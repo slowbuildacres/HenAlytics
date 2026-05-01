@@ -4,14 +4,31 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#F4EDE0">
-<meta name="description" content="A simple homestead tracker for gardens, egg layers, and meat chickens.">
 
-<title>Henalytics</title>
+<!-- SEO basics -->
+<title>Henalytics — Homestead tracker for gardens, eggs & meat birds</title>
+<meta name="description" content="A simple homestead tracker for gardens, egg layers, and meat chickens. Log entries, attach photos, share with farmhands, and watch the patterns emerge.">
+<meta name="keywords" content="homestead, homesteading, garden tracker, egg layer tracker, chicken tracker, backyard chickens, small farm app">
+<link rel="canonical" href="https://henalytics.com/">
 
-<!-- Standard favicon (browser tab) -->
+<!-- Open Graph (Facebook, LinkedIn, iMessage previews, etc.) -->
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://henalytics.com/">
+<meta property="og:title" content="Henalytics — Homestead tracker for gardens, eggs & meat birds">
+<meta property="og:description" content="A simple homestead tracker for gardens, egg layers, and meat chickens.">
+<meta property="og:image" content="https://henalytics.com/icon-512.png">
+<meta property="og:site_name" content="Henalytics">
+
+<!-- Twitter Card -->
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Henalytics — Homestead tracker">
+<meta name="twitter:description" content="A simple homestead tracker for gardens, egg layers, and meat chickens.">
+<meta name="twitter:image" content="https://henalytics.com/icon-512.png">
+
+<!-- Favicon (browser tab) -->
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 
-<!-- Web App Manifest (Android home screen, etc.) -->
+<!-- Web App Manifest (Android home screen) -->
 <link rel="manifest" href="/manifest.webmanifest">
 
 <!-- iOS home-screen icon + standalone behavior -->
@@ -20,14 +37,13 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="default">
 <meta name="apple-mobile-web-app-title" content="Henalytics">
 
-<!-- Android theme color (matches the parchment background) -->
+<!-- App-mode / theme metadata -->
 <meta name="application-name" content="Henalytics">
 <meta name="mobile-web-app-capable" content="yes">
 
 <style>
   html, body, #root { margin: 0; padding: 0; }
   body { background: #F4EDE0; }
-  /* Respect iPhone notch / safe areas in standalone mode */
   body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
 </style>
 </head>
@@ -35,8 +51,6 @@
 <div id="root"></div>
 <script type="module" src="/src/main.jsx"></script>
 <script>
-  // Register the service worker once the page has loaded.
-  // We deliberately don't block rendering on this.
   if ('serviceWorker' in navigator) {
     window.addEventListener('load', () => {
       navigator.serviceWorker.register('/sw.js').catch((err) => {
