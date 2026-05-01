@@ -4,14 +4,16 @@ import {
   Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut,
-  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon
+  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
+import FarmhandModal from "./FarmhandModal.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
 import {
   loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
+  sendFeedback, notifySignup, acceptInvite,
 } from "./sync.js";
 
 // ============ DESIGN TOKENS ============
@@ -302,8 +304,23 @@ export default function HomesteadApp() {
   const [modal, setModal] = useState(null);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
+  const [role, setRole] = useState(null); // "owner" | "member" | null
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
+  const [pendingInviteCode, setPendingInviteCode] = useState(null);
+
+  // ---- Detect ?invite=CODE in the URL on first load ----
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get("invite");
+    if (code) {
+      setPendingInviteCode(code);
+      // Clean the URL so a refresh doesn't re-trigger
+      const url = new URL(window.location.href);
+      url.searchParams.delete("invite");
+      window.history.replaceState({}, "", url.toString());
+    }
+  }, []);
 
   // Refs let us detect transitions like "user just signed in"
   const prevUserRef = useRef(null);
@@ -324,6 +341,36 @@ export default function HomesteadApp() {
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
+  useEffect(() => {
+    if (!authReady) return;
+    if (pendingInviteCode && !user && !modal) {
+      setModal({ type: "inviteSignIn" });
+    }
+  }, [pendingInviteCode, user, authReady]);
+
+  // ---- Once the user signs in WITH a pending invite, accept it ----
+  const inviteHandledRef = useRef(false);
+  useEffect(() => {
+    if (!user || !pendingInviteCode || inviteHandledRef.current) return;
+    inviteHandledRef.current = true;
+    (async () => {
+      try {
+        await acceptInvite(user, pendingInviteCode);
+        // Force a fresh load now that membership has changed
+        const result = await loadHomestead(user);
+        skipNextSaveRef.current = true;
+        setData(migrateData(result.data || {}));
+        setRole(result.role || "member");
+        setPendingInviteCode(null);
+        setModal({ type: "inviteAccepted" });
+      } catch (e) {
+        setPendingInviteCode(null);
+        setModal({ type: "inviteError", message: e.message || String(e) });
+      }
+    })();
+  }, [user, pendingInviteCode]);
+
   // ---- Load data once auth state is known ----
   // Re-runs whenever the user changes (sign in / sign out)
   useEffect(() => {
@@ -333,6 +380,9 @@ export default function HomesteadApp() {
     (async () => {
       const result = await loadHomestead(user);
       if (cancelled) return;
+
+      // Track the user's role on the active homestead (used by FarmhandModal)
+      setRole(result.role || null);
 
       const prevUser = prevUserRef.current;
 
@@ -581,7 +631,7 @@ export default function HomesteadApp() {
       </nav>
 
       {/* MODALS */}
-      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} />
+      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} />
     </div>
   );
 }
@@ -1738,15 +1788,15 @@ function PhotoTile({ photo }) {
 }
 
 // ============ MODAL ROUTER & FORMS ============
-function ModalRouter({ modal, setModal, data, update, activeHobby, user }) {
+function ModalRouter({ modal, setModal, data, update, activeHobby, user, role }) {
   const close = () => setModal(null);
   if (!modal) return null;
 
   const hobby = data.hobbies.find((h) => h.id === activeHobby);
 
-  if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
+  if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
-  if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} />;
+  if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
@@ -1757,10 +1807,70 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user }) {
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} />;
+  if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
+  if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
+  if (modal.type === "inviteAccepted") return <InviteAcceptedModal homesteadName={data.homesteadName} onClose={close} />;
+  if (modal.type === "inviteError") return <InviteErrorModal message={modal.message} onClose={close} />;
   return null;
 }
 
-function SettingsModal({ data, update, onClose, setModal, user }) {
+function InviteSignInModal({ onClose, setModal }) {
+  return (
+    <Modal open onClose={onClose} title="You've been invited! 🌱">
+      <div style={{
+        padding: 12, background: palette.yolkSoft, borderRadius: 8,
+        fontSize: 13, color: palette.ink, marginBottom: 16, lineHeight: 1.5,
+        border: `1.5px solid ${palette.line}`,
+      }}>
+        Someone invited you to share their homestead on Henalytics. Sign in or create an account to accept the invite.
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn variant="primary" onClick={() => setModal({ type: "signin" })}>Sign in</Btn>
+        <Btn variant="accent" onClick={() => setModal({ type: "signup" })}>Create account</Btn>
+      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 14, lineHeight: 1.5 }}>
+        Your account email must match the email the invitation was sent to.
+      </div>
+    </Modal>
+  );
+}
+
+function InviteAcceptedModal({ homesteadName, onClose }) {
+  return (
+    <Modal open onClose={onClose} title="Welcome to the homestead 🌱">
+      <div style={{
+        padding: 16, background: palette.leafSoft, borderRadius: 8,
+        fontSize: 14, color: palette.ink, marginBottom: 16, lineHeight: 1.5,
+        textAlign: "center",
+      }}>
+        <CheckCircle size={28} style={{ marginBottom: 8 }} />
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginBottom: 6 }}>
+          You're in!
+        </div>
+        <div>You've joined <strong>{homesteadName || "the homestead"}</strong> as a farmhand. You can log entries, view photos, and see analytics.</div>
+      </div>
+      <Btn variant="primary" onClick={onClose}>Get started</Btn>
+    </Modal>
+  );
+}
+
+function InviteErrorModal({ message, onClose }) {
+  return (
+    <Modal open onClose={onClose} title="Invitation problem">
+      <div style={{
+        padding: 12, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+        borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
+        display: "flex", alignItems: "flex-start", gap: 8,
+      }}>
+        <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+        <span>{message}</span>
+      </div>
+      <Btn variant="primary" onClick={onClose}>OK</Btn>
+    </Modal>
+  );
+}
+
+function SettingsModal({ data, update, onClose, setModal, user, role }) {
   const [showReset, setShowReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
 
@@ -1851,6 +1961,16 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         />
       )}
 
+      {user && (
+        <SectionBtn
+          icon={UserPlus}
+          label="Farmhands"
+          sub={role === "owner" ? "Invite a farmhand to share your homestead" : "View members of this homestead"}
+          accent={palette.feather}
+          onClick={() => { onClose(); setTimeout(() => setModal({ type: "farmhand" }), 0); }}
+        />
+      )}
+
       <SectionBtn
         icon={Lightbulb}
         label="How can I improve?"
@@ -1864,7 +1984,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
       }}>
         <strong style={{ color: palette.ink }}>Privacy:</strong> {user
-          ? "Your account email is stored only for support and account recovery. Your homestead data still saves locally to this browser for now — cross-device sync is coming soon. Nothing is shared or sold."
+          ? "Your account email is stored only for support and account recovery. Your homestead data syncs to the cloud and to any farmhands you've invited. Nothing is shared or sold."
           : "Your data is saved only to your own browser right now. Nothing is shared or sold. When you sign in, your email is used only for support — never sold or shared."}
       </div>
 
@@ -2035,7 +2155,7 @@ function RenameHomesteadModal({ data, update, onClose }) {
   );
 }
 
-function FeedbackModal({ onClose, presetCategory }) {
+function FeedbackModal({ onClose, presetCategory, user }) {
   const isHobbyRequest = presetCategory === "hobby";
   const [message, setMessage] = useState(
     isHobbyRequest
@@ -2043,36 +2163,56 @@ function FeedbackModal({ onClose, presetCategory }) {
       : ""
   );
   const [category, setCategory] = useState(presetCategory || "idea");
-  const [copied, setCopied] = useState(false);
+  const [fromEmail, setFromEmail] = useState(user?.email || "");
+  const [sending, setSending] = useState(false);
+  const [sent, setSent] = useState(false);
+  const [error, setError] = useState("");
 
-  const subject = `Homestead app feedback: ${category}`;
-  const body = `Category: ${category}\n\n${message}\n\n---\nSent from the Homestead Tracker app.`;
-  const mailtoHref = `mailto:slowbuildacres@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  const gmailHref = `https://mail.google.com/mail/?view=cm&fs=1&to=slowbuildacres@gmail.com&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-  const copyMessage = async () => {
-    const text = `To: slowbuildacres@gmail.com\nSubject: ${subject}\n\n${body}`;
+  const send = async () => {
+    setError("");
+    if (!message.trim()) {
+      setError("Please write a message first.");
+      return;
+    }
+    setSending(true);
     try {
-      await navigator.clipboard.writeText(text);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+      await sendFeedback({
+        category,
+        message,
+        fromEmail: fromEmail.trim() || null,
+      });
+      setSent(true);
     } catch (e) {
-      // fallback
-      const ta = document.createElement("textarea");
-      ta.value = text;
-      document.body.appendChild(ta);
-      ta.select();
-      try { document.execCommand("copy"); setCopied(true); setTimeout(() => setCopied(false), 2000); } catch (e2) {}
-      document.body.removeChild(ta);
+      setError(e.message || "Could not send. Please try the fallback options below.");
+    } finally {
+      setSending(false);
     }
   };
 
-  const linkStyle = {
-    display: "inline-flex", alignItems: "center", gap: 6,
-    padding: "10px 14px", borderRadius: 8, textDecoration: "none",
-    fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
-    boxShadow: "2px 2px 0 " + palette.line, cursor: "pointer",
-  };
+  // Fallback: if direct send is failing, give them the old options
+  const subject = `Henalytics feedback: ${category}`;
+  const body = `Category: ${category}\n\n${message}\n\n${fromEmail ? "From: " + fromEmail + "\n" : ""}---\nSent from Henalytics.`;
+  const mailtoHref = `mailto:slowbuildacres@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+  const gmailHref = `https://mail.google.com/mail/?view=cm&fs=1&to=slowbuildacres@gmail.com&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
+
+  if (sent) {
+    return (
+      <Modal open onClose={onClose} title="Thanks! 🌱">
+        <div style={{
+          padding: 20, background: palette.leafSoft, borderRadius: 10,
+          fontSize: 14, color: palette.ink, marginBottom: 16, lineHeight: 1.5,
+          textAlign: "center",
+        }}>
+          <CheckCircle size={32} style={{ marginBottom: 10 }} />
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginBottom: 6 }}>
+            Message sent
+          </div>
+          <div>I'll read it and reply if you included an email. Thanks for helping shape Henalytics!</div>
+        </div>
+        <Btn variant="primary" onClick={onClose}>Done</Btn>
+      </Modal>
+    );
+  }
 
   return (
     <Modal open onClose={onClose} title={isHobbyRequest ? "Request a hobby" : "How can I improve?"}>
@@ -2083,8 +2223,8 @@ function FeedbackModal({ onClose, presetCategory }) {
       }}>
         <Heart size={14} style={{ verticalAlign: "middle", marginRight: 6 }} />
         {isHobbyRequest
-          ? <>What hobby would you like to see added? Tell me what you'd want to track and I'll work on adding it. Your message goes to <strong>slowbuildacres@gmail.com</strong>.</>
-          : <>Got an idea, bug, or feature request? Pick how you'd like to send it — your message goes to <strong>slowbuildacres@gmail.com</strong>.</>
+          ? <>What hobby would you like to see added? Tell me what you'd want to track and I'll work on adding it. Your message goes directly to <strong>slowbuildacres@gmail.com</strong>.</>
+          : <>Got an idea, bug, or feature request? Type it below and tap Send — your message goes directly to <strong>slowbuildacres@gmail.com</strong>.</>
         }
       </div>
 
@@ -2104,75 +2244,78 @@ function FeedbackModal({ onClose, presetCategory }) {
           onChange={(e) => setMessage(e.target.value)}
           placeholder="What would make this app better for you?"
           autoFocus
+          disabled={sending}
         />
       </Field>
 
-      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, fontWeight: 600, textTransform: "uppercase", letterSpacing: 0.8 }}>
-        Send via
-      </div>
+      <Field label="Your email (optional, so I can reply)">
+        <input
+          type="email"
+          style={inputStyle}
+          value={fromEmail}
+          onChange={(e) => setFromEmail(e.target.value)}
+          placeholder="you@example.com"
+          disabled={sending}
+        />
+      </Field>
 
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        <a
-          href={message.trim() ? gmailHref : "#"}
-          target="_blank"
-          rel="noopener noreferrer"
-          onClick={(e) => { if (!message.trim()) e.preventDefault(); }}
-          style={{
-            ...linkStyle,
-            background: message.trim() ? palette.ink : palette.line,
-            color: palette.bg,
-            border: `1.5px solid ${palette.ink}`,
-            opacity: message.trim() ? 1 : 0.5,
-            pointerEvents: message.trim() ? "auto" : "none",
-          }}
-        >
-          <Mail size={14} /> Open in Gmail
-        </a>
+      {error && (
+        <div style={{
+          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
+          display: "flex", alignItems: "flex-start", gap: 8,
+        }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>{error}</span>
+        </div>
+      )}
 
-        <a
-          href={message.trim() ? mailtoHref : "#"}
-          onClick={(e) => { if (!message.trim()) e.preventDefault(); }}
-          style={{
-            ...linkStyle,
-            background: message.trim() ? palette.yolk : palette.line,
-            color: palette.ink,
-            border: `1.5px solid ${palette.ink}`,
-            opacity: message.trim() ? 1 : 0.5,
-            pointerEvents: message.trim() ? "auto" : "none",
-          }}
-        >
-          <Mail size={14} /> Open mail app
-        </a>
+      <Btn variant="primary" onClick={send} disabled={sending} style={{ width: "100%" }}>
+        {sending ? "Sending..." : "Send message"}
+      </Btn>
 
-        <button
-          onClick={copyMessage}
-          disabled={!message.trim()}
-          style={{
-            ...linkStyle,
-            background: copied ? palette.leafSoft : "transparent",
-            color: palette.ink,
-            border: `1.5px solid ${palette.line}`,
-            opacity: message.trim() ? 1 : 0.5,
-            cursor: message.trim() ? "pointer" : "not-allowed",
-          }}
-        >
-          {copied ? "✓ Copied!" : "Copy text"}
-        </button>
-      </div>
+      {error && (
+        <details style={{ marginTop: 14, fontSize: 12, color: palette.inkSoft }}>
+          <summary style={{ cursor: "pointer" }}>Or send via your email app instead</summary>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+            <a
+              href={gmailHref}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 12px", borderRadius: 8, textDecoration: "none",
+                fontSize: 12, fontWeight: 600,
+                background: palette.ink, color: palette.bg,
+                border: `1.5px solid ${palette.ink}`,
+              }}
+            >
+              <Mail size={12} /> Open in Gmail
+            </a>
+            <a
+              href={mailtoHref}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 12px", borderRadius: 8, textDecoration: "none",
+                fontSize: 12, fontWeight: 600,
+                background: palette.yolk, color: palette.ink,
+                border: `1.5px solid ${palette.ink}`,
+              }}
+            >
+              <Mail size={12} /> Open mail app
+            </a>
+          </div>
+        </details>
+      )}
 
-      <div style={{
-        fontSize: 11, color: palette.inkSoft, lineHeight: 1.5,
-        padding: 10, background: palette.bgAlt, borderRadius: 6, marginBottom: 12,
-      }}>
-        <strong>Tip:</strong> "Open in Gmail" works best in browsers. "Open mail app" uses your phone or computer's default mail app. Or just tap "Copy text" and paste it into any email.
-      </div>
-
-      <div style={{ fontSize: 11, color: palette.inkSoft, fontStyle: "italic" }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 14, lineHeight: 1.5 }}>
         Your email is only used to read & reply to your feedback — never shared.
       </div>
     </Modal>
   );
 }
+
+
 
 function AddHobbyModal({ update, onClose }) {
   const [name, setName] = useState("");

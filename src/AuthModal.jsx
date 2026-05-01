@@ -59,6 +59,20 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           password,
         });
         if (error) throw error;
+        // Fire off a notification email to slowbuildacres@gmail.com.
+        // Best-effort: don't block signup if it fails.
+        try {
+          await fetch('/api/send-email', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              kind: 'signup_notify',
+              newUserEmail: email.trim(),
+            }),
+          });
+        } catch (e) {
+          console.warn('Signup notification failed', e);
+        }
         // If email confirmation is OFF in Supabase (which we did), session is immediate
         if (data.session) {
           onClose();

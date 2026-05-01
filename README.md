@@ -1,6 +1,7 @@
 # Henalytics
 
 A homestead tracker for gardens, egg layers, and meat chickens.
+With cloud accounts, photo uploads, and farmhand sharing.
 
 ## Setup
 
@@ -9,11 +10,7 @@ A homestead tracker for gardens, egg layers, and meat chickens.
    npm install
    ```
 
-2. Create `.env.local` (copy from `.env.local.example`) and fill in your Supabase keys:
-   ```
-   VITE_SUPABASE_URL=https://your-project.supabase.co
-   VITE_SUPABASE_ANON_KEY=your-anon-key
-   ```
+2. Copy `.env.local.example` to `.env.local` and fill in your keys.
 
 3. Run locally:
    ```bash
@@ -21,13 +18,28 @@ A homestead tracker for gardens, egg layers, and meat chickens.
    ```
    Then open http://localhost:5173
 
+   ⚠️ Note: the in-app feedback/farmhand-invite emails won't actually send during `npm run dev` because the serverless function only runs in production. Test those features by deploying to Vercel and using the live URL.
+
 ## Build for production
 
 ```bash
 npm run build
 ```
 
+## Environment variables
+
+| Name | Where used | Required? | Notes |
+|---|---|---|---|
+| `VITE_SUPABASE_URL` | Browser | Yes | Public — safe in frontend |
+| `VITE_SUPABASE_ANON_KEY` | Browser | Yes | Public — safe in frontend |
+| `RESEND_API_KEY` | `/api/send-email` (server) | Yes for emails | SECRET — never expose to browser |
+| `EMAIL_FROM` | `/api/send-email` | Optional | Default: `onboarding@resend.dev` |
+| `OWNER_EMAIL` | `/api/send-email` | Optional | Default: `slowbuildacres@gmail.com` |
+
+In Vercel, all five go in **Settings → Environment Variables**.
+The `VITE_*` ones must be exposed to Production+Preview (Development is optional).
+The others can be Production+Preview only — they're never used in the browser.
+
 ## Deployment
 
 Auto-deploys to Vercel when pushed to the `main` branch on GitHub.
-Environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) need to be set in the Vercel project settings.

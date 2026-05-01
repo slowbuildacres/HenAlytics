@@ -1,19 +1,26 @@
 // ============================================================================
-// SYNC LAYER
+// SYNC LAYER (Stage 4)
 // ----------------------------------------------------------------------------
-// When a user is signed in, homestead data lives in Supabase and stays in sync
-// across devices. When signed out, data lives in localStorage. This module
-// hides that distinction from the rest of the app.
+// Each user belongs to one or more homesteads via the homestead_members table.
+// In v1 of farmhand sharing we assume one homestead per user — they're the
+// owner of their own, and may also be a member of someone else's.
+// For now we always operate on the user's "primary" homestead, which is:
+//   - The first homestead they own (if they own any), or
+//   - The first homestead they're a member of (if they don't own one).
 //
-// Photos always go to Supabase Storage (only available when signed in).
+// Photos go to Supabase Storage. Files are pathed by USER ID (not homestead),
+// because Storage RLS uses auth.uid() to enforce per-user folders. Every member
+// of a homestead can see every photo path stored in the data blob — that's by
+// design. The path itself reveals only the uploader's user ID.
 // ============================================================================
 
 import { supabase, isSupabaseConfigured } from './supabase.js';
 
 const STORAGE_KEY = 'homestead_data_v1';
+const HOMESTEAD_ID_KEY = 'homestead_active_id_v1';
 
 // ============================================================================
-// LOCAL STORAGE HELPERS (exported for app to use during sign-in transitions)
+// LOCAL STORAGE HELPERS
 // ============================================================================
 
 export function readLocalHomestead() {
@@ -36,18 +43,77 @@ function writeLocalHomestead(data) {
 export function clearLocalHomestead() {
   try {
     localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(HOMESTEAD_ID_KEY);
   } catch (e) {}
 }
 
+function readActiveHomesteadId() {
+  try { return localStorage.getItem(HOMESTEAD_ID_KEY) || null; } catch (e) { return null; }
+}
+
+function writeActiveHomesteadId(id) {
+  try { localStorage.setItem(HOMESTEAD_ID_KEY, id); } catch (e) {}
+}
+
 // ============================================================================
-// CLOUD HELPERS
+// HOMESTEAD DISCOVERY / CREATION
 // ============================================================================
 
-async function readCloudHomestead(userId) {
-  const { data, error } = await supabase
-    .from('user_homestead')
-    .select('data')
+// Find or create the user's primary homestead. Returns { id, role }.
+// If they own none and aren't a member of any, creates a new one.
+async function ensureHomestead(userId) {
+  // Check membership
+  const { data: memberships, error: mErr } = await supabase
+    .from('homestead_members')
+    .select('homestead_id, role')
     .eq('user_id', userId)
+    .order('joined_at', { ascending: true });
+
+  if (mErr) {
+    console.error('Membership lookup failed', mErr);
+    throw mErr;
+  }
+
+  if (memberships && memberships.length > 0) {
+    // Prefer a homestead they own
+    const owned = memberships.find((m) => m.role === 'owner');
+    const chosen = owned || memberships[0];
+    return { id: chosen.homestead_id, role: chosen.role };
+  }
+
+  // No memberships — create a brand-new homestead and make them owner
+  const { data: created, error: cErr } = await supabase
+    .from('homesteads')
+    .insert({ data: {} })
+    .select()
+    .single();
+
+  if (cErr) {
+    console.error('Homestead create failed', cErr);
+    throw cErr;
+  }
+
+  const { error: jErr } = await supabase
+    .from('homestead_members')
+    .insert({ homestead_id: created.id, user_id: userId, role: 'owner' });
+
+  if (jErr) {
+    console.error('Initial owner insert failed', jErr);
+    throw jErr;
+  }
+
+  return { id: created.id, role: 'owner' };
+}
+
+// ============================================================================
+// CLOUD READ / WRITE
+// ============================================================================
+
+async function readCloudHomestead(homesteadId) {
+  const { data, error } = await supabase
+    .from('homesteads')
+    .select('data')
+    .eq('id', homesteadId)
     .maybeSingle();
 
   if (error) {
@@ -57,14 +123,11 @@ async function readCloudHomestead(userId) {
   return data ? data.data : null;
 }
 
-async function writeCloudHomestead(userId, data) {
+async function writeCloudHomestead(homesteadId, data) {
   const { error } = await supabase
-    .from('user_homestead')
-    .upsert({
-      user_id: userId,
-      data,
-      updated_at: new Date().toISOString(),
-    });
+    .from('homesteads')
+    .update({ data, updated_at: new Date().toISOString() })
+    .eq('id', homesteadId);
 
   if (error) {
     console.error('Cloud save failed', error);
@@ -76,47 +139,47 @@ async function writeCloudHomestead(userId, data) {
 // PUBLIC LOAD / SAVE API
 // ============================================================================
 
-// Load homestead data. Returns { source, data }:
-//   source = "cloud"        — data came from the user's cloud account
-//   source = "cloud-empty"  — user is signed in but has no cloud row yet
+// Load homestead data. Returns { source, data, homesteadId, role }
+//   source = "cloud"        — got existing data from cloud
+//   source = "cloud-empty"  — homestead exists but data is empty
 //   source = "local"        — signed out, loaded from localStorage
-//   data   = the homestead object (null if cloud-empty or no local data)
 export async function loadHomestead(user) {
   if (user && isSupabaseConfigured) {
     try {
-      const cloud = await readCloudHomestead(user.id);
-      if (cloud) {
-        // Mirror to local cache for fast loads next time.
+      const { id, role } = await ensureHomestead(user.id);
+      writeActiveHomesteadId(id);
+      const cloud = await readCloudHomestead(id);
+      const hasContent = cloud && Object.keys(cloud).length > 0;
+      if (hasContent) {
         writeLocalHomestead(cloud);
-        return { source: 'cloud', data: cloud };
+        return { source: 'cloud', data: cloud, homesteadId: id, role };
       }
-      return { source: 'cloud-empty', data: null };
+      return { source: 'cloud-empty', data: null, homesteadId: id, role };
     } catch (e) {
-      // If we can't reach the cloud, fall back to local cache so the app
-      // still works. The user might be offline.
-      console.warn('Falling back to local cache after cloud read error', e);
-      const local = readLocalHomestead();
-      return { source: 'local', data: local };
+      console.warn('Falling back to local cache after cloud error', e);
+      return { source: 'local', data: readLocalHomestead() };
     }
   }
-  // Signed out: read from localStorage.
-  const local = readLocalHomestead();
-  return { source: 'local', data: local };
+  return { source: 'local', data: readLocalHomestead() };
 }
 
-// Save homestead data. If signed in, writes both cloud and local cache.
-// If signed out, writes local only.
-// Returns { ok, location, error? }.
+// Save homestead data. Writes both cloud (if signed in) and local cache.
 export async function saveHomestead(user, data) {
-  // Always write the local cache (offline buffer for signed-in users).
   writeLocalHomestead(data);
 
   if (user && isSupabaseConfigured) {
     try {
-      await writeCloudHomestead(user.id, data);
+      const homesteadId = readActiveHomesteadId();
+      if (!homesteadId) {
+        // No cached id — discover it. Rare; happens if storage was cleared.
+        const { id } = await ensureHomestead(user.id);
+        writeActiveHomesteadId(id);
+        await writeCloudHomestead(id, data);
+      } else {
+        await writeCloudHomestead(homesteadId, data);
+      }
       return { ok: true, location: 'cloud' };
     } catch (e) {
-      // Cloud failed but local saved — return partial success so UI can show "Error"
       return { ok: false, location: 'local', error: e };
     }
   }
@@ -124,11 +187,203 @@ export async function saveHomestead(user, data) {
 }
 
 // ============================================================================
-// PHOTO UPLOADS
+// FARMHAND MANAGEMENT
 // ============================================================================
 
-// Resize an image to fit within maxDim, encode as JPEG quality 0.85.
-// Most phone photos are 4-12MB; this brings them to ~200-500KB.
+// Returns the list of members in the user's primary homestead.
+// Each member: { user_id, role, email, joined_at }
+export async function listMembers(user) {
+  if (!user || !isSupabaseConfigured) return [];
+  const homesteadId = readActiveHomesteadId();
+  if (!homesteadId) return [];
+
+  const { data, error } = await supabase
+    .from('homestead_members')
+    .select('user_id, role, joined_at')
+    .eq('homestead_id', homesteadId);
+
+  if (error) {
+    console.error('Member list failed', error);
+    return [];
+  }
+
+  // We can't directly query auth.users from the client, but we can get our own
+  // user's email. For other members we show a partial label.
+  return (data || []).map((m) => ({
+    ...m,
+    email: m.user_id === user.id ? user.email : null,
+    isYou: m.user_id === user.id,
+  }));
+}
+
+// Returns pending invites for the user's homestead.
+export async function listPendingInvites(user) {
+  if (!user || !isSupabaseConfigured) return [];
+  const homesteadId = readActiveHomesteadId();
+  if (!homesteadId) return [];
+
+  const { data, error } = await supabase
+    .from('pending_invites')
+    .select('id, invited_email, invite_code, created_at, expires_at, accepted_at')
+    .eq('homestead_id', homesteadId)
+    .is('accepted_at', null)
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Invite list failed', error);
+    return [];
+  }
+  return data || [];
+}
+
+// Create a farmhand invite. Returns the invite code so we can email it.
+export async function createInvite(user, email) {
+  if (!user || !isSupabaseConfigured) throw new Error('Sign in first');
+  const homesteadId = readActiveHomesteadId();
+  if (!homesteadId) throw new Error('No active homestead');
+
+  const trimmed = (email || '').trim().toLowerCase();
+  if (!trimmed || !trimmed.includes('@')) {
+    throw new Error('Please enter a valid email address');
+  }
+
+  const { data, error } = await supabase
+    .from('pending_invites')
+    .insert({
+      homestead_id: homesteadId,
+      invited_email: trimmed,
+      invited_by: user.id,
+    })
+    .select()
+    .single();
+
+  if (error) {
+    console.error('Invite create failed', error);
+    throw new Error(error.message || 'Could not create invite');
+  }
+  return data;
+}
+
+// Cancel a pending invite.
+export async function cancelInvite(inviteId) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase
+    .from('pending_invites')
+    .delete()
+    .eq('id', inviteId);
+  if (error) throw error;
+}
+
+// Accept an invite by code. Adds the current user as a member of the
+// invite's homestead. Should be called after sign-in.
+export async function acceptInvite(user, inviteCode) {
+  if (!user || !isSupabaseConfigured) throw new Error('Sign in first');
+
+  // Look up the invite
+  const { data: invite, error: lookupErr } = await supabase
+    .from('pending_invites')
+    .select('id, homestead_id, invited_email, expires_at, accepted_at')
+    .eq('invite_code', inviteCode)
+    .maybeSingle();
+
+  if (lookupErr || !invite) {
+    throw new Error('Invite not found or already used');
+  }
+  if (invite.accepted_at) {
+    throw new Error('This invite was already used');
+  }
+  if (new Date(invite.expires_at) < new Date()) {
+    throw new Error('This invite has expired');
+  }
+  // Verify the email matches
+  if (user.email && user.email.toLowerCase() !== invite.invited_email.toLowerCase()) {
+    throw new Error(`This invite is for ${invite.invited_email}, but you signed in as ${user.email}`);
+  }
+
+  // Add as member
+  const { error: addErr } = await supabase
+    .from('homestead_members')
+    .insert({
+      homestead_id: invite.homestead_id,
+      user_id: user.id,
+      role: 'member',
+    });
+
+  if (addErr && !String(addErr.message || '').includes('duplicate')) {
+    throw addErr;
+  }
+
+  // Mark invite as accepted
+  await supabase
+    .from('pending_invites')
+    .update({ accepted_at: new Date().toISOString() })
+    .eq('id', invite.id);
+
+  // Switch their active homestead to the one they just joined
+  writeActiveHomesteadId(invite.homestead_id);
+  // Clear local cache so the joined homestead's data loads fresh
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+
+  return invite.homestead_id;
+}
+
+// Remove a member (kick a farmhand, or leave). Owner-only for kicking; anyone
+// for leaving themselves.
+export async function removeMember(homesteadId, userId) {
+  if (!isSupabaseConfigured) return;
+  const { error } = await supabase
+    .from('homestead_members')
+    .delete()
+    .eq('homestead_id', homesteadId)
+    .eq('user_id', userId);
+  if (error) throw error;
+}
+
+// Get the active homestead's ID (used by Farmhand UI).
+export function getActiveHomesteadId() {
+  return readActiveHomesteadId();
+}
+
+// ============================================================================
+// EMAIL via /api/send-email (Vercel serverless function)
+// ============================================================================
+
+async function sendEmail(payload) {
+  const res = await fetch('/api/send-email', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    const err = await res.text().catch(() => '');
+    throw new Error(`Email send failed: ${res.status} ${err}`);
+  }
+  return res.json();
+}
+
+export function sendFeedback({ category, message, fromEmail }) {
+  return sendEmail({ kind: 'feedback', category, message, fromEmail });
+}
+
+export function notifySignup({ newUserEmail }) {
+  return sendEmail({ kind: 'signup_notify', newUserEmail });
+}
+
+export function sendFarmhandInvite({ inviteEmail, inviterEmail, homesteadName, inviteCode, baseUrl }) {
+  const inviteLink = `${baseUrl}/?invite=${encodeURIComponent(inviteCode)}`;
+  return sendEmail({
+    kind: 'farmhand_invite',
+    inviteEmail,
+    inviterEmail,
+    homesteadName,
+    inviteLink,
+  });
+}
+
+// ============================================================================
+// PHOTO UPLOADS  (unchanged from Stage 3)
+// ============================================================================
+
 export async function compressImage(file, maxDim = 1600, quality = 0.85) {
   const img = await fileToImage(file);
 
@@ -172,8 +427,6 @@ function fileToImage(file) {
   });
 }
 
-// Upload a photo to Supabase storage. The file path is `userId/entryId-randomId.jpg`,
-// matching the RLS policies. Returns the storage path so we can show it later.
 export async function uploadPhoto(user, entryId, file) {
   if (!user || !isSupabaseConfigured) {
     throw new Error('You must be signed in to upload photos.');
@@ -198,8 +451,6 @@ export async function uploadPhoto(user, entryId, file) {
   return path;
 }
 
-// Generate a temporary signed URL for displaying a photo. Lasts 1 hour.
-// Returns null if the photo can't be loaded (e.g., user is signed out).
 export async function getPhotoUrl(path) {
   if (!path || !isSupabaseConfigured) return null;
   const { data, error } = await supabase.storage
@@ -212,7 +463,6 @@ export async function getPhotoUrl(path) {
   return data.signedUrl;
 }
 
-// Delete a photo from storage. Used when removing an entry that has a photo.
 export async function deletePhoto(path) {
   if (!path || !isSupabaseConfigured) return;
   await supabase.storage.from('photos').remove([path]);
