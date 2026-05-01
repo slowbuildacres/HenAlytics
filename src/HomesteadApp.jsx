@@ -663,7 +663,7 @@ function HomePage({ hobby, data, update, setModal }) {
   return (
     <div>
       {/* HOBBY-SPECIFIC SUMMARY */}
-      {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} update={update} setModal={setModal} />}
+      {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} setModal={setModal} />}
 
@@ -687,15 +687,20 @@ function HomePage({ hobby, data, update, setModal }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {recent.map((e) => (
-            <ActivityRow key={e.id} entry={e} hobbyType={hobby.type} onDelete={() => {
-              // Best-effort: clean up the photo from storage if there was one.
-              // We don't await because the UI shouldn't wait on it.
-              if (e.photoPath) deletePhoto(e.photoPath).catch(() => {});
-              update((d) => {
-                d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
-                return d;
-              });
-            }} />
+            <ActivityRow
+              key={e.id}
+              entry={e}
+              hobbyType={hobby.type}
+              onEdit={() => setModal({ type: "log", action: e.action, existingEntry: e })}
+              onDelete={() => {
+                // Best-effort: clean up the photo from storage if there was one.
+                if (e.photoPath) deletePhoto(e.photoPath).catch(() => {});
+                update((d) => {
+                  d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
+                  return d;
+                });
+              }}
+            />
           ))}
         </div>
       )}
@@ -821,35 +826,225 @@ function GardenSummary({ hobby, data, setModal }) {
   );
 }
 
-function EggLayersSummary({ hobby, update, setModal }) {
+function EggLayersSummary({ hobby, entries, update, setModal }) {
+  const today = new Date().toISOString().slice(0, 10);
+
+  // ---- Weekly stats ----
+  const eggsLaid = entries.filter((e) => e.action === "eggs_laid");
+  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const eggsThisWeek = eggsLaid.filter((e) => e.date > oneWeekAgo).reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const eggsLastWeek = eggsLaid.filter((e) => e.date > twoWeeksAgo && e.date <= oneWeekAgo).reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const diff = eggsThisWeek - eggsLastWeek;
+
   return (
-    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-      <div style={{
-        flex: 1, minWidth: 160, background: palette.card, border: `1.5px solid ${palette.line}`,
-        borderRadius: 12, padding: 14,
-      }}>
-        <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-          Current Flock
-        </div>
-        <div style={{ fontSize: 32, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>
-          {hobby.flockSize || 0}
-        </div>
-        <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 6 }}>
-          {hobby.flockSize ? "hens" : "Tap +Add Birds to start"}
-        </div>
-      </div>
-      {(hobby.flockHistory || []).length > 0 && (
+    <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+      {/* Top row: flock + flock-started */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
         <div style={{
           flex: 1, minWidth: 160, background: palette.card, border: `1.5px solid ${palette.line}`,
           borderRadius: 12, padding: 14,
         }}>
           <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            Flock Started
+            Current Flock
           </div>
-          <div style={{ fontSize: 16, fontWeight: 600 }}>
-            {fmtDate(hobby.flockHistory[0].date)}
+          <div style={{ fontSize: 32, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>
+            {hobby.flockSize || 0}
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 6 }}>
+            {hobby.flockSize ? "hens" : "Tap +Add Birds to start"}
           </div>
         </div>
+        {(hobby.flockHistory || []).length > 0 && (
+          <div style={{
+            flex: 1, minWidth: 160, background: palette.card, border: `1.5px solid ${palette.line}`,
+            borderRadius: 12, padding: 14,
+          }}>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+              Flock Started
+            </div>
+            <div style={{ fontSize: 16, fontWeight: 600 }}>
+              {fmtDate(hobby.flockHistory[0].date)}
+            </div>
+          </div>
+        )}
+      </div>
+
+      {/* Egg basket (only show if there's a flock) */}
+      {hobby.flockSize > 0 && <EggBasket hobby={hobby} update={update} />}
+
+      {/* Weekly stats */}
+      {hobby.flockSize > 0 && eggsLaid.length > 0 && (
+        <div style={{
+          background: palette.card, border: `1.5px solid ${palette.line}`,
+          borderRadius: 12, padding: 14,
+          display: "flex", alignItems: "center", gap: 14,
+        }}>
+          <div style={{
+            width: 48, height: 48, borderRadius: 24, background: palette.yolkSoft,
+            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          }}>
+            <Egg size={24} strokeWidth={1.8} color={palette.ink} />
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
+              This week
+            </div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>
+              {eggsThisWeek} <span style={{ fontSize: 14, color: palette.inkSoft }}>egg{eggsThisWeek === 1 ? "" : "s"}</span>
+            </div>
+            {eggsLastWeek > 0 && (
+              <div style={{
+                fontSize: 12, marginTop: 4,
+                color: diff > 0 ? palette.leaf : diff < 0 ? palette.accent : palette.inkSoft,
+              }}>
+                {diff > 0 && <>▲ {diff} more than last week</>}
+                {diff < 0 && <>▼ {Math.abs(diff)} fewer than last week</>}
+                {diff === 0 && <>= same as last week</>}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// EggBasket: a running tally for the day. Tap +1 each time you collect an egg.
+// Persists in hobby.eggBasket = { date, count }. Auto-resets when the date changes.
+// Tap "Done" to commit it as a single eggs_laid entry.
+function EggBasket({ hobby, update }) {
+  const today = new Date().toISOString().slice(0, 10);
+  const basket = hobby.eggBasket;
+  const isToday = basket && basket.date === today;
+  const count = isToday ? basket.count : 0;
+
+  const inc = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      const cur = h.eggBasket && h.eggBasket.date === today ? h.eggBasket.count : 0;
+      h.eggBasket = { date: today, count: cur + 1 };
+      return d;
+    });
+  };
+
+  const dec = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h || !h.eggBasket) return d;
+      const cur = h.eggBasket.date === today ? h.eggBasket.count : 0;
+      const next = Math.max(0, cur - 1);
+      h.eggBasket = next === 0 ? null : { date: today, count: next };
+      return d;
+    });
+  };
+
+  const commit = () => {
+    if (count <= 0) return;
+    update((d) => {
+      d.entries[hobby.id] = d.entries[hobby.id] || [];
+      d.entries[hobby.id].push({
+        id: newId(),
+        date: today,
+        action: "eggs_laid",
+        count,
+        created: Date.now(),
+      });
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h) h.eggBasket = null;
+      return d;
+    });
+  };
+
+  const reset = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h) h.eggBasket = null;
+      return d;
+    });
+  };
+
+  return (
+    <div style={{
+      background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+      borderRadius: 12, padding: 14,
+    }}>
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 10,
+      }}>
+        <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1 }}>
+          🥚 Today's egg basket
+        </div>
+        {count > 0 && (
+          <button
+            onClick={reset}
+            style={{ background: "none", border: "none", color: palette.inkSoft, cursor: "pointer", fontSize: 11, padding: 4 }}
+            title="Clear basket"
+          >
+            Clear
+          </button>
+        )}
+      </div>
+
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14,
+      }}>
+        <button
+          onClick={dec}
+          disabled={count === 0}
+          style={{
+            width: 48, height: 48, borderRadius: 24, fontSize: 24, fontWeight: 700,
+            border: `1.5px solid ${palette.line}`, background: palette.card,
+            cursor: count === 0 ? "default" : "pointer", color: palette.ink,
+            opacity: count === 0 ? 0.4 : 1,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          −
+        </button>
+
+        <div style={{
+          flex: 1, textAlign: "center", padding: "8px 0",
+        }}>
+          <div style={{ fontSize: 56, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>
+            {count}
+          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+            {count === 0 ? "Tap + as you collect" : `egg${count === 1 ? "" : "s"} so far today`}
+          </div>
+        </div>
+
+        <button
+          onClick={inc}
+          style={{
+            width: 56, height: 56, borderRadius: 28, fontSize: 30, fontWeight: 700,
+            border: `2px solid ${palette.ink}`, background: palette.yolk,
+            cursor: "pointer", color: palette.ink,
+            boxShadow: "2px 2px 0 " + palette.line,
+            display: "flex", alignItems: "center", justifyContent: "center",
+            flexShrink: 0,
+          }}
+        >
+          +
+        </button>
+      </div>
+
+      {count > 0 && (
+        <button
+          onClick={commit}
+          style={{
+            width: "100%", marginTop: 12, padding: "10px",
+            borderRadius: 8, border: `1.5px solid ${palette.ink}`,
+            background: palette.ink, color: palette.bg,
+            fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+            cursor: "pointer",
+          }}
+        >
+          Done — log {count} egg{count === 1 ? "" : "s"} for today
+        </button>
       )}
     </div>
   );
@@ -899,7 +1094,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
 }
 
 // ============ ACTIVITY ROW ============
-function ActivityRow({ entry, hobbyType, onDelete }) {
+function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
   const labels = {
     watered: "Watered", planted: "Planted", harvested: "Harvested", issue: "Issue Reported",
     fed: "Fed", free_range: "Free range", eggs: "Eggs collected", bedding: "Bedding",
@@ -966,6 +1161,15 @@ function ActivityRow({ entry, hobbyType, onDelete }) {
         )}
       </div>
       {entry.photoPath && <EntryPhotoThumb path={entry.photoPath} />}
+      {onEdit && (
+        <button
+          onClick={onEdit}
+          style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
+          title="Edit"
+        >
+          <Edit3 size={16} />
+        </button>
+      )}
       <button
         onClick={onDelete}
         style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
@@ -1835,7 +2039,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
-  if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} />;
+  if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
@@ -2801,10 +3005,18 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
 }
 
 // ============ LOG MODAL (DIFFERENT BY ACTION) ============
-function LogModal({ hobby, action, data, update, onClose, user }) {
-  const [date, setDate] = useState(todayStr());
-  const [fields, setFields] = useState({});
-  const [photoFile, setPhotoFile] = useState(null);  // selected file before upload
+function LogModal({ hobby, action, data, update, onClose, user, existingEntry }) {
+  const isEdit = !!existingEntry;
+
+  // Pre-populate from existingEntry when editing.
+  const [date, setDate] = useState(() => existingEntry ? existingEntry.date : todayStr());
+  const [fields, setFields] = useState(() => {
+    if (!existingEntry) return {};
+    // Copy all fields except metadata
+    const { id, date: _d, action: _a, created, photoPath, weather, batchId, seasonId, ...rest } = existingEntry;
+    return rest;
+  });
+  const [photoFile, setPhotoFile] = useState(null);  // selected file before upload (only if user changes it)
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
 
@@ -2824,9 +3036,10 @@ function LogModal({ hobby, action, data, update, onClose, user }) {
       }
     });
 
-    // We need an entry id up front so we can attach the photo to it
-    const entryId = newId();
-    let photoPath = null;
+    // We need an entry id up front so we can attach the photo to it.
+    // For edits, we keep the existing id so we don't create a duplicate.
+    const entryId = isEdit ? existingEntry.id : newId();
+    let photoPath = isEdit ? (existingEntry.photoPath || null) : null;
 
     if (photoFile) {
       if (!user) {
@@ -2836,7 +3049,10 @@ function LogModal({ hobby, action, data, update, onClose, user }) {
       setPhotoUploading(true);
       setPhotoError("");
       try {
+        // If editing and there was an old photo, delete it after the new one uploads.
+        const oldPhotoPath = isEdit ? existingEntry.photoPath : null;
         photoPath = await uploadPhoto(user, entryId, photoFile);
+        if (oldPhotoPath) deletePhoto(oldPhotoPath).catch(() => {});
       } catch (e) {
         setPhotoError(e.message || "Upload failed. Try again or save without a photo.");
         setPhotoUploading(false);
@@ -2845,75 +3061,103 @@ function LogModal({ hobby, action, data, update, onClose, user }) {
       setPhotoUploading(false);
     }
 
-    // Fetch weather (best-effort — never blocks save). If location is set,
-    // try with a 4-second timeout. If it fails or times out, save without.
-    let weather = null;
-    const loc = data.homesteadLocation;
-    if (loc && loc.lat != null && loc.lon != null) {
-      try {
-        weather = await Promise.race([
-          getDailyWeather(date, loc.lat, loc.lon),
-          new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
-        ]);
-      } catch (e) {
-        weather = null;
+    // Fetch weather only for new entries — preserve existing weather on edits.
+    let weather = isEdit ? (existingEntry.weather || null) : null;
+    if (!isEdit) {
+      const loc = data.homesteadLocation;
+      if (loc && loc.lat != null && loc.lon != null) {
+        try {
+          weather = await Promise.race([
+            getDailyWeather(date, loc.lat, loc.lon),
+            new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
+          ]);
+        } catch (e) {
+          weather = null;
+        }
       }
     }
 
     update((d) => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
-      const entry = { id: entryId, date, action, created: Date.now(), ...cleanFields };
+      const entry = {
+        id: entryId,
+        date,
+        action,
+        created: isEdit ? existingEntry.created : Date.now(),
+        ...cleanFields,
+      };
       if (photoPath) entry.photoPath = photoPath;
       if (weather) entry.weather = weather;
-
-      // attach to current batch for meat chickens
-      if (hobby.type === "meat_chickens" && hobby.currentBatch) {
-        entry.batchId = hobby.currentBatch.id;
+      // Preserve batch/season association when editing
+      if (isEdit) {
+        if (existingEntry.batchId) entry.batchId = existingEntry.batchId;
+        if (existingEntry.seasonId) entry.seasonId = existingEntry.seasonId;
       }
 
-      // attach to current season for garden
-      if (hobby.type === "garden") {
-        const h = d.hobbies.find((x) => x.id === hobby.id);
-        if (h && h.currentSeason) {
-          entry.seasonId = h.currentSeason.id;
+      // For new entries only, attach context and trigger side-effects.
+      if (!isEdit) {
+        // attach to current batch for meat chickens
+        if (hobby.type === "meat_chickens" && hobby.currentBatch) {
+          entry.batchId = hobby.currentBatch.id;
+        }
+
+        // attach to current season for garden
+        if (hobby.type === "garden") {
+          const h = d.hobbies.find((x) => x.id === hobby.id);
+          if (h && h.currentSeason) {
+            entry.seasonId = h.currentSeason.id;
+          }
+        }
+
+        // garden planting -> create planting record
+        if (action === "planted" && cleanFields.plant) {
+          d.plantings = d.plantings || [];
+          d.plantings.push({
+            id: newId(), plant: cleanFields.plant, quantity: cleanFields.quantity,
+            date, harvested: false,
+          });
+        }
+
+        // egg layer death decrements flock by the quantity (default 1)
+        if (action === "death" && hobby.type === "egg_layers") {
+          const h = d.hobbies.find((x) => x.id === hobby.id);
+          const n = Math.max(1, Number(cleanFields.count) || 1);
+          h.flockSize = Math.max(0, (h.flockSize || 0) - n);
+        }
+
+        d.entries[hobby.id].push(entry);
+      } else {
+        // Edit: replace the existing entry in place
+        const idx = d.entries[hobby.id].findIndex((e) => e.id === existingEntry.id);
+        if (idx !== -1) {
+          d.entries[hobby.id][idx] = entry;
+        } else {
+          // If somehow it's missing (e.g., removed elsewhere), add it back
+          d.entries[hobby.id].push(entry);
         }
       }
 
-      // garden planting -> create planting record
-      if (action === "planted" && cleanFields.plant) {
-        d.plantings = d.plantings || [];
-        d.plantings.push({
-          id: newId(), plant: cleanFields.plant, quantity: cleanFields.quantity,
-          date, harvested: false,
-        });
-      }
-
-      // egg layer death decrements flock by the quantity (default 1)
-      if (action === "death" && hobby.type === "egg_layers") {
-        const h = d.hobbies.find((x) => x.id === hobby.id);
-        const n = Math.max(1, Number(cleanFields.count) || 1);
-        h.flockSize = Math.max(0, (h.flockSize || 0) - n);
-      }
-
-      d.entries[hobby.id].push(entry);
       return d;
     });
     onClose();
   };
 
   const titles = {
-    watered: "Log watering", planted: "Log planting", harvested: "Log harvest",
-    issue: "Report issue", fed: "Log feed", free_range: "Log free-range",
-    eggs: "Log eggs collected", bedding: "Log bedding change", death: "Report death",
-    note: "Add a note", butcher: "Butcher",
-    sold_eggs: "Log eggs sold", infrastructure: "Log infrastructure",
+    watered: "watering", planted: "planting", harvested: "harvest",
+    issue: "issue", fed: "feed", free_range: "free-range",
+    eggs: "eggs collected", bedding: "bedding change", death: "death",
+    note: "a note", butcher: "butcher",
+    sold_eggs: "eggs sold", infrastructure: "infrastructure",
+    eggs_laid: "eggs laid",
   };
+  const titlePrefix = isEdit ? "Edit" : "Log";
+  const dynamicTitle = `${titlePrefix} ${titles[action] || "entry"}`;
 
   // existing plant names from history (for the autocomplete-ish helper)
   const plants = Array.from(new Set((data.plantings || []).map((p) => p.plant).filter(Boolean)));
 
   return (
-    <Modal open onClose={onClose} title={titles[action] || "Log entry"}>
+    <Modal open onClose={onClose} title={dynamicTitle}>
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
@@ -3145,7 +3389,7 @@ function LogModal({ hobby, action, data, update, onClose, user }) {
       )}
 
       <Btn variant="primary" onClick={submit} disabled={photoUploading}>
-        {photoUploading ? "Uploading photo..." : "Save entry"}
+        {photoUploading ? "Uploading photo..." : (isEdit ? "Save changes" : "Save entry")}
       </Btn>
     </Modal>
   );
