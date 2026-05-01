@@ -3,9 +3,11 @@ import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
   Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
-  Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf
+  Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+import AuthModal from "./AuthModal.jsx";
+import { supabase, isSupabaseConfigured } from "./supabase.js";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -265,9 +267,28 @@ export default function HomesteadApp() {
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
   const [seasonFilter, setSeasonFilter] = useState("all");
+  const [user, setUser] = useState(null);
 
   useEffect(() => {
     loadData().then((d) => setData(d));
+  }, []);
+
+  // Track Supabase auth state. The listener fires on signup, signin, signout,
+  // and on initial load (it tells us if there's already a saved session).
+  useEffect(() => {
+    if (!isSupabaseConfigured) return;
+
+    // Get the current session immediately
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(session?.user || null);
+    });
+
+    // Subscribe to changes (sign in, sign out, token refresh)
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(session?.user || null);
+    });
+
+    return () => listener.subscription.unsubscribe();
   }, []);
 
   const update = (mutator) => {
@@ -441,7 +462,7 @@ export default function HomesteadApp() {
       </nav>
 
       {/* MODALS */}
-      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} />
+      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} />
     </div>
   );
 }
@@ -1225,16 +1246,17 @@ function EmptyState({ text }) {
 }
 
 // ============ MODAL ROUTER & FORMS ============
-function ModalRouter({ modal, setModal, data, update, activeHobby }) {
+function ModalRouter({ modal, setModal, data, update, activeHobby, user }) {
   const close = () => setModal(null);
   if (!modal) return null;
 
   const hobby = data.hobbies.find((h) => h.id === activeHobby);
 
-  if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} />;
+  if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} />;
-  if (modal.type === "signin") return <SignInModal onClose={close} />;
+  if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
+  if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "addBirds") return <AddBirdsModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
@@ -1245,8 +1267,20 @@ function ModalRouter({ modal, setModal, data, update, activeHobby }) {
   return null;
 }
 
-function SettingsModal({ data, update, onClose, setModal }) {
+function SettingsModal({ data, update, onClose, setModal, user }) {
   const [showReset, setShowReset] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      if (supabase) await supabase.auth.signOut();
+    } catch (e) {
+      console.error("Sign out failed", e);
+    }
+    setSigningOut(false);
+    onClose();
+  };
 
   const SectionBtn = ({ icon: Icon, label, sub, onClick, accent = palette.ink }) => (
     <button
@@ -1267,7 +1301,7 @@ function SettingsModal({ data, update, onClose, setModal }) {
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{label}</div>
-        {sub && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
+        {sub && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis" }}>{sub}</div>}
       </div>
     </button>
   );
@@ -1281,13 +1315,46 @@ function SettingsModal({ data, update, onClose, setModal }) {
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "renameHomestead" }), 0); }}
       />
 
-      <SectionBtn
-        icon={UserCircle}
-        label="Sign in to save across devices"
-        sub="Coming soon"
-        accent={palette.leaf}
-        onClick={() => { onClose(); setTimeout(() => setModal({ type: "signin" }), 0); }}
-      />
+      {user ? (
+        <>
+          <div style={{
+            padding: "14px 14px", marginBottom: 8,
+            background: palette.card, border: `1.5px solid ${palette.line}`,
+            borderRadius: 10,
+            display: "flex", alignItems: "center", gap: 12,
+            boxShadow: "2px 2px 0 " + palette.line,
+          }}>
+            <div style={{
+              width: 36, height: 36, borderRadius: 8, background: palette.leafSoft,
+              display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+            }}>
+              <UserCircle size={18} strokeWidth={1.8} color={palette.ink} />
+            </div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>Signed in</div>
+              <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {user.email}
+              </div>
+            </div>
+          </div>
+
+          <SectionBtn
+            icon={LogOut}
+            label={signingOut ? "Signing out..." : "Sign out"}
+            sub="You'll need to sign back in to access your account"
+            accent={palette.accent}
+            onClick={signingOut ? () => {} : handleSignOut}
+          />
+        </>
+      ) : (
+        <SectionBtn
+          icon={UserCircle}
+          label="Sign in or create account"
+          sub={isSupabaseConfigured ? "Save your homestead with an account" : "Coming soon"}
+          accent={palette.leaf}
+          onClick={() => { onClose(); setTimeout(() => setModal({ type: "signin" }), 0); }}
+        />
+      )}
 
       <SectionBtn
         icon={Lightbulb}
@@ -1301,7 +1368,9 @@ function SettingsModal({ data, update, onClose, setModal }) {
         marginTop: 16, padding: 12, background: palette.bgAlt, borderRadius: 8,
         fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
       }}>
-        <strong style={{ color: palette.ink }}>Privacy:</strong> Your data is saved only to your own browser right now. Nothing is shared or sold. When sign-in launches, your email and homestead info will only be used internally for support — never sold, never shared with third parties.
+        <strong style={{ color: palette.ink }}>Privacy:</strong> {user
+          ? "Your account email is stored only for support and account recovery. Your homestead data still saves locally to this browser for now — cross-device sync is coming soon. Nothing is shared or sold."
+          : "Your data is saved only to your own browser right now. Nothing is shared or sold. When you sign in, your email is used only for support — never sold or shared."}
       </div>
 
       {!showReset ? (
@@ -1347,7 +1416,7 @@ function RenameHomesteadModal({ data, update, onClose }) {
           style={inputStyle}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Fro Family Farm"
+          placeholder="Slow Build Acres, Willow Creek Farm..."
           autoFocus
           maxLength={40}
         />
@@ -1502,76 +1571,6 @@ function FeedbackModal({ onClose, presetCategory }) {
 
       <div style={{ fontSize: 11, color: palette.inkSoft, fontStyle: "italic" }}>
         Your email is only used to read & reply to your feedback — never shared.
-      </div>
-    </Modal>
-  );
-}
-
-function SignInModal({ onClose }) {
-  const subject = "Notify me when sign-in launches";
-  const body = "Hi! I'd like to be notified when account sign-in is available in the homestead tracker. Thanks!";
-  const mailtoHref = `mailto:slowbuildacres@gmail.com?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-  const gmailHref = `https://mail.google.com/mail/?view=cm&fs=1&to=slowbuildacres@gmail.com&su=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`;
-
-  const linkStyle = {
-    display: "inline-flex", alignItems: "center", gap: 6,
-    padding: "10px 14px", borderRadius: 8, textDecoration: "none",
-    fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
-    boxShadow: "2px 2px 0 " + palette.line,
-    border: `1.5px solid ${palette.ink}`,
-  };
-
-  return (
-    <Modal open onClose={onClose} title="Sign in">
-      <div style={{
-        padding: 14, background: palette.bgAlt, borderRadius: 10,
-        marginBottom: 16, border: `1.5px solid ${palette.line}`,
-        textAlign: "center",
-      }}>
-        <Lock size={28} color={palette.ink} strokeWidth={1.5} style={{ marginBottom: 8 }} />
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink, marginBottom: 4 }}>
-          Coming soon
-        </div>
-        <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.5 }}>
-          Sign-in is in the works. Right now your data saves to this device's browser. The full version will let you log in to save your homestead analytics across devices and invite a farmhand to share the account.
-        </div>
-      </div>
-
-      <div style={{ fontSize: 13, color: palette.ink, marginBottom: 10, fontWeight: 600 }}>
-        What sign-in will look like:
-      </div>
-
-      <ul style={{ paddingLeft: 18, margin: "0 0 16px", color: palette.inkSoft, fontSize: 13, lineHeight: 1.7 }}>
-        <li>Sign-in is <strong>completely optional</strong> — the app works without it.</li>
-        <li>You'll only need to log in if you want your data saved beyond this device.</li>
-        <li>Your email, name, and homestead info are <strong>never shared or sold</strong>.</li>
-        <li>Used only internally for support and account recovery.</li>
-        <li>Optionally add a farmhand by their email — they'll get an invite to share your account.</li>
-      </ul>
-
-      <div style={{
-        padding: 10, background: palette.yolkSoft, borderRadius: 8,
-        fontSize: 12, color: palette.ink, marginBottom: 12,
-        border: `1.5px solid ${palette.line}`,
-      }}>
-        Want to be notified when sign-in launches? Pick how to send the email:
-      </div>
-
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-        <a
-          href={gmailHref}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ ...linkStyle, background: palette.ink, color: palette.bg }}
-        >
-          <Mail size={14} /> Open in Gmail
-        </a>
-        <a
-          href={mailtoHref}
-          style={{ ...linkStyle, background: palette.yolk, color: palette.ink }}
-        >
-          <Mail size={14} /> Open mail app
-        </a>
       </div>
     </Modal>
   );

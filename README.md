@@ -2,14 +2,24 @@
 
 A homestead tracker for gardens, egg layers, and meat chickens.
 
-## Run locally
+## Setup
 
-```bash
-npm install
-npm run dev
-```
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
 
-Then open http://localhost:5173
+2. Create `.env.local` (copy from `.env.local.example`) and fill in your Supabase keys:
+   ```
+   VITE_SUPABASE_URL=https://your-project.supabase.co
+   VITE_SUPABASE_ANON_KEY=your-anon-key
+   ```
+
+3. Run locally:
+   ```bash
+   npm run dev
+   ```
+   Then open http://localhost:5173
 
 ## Build for production
 
@@ -17,8 +27,7 @@ Then open http://localhost:5173
 npm run build
 ```
 
-Outputs to `dist/`.
+## Deployment
 
-## Deploy
-
-This project deploys automatically to Vercel when pushed to the `main` branch on GitHub.
+Auto-deploys to Vercel when pushed to the `main` branch on GitHub.
+Environment variables (`VITE_SUPABASE_URL`, `VITE_SUPABASE_ANON_KEY`) need to be set in the Vercel project settings.
