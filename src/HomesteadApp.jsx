@@ -397,21 +397,32 @@ export default function HomesteadApp() {
       // Case 1: User just signed in (was null, now an object)
       if (user && !prevUser) {
         const localData = readLocalHomestead();
-        if (result.source === "cloud-empty" && localData) {
-          // First-ever sign-in for this account, AND there's existing local data.
-          // Prompt them: upload local, or start fresh?
+        // Has this user ever been prompted on this device before?
+        const firstSignInKey = `firstSignInDone:${user.id}`;
+        const alreadyPrompted = (() => {
+          try { return localStorage.getItem(firstSignInKey) === "1"; } catch (e) { return false; }
+        })();
+
+        if (result.source === "cloud-empty" && localData && !alreadyPrompted) {
+          // Truly first-ever sign-in for this account on this device, AND there's
+          // existing local data worth preserving. Show the one-time prompt.
           skipNextSaveRef.current = true;
           setData(migrateData(localData));
           setModal({ type: "firstSignIn", localData });
+          // Mark as prompted regardless of which choice they make next —
+          // the modal handles the action, but we never show this prompt again.
+          try { localStorage.setItem(firstSignInKey, "1"); } catch (e) {}
         } else if (result.source === "cloud" && result.data) {
-          // Existing account — pull cloud data down. Local data (if any) is silently
-          // discarded in v1 (we kept the localStorage backup but won't push it).
+          // Existing account — pull cloud data down.
           skipNextSaveRef.current = true;
           setData(migrateData(result.data));
+          try { localStorage.setItem(firstSignInKey, "1"); } catch (e) {}
         } else {
-          // Empty cloud, no local. Fresh start.
+          // Empty cloud and either no local data OR we've prompted before.
+          // Just load whatever cloud has (which is empty) — don't ask.
           skipNextSaveRef.current = true;
-          setData(defaultData());
+          setData(result.data ? migrateData(result.data) : defaultData());
+          try { localStorage.setItem(firstSignInKey, "1"); } catch (e) {}
         }
       }
       // Case 2: User just signed out (was object, now null)
