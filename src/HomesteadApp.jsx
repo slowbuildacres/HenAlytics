@@ -336,6 +336,14 @@ export default function HomesteadApp() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
+  const [minLoadDone, setMinLoadDone] = useState(false);
+
+  // Show the loading scene for at least 5 seconds so users get to enjoy the
+  // hen-and-chick animation even if the data loads near-instantly.
+  useEffect(() => {
+    const id = setTimeout(() => setMinLoadDone(true), 5000);
+    return () => clearTimeout(id);
+  }, []);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
@@ -488,7 +496,7 @@ export default function HomesteadApp() {
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
 
-  if (!authReady || !data) {
+  if (!authReady || !data || !minLoadDone) {
     return <LoadingScene />;
   }
 
