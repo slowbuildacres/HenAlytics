@@ -338,10 +338,10 @@ export default function HomesteadApp() {
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
   const [minLoadDone, setMinLoadDone] = useState(false);
 
-  // Show the loading scene for at least 5 seconds so users get to enjoy the
-  // hen-and-chick animation even if the data loads near-instantly.
+  // Show the loading scene for at least 8 seconds — one full animation cycle —
+  // so users get to see the whole hen-and-chick sequence.
   useEffect(() => {
-    const id = setTimeout(() => setMinLoadDone(true), 5000);
+    const id = setTimeout(() => setMinLoadDone(true), 8000);
     return () => clearTimeout(id);
   }, []);
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
