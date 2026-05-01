@@ -193,6 +193,65 @@ async function writeCloudHomestead(homesteadId, data) {
   }
 }
 
+// Score how much "real content" a homestead data blob has. Higher = more data.
+// Used to detect potentially-destructive saves (overwriting rich data with empty).
+function scoreData(data) {
+  if (!data || typeof data !== 'object') return 0;
+  let score = 0;
+  if (typeof data.homesteadName === 'string' && data.homesteadName.trim()) score += 50;
+  if (data.entries && typeof data.entries === 'object') {
+    for (const arr of Object.values(data.entries)) {
+      if (Array.isArray(arr)) score += arr.length;
+    }
+  }
+  if (Array.isArray(data.plantings)) score += data.plantings.length;
+  if (Array.isArray(data.hobbies)) {
+    for (const h of data.hobbies) {
+      if (h && typeof h === 'object') {
+        if (h.flockSize > 0) score += 5;
+        if (Array.isArray(h.flockHistory)) score += h.flockHistory.length;
+        if (h.currentBatch) score += 5;
+        if (Array.isArray(h.archivedBatches)) score += h.archivedBatches.length;
+        if (h.currentSeason) score += 5;
+        if (Array.isArray(h.archivedSeasons)) score += h.archivedSeasons.length;
+      }
+    }
+  }
+  return score;
+}
+
+// Anti-clobber save: refuses to write data that has noticeably less content than
+// what's already in the cloud. Prevents the bug where a fresh page load
+// transiently writes default/empty data over the user's real homestead.
+async function safeWriteCloudHomestead(homesteadId, newData) {
+  // Read current cloud state
+  let currentCloud = null;
+  try {
+    currentCloud = await readCloudHomestead(homesteadId);
+  } catch (e) {
+    // If we can't read the current state, fall back to writing anyway.
+    // Read failures should be rare and we don't want to block all saves on them.
+    currentCloud = null;
+  }
+
+  const currentScore = scoreData(currentCloud);
+  const newScore = scoreData(newData);
+
+  // If the cloud already has content and the new data has noticeably less,
+  // refuse to overwrite. Tolerance: small drops (e.g. user deleted one entry)
+  // are fine, but going from 50 entries to 0 is a clobber.
+  if (currentScore >= 5 && newScore < currentScore - 10) {
+    console.warn(
+      `Refusing to clobber cloud data (current score=${currentScore}, new=${newScore}). ` +
+      `This usually means a fresh page load tried to save default data. Skipping save.`
+    );
+    return { skipped: true };
+  }
+
+  await writeCloudHomestead(homesteadId, newData);
+  return { skipped: false };
+}
+
 // ============================================================================
 // PUBLIC LOAD / SAVE API
 // ============================================================================
@@ -222,19 +281,23 @@ export async function loadHomestead(user) {
 }
 
 // Save homestead data. Writes both cloud (if signed in) and local cache.
+// Uses safeWriteCloudHomestead which refuses to clobber existing rich data
+// with empty/default data — protects against fresh-page-load bugs.
 export async function saveHomestead(user, data) {
   writeLocalHomestead(data);
 
   if (user && isSupabaseConfigured) {
     try {
-      const homesteadId = readActiveHomesteadId();
+      let homesteadId = readActiveHomesteadId();
       if (!homesteadId) {
         // No cached id — discover it. Rare; happens if storage was cleared.
         const { id } = await ensureHomestead(user.id);
         writeActiveHomesteadId(id);
-        await writeCloudHomestead(id, data);
-      } else {
-        await writeCloudHomestead(homesteadId, data);
+        homesteadId = id;
+      }
+      const result = await safeWriteCloudHomestead(homesteadId, data);
+      if (result.skipped) {
+        return { ok: false, location: 'local', skipped: true };
       }
       return { ok: true, location: 'cloud' };
     } catch (e) {

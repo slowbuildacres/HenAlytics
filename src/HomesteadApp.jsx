@@ -435,18 +435,11 @@ export default function HomesteadApp() {
           skipNextSaveRef.current = true;
           setData(migrateData(result.data));
         } else if (result.source === "cloud-empty") {
-          // No cloud data yet. If they have local data, silently upload it
-          // (the next save effect will write it to the cloud). If not, fresh start.
+          // No cloud data yet. If they have local data, use it as a starting
+          // point. The next user interaction will save it to cloud naturally.
           const localData = readLocalHomestead();
           skipNextSaveRef.current = true;
-          if (localData) {
-            // Local data becomes the new cloud data on next save
-            setData(migrateData(localData));
-            // Don't skip — let the save effect commit it to cloud
-            skipNextSaveRef.current = false;
-          } else {
-            setData(defaultData());
-          }
+          setData(migrateData(localData || {}));
         } else {
           // Local fallback (cloud unreachable)
           skipNextSaveRef.current = true;
