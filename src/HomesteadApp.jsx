@@ -1347,7 +1347,7 @@ function RenameHomesteadModal({ data, update, onClose }) {
           style={inputStyle}
           value={name}
           onChange={(e) => setName(e.target.value)}
-          placeholder="Slow Build Acres, Willow Creek Farm..."
+          placeholder="Fro Family Farm"
           autoFocus
           maxLength={40}
         />
