@@ -60,12 +60,22 @@ function writeActiveHomesteadId(id) {
 // ============================================================================
 
 // Find or create the user's primary homestead. Returns { id, role }.
-// If they own none and aren't a member of any, creates a new one.
+// Preference order:
+//   1. The homestead ID we cached locally (if user is still a member)
+//   2. Among owned homesteads, the one with the MOST data (homesteadName set,
+//      or has actual entries/seasons). This protects against bugs that created
+//      multiple empty homesteads — we always pick the user's real one.
+//   3. The oldest owned homestead
+//   4. Any membership at all
+//   5. Last resort: create a new one
 async function ensureHomestead(userId) {
-  // Check membership
+  const cachedId = readActiveHomesteadId();
+
+  // Pull all memberships AND the data of each homestead, so we can pick the
+  // one that actually has the user's content rather than a freshly-created shell.
   const { data: memberships, error: mErr } = await supabase
     .from('homestead_members')
-    .select('homestead_id, role')
+    .select('homestead_id, role, joined_at, homesteads(id, data, updated_at)')
     .eq('user_id', userId)
     .order('joined_at', { ascending: true });
 
@@ -75,13 +85,61 @@ async function ensureHomestead(userId) {
   }
 
   if (memberships && memberships.length > 0) {
-    // Prefer a homestead they own
-    const owned = memberships.find((m) => m.role === 'owner');
-    const chosen = owned || memberships[0];
+    // Score each homestead by how much "real" data it has. Higher = more likely
+    // to be the user's real one.
+    const scored = memberships.map((m) => {
+      const data = (m.homesteads && m.homesteads.data) || {};
+      let score = 0;
+      if (typeof data.homesteadName === 'string' && data.homesteadName.trim()) score += 100;
+      if (data.entries && typeof data.entries === 'object') {
+        for (const arr of Object.values(data.entries)) {
+          if (Array.isArray(arr)) score += arr.length;
+        }
+      }
+      if (Array.isArray(data.plantings)) score += data.plantings.length;
+      if (Array.isArray(data.hobbies)) {
+        for (const h of data.hobbies) {
+          if (h && typeof h === 'object') {
+            if (h.flockSize > 0) score += 10;
+            if (Array.isArray(h.flockHistory)) score += h.flockHistory.length;
+            if (h.currentBatch) score += 10;
+            if (Array.isArray(h.archivedBatches)) score += h.archivedBatches.length;
+            if (h.currentSeason) score += 10;
+            if (Array.isArray(h.archivedSeasons)) score += h.archivedSeasons.length;
+          }
+        }
+      }
+      return { membership: m, score };
+    });
+
+    // Step 1: If we cached an ID and the user is still a member, prefer it
+    //         (but only if it has data; otherwise fall through to scoring).
+    if (cachedId) {
+      const cachedMatch = scored.find((s) => s.membership.homestead_id === cachedId);
+      if (cachedMatch && cachedMatch.score > 0) {
+        return { id: cachedMatch.membership.homestead_id, role: cachedMatch.membership.role };
+      }
+    }
+
+    // Step 2: Among owned, pick the highest-scoring one. Ties broken by oldest.
+    const owned = scored.filter((s) => s.membership.role === 'owner');
+    if (owned.length > 0) {
+      owned.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        // Older joined_at first
+        return new Date(a.membership.joined_at) - new Date(b.membership.joined_at);
+      });
+      const chosen = owned[0].membership;
+      return { id: chosen.homestead_id, role: chosen.role };
+    }
+
+    // Step 3: No owned homesteads, just pick the highest-scoring membership.
+    scored.sort((a, b) => b.score - a.score);
+    const chosen = scored[0].membership;
     return { id: chosen.homestead_id, role: chosen.role };
   }
 
-  // No memberships — create a brand-new homestead and make them owner
+  // No memberships at all — create a brand-new homestead.
   const { data: created, error: cErr } = await supabase
     .from('homesteads')
     .insert({ data: {} })
