@@ -21,6 +21,7 @@ import {
 } from "./weather.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
+import LoadingScene from "./LoadingScene.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -429,33 +430,27 @@ export default function HomesteadApp() {
 
       // Case 1: User just signed in (was null, now an object)
       if (user && !prevUser) {
-        const localData = readLocalHomestead();
-        // Has this user ever been prompted on this device before?
-        const firstSignInKey = `firstSignInDone:${user.id}`;
-        const alreadyPrompted = (() => {
-          try { return localStorage.getItem(firstSignInKey) === "1"; } catch (e) { return false; }
-        })();
-
-        if (result.source === "cloud-empty" && localData && !alreadyPrompted) {
-          // Truly first-ever sign-in for this account on this device, AND there's
-          // existing local data worth preserving. Show the one-time prompt.
-          skipNextSaveRef.current = true;
-          setData(migrateData(localData));
-          setModal({ type: "firstSignIn", localData });
-          // Mark as prompted regardless of which choice they make next —
-          // the modal handles the action, but we never show this prompt again.
-          try { localStorage.setItem(firstSignInKey, "1"); } catch (e) {}
-        } else if (result.source === "cloud" && result.data) {
+        if (result.source === "cloud" && result.data) {
           // Existing account — pull cloud data down.
           skipNextSaveRef.current = true;
           setData(migrateData(result.data));
-          try { localStorage.setItem(firstSignInKey, "1"); } catch (e) {}
+        } else if (result.source === "cloud-empty") {
+          // No cloud data yet. If they have local data, silently upload it
+          // (the next save effect will write it to the cloud). If not, fresh start.
+          const localData = readLocalHomestead();
+          skipNextSaveRef.current = true;
+          if (localData) {
+            // Local data becomes the new cloud data on next save
+            setData(migrateData(localData));
+            // Don't skip — let the save effect commit it to cloud
+            skipNextSaveRef.current = false;
+          } else {
+            setData(defaultData());
+          }
         } else {
-          // Empty cloud and either no local data OR we've prompted before.
-          // Just load whatever cloud has (which is empty) — don't ask.
+          // Local fallback (cloud unreachable)
           skipNextSaveRef.current = true;
           setData(result.data ? migrateData(result.data) : defaultData());
-          try { localStorage.setItem(firstSignInKey, "1"); } catch (e) {}
         }
       }
       // Case 2: User just signed out (was object, now null)
@@ -501,11 +496,7 @@ export default function HomesteadApp() {
   };
 
   if (!authReady || !data) {
-    return (
-      <div style={{ minHeight: "100vh", background: palette.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_DISPLAY, color: palette.ink }}>
-        Loading homestead...
-      </div>
-    );
+    return <LoadingScene />;
   }
 
   const hobby = data.hobbies.find((h) => h.id === activeHobby);
