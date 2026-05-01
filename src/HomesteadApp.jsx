@@ -3,11 +3,16 @@ import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
   Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
-  Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut
+  Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut,
+  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
+import {
+  loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
+  uploadPhoto, getPhotoUrl, deletePhoto,
+} from "./sync.js";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -28,8 +33,6 @@ const palette = {
 };
 
 // ============ STORAGE HELPERS ============
-const STORAGE_KEY = "homestead_data_v1";
-
 const defaultData = () => ({
   homesteadName: "",
   hobbies: [
@@ -66,22 +69,6 @@ function migrateData(data) {
   });
 
   return data;
-}
-
-async function loadData() {
-  try {
-    const v = localStorage.getItem(STORAGE_KEY);
-    if (v) return migrateData(JSON.parse(v));
-  } catch (e) {}
-  return defaultData();
-}
-
-async function saveData(data) {
-  try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
-  } catch (e) {
-    console.error("Save failed", e);
-  }
 }
 
 // ============ UTIL ============
@@ -224,7 +211,7 @@ const inputStyle = {
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
 };
 
-function Btn({ children, onClick, variant = "primary", style = {}, type = "button", small = false }) {
+function Btn({ children, onClick, variant = "primary", style = {}, type = "button", small = false, disabled = false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
     danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
@@ -234,14 +221,16 @@ function Btn({ children, onClick, variant = "primary", style = {}, type = "butto
   return (
     <button
       type={type}
-      onClick={onClick}
+      onClick={disabled ? undefined : onClick}
+      disabled={disabled}
       style={{
         padding: small ? "6px 12px" : "10px 18px",
         borderRadius: 8,
-        cursor: "pointer",
+        cursor: disabled ? "wait" : "pointer",
         fontFamily: FONT_BODY,
         fontWeight: 600,
         fontSize: small ? 13 : 14,
+        opacity: disabled ? 0.7 : 1,
         ...styles[variant],
         boxShadow: "2px 2px 0 " + palette.line,
         ...style,
@@ -259,6 +248,51 @@ const HobbyIcon = ({ name, ...props }) => {
   return <I {...props} />;
 };
 
+// ============ SYNC INDICATOR ============
+function SyncIndicator({ status, signedIn }) {
+  // Show nothing in the very common idle state for signed-out users —
+  // they don't need to think about syncing.
+  if (!signedIn && status === "idle") return null;
+
+  let icon, color, label;
+  if (!signedIn) {
+    icon = <CloudOff size={14} />;
+    color = palette.inkSoft;
+    label = "Local";
+  } else if (status === "saving") {
+    icon = <Loader2 size={14} style={{ animation: "spin 1s linear infinite" }} />;
+    color = palette.feather;
+    label = "Saving";
+  } else if (status === "saved") {
+    icon = <Cloud size={14} />;
+    color = palette.leaf;
+    label = "Saved";
+  } else if (status === "error") {
+    icon = <AlertTriangle size={14} />;
+    color = palette.accent;
+    label = "Error";
+  } else {
+    icon = <Cloud size={14} />;
+    color = palette.inkSoft;
+    label = "Synced";
+  }
+  return (
+    <div
+      title={signedIn ? "Synced to your cloud account" : "Saving locally to this browser"}
+      style={{
+        display: "flex", alignItems: "center", gap: 4,
+        padding: "4px 8px", borderRadius: 6,
+        background: palette.bgAlt, color,
+        fontSize: 11, fontWeight: 600,
+      }}
+    >
+      <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
+      {icon}
+      <span>{label}</span>
+    </div>
+  );
+}
+
 // ============ MAIN APP ============
 export default function HomesteadApp() {
   const [data, setData] = useState(null);
@@ -268,38 +302,103 @@ export default function HomesteadApp() {
   const [modal, setModal] = useState(null);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
+  const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
+  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
 
-  useEffect(() => {
-    loadData().then((d) => setData(d));
-  }, []);
+  // Refs let us detect transitions like "user just signed in"
+  const prevUserRef = useRef(null);
+  const saveTimerRef = useRef(null);
+  const skipNextSaveRef = useRef(false); // used when we set state from cloud load — don't re-save it
 
-  // Track Supabase auth state. The listener fires on signup, signin, signout,
-  // and on initial load (it tells us if there's already a saved session).
+  // ---- Auth state listener ----
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-
-    // Get the current session immediately
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
+      setAuthReady(true);
     });
-
-    // Subscribe to changes (sign in, sign out, token refresh)
     const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
       setUser(session?.user || null);
+      setAuthReady(true);
     });
-
     return () => listener.subscription.unsubscribe();
   }, []);
 
+  // ---- Load data once auth state is known ----
+  // Re-runs whenever the user changes (sign in / sign out)
+  useEffect(() => {
+    if (!authReady) return;
+
+    let cancelled = false;
+    (async () => {
+      const result = await loadHomestead(user);
+      if (cancelled) return;
+
+      const prevUser = prevUserRef.current;
+
+      // Case 1: User just signed in (was null, now an object)
+      if (user && !prevUser) {
+        const localData = readLocalHomestead();
+        if (result.source === "cloud-empty" && localData) {
+          // First-ever sign-in for this account, AND there's existing local data.
+          // Prompt them: upload local, or start fresh?
+          skipNextSaveRef.current = true;
+          setData(migrateData(localData));
+          setModal({ type: "firstSignIn", localData });
+        } else if (result.source === "cloud" && result.data) {
+          // Existing account — pull cloud data down. Local data (if any) is silently
+          // discarded in v1 (we kept the localStorage backup but won't push it).
+          skipNextSaveRef.current = true;
+          setData(migrateData(result.data));
+        } else {
+          // Empty cloud, no local. Fresh start.
+          skipNextSaveRef.current = true;
+          setData(defaultData());
+        }
+      }
+      // Case 2: User just signed out (was object, now null)
+      else if (!user && prevUser) {
+        // Load from local backup. Cloud data isn't accessible without auth.
+        skipNextSaveRef.current = true;
+        setData(result.data ? migrateData(result.data) : defaultData());
+      }
+      // Case 3: Initial load (no user transition)
+      else {
+        skipNextSaveRef.current = true;
+        setData(result.data ? migrateData(result.data) : defaultData());
+      }
+
+      prevUserRef.current = user;
+    })();
+    return () => { cancelled = true; };
+  }, [user, authReady]);
+
+  // ---- Save with debouncing whenever data changes ----
+  // We don't save on every keystroke — wait 500ms after the last change to coalesce edits.
+  useEffect(() => {
+    if (!data) return;
+    if (skipNextSaveRef.current) {
+      skipNextSaveRef.current = false;
+      return;
+    }
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    setSyncStatus("saving");
+    saveTimerRef.current = setTimeout(async () => {
+      const result = await saveHomestead(user, data);
+      setSyncStatus(result.ok ? "saved" : "error");
+      // After "saved" briefly shows, fade back to "idle"
+      if (result.ok) {
+        setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
+      }
+    }, 500);
+    return () => clearTimeout(saveTimerRef.current);
+  }, [data, user]);
+
   const update = (mutator) => {
-    setData((prev) => {
-      const next = mutator(JSON.parse(JSON.stringify(prev)));
-      saveData(next);
-      return next;
-    });
+    setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
 
-  if (!data) {
+  if (!authReady || !data) {
     return (
       <div style={{ minHeight: "100vh", background: palette.bg, display: "flex", alignItems: "center", justifyContent: "center", fontFamily: FONT_DISPLAY, color: palette.ink }}>
         Loading homestead...
@@ -352,7 +451,8 @@ export default function HomesteadApp() {
               {data.homesteadName || "the homestead"}
             </h1>
           </button>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <SyncIndicator status={syncStatus} signedIn={!!user} />
             <button
               onClick={() => setModal({ type: "settings" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
@@ -363,7 +463,8 @@ export default function HomesteadApp() {
           </div>
         </div>
 
-        {/* HOBBY PICKER */}
+        {/* HOBBY PICKER (hidden on Photos page since it shows all hobbies) */}
+        {page !== "photos" && (
         <div style={{ maxWidth: 720, margin: "16px auto 0", position: "relative" }}>
           <button
             onClick={() => setHobbyMenuOpen(!hobbyMenuOpen)}
@@ -416,14 +517,19 @@ export default function HomesteadApp() {
             </div>
           )}
         </div>
+        )}
       </header>
 
       {/* MAIN */}
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "20px 20px 40px" }}>
-        {page === "home" ? (
+        {page === "home" && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} />
-        ) : (
+        )}
+        {page === "analytics" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} />
+        )}
+        {page === "photos" && (
+          <PhotoLibraryPage data={data} user={user} />
         )}
       </main>
 
@@ -458,6 +564,19 @@ export default function HomesteadApp() {
           }}
         >
           <BarChart3 size={18} strokeWidth={2} /> Analytics
+        </button>
+        <button
+          onClick={() => setPage("photos")}
+          style={{
+            flex: 1, maxWidth: 200, padding: "10px",
+            background: page === "photos" ? palette.yolk : "transparent",
+            color: page === "photos" ? palette.ink : palette.bg,
+            border: "none", borderRadius: 10, cursor: "pointer",
+            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+            fontWeight: 600,
+          }}
+        >
+          <ImageIcon size={18} strokeWidth={2} /> Photos
         </button>
       </nav>
 
@@ -500,6 +619,9 @@ function HomePage({ hobby, data, update, setModal }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {recent.map((e) => (
             <ActivityRow key={e.id} entry={e} hobbyType={hobby.type} onDelete={() => {
+              // Best-effort: clean up the photo from storage if there was one.
+              // We don't await because the UI shouldn't wait on it.
+              if (e.photoPath) deletePhoto(e.photoPath).catch(() => {});
               update((d) => {
                 d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
                 return d;
@@ -764,6 +886,7 @@ function ActivityRow({ entry, hobbyType, onDelete }) {
           {fmtDate(entry.date)} {detail && "· " + detail}
         </div>
       </div>
+      {entry.photoPath && <EntryPhotoThumb path={entry.photoPath} />}
       <button
         onClick={onDelete}
         style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
@@ -772,6 +895,74 @@ function ActivityRow({ entry, hobbyType, onDelete }) {
         <Trash2 size={16} />
       </button>
     </div>
+  );
+}
+
+// Small async-loaded thumbnail. Tappable: opens a fullscreen lightbox.
+function EntryPhotoThumb({ path }) {
+  const [url, setUrl] = useState(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPhotoUrl(path).then((u) => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [path]);
+
+  if (!url) {
+    return (
+      <div style={{
+        width: 40, height: 40, borderRadius: 6, background: palette.bgAlt,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        border: `1px solid ${palette.line}`,
+      }}>
+        <ImageIcon size={14} color={palette.inkSoft} />
+      </div>
+    );
+  }
+
+  return (
+    <>
+      <button
+        onClick={() => setOpen(true)}
+        style={{
+          width: 40, height: 40, borderRadius: 6, padding: 0,
+          background: `url(${url}) center/cover`,
+          border: `1px solid ${palette.line}`,
+          cursor: "pointer", flexShrink: 0,
+        }}
+        title="View photo"
+      />
+      {open && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 200, padding: 20, cursor: "pointer",
+          }}
+        >
+          <img
+            src={url}
+            alt=""
+            style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8 }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <button
+            onClick={() => setOpen(false)}
+            style={{
+              position: "absolute", top: 16, right: 16,
+              background: "rgba(255,255,255,0.9)", border: "none",
+              borderRadius: 20, width: 36, height: 36,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
+    </>
   );
 }
 
@@ -977,8 +1168,15 @@ function EggLayersAnalytics({ hobby, entries }) {
         {totalDeathCount > 0 && <StatCard label="Deaths" value={totalDeathCount} accent={palette.ink} />}
       </div>
 
-      {(sold.length > 0 || totalRevenue > 0) && (
-        <ChartCard title="💰 Revenue & profit">
+      <ChartCard title="💰 Revenue & profit">
+        {sold.length === 0 ? (
+          <div style={{
+            padding: "12px 14px", background: palette.bgAlt, borderRadius: 8,
+            fontSize: 13, color: palette.inkSoft, textAlign: "center", lineHeight: 1.5,
+          }}>
+            No egg sales logged yet. Tap the <strong>Sold Eggs</strong> tile on the Home page to record a sale and start tracking revenue.
+          </div>
+        ) : (
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <StatCard label="Eggs Sold" value={totalEggsSold} sub={`${dozensSold.toFixed(1)} dozen`} accent={palette.yolk} />
             <StatCard label="Total Revenue" value={fmtMoney(totalRevenue)} accent={palette.leaf} />
@@ -996,8 +1194,8 @@ function EggLayersAnalytics({ hobby, entries }) {
               accent={netProfit >= 0 ? palette.leaf : palette.accent}
             />
           </div>
-        </ChartCard>
-      )}
+        )}
+      </ChartCard>
 
       <ChartCard title="📊 Cost breakdown">
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1245,6 +1443,300 @@ function EmptyState({ text }) {
   );
 }
 
+// ============ PHOTO LIBRARY ============
+function PhotoLibraryPage({ data, user }) {
+  if (!user) {
+    return (
+      <div>
+        <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 12px", color: palette.ink }}>
+          photo library
+        </h2>
+        <div style={{
+          padding: 32, background: palette.card, border: `1.5px dashed ${palette.line}`,
+          borderRadius: 12, textAlign: "center", color: palette.inkSoft,
+        }}>
+          <ImageIcon size={32} strokeWidth={1.5} style={{ marginBottom: 10 }} />
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 4 }}>
+            Sign in to use the photo library
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+            Photos are saved to your account so they sync across devices and stay safe even if your browser data is cleared.
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Build the photo collections, grouped by hobby and then by season/batch.
+  // Each "group" has: { id, label, photos: [{path, entry, date}] }
+  const sections = data.hobbies.map((hobby) => {
+    const allEntries = data.entries[hobby.id] || [];
+
+    if (hobby.type === "garden") {
+      // Garden uses explicit seasons. Collect photos from each archived season + current season.
+      const groups = [];
+      const archived = hobby.archivedSeasons || [];
+      archived.forEach((s) => {
+        const photos = (s.finalEntries || [])
+          .filter((e) => e.photoPath)
+          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        if (photos.length > 0) {
+          groups.push({ id: s.id, label: s.name, photos, dateForSort: s.startDate });
+        }
+      });
+      if (hobby.currentSeason) {
+        const photos = allEntries
+          .filter((e) => e.seasonId === hobby.currentSeason.id && e.photoPath)
+          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        if (photos.length > 0) {
+          groups.push({
+            id: hobby.currentSeason.id,
+            label: `${hobby.currentSeason.name} (active)`,
+            photos,
+            dateForSort: hobby.currentSeason.startDate,
+            active: true,
+          });
+        }
+      }
+      // Sort newest first
+      groups.sort((a, b) => (b.dateForSort || "").localeCompare(a.dateForSort || ""));
+      return { hobby, groups };
+    }
+
+    if (hobby.type === "meat_chickens") {
+      const groups = [];
+      const archived = hobby.archivedBatches || [];
+      archived.forEach((b) => {
+        const photos = (b.finalEntries || [])
+          .filter((e) => e.photoPath)
+          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        if (photos.length > 0) {
+          groups.push({ id: b.id, label: b.name, photos, dateForSort: b.startDate });
+        }
+      });
+      if (hobby.currentBatch) {
+        const photos = allEntries
+          .filter((e) => e.batchId === hobby.currentBatch.id && e.photoPath)
+          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        if (photos.length > 0) {
+          groups.push({
+            id: hobby.currentBatch.id,
+            label: `${hobby.currentBatch.name} (active)`,
+            photos,
+            dateForSort: hobby.currentBatch.startDate,
+            active: true,
+          });
+        }
+      }
+      groups.sort((a, b) => (b.dateForSort || "").localeCompare(a.dateForSort || ""));
+      return { hobby, groups };
+    }
+
+    // Other hobbies (egg layers, custom): group by date-derived season.
+    const photoEntries = allEntries.filter((e) => e.photoPath);
+    const bySeason = {};
+    photoEntries.forEach((e) => {
+      const s = getSeason(e.date);
+      if (!bySeason[s]) bySeason[s] = [];
+      bySeason[s].push({ path: e.photoPath, entry: e, date: e.date });
+    });
+    const groups = Object.entries(bySeason)
+      .map(([label, photos]) => ({ id: label, label, photos, dateForSort: photos[0]?.date }))
+      .sort((a, b) => (b.dateForSort || "").localeCompare(a.dateForSort || ""));
+    return { hobby, groups };
+  });
+
+  const anyPhotos = sections.some((s) => s.groups.length > 0);
+
+  return (
+    <div>
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 12px", color: palette.ink }}>
+        photo library
+      </h2>
+
+      {!anyPhotos && (
+        <div style={{
+          padding: 32, background: palette.card, border: `1.5px dashed ${palette.line}`,
+          borderRadius: 12, textAlign: "center", color: palette.inkSoft,
+        }}>
+          <ImageIcon size={32} strokeWidth={1.5} style={{ marginBottom: 10 }} />
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 4 }}>
+            No photos yet
+          </div>
+          <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+            Add photos when logging entries on the Home page — they'll appear here, organized by hobby and season.
+          </div>
+        </div>
+      )}
+
+      {sections.map((section) =>
+        section.groups.length > 0 ? (
+          <PhotoHobbySection key={section.hobby.id} hobby={section.hobby} groups={section.groups} />
+        ) : null
+      )}
+    </div>
+  );
+}
+
+function PhotoHobbySection({ hobby, groups }) {
+  return (
+    <div style={{ marginBottom: 22 }}>
+      <div style={{
+        display: "flex", alignItems: "center", gap: 10, marginBottom: 10,
+        paddingBottom: 8, borderBottom: `1.5px solid ${palette.line}`,
+      }}>
+        <HobbyIcon name={hobby.icon} size={20} strokeWidth={1.5} />
+        <h3 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, margin: 0, color: palette.ink }}>
+          {hobby.name}
+        </h3>
+        <span style={{ fontSize: 11, color: palette.inkSoft, marginLeft: "auto" }}>
+          {groups.reduce((s, g) => s + g.photos.length, 0)} photos
+        </span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {groups.map((g) => (
+          <PhotoGroup key={g.id} group={g} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function PhotoGroup({ group }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div style={{
+      background: palette.card, border: `1.5px solid ${palette.line}`,
+      borderRadius: 10, overflow: "hidden",
+    }}>
+      <button
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          width: "100%", padding: "12px 14px",
+          background: expanded ? palette.bgAlt : "transparent",
+          border: "none", borderBottom: expanded ? `1px solid ${palette.line}` : "none",
+          cursor: "pointer", textAlign: "left",
+          display: "flex", alignItems: "center", gap: 10,
+          fontFamily: FONT_BODY,
+        }}
+      >
+        <Calendar size={16} color={palette.inkSoft} strokeWidth={1.8} />
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>
+            {group.label}
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft }}>
+            {group.photos.length} photo{group.photos.length === 1 ? "" : "s"}
+          </div>
+        </div>
+        <ChevronDown
+          size={18}
+          color={palette.inkSoft}
+          style={{
+            transform: expanded ? "rotate(180deg)" : "",
+            transition: "transform 0.2s",
+          }}
+        />
+      </button>
+
+      {expanded && (
+        <div style={{
+          padding: 10,
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fill, minmax(95px, 1fr))",
+          gap: 8,
+        }}>
+          {group.photos.map((p) => (
+            <PhotoTile key={p.path} photo={p} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function PhotoTile({ photo }) {
+  const [url, setUrl] = useState(null);
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+    getPhotoUrl(photo.path).then((u) => { if (!cancelled) setUrl(u); });
+    return () => { cancelled = true; };
+  }, [photo.path]);
+
+  // Build a short caption from the entry: action + plant/item/cause if present
+  const caption = (() => {
+    const e = photo.entry;
+    const bits = [];
+    if (e.plant) bits.push(e.plant);
+    else if (e.item) bits.push(e.item);
+    else if (e.cause) bits.push(e.cause);
+    return bits.join(" ");
+  })();
+
+  return (
+    <>
+      <button
+        onClick={() => url && setOpen(true)}
+        title={`${fmtDate(photo.date)}${caption ? " · " + caption : ""}`}
+        style={{
+          width: "100%", aspectRatio: "1 / 1",
+          padding: 0, border: `1px solid ${palette.line}`,
+          borderRadius: 6,
+          background: url ? `url(${url}) center/cover` : palette.bgAlt,
+          cursor: url ? "pointer" : "default",
+          position: "relative", overflow: "hidden",
+        }}
+      >
+        {!url && (
+          <ImageIcon
+            size={20}
+            color={palette.inkSoft}
+            style={{ position: "absolute", top: "50%", left: "50%", transform: "translate(-50%, -50%)" }}
+          />
+        )}
+      </button>
+
+      {open && url && (
+        <div
+          onClick={() => setOpen(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(0,0,0,0.85)",
+            display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center",
+            zIndex: 200, padding: 20, cursor: "pointer", gap: 12,
+          }}
+        >
+          <img
+            src={url}
+            alt=""
+            style={{ maxWidth: "100%", maxHeight: "85vh", borderRadius: 8 }}
+            onClick={(e) => e.stopPropagation()}
+          />
+          <div style={{
+            color: "#fff", fontSize: 13, textAlign: "center",
+            background: "rgba(0,0,0,0.4)", padding: "6px 12px", borderRadius: 6,
+          }}>
+            {fmtDate(photo.date)}{caption ? " · " + caption : ""}
+          </div>
+          <button
+            onClick={() => setOpen(false)}
+            style={{
+              position: "absolute", top: 16, right: 16,
+              background: "rgba(255,255,255,0.9)", border: "none",
+              borderRadius: 20, width: 36, height: 36,
+              display: "flex", alignItems: "center", justifyContent: "center",
+              cursor: "pointer",
+            }}
+          >
+            <X size={20} />
+          </button>
+        </div>
+      )}
+    </>
+  );
+}
+
 // ============ MODAL ROUTER & FORMS ============
 function ModalRouter({ modal, setModal, data, update, activeHobby, user }) {
   const close = () => setModal(null);
@@ -1257,13 +1749,14 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user }) {
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
+  if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "addBirds") return <AddBirdsModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
-  if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} />;
+  if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} />;
   return null;
 }
 
@@ -1275,6 +1768,8 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
     setSigningOut(true);
     try {
       if (supabase) await supabase.auth.signOut();
+      // Clear the local cache so the next signed-out session doesn't see this user's data.
+      clearLocalHomestead();
     } catch (e) {
       console.error("Sign out failed", e);
     }
@@ -1391,7 +1886,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           </div>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="danger" small onClick={async () => {
-              try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+              clearLocalHomestead();
               const fresh = defaultData();
               update(() => fresh);
               onClose();
@@ -1400,6 +1895,109 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           </div>
         </div>
       )}
+    </Modal>
+  );
+}
+
+function FirstSignInModal({ user, localData, onClose }) {
+  // localData is what was in localStorage when they signed in.
+  // We've already optimistically loaded it into state; this modal
+  // confirms whether to keep it (uploads to cloud) or start fresh.
+  const [working, setWorking] = useState(false);
+
+  const counts = (() => {
+    if (!localData) return null;
+    const totalEntries = Object.values(localData.entries || {}).reduce(
+      (s, arr) => s + (Array.isArray(arr) ? arr.length : 0),
+      0,
+    );
+    return { entries: totalEntries, name: localData.homesteadName };
+  })();
+
+  const keepLocal = async () => {
+    setWorking(true);
+    // Push the local data to the cloud — saveHomestead will handle it.
+    await saveHomestead(user, localData);
+    onClose();
+  };
+
+  const startFresh = async () => {
+    setWorking(true);
+    // Replace state with a fresh default and clear local backup.
+    clearLocalHomestead();
+    const fresh = defaultData();
+    await saveHomestead(user, fresh);
+    // Tell the parent to refresh its state by signaling a reload via location refresh —
+    // simplest, most reliable. (In practice this is rare and a reload is fine UX.)
+    window.location.reload();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Welcome — what do you want to do?">
+      <div style={{
+        padding: 12, background: palette.yolkSoft, borderRadius: 8,
+        fontSize: 13, color: palette.ink, marginBottom: 16, lineHeight: 1.5,
+        border: `1.5px solid ${palette.line}`,
+      }}>
+        You've been using Henalytics on this device without an account. We found:
+        {counts && (
+          <ul style={{ margin: "8px 0 0", paddingLeft: 18 }}>
+            {counts.name && <li>Homestead: <strong>{counts.name}</strong></li>}
+            <li><strong>{counts.entries}</strong> log entries</li>
+          </ul>
+        )}
+      </div>
+
+      <div style={{ fontSize: 13, color: palette.ink, marginBottom: 14, lineHeight: 1.5 }}>
+        Now that you're signed in, you have two options:
+      </div>
+
+      <button
+        onClick={working ? undefined : keepLocal}
+        disabled={working}
+        style={{
+          width: "100%", padding: "14px", marginBottom: 8,
+          background: palette.ink, color: palette.bg,
+          border: `1.5px solid ${palette.ink}`, borderRadius: 10,
+          cursor: working ? "wait" : "pointer", textAlign: "left",
+          boxShadow: "2px 2px 0 " + palette.line,
+          fontFamily: FONT_BODY,
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+          📤 Upload this homestead to my account
+        </div>
+        <div style={{ fontSize: 12, opacity: 0.85, lineHeight: 1.4 }}>
+          Save everything you've already logged. Your data syncs across devices going forward.
+        </div>
+      </button>
+
+      <button
+        onClick={working ? undefined : startFresh}
+        disabled={working}
+        style={{
+          width: "100%", padding: "14px",
+          background: palette.card, color: palette.ink,
+          border: `1.5px solid ${palette.line}`, borderRadius: 10,
+          cursor: working ? "wait" : "pointer", textAlign: "left",
+          boxShadow: "2px 2px 0 " + palette.line,
+          fontFamily: FONT_BODY,
+        }}
+      >
+        <div style={{ fontWeight: 600, fontSize: 14, marginBottom: 4 }}>
+          🌱 Start fresh on my account
+        </div>
+        <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.4 }}>
+          Begin with an empty homestead. Your local data will be cleared.
+        </div>
+      </button>
+
+      <div style={{
+        fontSize: 11, color: palette.inkSoft, marginTop: 14, lineHeight: 1.5,
+        padding: 10, background: palette.bgAlt, borderRadius: 6,
+      }}>
+        💡 You can sign out anytime in Settings. Your account email is only used for support — never shared.
+      </div>
     </Modal>
   );
 }
@@ -1868,13 +2466,19 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
 }
 
 // ============ LOG MODAL (DIFFERENT BY ACTION) ============
-function LogModal({ hobby, action, data, update, onClose }) {
+function LogModal({ hobby, action, data, update, onClose, user }) {
   const [date, setDate] = useState(todayStr());
   const [fields, setFields] = useState({});
+  const [photoFile, setPhotoFile] = useState(null);  // selected file before upload
+  const [photoUploading, setPhotoUploading] = useState(false);
+  const [photoError, setPhotoError] = useState("");
 
   const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
 
-  const submit = () => {
+  // Which actions support attaching a photo
+  const supportsPhoto = ["note", "harvested", "planted", "issue"].includes(action);
+
+  const submit = async () => {
     // Coerce numeric fields from string inputs to actual numbers
     const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen"];
     const cleanFields = { ...fields };
@@ -1885,9 +2489,31 @@ function LogModal({ hobby, action, data, update, onClose }) {
       }
     });
 
+    // We need an entry id up front so we can attach the photo to it
+    const entryId = newId();
+    let photoPath = null;
+
+    if (photoFile) {
+      if (!user) {
+        setPhotoError("Sign in first to upload photos.");
+        return;
+      }
+      setPhotoUploading(true);
+      setPhotoError("");
+      try {
+        photoPath = await uploadPhoto(user, entryId, photoFile);
+      } catch (e) {
+        setPhotoError(e.message || "Upload failed. Try again or save without a photo.");
+        setPhotoUploading(false);
+        return;
+      }
+      setPhotoUploading(false);
+    }
+
     update((d) => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
-      const entry = { id: newId(), date, action, created: Date.now(), ...cleanFields };
+      const entry = { id: entryId, date, action, created: Date.now(), ...cleanFields };
+      if (photoPath) entry.photoPath = photoPath;
 
       // attach to current batch for meat chickens
       if (hobby.type === "meat_chickens" && hobby.currentBatch) {
@@ -2105,7 +2731,71 @@ function LogModal({ hobby, action, data, update, onClose }) {
         </Field>
       )}
 
-      <Btn variant="primary" onClick={submit}>Save entry</Btn>
+      {/* PHOTO UPLOAD — only shown for signed-in users */}
+      {user && (
+        <Field label="Photo (optional)">
+          {!photoFile ? (
+            <label style={{
+              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+              padding: "16px", borderRadius: 8,
+              border: `1.5px dashed ${palette.line}`, background: palette.bgAlt,
+              cursor: "pointer", color: palette.inkSoft, fontSize: 13,
+            }}>
+              <Camera size={18} strokeWidth={1.8} />
+              Tap to add a photo
+              <input
+                type="file"
+                accept="image/*"
+                style={{ display: "none" }}
+                onChange={(e) => {
+                  const f = e.target.files && e.target.files[0];
+                  if (f) {
+                    setPhotoFile(f);
+                    setPhotoError("");
+                  }
+                }}
+              />
+            </label>
+          ) : (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px", borderRadius: 8,
+              border: `1.5px solid ${palette.line}`, background: palette.card,
+            }}>
+              <ImageIcon size={18} strokeWidth={1.8} color={palette.leaf} />
+              <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {photoFile.name} <span style={{ color: palette.inkSoft }}>({Math.round(photoFile.size / 1024)} KB)</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setPhotoFile(null); setPhotoError(""); }}
+                style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
+                title="Remove"
+              >
+                <X size={16} />
+              </button>
+            </div>
+          )}
+          {photoError && (
+            <div style={{ fontSize: 12, color: palette.accent, marginTop: 6 }}>
+              {photoError}
+            </div>
+          )}
+        </Field>
+      )}
+
+      {!user && (
+        <div style={{
+          padding: 10, background: palette.bgAlt, borderRadius: 8,
+          fontSize: 11, color: palette.inkSoft, marginBottom: 14, textAlign: "center",
+        }}>
+          📷 Sign in to add photos to your entries.
+        </div>
+      )}
+
+      <Btn variant="primary" onClick={submit} disabled={photoUploading}>
+        {photoUploading ? "Uploading photo..." : "Save entry"}
+      </Btn>
     </Modal>
   );
 }
