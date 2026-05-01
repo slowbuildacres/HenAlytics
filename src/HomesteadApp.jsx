@@ -19,6 +19,8 @@ import {
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
 } from "./weather.js";
+import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
+import YearInReviewPage from "./YearInReview.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -251,6 +253,25 @@ function Btn({ children, onClick, variant = "primary", style = {}, type = "butto
   );
 }
 
+function NavTab({ active, onClick, icon: Icon, label }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        flex: 1, maxWidth: 120, padding: "8px 4px",
+        background: active ? palette.yolk : "transparent",
+        color: active ? palette.ink : palette.bg,
+        border: "none", borderRadius: 10, cursor: "pointer",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+        fontWeight: 600, fontSize: 11,
+      }}
+    >
+      <Icon size={20} strokeWidth={2} />
+      {label}
+    </button>
+  );
+}
+
 // ============ ICON RESOLVER ============
 const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick };
 const HobbyIcon = ({ name, ...props }) => {
@@ -316,6 +337,18 @@ export default function HomesteadApp() {
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
   const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
+  const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
+
+  // ---- Refresh the time-of-day accent every 10 minutes so it shifts naturally ----
+  useEffect(() => {
+    const id = setInterval(() => setTimeOfDayAccent(getTimeOfDayAccent()), 10 * 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Apply the accent to the palette by mutating the in-memory object.
+  // This is safe: palette is a const reference but its properties are mutable,
+  // and React re-renders on every state change so all components see the new value.
+  palette.yolk = timeOfDayAccent;
 
   // ---- Detect ?invite=CODE in the URL on first load ----
   useEffect(() => {
@@ -497,6 +530,9 @@ export default function HomesteadApp() {
         .tile:hover { background: ${palette.bgAlt} !important; }
       `}</style>
 
+      {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
+      <SeasonalDecorations />
+
       {/* HEADER */}
       <header style={{
         padding: "20px 20px 12px",
@@ -533,7 +569,7 @@ export default function HomesteadApp() {
         </div>
 
         {/* HOBBY PICKER (hidden on Photos page since it shows all hobbies) */}
-        {page !== "photos" && (
+        {page !== "photos" && page !== "year" && (
         <div style={{ maxWidth: 720, margin: "16px auto 0", position: "relative" }}>
           <button
             onClick={() => setHobbyMenuOpen(!hobbyMenuOpen)}
@@ -600,53 +636,21 @@ export default function HomesteadApp() {
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
         )}
+        {page === "year" && (
+          <YearInReviewPage data={data} />
+        )}
       </main>
 
-      {/* BOTTOM NAV */}
+      {/* BOTTOM NAV — 4 tabs, compact layout */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
-        background: palette.ink, padding: "12px 16px",
+        background: palette.ink, padding: "8px 8px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 4, zIndex: 50,
       }}>
-        <button
-          onClick={() => setPage("home")}
-          style={{
-            flex: 1, maxWidth: 200, padding: "10px",
-            background: page === "home" ? palette.yolk : "transparent",
-            color: page === "home" ? palette.ink : palette.bg,
-            border: "none", borderRadius: 10, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            fontWeight: 600,
-          }}
-        >
-          <Home size={18} strokeWidth={2} /> Home
-        </button>
-        <button
-          onClick={() => setPage("analytics")}
-          style={{
-            flex: 1, maxWidth: 200, padding: "10px",
-            background: page === "analytics" ? palette.yolk : "transparent",
-            color: page === "analytics" ? palette.ink : palette.bg,
-            border: "none", borderRadius: 10, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            fontWeight: 600,
-          }}
-        >
-          <BarChart3 size={18} strokeWidth={2} /> Analytics
-        </button>
-        <button
-          onClick={() => setPage("photos")}
-          style={{
-            flex: 1, maxWidth: 200, padding: "10px",
-            background: page === "photos" ? palette.yolk : "transparent",
-            color: page === "photos" ? palette.ink : palette.bg,
-            border: "none", borderRadius: 10, cursor: "pointer",
-            display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-            fontWeight: 600,
-          }}
-        >
-          <ImageIcon size={18} strokeWidth={2} /> Photos
-        </button>
+        <NavTab active={page === "home"} onClick={() => setPage("home")} icon={Home} label="Home" />
+        <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
+        <NavTab active={page === "photos"} onClick={() => setPage("photos")} icon={ImageIcon} label="Photos" />
+        <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Calendar} label="Year" />
       </nav>
 
       {/* MODALS */}

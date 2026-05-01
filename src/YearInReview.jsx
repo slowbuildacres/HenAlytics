@@ -1,0 +1,642 @@
+// ============================================================================
+// YEAR IN REVIEW
+// ----------------------------------------------------------------------------
+// Spotify-Wrapped-style summary of the user's homesteading year. Shows totals
+// for eggs, harvest, meat birds, plus a few flair stats. Each "card" is a
+// section with one big stat + visual flair.
+//
+// Year selector at the top lets users flip between past years.
+// ============================================================================
+
+import React, { useState, useMemo, useEffect } from "react";
+import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
+import { getPhotoUrl } from "./sync.js";
+
+const palette = {
+  bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
+  accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
+  yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47",
+  line: "#2C181030", card: "#FAF5EA",
+};
+const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
+const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
+
+// ============================================================================
+// Main page
+// ============================================================================
+export default function YearInReviewPage({ data }) {
+  const currentYear = new Date().getFullYear();
+  const availableYears = useMemo(() => collectYears(data), [data]);
+  const [year, setYear] = useState(() => {
+    if (availableYears.includes(currentYear)) return currentYear;
+    if (availableYears.length > 0) return availableYears[0];
+    return currentYear;
+  });
+
+  const stats = useMemo(() => computeStats(data, year), [data, year]);
+  const hasAnyData = stats.totalEntries > 0;
+
+  return (
+    <div>
+      {/* Header with year selector */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        marginBottom: 18, flexWrap: "wrap", gap: 10,
+      }}>
+        <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: 0, color: palette.ink }}>
+          year in review
+        </h2>
+        {availableYears.length > 0 && (
+          <select
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value))}
+            style={{
+              padding: "8px 12px", borderRadius: 8,
+              border: `1.5px solid ${palette.line}`,
+              background: palette.card, fontFamily: FONT_BODY, fontSize: 14,
+              color: palette.ink, cursor: "pointer",
+            }}
+          >
+            {availableYears.map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        )}
+      </div>
+
+      {!hasAnyData ? (
+        <EmptyYear year={year} />
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
+          <CoverCard year={year} stats={stats} />
+          <EggsCard stats={stats} />
+          <GardenCard stats={stats} />
+          <MeatChickensCard stats={stats} />
+          <ActivityCard stats={stats} />
+          {stats.weatherStats && <WeatherCard stats={stats} />}
+          {stats.photos.length > 0 && <PhotosCard stats={stats} />}
+          <FooterCard year={year} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EmptyYear({ year }) {
+  return (
+    <div style={{
+      padding: 32, background: palette.card, border: `1.5px dashed ${palette.line}`,
+      borderRadius: 12, textAlign: "center", color: palette.inkSoft,
+    }}>
+      <Sprout size={32} strokeWidth={1.5} style={{ marginBottom: 10 }} />
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink, marginBottom: 4 }}>
+        Nothing logged in {year} yet
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+        Once you've logged some entries this year, your review will fill in here.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Cards
+// ============================================================================
+
+function Card({ children, accent = palette.card, ...rest }) {
+  return (
+    <div
+      {...rest}
+      style={{
+        background: accent,
+        border: `1.5px solid ${palette.line}`,
+        borderRadius: 14,
+        padding: 22,
+        boxShadow: "3px 3px 0 " + palette.line,
+        ...(rest.style || {}),
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function CoverCard({ year, stats }) {
+  return (
+    <Card accent={palette.yolkSoft} style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 8 }}>
+        Your homestead in
+      </div>
+      <div style={{
+        fontFamily: FONT_DISPLAY, fontSize: 64, color: palette.ink,
+        lineHeight: 1, marginBottom: 12,
+      }}>
+        {year}
+      </div>
+      <div style={{ fontSize: 14, color: palette.inkSoft, fontStyle: "italic" }}>
+        {stats.totalEntries} {stats.totalEntries === 1 ? "entry" : "entries"} logged · {stats.activeDays} active {stats.activeDays === 1 ? "day" : "days"}
+      </div>
+    </Card>
+  );
+}
+
+function EggsCard({ stats }) {
+  if (!stats.eggsCollected && !stats.eggsSold) return null;
+  const { eggsCollected, dozensCollected, eggsSold, eggRevenueByMonth, peakEggMonth } = stats;
+  const maxBar = Math.max(...Object.values(eggRevenueByMonth || {}).map((m) => m.collected || 0), 1);
+
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
+        🥚 Eggs
+      </div>
+      <CountUp number={eggsCollected} suffix="eggs collected" big />
+      <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 12 }}>
+        That's <strong style={{ color: palette.ink }}>{dozensCollected.toFixed(1)} dozen</strong>
+        {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{(eggsSold / 12).toFixed(1)} dozen</strong></>}
+      </div>
+
+      {/* Month-by-month bar chart */}
+      {peakEggMonth && (
+        <div style={{ marginTop: 14 }}>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6 }}>
+            Best month: <strong style={{ color: palette.ink }}>{peakEggMonth}</strong>
+          </div>
+          <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 60 }}>
+            {monthLabels.map((label, i) => {
+              const collected = (eggRevenueByMonth[i] && eggRevenueByMonth[i].collected) || 0;
+              const h = (collected / maxBar) * 60;
+              return (
+                <div
+                  key={i}
+                  style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
+                  title={`${label}: ${collected} eggs`}
+                >
+                  <div style={{
+                    width: "100%", height: `${h}px`, minHeight: 2,
+                    background: palette.yolk, borderRadius: "3px 3px 0 0",
+                  }} />
+                  <div style={{ fontSize: 9, color: palette.inkSoft }}>{label[0]}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function GardenCard({ stats }) {
+  if (!stats.totalHarvestLbs && stats.topPlants.length === 0) return null;
+  const { totalHarvestLbs, topPlants, plantingsCount, harvestsCount } = stats;
+  const maxLbs = Math.max(...topPlants.map((p) => p.lbs), 1);
+
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
+        🌱 Garden
+      </div>
+      <CountUp number={Math.round(totalHarvestLbs)} suffix={`lbs harvested`} big />
+      <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
+        From <strong style={{ color: palette.ink }}>{harvestsCount}</strong> harvest{harvestsCount === 1 ? "" : "s"}
+        {plantingsCount > 0 && <> · {plantingsCount} planting{plantingsCount === 1 ? "" : "s"}</>}
+      </div>
+
+      {topPlants.length > 0 && (
+        <div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            Top crops
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {topPlants.slice(0, 5).map((p) => (
+              <div key={p.plant} style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <div style={{ minWidth: 90, fontSize: 13, color: palette.ink, fontWeight: 500 }}>
+                  {p.plant}
+                </div>
+                <div style={{ flex: 1, height: 14, background: palette.bgAlt, borderRadius: 7, overflow: "hidden" }}>
+                  <div style={{
+                    height: "100%",
+                    width: `${(p.lbs / maxLbs) * 100}%`,
+                    background: palette.leaf,
+                    borderRadius: 7,
+                  }} />
+                </div>
+                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>
+                  {p.lbs.toFixed(1)} lbs
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function MeatChickensCard({ stats }) {
+  if (!stats.birdsRaised && !stats.birdsButchered) return null;
+  const { birdsRaised, birdsButchered, totalMeatLbs, birdDeaths, mortalityRate } = stats;
+
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
+        🍗 Meat birds
+      </div>
+      {birdsButchered > 0 ? (
+        <>
+          <CountUp number={Math.round(totalMeatLbs)} suffix="lbs in the freezer" big />
+          <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
+            From <strong style={{ color: palette.ink }}>{birdsButchered}</strong> bird{birdsButchered === 1 ? "" : "s"} butchered
+          </div>
+        </>
+      ) : (
+        <>
+          <CountUp number={birdsRaised} suffix="birds raised" big />
+        </>
+      )}
+
+      {birdDeaths > 0 && (
+        <div style={{
+          padding: 10, background: palette.bgAlt, borderRadius: 8,
+          fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+        }}>
+          <Heart size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
+          You lost {birdDeaths} bird{birdDeaths === 1 ? "" : "s"} this year
+          {mortalityRate > 0 && ` (${mortalityRate.toFixed(0)}% mortality)`}.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function ActivityCard({ stats }) {
+  const { totalEntries, busiestMonth, longestStreak, activeDays } = stats;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
+        📔 Activity
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+        <Stat big={totalEntries} label="entries logged" accent={palette.feather} />
+        <Stat big={activeDays} label="active days" accent={palette.leaf} />
+        {longestStreak > 1 && <Stat big={longestStreak} label="day longest streak" accent={palette.yolk} />}
+      </div>
+      {busiestMonth && (
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 12 }}>
+          Busiest month: <strong style={{ color: palette.ink }}>{busiestMonth}</strong>
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function WeatherCard({ stats }) {
+  const { weatherStats } = stats;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>
+        🌦️ Weather
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
+        {weatherStats.hottestDay && (
+          <Stat
+            big={`${weatherStats.hottestDay.highF}°`}
+            label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`}
+            accent={palette.accent}
+          />
+        )}
+        {weatherStats.coldestDay && (
+          <Stat
+            big={`${weatherStats.coldestDay.lowF}°`}
+            label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`}
+            accent="#7AA8B8"
+          />
+        )}
+        {weatherStats.totalRainIn > 0 && (
+          <Stat
+            big={`${weatherStats.totalRainIn.toFixed(1)}"`}
+            label="rain logged"
+            accent={palette.leaf}
+          />
+        )}
+      </div>
+    </Card>
+  );
+}
+
+function PhotosCard({ stats }) {
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>
+        📷 Best moments
+      </div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(3, 1fr)",
+        gap: 6,
+      }}>
+        {stats.photos.slice(0, 6).map((photoPath, i) => (
+          <YearPhotoTile key={i} path={photoPath} />
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, textAlign: "center" }}>
+        {stats.photos.length} photo{stats.photos.length === 1 ? "" : "s"} this year
+      </div>
+    </Card>
+  );
+}
+
+function YearPhotoTile({ path }) {
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let c = false;
+    getPhotoUrl(path).then((u) => { if (!c) setUrl(u); });
+    return () => { c = true; };
+  }, [path]);
+  return (
+    <div style={{
+      width: "100%", aspectRatio: "1 / 1",
+      borderRadius: 6, overflow: "hidden",
+      background: url ? `url(${url}) center/cover` : palette.bgAlt,
+      border: `1px solid ${palette.line}`,
+    }} />
+  );
+}
+
+function FooterCard({ year }) {
+  return (
+    <Card accent={palette.bgAlt} style={{ textAlign: "center" }}>
+      <div style={{ fontSize: 28, marginBottom: 6 }}>🌱</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 4 }}>
+        Thanks for slow-building.
+      </div>
+      <div style={{ fontSize: 13, color: palette.inkSoft }}>
+        See you in {year + 1}.
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================================
+// Helper components
+// ============================================================================
+function CountUp({ number, suffix, big }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (!Number.isFinite(number)) return;
+    const duration = 800;
+    const start = performance.now();
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / duration);
+      // ease-out
+      const eased = 1 - Math.pow(1 - p, 3);
+      setShown(Math.round(number * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => raf && cancelAnimationFrame(raf);
+  }, [number]);
+
+  return (
+    <div style={{
+      fontFamily: FONT_DISPLAY, fontSize: big ? 56 : 36,
+      color: palette.ink, lineHeight: 1, marginBottom: 4,
+    }}>
+      {shown.toLocaleString()} <span style={{ fontSize: big ? 16 : 14, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>{suffix}</span>
+    </div>
+  );
+}
+
+function Stat({ big, label, accent = palette.ink }) {
+  return (
+    <div style={{
+      flex: "1 1 110px", padding: 14, borderRadius: 10,
+      background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+      borderLeft: `4px solid ${accent}`,
+    }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>
+        {big}
+      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// Stats computation
+// ============================================================================
+const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function shortDate(dateStr) {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  return `${monthLabels[d.getMonth()]} ${d.getDate()}`;
+}
+
+function collectYears(data) {
+  const years = new Set();
+  Object.values(data.entries || {}).forEach((arr) => {
+    (arr || []).forEach((e) => {
+      if (e.date) years.add(parseInt(e.date.slice(0, 4)));
+    });
+  });
+  // Also check archived seasons/batches
+  (data.hobbies || []).forEach((h) => {
+    (h.archivedSeasons || []).forEach((s) => {
+      (s.finalEntries || []).forEach((e) => {
+        if (e.date) years.add(parseInt(e.date.slice(0, 4)));
+      });
+    });
+    (h.archivedBatches || []).forEach((b) => {
+      (b.finalEntries || []).forEach((e) => {
+        if (e.date) years.add(parseInt(e.date.slice(0, 4)));
+      });
+    });
+  });
+  return Array.from(years).filter((y) => !isNaN(y)).sort((a, b) => b - a);
+}
+
+function computeStats(data, year) {
+  const yearStr = String(year);
+  const inYear = (e) => e.date && e.date.startsWith(yearStr);
+
+  // Collect ALL entries across hobbies (current + archived)
+  const allEntries = [];
+  (data.hobbies || []).forEach((h) => {
+    const live = (data.entries[h.id] || []).filter(inYear);
+    allEntries.push(...live.map((e) => ({ ...e, hobbyType: h.type })));
+    (h.archivedSeasons || []).forEach((s) => {
+      const fe = (s.finalEntries || []).filter(inYear);
+      allEntries.push(...fe.map((e) => ({ ...e, hobbyType: h.type })));
+    });
+    (h.archivedBatches || []).forEach((b) => {
+      const fe = (b.finalEntries || []).filter(inYear);
+      allEntries.push(...fe.map((e) => ({ ...e, hobbyType: h.type })));
+    });
+  });
+
+  // Eggs collected
+  const eggLaidEntries = allEntries.filter((e) => e.action === "eggs_laid");
+  const eggsCollected = eggLaidEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const dozensCollected = eggsCollected / 12;
+
+  // Eggs sold
+  const eggsSold = allEntries.filter((e) => e.action === "sold_eggs")
+    .reduce((s, e) => s + (Number(e.count) || 0), 0);
+
+  // Eggs by month
+  const eggRevenueByMonth = {};
+  for (let m = 0; m < 12; m++) eggRevenueByMonth[m] = { collected: 0 };
+  eggLaidEntries.forEach((e) => {
+    const m = new Date(e.date).getMonth();
+    eggRevenueByMonth[m].collected += Number(e.count) || 0;
+  });
+  let peakEggMonth = null;
+  let peakEggMonthCount = 0;
+  for (let m = 0; m < 12; m++) {
+    if (eggRevenueByMonth[m].collected > peakEggMonthCount) {
+      peakEggMonthCount = eggRevenueByMonth[m].collected;
+      peakEggMonth = monthLabels[m];
+    }
+  }
+
+  // Garden harvest
+  const harvestEntries = allEntries.filter((e) => e.action === "harvested");
+  const totalHarvestLbs = harvestEntries.reduce((s, e) => {
+    const q = Number(e.quantity) || 0;
+    // Treat all units as lbs for simplicity (most users use lbs)
+    return s + q;
+  }, 0);
+  const harvestsCount = harvestEntries.length;
+  const plantingsCount = allEntries.filter((e) => e.action === "planted").length;
+
+  // Top plants by total lbs harvested
+  const plantTotals = {};
+  harvestEntries.forEach((e) => {
+    const name = (e.plant || "Unknown").trim();
+    if (!name) return;
+    plantTotals[name] = (plantTotals[name] || 0) + (Number(e.quantity) || 0);
+  });
+  const topPlants = Object.entries(plantTotals)
+    .map(([plant, lbs]) => ({ plant, lbs }))
+    .sort((a, b) => b.lbs - a.lbs);
+
+  // Meat chickens
+  const butcherEntries = allEntries.filter((e) => e.action === "butcher");
+  const birdsButchered = butcherEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const totalMeatLbs = butcherEntries.reduce((s, e) => {
+    const c = Number(e.count) || 0;
+    const w = Number(e.avgWeight) || 0;
+    return s + c * w;
+  }, 0);
+  const birdDeaths = allEntries.filter((e) => e.action === "death" && e.hobbyType === "meat_chickens")
+    .reduce((s, e) => s + (Number(e.count) || 1), 0);
+
+  // Total birds raised (start counts of batches that started this year)
+  let birdsRaised = 0;
+  (data.hobbies || []).forEach((h) => {
+    if (h.type !== "meat_chickens") return;
+    if (h.currentBatch && h.currentBatch.startDate && h.currentBatch.startDate.startsWith(yearStr)) {
+      birdsRaised += Number(h.currentBatch.startCount) || 0;
+    }
+    (h.archivedBatches || []).forEach((b) => {
+      if (b.startDate && b.startDate.startsWith(yearStr)) {
+        birdsRaised += Number(b.startCount) || 0;
+      }
+    });
+  });
+
+  const mortalityRate = birdsRaised > 0 ? (birdDeaths / birdsRaised) * 100 : 0;
+
+  // Activity / streaks / busiest month
+  const datesSet = new Set(allEntries.map((e) => e.date));
+  const activeDays = datesSet.size;
+  const totalEntries = allEntries.length;
+
+  // Busiest month
+  const monthCounts = new Array(12).fill(0);
+  allEntries.forEach((e) => {
+    if (e.date) monthCounts[new Date(e.date).getMonth()]++;
+  });
+  let busiestMonthIdx = -1;
+  let busiestCount = 0;
+  monthCounts.forEach((c, i) => {
+    if (c > busiestCount) { busiestCount = c; busiestMonthIdx = i; }
+  });
+  const busiestMonth = busiestMonthIdx >= 0 ? monthLabels[busiestMonthIdx] : null;
+
+  // Longest consecutive-day streak
+  const sortedDays = Array.from(datesSet).sort();
+  let longestStreak = 0;
+  let currentStreak = 0;
+  let prevDate = null;
+  sortedDays.forEach((d) => {
+    if (prevDate) {
+      const diff = (new Date(d) - new Date(prevDate)) / (1000 * 60 * 60 * 24);
+      if (diff === 1) currentStreak++;
+      else currentStreak = 1;
+    } else {
+      currentStreak = 1;
+    }
+    if (currentStreak > longestStreak) longestStreak = currentStreak;
+    prevDate = d;
+  });
+
+  // Weather stats from attached weather objects
+  const withWeather = allEntries.filter((e) => e.weather);
+  let weatherStats = null;
+  if (withWeather.length > 0) {
+    let hottestDay = null;
+    let coldestDay = null;
+    let totalRainIn = 0;
+    withWeather.forEach((e) => {
+      const w = e.weather;
+      if (w.highF != null && (!hottestDay || w.highF > hottestDay.highF)) {
+        hottestDay = { date: e.date, highF: w.highF };
+      }
+      if (w.lowF != null && (!coldestDay || w.lowF < coldestDay.lowF)) {
+        coldestDay = { date: e.date, lowF: w.lowF };
+      }
+    });
+    // Total rain: sum unique day precips (avoid double-counting if multiple entries on same date)
+    const rainByDate = {};
+    withWeather.forEach((e) => {
+      if (e.weather.precipIn != null) rainByDate[e.date] = e.weather.precipIn;
+    });
+    totalRainIn = Object.values(rainByDate).reduce((s, p) => s + p, 0);
+    weatherStats = { hottestDay, coldestDay, totalRainIn };
+  }
+
+  // Photos from this year
+  const photos = allEntries
+    .filter((e) => e.photoPath)
+    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+    .map((e) => e.photoPath);
+
+  return {
+    totalEntries,
+    activeDays,
+    eggsCollected,
+    dozensCollected,
+    eggsSold,
+    eggRevenueByMonth,
+    peakEggMonth,
+    totalHarvestLbs,
+    harvestsCount,
+    plantingsCount,
+    topPlants,
+    birdsRaised,
+    birdsButchered,
+    totalMeatLbs,
+    birdDeaths,
+    mortalityRate,
+    busiestMonth,
+    longestStreak,
+    weatherStats,
+    photos,
+  };
+}
