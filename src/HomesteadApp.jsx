@@ -4,7 +4,8 @@ import {
   Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut,
-  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle
+  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
+  MapPin, CloudRain, Thermometer
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
@@ -15,6 +16,9 @@ import {
   uploadPhoto, getPhotoUrl, deletePhoto,
   sendFeedback, notifySignup, acceptInvite,
 } from "./sync.js";
+import {
+  getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
+} from "./weather.js";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -37,6 +41,7 @@ const palette = {
 // ============ STORAGE HELPERS ============
 const defaultData = () => ({
   homesteadName: "",
+  homesteadLocation: null, // { lat, lon, label } once set
   hobbies: [
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flockSize: 0, flockHistory: [] },
@@ -54,6 +59,9 @@ function migrateData(data) {
   if (!data.entries || typeof data.entries !== "object") data.entries = {};
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (typeof data.homesteadName !== "string") data.homesteadName = "";
+  if (data.homesteadLocation !== null && (!data.homesteadLocation || typeof data.homesteadLocation !== "object")) {
+    data.homesteadLocation = null;
+  }
 
   data.hobbies.forEach((h) => {
     if (h.type === "garden") {
@@ -935,6 +943,16 @@ function ActivityRow({ entry, hobbyType, onDelete }) {
         <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {fmtDate(entry.date)} {detail && "· " + detail}
         </div>
+        {entry.weather && (
+          <div style={{
+            display: "inline-flex", alignItems: "center", gap: 4,
+            marginTop: 4, fontSize: 11, color: palette.feather,
+            padding: "2px 6px", background: palette.bgAlt, borderRadius: 4,
+          }}>
+            {entry.weather.precipIn > 0 ? <CloudRain size={11} /> : <Sun size={11} />}
+            {formatWeather(entry.weather)}
+          </div>
+        )}
       </div>
       {entry.photoPath && <EntryPhotoThumb path={entry.photoPath} />}
       <button
@@ -1808,6 +1826,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
+  if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
   if (modal.type === "inviteAccepted") return <InviteAcceptedModal homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "inviteError") return <InviteErrorModal message={modal.message} onClose={close} />;
@@ -1970,6 +1989,16 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
           onClick={() => { onClose(); setTimeout(() => setModal({ type: "farmhand" }), 0); }}
         />
       )}
+
+      <SectionBtn
+        icon={MapPin}
+        label="Homestead location"
+        sub={data.homesteadLocation
+          ? `Set: ${data.homesteadLocation.label || `${data.homesteadLocation.lat.toFixed(2)}, ${data.homesteadLocation.lon.toFixed(2)}`}`
+          : "Set your location to auto-attach weather to entries"}
+        accent={palette.leaf}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "location" }), 0); }}
+      />
 
       <SectionBtn
         icon={Lightbulb}
@@ -2150,6 +2179,158 @@ function RenameHomesteadModal({ data, update, onClose }) {
             onClose();
           }}>Clear</Btn>
         )}
+      </div>
+    </Modal>
+  );
+}
+
+function LocationModal({ data, update, onClose }) {
+  const current = data.homesteadLocation;
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  const [typed, setTyped] = useState("");
+  const [searchResults, setSearchResults] = useState(null);
+
+  const useGPS = async () => {
+    setBusy(true); setError(""); setSearchResults(null);
+    try {
+      const { lat, lon } = await requestBrowserLocation();
+      const label = await reverseGeocode(lat, lon);
+      update((d) => {
+        d.homesteadLocation = { lat, lon, label: label || `${lat.toFixed(3)}, ${lon.toFixed(3)}` };
+        return d;
+      });
+      onClose();
+    } catch (e) {
+      setError(e.message || "Could not get location.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const useTyped = async (e) => {
+    e.preventDefault();
+    setBusy(true); setError(""); setSearchResults(null);
+    try {
+      const result = await geocodePlace(typed);
+      if (!result) {
+        setError("Couldn't find that place. Try including the state or country.");
+      } else {
+        setSearchResults(result);
+      }
+    } catch (e) {
+      setError(e.message || "Search failed.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const confirmTyped = () => {
+    if (!searchResults) return;
+    update((d) => {
+      d.homesteadLocation = searchResults;
+      return d;
+    });
+    onClose();
+  };
+
+  const clearLocation = () => {
+    update((d) => { d.homesteadLocation = null; return d; });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Homestead location">
+      <div style={{
+        padding: 12, background: palette.yolkSoft, borderRadius: 8,
+        fontSize: 13, color: palette.ink, marginBottom: 16, lineHeight: 1.5,
+        border: `1.5px solid ${palette.line}`,
+      }}>
+        Set your location once and Henalytics will auto-attach the day's weather (high temp, rain) to every entry you log. Useful for spotting patterns over time.
+      </div>
+
+      {current && (
+        <div style={{
+          padding: 10, background: palette.leafSoft, borderRadius: 8,
+          fontSize: 13, color: palette.ink, marginBottom: 16,
+          display: "flex", alignItems: "center", gap: 8,
+        }}>
+          <CheckCircle size={16} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontWeight: 600 }}>Currently set</div>
+            <div style={{ fontSize: 12 }}>
+              {current.label || `${current.lat.toFixed(3)}, ${current.lon.toFixed(3)}`}
+            </div>
+          </div>
+          <button
+            onClick={clearLocation}
+            style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
+            title="Clear location"
+          >
+            <Trash2 size={14} />
+          </button>
+        </div>
+      )}
+
+      <div style={{
+        fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+        textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+      }}>
+        Option 1 — Use my current location
+      </div>
+      <Btn variant="primary" onClick={useGPS} disabled={busy} style={{ width: "100%", marginBottom: 18 }}>
+        {busy ? "Locating..." : "📍 Detect my location"}
+      </Btn>
+
+      <div style={{
+        fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+        textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+      }}>
+        Option 2 — Type a city
+      </div>
+      <form onSubmit={useTyped}>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            style={inputStyle}
+            value={typed}
+            onChange={(e) => setTyped(e.target.value)}
+            placeholder="Kansas City"
+            disabled={busy}
+          />
+          <Btn variant="ghost" type="submit" disabled={busy || !typed.trim()}>
+            Search
+          </Btn>
+        </div>
+      </form>
+
+      {searchResults && (
+        <div style={{
+          padding: 12, background: palette.card, border: `1.5px solid ${palette.ink}`,
+          borderRadius: 8, marginBottom: 12,
+        }}>
+          <div style={{ fontWeight: 600, fontSize: 13, color: palette.ink, marginBottom: 4 }}>
+            Found: {searchResults.label}
+          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10 }}>
+            {searchResults.lat.toFixed(3)}, {searchResults.lon.toFixed(3)}
+          </div>
+          <Btn variant="primary" onClick={confirmTyped} small>Use this location</Btn>
+        </div>
+      )}
+
+      {error && (
+        <div style={{
+          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          borderRadius: 8, fontSize: 13, color: palette.accent, marginTop: 8,
+          display: "flex", alignItems: "flex-start", gap: 8,
+        }}>
+          <AlertTriangle size={16} style={{ flexShrink: 0, marginTop: 1 }} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 16, lineHeight: 1.5 }}>
+        Your location is stored only in your homestead data — never shared or sold. Weather is fetched from the free Open-Meteo service.
       </div>
     </Modal>
   );
@@ -2653,10 +2834,26 @@ function LogModal({ hobby, action, data, update, onClose, user }) {
       setPhotoUploading(false);
     }
 
+    // Fetch weather (best-effort — never blocks save). If location is set,
+    // try with a 4-second timeout. If it fails or times out, save without.
+    let weather = null;
+    const loc = data.homesteadLocation;
+    if (loc && loc.lat != null && loc.lon != null) {
+      try {
+        weather = await Promise.race([
+          getDailyWeather(date, loc.lat, loc.lon),
+          new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
+        ]);
+      } catch (e) {
+        weather = null;
+      }
+    }
+
     update((d) => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const entry = { id: entryId, date, action, created: Date.now(), ...cleanFields };
       if (photoPath) entry.photoPath = photoPath;
+      if (weather) entry.weather = weather;
 
       // attach to current batch for meat chickens
       if (hobby.type === "meat_chickens" && hobby.currentBatch) {
