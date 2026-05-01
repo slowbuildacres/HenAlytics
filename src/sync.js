@@ -276,55 +276,41 @@ export async function cancelInvite(inviteId) {
 
 // Accept an invite by code. Adds the current user as a member of the
 // invite's homestead. Should be called after sign-in.
+// Uses a SECURITY DEFINER function so the lookup, validation, and insert
+// happen atomically and bypass RLS quirks.
 export async function acceptInvite(user, inviteCode) {
   if (!user || !isSupabaseConfigured) throw new Error('Sign in first');
 
-  // Look up the invite
-  const { data: invite, error: lookupErr } = await supabase
-    .from('pending_invites')
-    .select('id, homestead_id, invited_email, expires_at, accepted_at')
-    .eq('invite_code', inviteCode)
-    .maybeSingle();
+  const { data, error } = await supabase.rpc('accept_invite_by_code', {
+    p_code: inviteCode,
+  });
 
-  if (lookupErr || !invite) {
-    throw new Error('Invite not found or already used');
-  }
-  if (invite.accepted_at) {
-    throw new Error('This invite was already used');
-  }
-  if (new Date(invite.expires_at) < new Date()) {
-    throw new Error('This invite has expired');
-  }
-  // Verify the email matches
-  if (user.email && user.email.toLowerCase() !== invite.invited_email.toLowerCase()) {
-    throw new Error(`This invite is for ${invite.invited_email}, but you signed in as ${user.email}`);
-  }
-
-  // Add as member
-  const { error: addErr } = await supabase
-    .from('homestead_members')
-    .insert({
-      homestead_id: invite.homestead_id,
-      user_id: user.id,
-      role: 'member',
-    });
-
-  if (addErr && !String(addErr.message || '').includes('duplicate')) {
-    throw addErr;
+  if (error) {
+    // The function raises useful messages — surface them
+    const msg = error.message || '';
+    if (msg.includes('different email')) {
+      throw new Error("This invite is for a different email address than the one you signed in with.");
+    }
+    if (msg.includes('expired')) {
+      throw new Error('This invite has expired.');
+    }
+    if (msg.includes('already been used')) {
+      throw new Error('This invite was already used.');
+    }
+    if (msg.includes('not found')) {
+      throw new Error('This invite was not found. Check the link or ask for a new invitation.');
+    }
+    throw new Error(msg || 'Could not accept invite');
   }
 
-  // Mark invite as accepted
-  await supabase
-    .from('pending_invites')
-    .update({ accepted_at: new Date().toISOString() })
-    .eq('id', invite.id);
+  const homesteadId = data;
 
   // Switch their active homestead to the one they just joined
-  writeActiveHomesteadId(invite.homestead_id);
+  writeActiveHomesteadId(homesteadId);
   // Clear local cache so the joined homestead's data loads fresh
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 
-  return invite.homestead_id;
+  return homesteadId;
 }
 
 // Remove a member (kick a farmhand, or leave). Owner-only for kicking; anyone
