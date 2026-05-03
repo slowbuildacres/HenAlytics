@@ -69,12 +69,14 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
+          <HeadlinesCard stats={stats} />
           <EggsCard stats={stats} />
           <GardenCard stats={stats} />
           <MeatChickensCard stats={stats} />
           <ActivityCard stats={stats} />
           {stats.weatherStats && <WeatherCard stats={stats} />}
           {stats.photos.length > 0 && <PhotosCard stats={stats} />}
+          <FunFactsCard stats={stats} />
           <FooterCard year={year} />
         </div>
       )}
@@ -140,10 +142,87 @@ function CoverCard({ year, stats }) {
   );
 }
 
+// Big-three headlines: eggs collected, meat birds raised, total harvest lbs.
+// Always shown (with zeros if empty) so user sees their year-at-a-glance.
+function HeadlinesCard({ stats }) {
+  return (
+    <Card accent={palette.bgAlt}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 12 }}>
+        ✨ Your year at a glance
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        <BigStat
+          icon="🥚"
+          number={stats.eggsCollected}
+          label={`egg${stats.eggsCollected === 1 ? "" : "s"} laid`}
+          accent={palette.yolk}
+        />
+        <BigStat
+          icon="🍗"
+          number={Math.max(stats.birdsRaised, stats.birdsButchered)}
+          label={`meat bird${stats.birdsRaised === 1 ? "" : "s"} raised`}
+          accent={palette.feather}
+        />
+        <BigStat
+          icon="🌱"
+          number={Math.round(stats.totalHarvestLbs)}
+          label={`lb${Math.round(stats.totalHarvestLbs) === 1 ? "" : "s"} harvested`}
+          accent={palette.leaf}
+        />
+      </div>
+    </Card>
+  );
+}
+
+function BigStat({ icon, number, label, accent }) {
+  const [shown, setShown] = useState(0);
+  useEffect(() => {
+    if (!Number.isFinite(number)) return;
+    const duration = 800;
+    const start = performance.now();
+    let raf;
+    const tick = (t) => {
+      const p = Math.min(1, (t - start) / duration);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setShown(Math.round(number * eased));
+      if (p < 1) raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => raf && cancelAnimationFrame(raf);
+  }, [number]);
+
+  return (
+    <div style={{
+      flex: "1 1 110px", padding: "16px 12px",
+      background: palette.card, borderRadius: 12,
+      border: `1.5px solid ${palette.line}`,
+      borderTop: `4px solid ${accent}`,
+      textAlign: "center",
+    }}>
+      <div style={{ fontSize: 26, marginBottom: 4 }}>{icon}</div>
+      <div style={{
+        fontFamily: FONT_DISPLAY, fontSize: 32, color: palette.ink,
+        lineHeight: 1, marginBottom: 4,
+      }}>
+        {shown.toLocaleString()}
+      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft }}>
+        {label}
+      </div>
+    </div>
+  );
+}
+
 function EggsCard({ stats }) {
-  if (!stats.eggsCollected && !stats.eggsSold) return null;
-  const { eggsCollected, dozensCollected, eggsSold, eggRevenueByMonth, peakEggMonth } = stats;
+  if (!stats.eggsCollected && !stats.eggsSold && !stats.eggLayerTotalCost) return null;
+  const {
+    eggsCollected, dozensCollected, eggsSold, eggRevenue,
+    eggLayerFeedCost, eggLayerInfraCost, eggLayerBirdCost,
+    eggLayerTotalCost, eggLayerNetProfit,
+    eggRevenueByMonth, peakEggMonth,
+  } = stats;
   const maxBar = Math.max(...Object.values(eggRevenueByMonth || {}).map((m) => m.collected || 0), 1);
+  const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
   return (
     <Card accent={palette.card}>
@@ -155,6 +234,44 @@ function EggsCard({ stats }) {
         That's <strong style={{ color: palette.ink }}>{dozensCollected.toFixed(1)} dozen</strong>
         {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{(eggsSold / 12).toFixed(1)} dozen</strong></>}
       </div>
+
+      {/* Money breakdown — only shows if there's any cost or revenue activity */}
+      {(eggLayerTotalCost > 0 || eggRevenue > 0) && (
+        <div style={{ marginTop: 4, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            The numbers
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {eggRevenue > 0 && (
+              <Stat big={fmtMoney(eggRevenue)} label="revenue from sold eggs" accent={palette.leaf} />
+            )}
+            {eggLayerTotalCost > 0 && (
+              <Stat big={fmtMoney(eggLayerTotalCost)} label="total spent on layers" accent={palette.feather} />
+            )}
+            {(eggRevenue > 0 || eggLayerTotalCost > 0) && (
+              <Stat
+                big={fmtMoney(eggLayerNetProfit)}
+                label={eggLayerNetProfit >= 0 ? "net profit" : "net loss"}
+                accent={eggLayerNetProfit >= 0 ? palette.leaf : palette.accent}
+              />
+            )}
+          </div>
+
+          {/* Itemized cost breakdown */}
+          {eggLayerTotalCost > 0 && (
+            <div style={{
+              marginTop: 12, padding: 10,
+              background: palette.bgAlt, borderRadius: 8,
+              fontSize: 12, color: palette.inkSoft, lineHeight: 1.6,
+            }}>
+              <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 4 }}>Costs broken down:</div>
+              {eggLayerFeedCost > 0 && <div>🌾 Feed · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerFeedCost)}</strong></div>}
+              {eggLayerInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerInfraCost)}</strong></div>}
+              {eggLayerBirdCost > 0 && <div>🐔 Bird purchases · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerBirdCost)}</strong></div>}
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Month-by-month bar chart */}
       {peakEggMonth && (
@@ -364,6 +481,91 @@ function YearPhotoTile({ path }) {
   );
 }
 
+function FunFactsCard({ stats }) {
+  const facts = [];
+
+  if (stats.firstEntryDate) {
+    facts.push({ emoji: "🚀", label: "First entry", value: shortDate(stats.firstEntryDate) });
+  }
+  if (stats.lastEntryDate && stats.lastEntryDate !== stats.firstEntryDate) {
+    facts.push({ emoji: "📅", label: "Most recent entry", value: shortDate(stats.lastEntryDate) });
+  }
+  if (stats.heaviestDayCount > 1) {
+    facts.push({ emoji: "🔥", label: "Most active day", value: `${shortDate(stats.heaviestDay)} · ${stats.heaviestDayCount} entries` });
+  }
+  if (stats.gardenWaterCount > 0) {
+    facts.push({ emoji: "💧", label: "Garden waterings", value: stats.gardenWaterCount });
+  }
+  if (stats.totalFeedLbs > 0) {
+    facts.push({ emoji: "🌾", label: "Feed bought", value: `${Math.round(stats.totalFeedLbs)} lbs` });
+  }
+  if (stats.totalFeedCost > 0) {
+    facts.push({ emoji: "💸", label: "Spent on feed", value: `$${stats.totalFeedCost.toFixed(2)}` });
+  }
+  if (stats.freeRangeCount > 0) {
+    facts.push({ emoji: "🌳", label: "Free-range days", value: stats.freeRangeCount });
+  }
+  if (stats.photosCount > 0) {
+    facts.push({ emoji: "📷", label: "Photos taken", value: stats.photosCount });
+  }
+  if (stats.issueCount > 0) {
+    facts.push({ emoji: "⚠️", label: "Issues logged", value: stats.issueCount });
+  }
+  if (stats.plantingsCount > 0) {
+    facts.push({ emoji: "🌱", label: "Plantings", value: stats.plantingsCount });
+  }
+  if (stats.harvestsCount > 0) {
+    facts.push({ emoji: "🧺", label: "Harvest trips", value: stats.harvestsCount });
+  }
+  // Show the most-used hobby
+  if (stats.entryCountByHobby) {
+    const top = Object.entries(stats.entryCountByHobby).sort((a, b) => b[1] - a[1])[0];
+    if (top && top[1] > 0) {
+      const hobbyLabels = {
+        garden: "Garden",
+        egg_layers: "Egg Layers",
+        meat_chickens: "Meat Birds",
+      };
+      facts.push({
+        emoji: "⭐",
+        label: "Most-tracked hobby",
+        value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})`,
+      });
+    }
+  }
+
+  if (facts.length === 0) return null;
+
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 12 }}>
+        🎉 Fun facts
+      </div>
+      <div style={{
+        display: "grid",
+        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
+        gap: 10,
+      }}>
+        {facts.map((f, i) => (
+          <div key={i} style={{
+            padding: "10px 12px",
+            background: palette.bgAlt, borderRadius: 8,
+            border: `1px solid ${palette.line}`,
+          }}>
+            <div style={{ fontSize: 16, marginBottom: 2 }}>{f.emoji}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>
+              {f.value}
+            </div>
+            <div style={{ fontSize: 10, color: palette.inkSoft }}>
+              {f.label}
+            </div>
+          </div>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
 function FooterCard({ year }) {
   return (
     <Card accent={palette.bgAlt} style={{ textAlign: "center" }}>
@@ -479,14 +681,38 @@ function computeStats(data, year) {
     });
   });
 
-  // Eggs collected
-  const eggLaidEntries = allEntries.filter((e) => e.action === "eggs_laid");
+  // Eggs collected (covers both "eggs" — original quick-tile — and "eggs_laid" — egg basket commit)
+  const eggLaidEntries = allEntries.filter((e) => e.action === "eggs_laid" || e.action === "eggs");
   const eggsCollected = eggLaidEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
   const dozensCollected = eggsCollected / 12;
 
   // Eggs sold
-  const eggsSold = allEntries.filter((e) => e.action === "sold_eggs")
-    .reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const soldEggsEntries = allEntries.filter((e) => e.action === "sold_eggs");
+  const eggsSold = soldEggsEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const eggRevenue = soldEggsEntries.reduce((s, e) => {
+    const dozens = (Number(e.count) || 0) / 12;
+    return s + dozens * (Number(e.pricePerDozen) || 0);
+  }, 0);
+
+  // Egg layer costs: feed + infrastructure on egg_layers hobby + bird purchases
+  const eggLayerFeedCost = allEntries
+    .filter((e) => e.action === "fed" && e.hobbyType === "egg_layers")
+    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const eggLayerInfraCost = allEntries
+    .filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers")
+    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  // Bird purchases this year (from flockHistory)
+  let eggLayerBirdCost = 0;
+  (data.hobbies || []).forEach((h) => {
+    if (h.type !== "egg_layers") return;
+    (h.flockHistory || []).forEach((fh) => {
+      if (fh.date && fh.date.startsWith(yearStr)) {
+        eggLayerBirdCost += Number(fh.cost) || 0;
+      }
+    });
+  });
+  const eggLayerTotalCost = eggLayerFeedCost + eggLayerInfraCost + eggLayerBirdCost;
+  const eggLayerNetProfit = eggRevenue - eggLayerTotalCost;
 
   // Eggs by month
   const eggRevenueByMonth = {};
@@ -586,6 +812,39 @@ function computeStats(data, year) {
     prevDate = d;
   });
 
+  // ------ FUN-FACT STATS ------
+  // First and last entry dates
+  const firstEntryDate = sortedDays[0] || null;
+  const lastEntryDate = sortedDays[sortedDays.length - 1] || null;
+
+  // Entry count by hobby (for the activity pie / "where did your time go")
+  const entryCountByHobby = {};
+  allEntries.forEach((e) => {
+    const t = e.hobbyType || "other";
+    entryCountByHobby[t] = (entryCountByHobby[t] || 0) + 1;
+  });
+
+  // Garden waterings, free-range count, feed lbs, etc.
+  const gardenWaterCount = allEntries.filter((e) => e.action === "watered" && e.hobbyType === "garden").length;
+  const freeRangeCount = allEntries.filter((e) => e.action === "free_range").length;
+  const totalFeedLbs = allEntries
+    .filter((e) => e.action === "fed")
+    .reduce((s, e) => s + (Number(e.lbs) || 0), 0);
+  const totalFeedCost = allEntries
+    .filter((e) => e.action === "fed")
+    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const photosCount = allEntries.filter((e) => e.photoPath).length;
+  const issueCount = allEntries.filter((e) => e.action === "issue").length;
+
+  // Days with multiple log entries (your active homestead days)
+  const entriesByDate = {};
+  allEntries.forEach((e) => {
+    if (!e.date) return;
+    entriesByDate[e.date] = (entriesByDate[e.date] || 0) + 1;
+  });
+  const heaviestDayCount = Math.max(0, ...Object.values(entriesByDate));
+  const heaviestDay = Object.entries(entriesByDate).find(([, c]) => c === heaviestDayCount)?.[0];
+
   // Weather stats from attached weather objects
   const withWeather = allEntries.filter((e) => e.weather);
   let weatherStats = null;
@@ -623,6 +882,12 @@ function computeStats(data, year) {
     eggsCollected,
     dozensCollected,
     eggsSold,
+    eggRevenue,
+    eggLayerFeedCost,
+    eggLayerInfraCost,
+    eggLayerBirdCost,
+    eggLayerTotalCost,
+    eggLayerNetProfit,
     eggRevenueByMonth,
     peakEggMonth,
     totalHarvestLbs,
@@ -638,5 +903,17 @@ function computeStats(data, year) {
     longestStreak,
     weatherStats,
     photos,
+    // Fun-fact stats
+    firstEntryDate,
+    lastEntryDate,
+    entryCountByHobby,
+    gardenWaterCount,
+    freeRangeCount,
+    totalFeedLbs,
+    totalFeedCost,
+    photosCount,
+    issueCount,
+    heaviestDay,
+    heaviestDayCount,
   };
 }
