@@ -218,7 +218,8 @@ function EggsCard({ stats }) {
   const {
     eggsCollected, dozensCollected, eggsSold, eggRevenue,
     eggLayerFeedCost, eggLayerInfraCost, eggLayerBirdCost,
-    eggLayerTotalCost, eggLayerNetProfit,
+    eggLayerTotalCost, eggLayerCostPerDozen,
+    benchmarkPricePerDozen, groceryStoreEquivalent, moneySavedVsBuying,
     eggRevenueByMonth, peakEggMonth,
   } = stats;
   const maxBar = Math.max(...Object.values(eggRevenueByMonth || {}).map((m) => m.collected || 0), 1);
@@ -235,8 +236,8 @@ function EggsCard({ stats }) {
         {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{(eggsSold / 12).toFixed(1)} dozen</strong></>}
       </div>
 
-      {/* Money breakdown — only shows if there's any cost or revenue activity */}
-      {(eggLayerTotalCost > 0 || eggRevenue > 0) && (
+      {/* Money breakdown — shows cost per dozen and grocery-store savings */}
+      {(eggLayerTotalCost > 0 && dozensCollected > 0) && (
         <div style={{ marginTop: 4, marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
             The numbers
@@ -245,31 +246,42 @@ function EggsCard({ stats }) {
             {eggRevenue > 0 && (
               <Stat big={fmtMoney(eggRevenue)} label="revenue from sold eggs" accent={palette.leaf} />
             )}
-            {eggLayerTotalCost > 0 && (
-              <Stat big={fmtMoney(eggLayerTotalCost)} label="total spent on layers" accent={palette.feather} />
-            )}
-            {(eggRevenue > 0 || eggLayerTotalCost > 0) && (
-              <Stat
-                big={fmtMoney(eggLayerNetProfit)}
-                label={eggLayerNetProfit >= 0 ? "net profit" : "net loss"}
-                accent={eggLayerNetProfit >= 0 ? palette.leaf : palette.accent}
-              />
-            )}
+            <Stat
+              big={fmtMoney(eggLayerCostPerDozen)}
+              label="cost per dozen produced"
+              accent={palette.feather}
+            />
+            <Stat
+              big={fmtMoney(moneySavedVsBuying)}
+              label={`saved vs. buying pasture-raised at $${benchmarkPricePerDozen.toFixed(2)}/doz`}
+              accent={moneySavedVsBuying >= 0 ? palette.leaf : palette.accent}
+            />
           </div>
 
           {/* Itemized cost breakdown */}
-          {eggLayerTotalCost > 0 && (
-            <div style={{
-              marginTop: 12, padding: 10,
-              background: palette.bgAlt, borderRadius: 8,
-              fontSize: 12, color: palette.inkSoft, lineHeight: 1.6,
-            }}>
-              <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 4 }}>Costs broken down:</div>
-              {eggLayerFeedCost > 0 && <div>🌾 Feed · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerFeedCost)}</strong></div>}
-              {eggLayerInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerInfraCost)}</strong></div>}
-              {eggLayerBirdCost > 0 && <div>🐔 Bird purchases · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerBirdCost)}</strong></div>}
+          <div style={{
+            marginTop: 12, padding: 10,
+            background: palette.bgAlt, borderRadius: 8,
+            fontSize: 12, color: palette.inkSoft, lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 4 }}>Costs broken down:</div>
+            {eggLayerFeedCost > 0 && <div>🌾 Feed · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerFeedCost)}</strong></div>}
+            {eggLayerInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerInfraCost)}</strong></div>}
+            {eggLayerBirdCost > 0 && <div>🐔 Bird purchases · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerBirdCost)}</strong></div>}
+            <div style={{ marginTop: 6, fontSize: 11, fontStyle: "italic" }}>
+              Buying {dozensCollected.toFixed(1)} dozen pasture-raised at the grocery store would have cost {fmtMoney(groceryStoreEquivalent)}.
             </div>
-          )}
+          </div>
+        </div>
+      )}
+
+      {/* Show just the cost-per-dozen even if there are no costs yet but eggs were collected */}
+      {eggLayerTotalCost === 0 && dozensCollected > 0 && (
+        <div style={{
+          padding: 10, background: palette.bgAlt, borderRadius: 8, marginBottom: 14,
+          fontSize: 12, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.5,
+        }}>
+          💡 Add costs (feed, infrastructure, birds) to your egg layer entries and we'll show you how much you saved vs. buying pasture-raised eggs at the store.
         </div>
       )}
 
@@ -633,6 +645,90 @@ function Stat({ big, label, accent = palette.ink }) {
 // ============================================================================
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+// ============================================================================
+// REGIONAL PASTURE-RAISED EGG PRICES
+// ----------------------------------------------------------------------------
+// Default benchmarks for "what would these eggs have cost at the grocery store
+// if I bought pasture-raised". Sources: USDA Weekly Grocery Store Egg Feature
+// Activity (March 2026), state egg pricing data, and consumer reports.
+//
+// We map by US state (from the location label) since national average is too
+// blunt — Hawaii / CA / Northeast pay way more than Midwest / South.
+// ============================================================================
+const PASTURE_PRICES_BY_STATE = {
+  // Highest-priced regions
+  "Hawaii": 11.00,
+  "California": 9.50,
+  "Alaska": 9.00,
+  "New York": 8.50,
+  "Massachusetts": 8.50,
+  "Connecticut": 8.50,
+  "New Jersey": 8.50,
+  "Washington": 8.25,
+  "Oregon": 8.00,
+  "Vermont": 8.00,
+  "Maine": 7.99,
+  "New Hampshire": 7.99,
+  "Rhode Island": 7.99,
+  "Maryland": 7.75,
+  "District of Columbia": 8.00,
+  "Virginia": 7.50,
+  "Pennsylvania": 7.50,
+  "Florida": 7.50,
+  "Colorado": 7.50,
+  "Illinois": 7.25,
+  "Texas": 7.00,
+  "Arizona": 7.00,
+  "Nevada": 7.50,
+  "Michigan": 7.00,
+  "Ohio": 6.99,
+  "Indiana": 6.75,
+  "Wisconsin": 6.99,
+  "Minnesota": 6.99,
+  // Mid-tier
+  "North Carolina": 6.50,
+  "South Carolina": 6.50,
+  "Georgia": 6.50,
+  "Tennessee": 6.25,
+  "New Mexico": 6.50,
+  "Utah": 6.75,
+  "Idaho": 6.50,
+  "Montana": 6.50,
+  "Wyoming": 6.50,
+  "North Dakota": 6.25,
+  "South Dakota": 6.25,
+  "Nebraska": 6.00,
+  "Kansas": 5.99,
+  "Iowa": 5.99,
+  "Missouri": 5.99,
+  // Lower-priced regions
+  "Kentucky": 5.75,
+  "West Virginia": 5.75,
+  "Oklahoma": 5.75,
+  "Arkansas": 5.50,
+  "Alabama": 5.50,
+  "Louisiana": 5.50,
+  "Mississippi": 5.25,
+  "Delaware": 6.99,
+};
+
+const PASTURE_PRICE_DEFAULT = 7.99; // National grocery feature weighted avg, March 2026
+
+// Pull the right benchmark based on the user's location label.
+// `location` is { lat, lon, label } where label is "Atchison, Kansas" or similar.
+function pickRegionalEggPrice(location) {
+  if (!location || !location.label) return PASTURE_PRICE_DEFAULT;
+  // The label format is "City, State" or "City, State, US"
+  const parts = location.label.split(",").map((s) => s.trim());
+  // Try each part — the state usually comes second
+  for (const part of parts) {
+    if (PASTURE_PRICES_BY_STATE[part] != null) {
+      return PASTURE_PRICES_BY_STATE[part];
+    }
+  }
+  return PASTURE_PRICE_DEFAULT;
+}
+
 function shortDate(dateStr) {
   if (!dateStr) return "";
   const d = new Date(dateStr);
@@ -712,7 +808,22 @@ function computeStats(data, year) {
     });
   });
   const eggLayerTotalCost = eggLayerFeedCost + eggLayerInfraCost + eggLayerBirdCost;
-  const eggLayerNetProfit = eggRevenue - eggLayerTotalCost;
+
+  // Cost per dozen produced — what each dozen of eggs you laid actually cost you
+  const eggLayerCostPerDozen = dozensCollected > 0 ? eggLayerTotalCost / dozensCollected : 0;
+
+  // Money saved by having backyard eggs vs. buying PASTURE-RAISED at the store.
+  // Pasture-raised is the right comparison because that's effectively what
+  // backyard eggs are — hens out on grass, foraging, eating bugs and scraps.
+  // Default: $7.99/dozen (USDA grocery feature data, March 2026 weighted avg).
+  // Regional adjustments based on the user's saved homesteadLocation.
+  const benchmarkPricePerDozen = (
+    data.eggBenchmarkPricePerDozen != null && data.eggBenchmarkPricePerDozen > 0
+      ? Number(data.eggBenchmarkPricePerDozen)
+      : pickRegionalEggPrice(data.homesteadLocation)
+  );
+  const groceryStoreEquivalent = dozensCollected * benchmarkPricePerDozen;
+  const moneySavedVsBuying = groceryStoreEquivalent - eggLayerTotalCost;
 
   // Eggs by month
   const eggRevenueByMonth = {};
@@ -887,7 +998,10 @@ function computeStats(data, year) {
     eggLayerInfraCost,
     eggLayerBirdCost,
     eggLayerTotalCost,
-    eggLayerNetProfit,
+    eggLayerCostPerDozen,
+    benchmarkPricePerDozen,
+    groceryStoreEquivalent,
+    moneySavedVsBuying,
     eggRevenueByMonth,
     peakEggMonth,
     totalHarvestLbs,
