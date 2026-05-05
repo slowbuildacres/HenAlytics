@@ -159,8 +159,8 @@ function HeadlinesCard({ stats }) {
         />
         <BigStat
           icon="🍗"
-          number={Math.max(stats.birdsRaised, stats.birdsButchered)}
-          label={`meat bird${stats.birdsRaised === 1 ? "" : "s"} raised`}
+          number={Math.max(stats.birdsSurvived, stats.birdsButchered)}
+          label={`meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`}
           accent={palette.feather}
         />
         <BigStat
@@ -365,7 +365,12 @@ function GardenCard({ stats }) {
 
 function MeatChickensCard({ stats }) {
   if (!stats.birdsRaised && !stats.birdsButchered) return null;
-  const { birdsRaised, birdsButchered, totalMeatLbs, birdDeaths, mortalityRate } = stats;
+  const {
+    birdsRaised, birdsSurvived, birdsButchered, totalMeatLbs, birdDeaths, mortalityRate,
+    meatChickenFeedCost, meatChickenInfraCost, meatChickenChickCost,
+    meatChickenTotalCost, meatCostPerLb,
+  } = stats;
+  const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
   return (
     <Card accent={palette.card}>
@@ -377,12 +382,55 @@ function MeatChickensCard({ stats }) {
           <CountUp number={Math.round(totalMeatLbs)} suffix="lbs in the freezer" big />
           <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
             From <strong style={{ color: palette.ink }}>{birdsButchered}</strong> bird{birdsButchered === 1 ? "" : "s"} butchered
+            {birdsRaised > 0 && (
+              <> · started with <strong style={{ color: palette.ink }}>{birdsRaised}</strong></>
+            )}
           </div>
         </>
       ) : (
         <>
-          <CountUp number={birdsRaised} suffix="birds raised" big />
+          <CountUp number={birdsSurvived} suffix="birds raised" big />
+          {birdsRaised !== birdsSurvived && (
+            <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
+              From <strong style={{ color: palette.ink }}>{birdsRaised}</strong> started · {birdDeaths} lost
+            </div>
+          )}
         </>
+      )}
+
+      {/* Money breakdown for meat chickens — only shown when there are real costs */}
+      {meatChickenTotalCost > 0 && (
+        <div style={{ marginTop: 4, marginBottom: 14 }}>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
+            The numbers
+          </div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {meatCostPerLb > 0 && (
+              <Stat
+                big={fmtMoney(meatCostPerLb)}
+                label="cost per lb of meat"
+                accent={palette.feather}
+              />
+            )}
+            <Stat
+              big={fmtMoney(meatChickenTotalCost)}
+              label="total spent on meat birds"
+              accent={palette.feather}
+            />
+          </div>
+
+          {/* Itemized cost breakdown */}
+          <div style={{
+            marginTop: 12, padding: 10,
+            background: palette.bgAlt, borderRadius: 8,
+            fontSize: 12, color: palette.inkSoft, lineHeight: 1.6,
+          }}>
+            <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 4 }}>Costs broken down:</div>
+            {meatChickenFeedCost > 0 && <div>🌾 Feed · <strong style={{ color: palette.ink }}>{fmtMoney(meatChickenFeedCost)}</strong></div>}
+            {meatChickenInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(meatChickenInfraCost)}</strong></div>}
+            {meatChickenChickCost > 0 && <div>🐣 Chick purchases · <strong style={{ color: palette.ink }}>{fmtMoney(meatChickenChickCost)}</strong></div>}
+          </div>
+        </div>
       )}
 
       {birdDeaths > 0 && (
@@ -791,13 +839,15 @@ function computeStats(data, year) {
   }, 0);
 
   // Egg layer costs: feed + infrastructure on egg_layers hobby + bird purchases
+  // CRITICAL: each filter explicitly checks hobbyType to prevent meat-chicken
+  // costs from polluting egg-layer numbers (or vice versa).
   const eggLayerFeedCost = allEntries
     .filter((e) => e.action === "fed" && e.hobbyType === "egg_layers")
     .reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const eggLayerInfraCost = allEntries
     .filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers")
     .reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  // Bird purchases this year (from flockHistory)
+  // Bird purchases this year (from flockHistory on the egg_layers hobby ONLY)
   let eggLayerBirdCost = 0;
   (data.hobbies || []).forEach((h) => {
     if (h.type !== "egg_layers") return;
@@ -808,6 +858,29 @@ function computeStats(data, year) {
     });
   });
   const eggLayerTotalCost = eggLayerFeedCost + eggLayerInfraCost + eggLayerBirdCost;
+
+  // Meat chicken costs: same filters but for meat_chickens
+  const meatChickenFeedCost = allEntries
+    .filter((e) => e.action === "fed" && e.hobbyType === "meat_chickens")
+    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const meatChickenInfraCost = allEntries
+    .filter((e) => e.action === "infrastructure" && e.hobbyType === "meat_chickens")
+    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  // Chick purchases on meat_chickens hobby (from archived + current batches' chickCost)
+  let meatChickenChickCost = 0;
+  (data.hobbies || []).forEach((h) => {
+    if (h.type !== "meat_chickens") return;
+    if (h.currentBatch && h.currentBatch.startDate && h.currentBatch.startDate.startsWith(yearStr)) {
+      meatChickenChickCost += Number(h.currentBatch.chickCost) || 0;
+    }
+    (h.archivedBatches || []).forEach((b) => {
+      if (b.startDate && b.startDate.startsWith(yearStr)) {
+        meatChickenChickCost += Number(b.chickCost) || 0;
+      }
+    });
+  });
+  const meatChickenTotalCost = meatChickenFeedCost + meatChickenInfraCost + meatChickenChickCost;
+  // meatCostPerLb is computed after totalMeatLbs is defined below.
 
   // Cost per dozen produced — what each dozen of eggs you laid actually cost you
   const eggLayerCostPerDozen = dozensCollected > 0 ? eggLayerTotalCost / dozensCollected : 0;
@@ -870,6 +943,8 @@ function computeStats(data, year) {
     const w = Number(e.avgWeight) || 0;
     return s + c * w;
   }, 0);
+  // Cost per lb of meat — only meaningful once you've butchered.
+  const meatCostPerLb = (totalMeatLbs > 0) ? meatChickenTotalCost / totalMeatLbs : 0;
   const birdDeaths = allEntries.filter((e) => e.action === "death" && e.hobbyType === "meat_chickens")
     .reduce((s, e) => s + (Number(e.count) || 1), 0);
 
@@ -888,6 +963,9 @@ function computeStats(data, year) {
   });
 
   const mortalityRate = birdsRaised > 0 ? (birdDeaths / birdsRaised) * 100 : 0;
+  // Birds that survived to butchering (or are still alive). Excludes birds that died.
+  // Used as the "headline" raised count since "raised" implies they made it.
+  const birdsSurvived = Math.max(0, birdsRaised - birdDeaths);
 
   // Activity / streaks / busiest month
   const datesSet = new Set(allEntries.map((e) => e.date));
@@ -1009,10 +1087,16 @@ function computeStats(data, year) {
     plantingsCount,
     topPlants,
     birdsRaised,
+    birdsSurvived,
     birdsButchered,
     totalMeatLbs,
     birdDeaths,
     mortalityRate,
+    meatChickenFeedCost,
+    meatChickenInfraCost,
+    meatChickenChickCost,
+    meatChickenTotalCost,
+    meatCostPerLb,
     busiestMonth,
     longestStreak,
     weatherStats,
