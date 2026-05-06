@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
-  Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign,
+  Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign, Sparkles,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
@@ -22,6 +22,11 @@ import {
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
 import LoadingScene from "./LoadingScene.jsx";
+import CalendarPage from "./Calendar.jsx";
+import {
+  PlanCropModal, PlanBirdsModal, AddCalendarEventModal,
+  EditCalendarEventModal, EditZoneModal, ViewDayEventsModal,
+} from "./CalendarModals.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -53,6 +58,7 @@ const defaultData = () => ({
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
   butchered: [], // butcher events for current batch
+  calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
 });
 
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
@@ -61,6 +67,7 @@ function migrateData(data) {
   if (!Array.isArray(data.hobbies)) data.hobbies = defaultData().hobbies;
   if (!data.entries || typeof data.entries !== "object") data.entries = {};
   if (!Array.isArray(data.plantings)) data.plantings = [];
+  if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (typeof data.homesteadName !== "string") data.homesteadName = "";
   if (data.homesteadLocation !== null && (!data.homesteadLocation || typeof data.homesteadLocation !== "object")) {
     data.homesteadLocation = null;
@@ -561,7 +568,7 @@ export default function HomesteadApp() {
         </div>
 
         {/* HOBBY PICKER (hidden on Photos page since it shows all hobbies) */}
-        {page !== "photos" && page !== "year" && (
+        {page !== "photos" && page !== "year" && page !== "calendar" && (
         <div style={{ maxWidth: 720, margin: "16px auto 0", position: "relative" }}>
           <button
             onClick={() => setHobbyMenuOpen(!hobbyMenuOpen)}
@@ -631,18 +638,22 @@ export default function HomesteadApp() {
         {page === "year" && (
           <YearInReviewPage data={data} />
         )}
+        {page === "calendar" && (
+          <CalendarPage data={data} update={update} setModal={setModal} />
+        )}
       </main>
 
-      {/* BOTTOM NAV — 4 tabs, compact layout */}
+      {/* BOTTOM NAV — 5 tabs, compact layout */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
-        background: palette.ink, padding: "8px 8px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
-        display: "flex", justifyContent: "center", gap: 4, zIndex: 50,
+        background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
+        display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
         <NavTab active={page === "home"} onClick={() => setPage("home")} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
+        <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         <NavTab active={page === "photos"} onClick={() => setPage("photos")} icon={ImageIcon} label="Photos" />
-        <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Calendar} label="Year" />
+        <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
       </nav>
 
       {/* MODALS */}
@@ -2099,6 +2110,12 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
+  if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} />;
+  if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} />;
+  if (modal.type === "addCalendarEvent") return <AddCalendarEventModal update={update} onClose={close} />;
+  if (modal.type === "editCalendarEvent") return <EditCalendarEventModal data={data} update={update} eventId={modal.eventId} onClose={close} />;
+  if (modal.type === "editZone") return <EditZoneModal data={data} update={update} onClose={close} />;
+  if (modal.type === "viewDayEvents") return <ViewDayEventsModal data={data} update={update} date={modal.date} setModal={setModal} onClose={close} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
