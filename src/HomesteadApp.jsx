@@ -3,7 +3,7 @@ import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
   Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign, Sparkles,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
-  Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut,
+  Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
   MapPin, CloudRain, Thermometer
 } from "lucide-react";
@@ -89,6 +89,98 @@ function migrateData(data) {
   });
 
   return data;
+}
+
+// ============ PHOTO HELPERS ============
+// Backwards compatibility: old entries use `entry.photoPath` (single string),
+// new entries use `entry.photoPaths` (array). This helper returns a unified array
+// of photo paths for any entry, regardless of which shape it has.
+function getEntryPhotos(entry) {
+  if (!entry) return [];
+  if (Array.isArray(entry.photoPaths) && entry.photoPaths.length > 0) {
+    return entry.photoPaths;
+  }
+  if (entry.photoPath) {
+    return [entry.photoPath];
+  }
+  return [];
+}
+// Returns the first/primary photo path for thumbnail uses, or null.
+function getEntryPrimaryPhoto(entry) {
+  const all = getEntryPhotos(entry);
+  return all.length > 0 ? all[0] : null;
+}
+
+// ============ CSV EXPORT ============
+// Bundles all the user's entries into a multi-sheet zip-friendly format.
+// Since real CSV multi-sheet would need a library, we instead make ONE wide CSV
+// with a "Hobby" column, plus separate downloads for cleaner per-hobby files.
+// We'll trigger one combined CSV download — the simplest, most useful default.
+function exportAllAsCsv(data) {
+  // Collect all entries into one flat array, with hobby info attached.
+  const rows = [];
+  const hobbies = data.hobbies || [];
+
+  hobbies.forEach((h) => {
+    const liveEntries = (data.entries[h.id] || []).map((e) => ({ ...e, hobbyName: h.name, hobbyType: h.type, archived: false }));
+    rows.push(...liveEntries);
+
+    // Pull from archived seasons / batches
+    (h.archivedSeasons || []).forEach((s) => {
+      (s.finalEntries || []).forEach((e) => {
+        rows.push({ ...e, hobbyName: h.name, hobbyType: h.type, archived: true, contextName: s.name || "" });
+      });
+    });
+    (h.archivedBatches || []).forEach((b) => {
+      (b.finalEntries || []).forEach((e) => {
+        rows.push({ ...e, hobbyName: h.name, hobbyType: h.type, archived: true, contextName: b.name || "" });
+      });
+    });
+  });
+
+  // Sort newest first
+  rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  // Define columns. Order matters — most useful first.
+  const columns = [
+    "date", "hobbyName", "action", "count", "quantity", "unit", "plant",
+    "lbs", "gallons", "cost", "pricePerDozen", "avgWeight", "cuft",
+    "item", "cause", "issueType", "detail", "note",
+    "weather_highF", "weather_lowF", "weather_precipIn", "weather_summary",
+    "contextName", "archived",
+  ];
+
+  const escape = (val) => {
+    if (val == null) return "";
+    const s = String(val);
+    // If has comma, quote, or newline, wrap in quotes and double internal quotes
+    if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
+    return s;
+  };
+
+  const headerRow = columns.join(",");
+  const bodyRows = rows.map((r) => columns.map((c) => {
+    if (c === "weather_highF") return escape(r.weather && r.weather.highF != null ? r.weather.highF : "");
+    if (c === "weather_lowF")  return escape(r.weather && r.weather.lowF  != null ? r.weather.lowF  : "");
+    if (c === "weather_precipIn") return escape(r.weather && r.weather.precipIn != null ? r.weather.precipIn : "");
+    if (c === "weather_summary") return escape(r.weather && r.weather.summary ? r.weather.summary : "");
+    return escape(r[c]);
+  }).join(","));
+
+  const csv = [headerRow, ...bodyRows].join("\n");
+
+  // Download as file
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const dateStr = new Date().toISOString().slice(0, 10);
+  const safeName = (data.homesteadName || "homestead").replace(/[^a-zA-Z0-9-_]/g, "_") || "homestead";
+  a.download = `${safeName}-export-${dateStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
 }
 
 // ============ UTIL ============
@@ -687,6 +779,9 @@ function HomePage({ hobby, data, update, setModal }) {
 
   return (
     <div>
+      {/* WHAT NEEDS ATTENTION — proactive nudges based on entry history */}
+      <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} />
+
       {/* HOBBY-SPECIFIC SUMMARY */}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
@@ -718,8 +813,8 @@ function HomePage({ hobby, data, update, setModal }) {
               hobbyType={hobby.type}
               onEdit={() => setModal({ type: "log", action: e.action, existingEntry: e })}
               onDelete={() => {
-                // Best-effort: clean up the photo from storage if there was one.
-                if (e.photoPath) deletePhoto(e.photoPath).catch(() => {});
+                // Best-effort: clean up ALL photos from storage if there were any.
+                getEntryPhotos(e).forEach((p) => deletePhoto(p).catch(() => {}));
                 update((d) => {
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
                   return d;
@@ -801,6 +896,166 @@ function QuickLogTiles({ hobby, setModal }) {
   return (
     <div style={grid}>
       <Tile icon={Plus} label="Quick Note" onClick={() => setModal({ type: "log", action: "note" })} />
+    </div>
+  );
+}
+
+// ============================================================================
+// NeedsAttentionCard — proactive nudges based on entry history
+// ----------------------------------------------------------------------------
+// Inspects the entries for this hobby and generates 0-N short messages about
+// things that may need attention (haven't watered in a while, no eggs today,
+// etc.). Only renders when at least one nudge is active so the home page stays
+// clean for active users.
+// ============================================================================
+function NeedsAttentionCard({ hobby, entries, setModal }) {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const todayIso = today.toISOString().slice(0, 10);
+  const dayMs = 24 * 60 * 60 * 1000;
+
+  const daysSince = (action) => {
+    const matching = entries.filter((e) => e.action === action);
+    if (matching.length === 0) return null;
+    const newest = matching.reduce((latest, e) => (e.date > latest ? e.date : latest), matching[0].date);
+    const diffDays = Math.floor((today.getTime() - new Date(newest + "T12:00").getTime()) / dayMs);
+    return diffDays;
+  };
+
+  const nudges = [];
+
+  if (hobby.type === "egg_layers" && hobby.flockSize > 0) {
+    // Eggs not collected today
+    const collectedToday = entries.some((e) => e.date === todayIso && (e.action === "eggs" || e.action === "eggs_laid"));
+    const basketCount = (hobby.eggBasket && hobby.eggBasket.date === todayIso) ? hobby.eggBasket.count : 0;
+    if (!collectedToday && basketCount === 0) {
+      nudges.push({
+        icon: "🥚",
+        text: "No eggs logged yet today",
+        action: () => setModal({ type: "log", action: "eggs" }),
+        actionLabel: "Log eggs",
+      });
+    }
+    // Feed > 7 days
+    const feedDays = daysSince("fed");
+    if (feedDays === null) {
+      nudges.push({
+        icon: "🌾",
+        text: "No feed costs logged yet",
+        sub: "Helps the cost-per-dozen math work",
+        action: () => setModal({ type: "log", action: "fed" }),
+        actionLabel: "Log feed",
+      });
+    } else if (feedDays > 14) {
+      nudges.push({
+        icon: "🌾",
+        text: `Last feed entry was ${feedDays} days ago`,
+        action: () => setModal({ type: "log", action: "fed" }),
+        actionLabel: "Log feed",
+      });
+    }
+  }
+
+  if (hobby.type === "garden" && hobby.currentSeason) {
+    // Watered in the last 5 days?
+    const wateredDays = daysSince("watered");
+    if (wateredDays === null || wateredDays > 5) {
+      nudges.push({
+        icon: "💧",
+        text: wateredDays === null
+          ? "No watering logged this season"
+          : `Last watered ${wateredDays} days ago`,
+        action: () => setModal({ type: "log", action: "watered" }),
+        actionLabel: "Log watering",
+      });
+    }
+  }
+
+  if (hobby.type === "meat_chickens" && hobby.currentBatch) {
+    const batch = hobby.currentBatch;
+    const startDate = batch.startDate ? new Date(batch.startDate + "T12:00") : null;
+    if (startDate) {
+      const ageWeeks = Math.floor((today.getTime() - startDate.getTime()) / (7 * dayMs));
+      if (ageWeeks >= 7 && ageWeeks <= 9) {
+        nudges.push({
+          icon: "🍗",
+          text: `Birds are ${ageWeeks} weeks old`,
+          sub: "Cornish Cross typically butcher around 7-8 weeks",
+          action: () => setModal({ type: "hatchBatch" }),
+          actionLabel: "Send to freezer camp",
+        });
+      } else if (ageWeeks > 9) {
+        nudges.push({
+          icon: "🍗",
+          text: `Birds are ${ageWeeks} weeks old — past typical butcher age`,
+          sub: "Each extra week means more feed cost",
+          action: () => setModal({ type: "hatchBatch" }),
+          actionLabel: "Send to freezer camp",
+        });
+      }
+    }
+    // Feed
+    const feedDays = daysSince("fed");
+    if (feedDays !== null && feedDays > 7) {
+      nudges.push({
+        icon: "🌾",
+        text: `Last feed entry was ${feedDays} days ago`,
+        action: () => setModal({ type: "log", action: "fed" }),
+        actionLabel: "Log feed",
+      });
+    }
+  }
+
+  if (nudges.length === 0) return null;
+
+  return (
+    <div style={{
+      background: palette.yolkSoft,
+      border: `1.5px solid ${palette.line}`,
+      borderRadius: 12,
+      padding: 14,
+      marginBottom: 14,
+    }}>
+      <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+        Needs attention
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {nudges.map((n, i) => (
+          <div key={i} style={{
+            display: "flex", alignItems: "center", gap: 10,
+            padding: "10px 12px",
+            background: palette.card,
+            borderRadius: 8,
+            border: `1.5px solid ${palette.line}`,
+          }}>
+            <div style={{ fontSize: 22, flexShrink: 0 }}>{n.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 13, color: palette.ink, fontWeight: 500 }}>
+                {n.text}
+              </div>
+              {n.sub && (
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+                  {n.sub}
+                </div>
+              )}
+            </div>
+            {n.action && (
+              <button
+                onClick={n.action}
+                style={{
+                  padding: "6px 10px", fontSize: 12, fontWeight: 600,
+                  background: palette.ink, color: palette.bg,
+                  border: "none", borderRadius: 6,
+                  cursor: "pointer", flexShrink: 0,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                {n.actionLabel}
+              </button>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1238,7 +1493,20 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
           </div>
         )}
       </div>
-      {entry.photoPath && <EntryPhotoThumb path={entry.photoPath} />}
+      {(() => {
+        const photos = getEntryPhotos(entry);
+        if (photos.length === 0) return null;
+        return (
+          <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+            <EntryPhotoThumb path={photos[0]} />
+            {photos.length > 1 && (
+              <span style={{ fontSize: 10, color: palette.inkSoft, fontWeight: 600 }}>
+                +{photos.length - 1}
+              </span>
+            )}
+          </div>
+        );
+      })()}
       {onEdit && (
         <button
           onClick={onEdit}
@@ -1260,7 +1528,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
 }
 
 // Small async-loaded thumbnail. Tappable: opens a fullscreen lightbox.
-function EntryPhotoThumb({ path }) {
+function EntryPhotoThumb({ path, size = 40 }) {
   const [url, setUrl] = useState(null);
   const [open, setOpen] = useState(false);
 
@@ -1273,11 +1541,11 @@ function EntryPhotoThumb({ path }) {
   if (!url) {
     return (
       <div style={{
-        width: 40, height: 40, borderRadius: 6, background: palette.bgAlt,
+        width: size, height: size, borderRadius: 6, background: palette.bgAlt,
         display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
         border: `1px solid ${palette.line}`,
       }}>
-        <ImageIcon size={14} color={palette.inkSoft} />
+        <ImageIcon size={Math.round(size * 0.4)} color={palette.inkSoft} />
       </div>
     );
   }
@@ -1287,7 +1555,7 @@ function EntryPhotoThumb({ path }) {
       <button
         onClick={() => setOpen(true)}
         style={{
-          width: 40, height: 40, borderRadius: 6, padding: 0,
+          width: size, height: size, borderRadius: 6, padding: 0,
           background: `url(${url}) center/cover`,
           border: `1px solid ${palette.line}`,
           cursor: "pointer", flexShrink: 0,
@@ -1828,6 +2096,17 @@ function PhotoLibraryPage({ data, user }) {
     );
   }
 
+  // Helper: turn a list of entries into a flat list of photo records, expanding
+  // multi-photo entries into multiple rows.
+  const expandPhotos = (entries) => {
+    const out = [];
+    entries.forEach((e) => {
+      const paths = getEntryPhotos(e);
+      paths.forEach((p) => out.push({ path: p, entry: e, date: e.date }));
+    });
+    return out;
+  };
+
   // Build the photo collections, grouped by hobby and then by season/batch.
   // Each "group" has: { id, label, photos: [{path, entry, date}] }
   const sections = data.hobbies.map((hobby) => {
@@ -1838,17 +2117,13 @@ function PhotoLibraryPage({ data, user }) {
       const groups = [];
       const archived = hobby.archivedSeasons || [];
       archived.forEach((s) => {
-        const photos = (s.finalEntries || [])
-          .filter((e) => e.photoPath)
-          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        const photos = expandPhotos(s.finalEntries || []);
         if (photos.length > 0) {
           groups.push({ id: s.id, label: s.name, photos, dateForSort: s.startDate });
         }
       });
       if (hobby.currentSeason) {
-        const photos = allEntries
-          .filter((e) => e.seasonId === hobby.currentSeason.id && e.photoPath)
-          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        const photos = expandPhotos(allEntries.filter((e) => e.seasonId === hobby.currentSeason.id));
         if (photos.length > 0) {
           groups.push({
             id: hobby.currentSeason.id,
@@ -1868,17 +2143,13 @@ function PhotoLibraryPage({ data, user }) {
       const groups = [];
       const archived = hobby.archivedBatches || [];
       archived.forEach((b) => {
-        const photos = (b.finalEntries || [])
-          .filter((e) => e.photoPath)
-          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        const photos = expandPhotos(b.finalEntries || []);
         if (photos.length > 0) {
           groups.push({ id: b.id, label: b.name, photos, dateForSort: b.startDate });
         }
       });
       if (hobby.currentBatch) {
-        const photos = allEntries
-          .filter((e) => e.batchId === hobby.currentBatch.id && e.photoPath)
-          .map((e) => ({ path: e.photoPath, entry: e, date: e.date }));
+        const photos = expandPhotos(allEntries.filter((e) => e.batchId === hobby.currentBatch.id));
         if (photos.length > 0) {
           groups.push({
             id: hobby.currentBatch.id,
@@ -1894,12 +2165,12 @@ function PhotoLibraryPage({ data, user }) {
     }
 
     // Other hobbies (egg layers, custom): group by date-derived season.
-    const photoEntries = allEntries.filter((e) => e.photoPath);
+    const photosFlat = expandPhotos(allEntries);
     const bySeason = {};
-    photoEntries.forEach((e) => {
-      const s = getSeason(e.date);
+    photosFlat.forEach((p) => {
+      const s = getSeason(p.date);
       if (!bySeason[s]) bySeason[s] = [];
-      bySeason[s].push({ path: e.photoPath, entry: e, date: e.date });
+      bySeason[s].push(p);
     });
     const groups = Object.entries(bySeason)
       .map(([label, photos]) => ({ id: label, label, photos, dateForSort: photos[0]?.date }))
@@ -2308,6 +2579,33 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
         accent={palette.leaf}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "location" }), 0); }}
       />
+
+      <SectionBtn
+        icon={Download}
+        label="Export to CSV"
+        sub="Download all your entries as spreadsheets"
+        accent={palette.leaf}
+        onClick={() => {
+          exportAllAsCsv(data);
+        }}
+      />
+
+      {user && (
+        <SectionBtn
+          icon={Mail}
+          label={data.weeklyDigestOptIn ? "Weekly summary email: ON" : "Weekly summary email: off"}
+          sub={data.weeklyDigestOptIn
+            ? "We'll email you a recap every Sunday"
+            : "Get a weekly recap of your homestead by email"}
+          accent={data.weeklyDigestOptIn ? palette.leaf : palette.inkSoft}
+          onClick={() => {
+            update((d) => {
+              d.weeklyDigestOptIn = !d.weeklyDigestOptIn;
+              return d;
+            });
+          }}
+        />
+      )}
 
       <SectionBtn
         icon={Lightbulb}
@@ -3224,17 +3522,26 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
   const [fields, setFields] = useState(() => {
     if (!existingEntry) return {};
     // Copy all fields except metadata
-    const { id, date: _d, action: _a, created, photoPath, weather, batchId, seasonId, ...rest } = existingEntry;
+    const { id, date: _d, action: _a, created, photoPath, photoPaths, weather, batchId, seasonId, ...rest } = existingEntry;
     return rest;
   });
-  const [photoFile, setPhotoFile] = useState(null);  // selected file before upload (only if user changes it)
+  // existingPaths: paths from already-uploaded photos that we want to KEEP on this entry.
+  // (Distinct from new files the user is uploading this session.)
+  const [existingPaths, setExistingPaths] = useState(() => {
+    if (!existingEntry) return [];
+    return getEntryPhotos(existingEntry);
+  });
+  // photoFiles: NEW File objects selected this session, not yet uploaded.
+  const [photoFiles, setPhotoFiles] = useState([]);
   const [photoUploading, setPhotoUploading] = useState(false);
   const [photoError, setPhotoError] = useState("");
 
   const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
 
-  // Which actions support attaching a photo
+  // Which actions support attaching photos
   const supportsPhoto = ["note", "harvested", "planted", "issue"].includes(action);
+  const MAX_PHOTOS = 5;
+  const totalPhotoCount = existingPaths.length + photoFiles.length;
 
   const submit = async () => {
     // Coerce numeric fields from string inputs to actual numbers
@@ -3247,12 +3554,14 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       }
     });
 
-    // We need an entry id up front so we can attach the photo to it.
+    // We need an entry id up front so we can attach photos to it.
     // For edits, we keep the existing id so we don't create a duplicate.
     const entryId = isEdit ? existingEntry.id : newId();
-    let photoPath = isEdit ? (existingEntry.photoPath || null) : null;
 
-    if (photoFile) {
+    // Upload any newly-selected photos in parallel. existingPaths are kept as-is.
+    let finalPaths = [...existingPaths];
+
+    if (photoFiles.length > 0) {
       if (!user) {
         setPhotoError("Sign in first to upload photos.");
         return;
@@ -3260,16 +3569,30 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       setPhotoUploading(true);
       setPhotoError("");
       try {
-        // If editing and there was an old photo, delete it after the new one uploads.
-        const oldPhotoPath = isEdit ? existingEntry.photoPath : null;
-        photoPath = await uploadPhoto(user, entryId, photoFile);
-        if (oldPhotoPath) deletePhoto(oldPhotoPath).catch(() => {});
+        const uploaded = await Promise.all(
+          photoFiles.map((f) => uploadPhoto(user, entryId, f))
+        );
+        finalPaths = [...finalPaths, ...uploaded];
+
+        // If editing, also delete photos the user removed from existingPaths
+        // (compared to what was originally on the entry).
+        if (isEdit) {
+          const wasOnEntry = getEntryPhotos(existingEntry);
+          const removed = wasOnEntry.filter((p) => !existingPaths.includes(p));
+          removed.forEach((p) => deletePhoto(p).catch(() => {}));
+        }
       } catch (e) {
-        setPhotoError(e.message || "Upload failed. Try again or save without a photo.");
+        setPhotoError(e.message || "Upload failed. Try again or save without photos.");
         setPhotoUploading(false);
         return;
       }
       setPhotoUploading(false);
+    } else if (isEdit) {
+      // No new photos uploaded, but we may still need to delete photos
+      // the user removed from existingPaths.
+      const wasOnEntry = getEntryPhotos(existingEntry);
+      const removed = wasOnEntry.filter((p) => !existingPaths.includes(p));
+      removed.forEach((p) => deletePhoto(p).catch(() => {}));
     }
 
     // Fetch weather only for new entries — preserve existing weather on edits.
@@ -3297,7 +3620,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         created: isEdit ? existingEntry.created : Date.now(),
         ...cleanFields,
       };
-      if (photoPath) entry.photoPath = photoPath;
+      if (finalPaths.length > 0) entry.photoPaths = finalPaths;
       if (weather) entry.weather = weather;
       // Preserve batch/season association when editing
       if (isEdit) {
@@ -3537,51 +3860,93 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         </Field>
       )}
 
-      {/* PHOTO UPLOAD — only shown for signed-in users */}
+      {/* PHOTO UPLOAD — supports up to 5 photos per entry */}
       {user && (
-        <Field label="Photo (optional)">
-          {!photoFile ? (
+        <Field label={`Photos (optional) — ${totalPhotoCount}/${MAX_PHOTOS}`}>
+          {/* Existing already-uploaded photos */}
+          {existingPaths.length > 0 && (
+            <div style={{
+              display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 8,
+            }}>
+              {existingPaths.map((p) => (
+                <div key={p} style={{ position: "relative" }}>
+                  <EntryPhotoThumb path={p} size={64} />
+                  <button
+                    type="button"
+                    onClick={() => setExistingPaths((paths) => paths.filter((x) => x !== p))}
+                    style={{
+                      position: "absolute", top: -4, right: -4,
+                      width: 22, height: 22, borderRadius: 11,
+                      background: palette.accent, color: "white",
+                      border: "none", cursor: "pointer", fontSize: 12, lineHeight: 1,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                    title="Remove this photo"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Newly-selected files (not yet uploaded) */}
+          {photoFiles.length > 0 && (
+            <div style={{
+              display: "flex", flexDirection: "column", gap: 6, marginBottom: 8,
+            }}>
+              {photoFiles.map((f, i) => (
+                <div key={i} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "8px 10px", borderRadius: 8,
+                  border: `1.5px solid ${palette.line}`, background: palette.card,
+                }}>
+                  <ImageIcon size={16} strokeWidth={1.8} color={palette.leaf} />
+                  <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {f.name} <span style={{ color: palette.inkSoft }}>({Math.round(f.size / 1024)} KB)</span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setPhotoFiles((files) => files.filter((_, j) => j !== i))}
+                    style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
+                    title="Remove"
+                  >
+                    <X size={14} />
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {/* Add-photo button — disabled when at max */}
+          {totalPhotoCount < MAX_PHOTOS && (
             <label style={{
               display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "16px", borderRadius: 8,
+              padding: "14px", borderRadius: 8,
               border: `1.5px dashed ${palette.line}`, background: palette.bgAlt,
               cursor: "pointer", color: palette.inkSoft, fontSize: 13,
             }}>
               <Camera size={18} strokeWidth={1.8} />
-              Tap to add a photo
+              {totalPhotoCount === 0 ? "Tap to add photos" : "Add another photo"}
               <input
                 type="file"
                 accept="image/*"
+                multiple
                 style={{ display: "none" }}
                 onChange={(e) => {
-                  const f = e.target.files && e.target.files[0];
-                  if (f) {
-                    setPhotoFile(f);
-                    setPhotoError("");
-                  }
+                  const files = Array.from(e.target.files || []);
+                  if (files.length === 0) return;
+                  // Cap to remaining slots
+                  const remaining = MAX_PHOTOS - totalPhotoCount;
+                  setPhotoFiles((current) => [...current, ...files.slice(0, remaining)]);
+                  setPhotoError("");
+                  // Reset input so picking the same file twice still triggers change
+                  e.target.value = "";
                 }}
               />
             </label>
-          ) : (
-            <div style={{
-              display: "flex", alignItems: "center", gap: 10,
-              padding: "10px 12px", borderRadius: 8,
-              border: `1.5px solid ${palette.line}`, background: palette.card,
-            }}>
-              <ImageIcon size={18} strokeWidth={1.8} color={palette.leaf} />
-              <div style={{ flex: 1, minWidth: 0, fontSize: 13, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                {photoFile.name} <span style={{ color: palette.inkSoft }}>({Math.round(photoFile.size / 1024)} KB)</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setPhotoFile(null); setPhotoError(""); }}
-                style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
-                title="Remove"
-              >
-                <X size={16} />
-              </button>
-            </div>
           )}
+
           {photoError && (
             <div style={{ fontSize: 12, color: palette.accent, marginTop: 6 }}>
               {photoError}
