@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Free Homestead Tracking App: Why I Built One Instead of Buying — Henalytics</title>
+<meta name="description" content="Most homestead apps are paid, bloated, or abandoned. I built a free one for tracking gardens, egg layers, and meat birds. Here's why and how it works.">
+<meta name="keywords" content="homestead app, homestead tracker, free homestead app, garden tracker, chicken tracker, backyard homestead, small farm tracker">
+<link rel="canonical" href="https://henalytics.com/blog/free-homestead-tracking-app.html">
+
+<!-- OpenGraph for social sharing -->
+<meta property="og:title" content="Free Homestead Tracking App: Why I Built One Instead of Buying">
+<meta property="og:description" content="Most homestead apps are paid, bloated, or abandoned. I built a free one for tracking gardens, egg layers, and meat birds.">
+<meta property="og:type" content="article">
+<meta property="og:url" content="https://henalytics.com/blog/free-homestead-tracking-app.html">
+<meta property="og:image" content="https://henalytics.com/icon-512.png">
+
+<!-- Article schema for Google -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "BlogPosting",
+  "headline": "Free Homestead Tracking App: Why I Built One Instead of Buying",
+  "datePublished": "2026-05-06",
+  "dateModified": "2026-05-06",
+  "author": { "@type": "Person", "name": "The Henalytics maker" },
+  "publisher": { "@type": "Organization", "name": "Henalytics", "logo": { "@type": "ImageObject", "url": "https://henalytics.com/icon-512.png" } },
+  "image": "https://henalytics.com/icon-512.png",
+  "mainEntityOfPage": "https://henalytics.com/blog/free-homestead-tracking-app.html"
+}
+</script>
+
+<style>
+  body { margin: 0; font-family: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif; background: #F4EDE0; color: #2C1810; line-height: 1.7; }
+  .container { max-width: 720px; margin: 0 auto; padding: 40px 24px 80px; }
+  header { padding: 16px 24px; border-bottom: 1.5px solid #2C181030; background: #FAF5EA; }
+  header a { color: #2C1810; text-decoration: none; font-family: 'DM Serif Display', Georgia, serif; font-size: 22px; }
+  header nav a { font-family: 'Be Vietnam Pro', sans-serif; font-size: 14px; margin-left: 16px; color: #5C4530; }
+  h1 { font-family: 'DM Serif Display', Georgia, serif; font-size: 38px; line-height: 1.2; margin: 0 0 12px; }
+  h2 { font-family: 'DM Serif Display', Georgia, serif; font-size: 26px; margin: 36px 0 12px; }
+  h3 { font-family: 'DM Serif Display', Georgia, serif; font-size: 20px; margin: 24px 0 8px; }
+  .meta { color: #5C4530; font-size: 14px; margin-bottom: 32px; }
+  p { margin: 0 0 16px; }
+  ul, ol { padding-left: 24px; }
+  li { margin: 0 0 8px; }
+  a { color: #C84B31; }
+  blockquote { border-left: 4px solid #5A7A3C; padding-left: 16px; margin: 24px 0; font-style: italic; color: #5C4530; }
+  code { background: #EBE0CC; padding: 2px 6px; border-radius: 4px; font-size: 13px; }
+  .cta { background: #FAF5EA; border: 1.5px solid #2C181030; border-left: 4px solid #E8B547; border-radius: 12px; padding: 20px; margin: 36px 0; }
+  .cta h3 { margin: 0 0 8px; }
+  .cta a { display: inline-block; margin-top: 8px; padding: 10px 18px; background: #2C1810; color: #F4EDE0; border-radius: 8px; text-decoration: none; font-weight: 600; box-shadow: 2px 2px 0 #2C181030; }
+  footer { padding: 24px; text-align: center; color: #5C4530; font-size: 13px; border-top: 1.5px solid #2C181030; }
+</style>
+</head>
+<body>
+
+<header>
+  <div style="display: flex; align-items: center; justify-content: space-between; max-width: 720px; margin: 0 auto;">
+    <a href="/">🐔 Henalytics</a>
+    <nav>
+      <a href="/blog/">Blog</a>
+      <a href="/">App</a>
+    </nav>
+  </div>
+</header>
+
+<div class="container">
+
+<h1>Free Homestead Tracking App: Why I Built One Instead of Buying</h1>
+<div class="meta">By the maker of Henalytics · May 2026 · 6 min read</div>
+
+<p>If you've ever tried to find a decent homestead tracking app, you know the landscape. There are paid apps that lock the good features behind subscriptions. There are bloated farm-management platforms built for commercial operations. There are abandoned freeware tools that haven't been updated since 2019. And there are dozens of "we'll send you a printable spreadsheet" sites pretending to be apps.</p>
+
+<p>I tried most of them. None worked for the small homesteader — the person with a backyard garden, six laying hens, and maybe a meat-bird batch in the spring. So I built one.</p>
+
+<h2>What I actually wanted</h2>
+
+<p>The criteria, in order of importance:</p>
+
+<ul>
+  <li><strong>Free.</strong> Not free-trial-then-$8/month. Just free.</li>
+  <li><strong>Useful for the actual scale of a backyard homestead.</strong> Not designed for 200-acre operations.</li>
+  <li><strong>Works on a phone</strong> — because that's what I have on me when I'm out feeding the chickens.</li>
+  <li><strong>Tracks what I care about:</strong> eggs collected, garden harvests, costs, weather, photos.</li>
+  <li><strong>Shows me patterns</strong> — month-over-month, year-over-year. I want to know if my egg production is up.</li>
+  <li><strong>Doesn't sell my data</strong> or ad-target me with chicken-feed offers.</li>
+</ul>
+
+<p>That list eliminated everything I could find. So I started building.</p>
+
+<h2>Why backyard homestead tracking is genuinely valuable</h2>
+
+<p>You might be thinking: "Do I really need an app? I can just remember." Same energy I had for years. Then I tried to answer simple questions like:</p>
+
+<ul>
+  <li>How many eggs did my flock lay last August compared to this August?</li>
+  <li>What did I spend on feed this year, and is it more than I would have spent on store eggs?</li>
+  <li>Which tomato variety produced the most last summer?</li>
+  <li>When did I plant the lettuce that didn't bolt? When did I plant the lettuce that did?</li>
+</ul>
+
+<p>I couldn't answer any of them. Memory fades fast when there are dozens of small events per week. A simple tracking habit answers all of these and starts compounding into real homestead intelligence.</p>
+
+<h2>What Henalytics tracks</h2>
+
+<p>The app handles three "hobbies" — the categories most small homesteads have:</p>
+
+<h3>🌱 Garden</h3>
+<p>Per-season tracking of plantings, waterings, harvests, issues, and notes. Each plant entry can include weight harvested, photos, and weather conditions for the day. You can see total lbs harvested by plant variety, year-over-year.</p>
+
+<h3>🥚 Egg Layers</h3>
+<p>Track flock size, daily egg collection (with a "tap +1 each time you walk to the coop" basket feature), feed costs, infrastructure costs, and bird purchases. The app automatically calculates your real cost-per-dozen and shows how much you saved versus buying pasture-raised eggs at the grocery store.</p>
+
+<h3>🍗 Meat Chickens</h3>
+<p>Per-batch tracking from chicks-arriving to butcher day. Total feed costs, mortality, average weights, lbs in the freezer. Exactly the math people want to see when deciding whether to do another batch next year.</p>
+
+<h2>Plus a calendar and year-in-review</h2>
+
+<p>The app uses your USDA hardiness zone (auto-detected from your location) to suggest planting dates for 30+ common crops. Pick "Tomatoes," choose "Start indoors," and it generates the seed-start date, transplant date, and estimated harvest date for you.</p>
+
+<p>At the end of every year, a Spotify-Wrapped-style summary shows your eggs collected, lbs harvested, money saved, and a few fun facts (longest logging streak, most active month, best photos). Worth screenshotting and sharing.</p>
+
+<h2>How it stays free</h2>
+
+<p>Three reasons:</p>
+
+<ol>
+  <li>It's a side project for me, not a business. I built it for my own homestead first. The web hosting is free (Vercel) and the database is free (Supabase). My only real cost is ~$10/year for the domain name.</li>
+  <li>No ads. The conversation about ads is poisonous to me — I want to use my homestead tracker without being marketed to.</li>
+  <li>No premium tier. If I built something useful, I want anyone to use it.</li>
+</ol>
+
+<h2>What it isn't</h2>
+
+<p>It is not a replacement for serious farm management software if you're running a commercial operation. It doesn't do payroll, multi-property accounting, or USDA compliance forms. It is built for the gardener-with-six-hens scale, and it is opinionated about staying that way.</p>
+
+<div class="cta">
+  <h3>Try it</h3>
+  <p>It runs in any browser. No app store, no install. Sign in once and your data syncs across devices.</p>
+  <a href="/">Open Henalytics →</a>
+</div>
+
+<p>If you do try it and have feedback, there's a button right inside the app that emails me directly. I read every one. The reason I'm telling you this is because I built this thing for fellow small homesteaders, and the only way it gets better is if I know what's missing.</p>
+
+<p>🌱</p>
+
+</div>
+
+<footer>
+  Henalytics · Built solo by one homesteader · <a href="/">henalytics.com</a>
+</footer>
+
+</body>
+</html>
