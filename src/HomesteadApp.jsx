@@ -902,6 +902,52 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
           </div>
         </div>
       )}
+
+      {/* Flock history — shows each "Add Birds" event so user can edit/delete */}
+      {(hobby.flockHistory || []).length > 0 && (
+        <FlockHistoryList hobby={hobby} setModal={setModal} />
+      )}
+    </div>
+  );
+}
+
+// Lists each flock-history entry (one per Add Birds event), with tap-to-edit
+function FlockHistoryList({ hobby, setModal }) {
+  const history = [...(hobby.flockHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
+
+  return (
+    <div style={{
+      background: palette.card, border: `1.5px solid ${palette.line}`,
+      borderRadius: 12, padding: 14,
+    }}>
+      <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 10 }}>
+        Flock history
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {history.map((fh, i) => (
+          <div
+            key={`${fh.date}-${i}`}
+            onClick={() => setModal({ type: "editFlockEntry", hobbyId: hobby.id, index: hobby.flockHistory.indexOf(fh) })}
+            style={{
+              padding: "8px 10px",
+              background: palette.bgAlt,
+              borderRadius: 8,
+              fontSize: 13,
+              display: "flex", alignItems: "center", justifyContent: "space-between",
+              cursor: "pointer",
+              gap: 8,
+            }}
+          >
+            <span>
+              <strong>+{fh.count}</strong> bird{fh.count === 1 ? "" : "s"} · {fmtDate(fh.date)}
+            </span>
+            <span style={{ display: "flex", alignItems: "center", gap: 8, color: palette.inkSoft }}>
+              {fh.cost > 0 ? `$${fh.cost.toFixed(2)}` : <em>no cost</em>}
+              <Edit3 size={14} />
+            </span>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -1073,16 +1119,23 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   const alive = batch.startCount - deaths;
   return (
     <div>
-      <div style={{
-        background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
-        marginBottom: 10,
-      }}>
-        <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-          Active Batch · {batch.name}
+      <div
+        onClick={() => setModal({ type: "editBatch", hobbyId: hobby.id })}
+        style={{
+          background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
+          marginBottom: 10, cursor: "pointer",
+        }}
+      >
+        <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+          <span>Active Batch · {batch.name}</span>
+          <Edit3 size={12} />
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, color: palette.yolk, lineHeight: 1 }}>{alive}</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>birds · {weeks} weeks · started {fmtDate(batch.startDate)}</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>
+            birds · {weeks} weeks · started {fmtDate(batch.startDate)}
+            {batch.chickCost > 0 && <> · {fmtMoney(batch.chickCost)}</>}
+          </div>
         </div>
       </div>
     </div>
@@ -2032,6 +2085,16 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "addBirds") return <AddBirdsModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
+  if (modal.type === "editFlockEntry") {
+    const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <EditFlockEntryModal hobby={targetHobby} index={modal.index} update={update} onClose={close} />;
+  }
+  if (modal.type === "editBatch") {
+    const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <EditBatchModal hobby={targetHobby} update={update} onClose={close} />;
+  }
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
@@ -2768,6 +2831,123 @@ function AddBirdsModal({ hobby, update, onClose }) {
         });
         onClose();
       }}>Add {count || "0"} birds</Btn>
+    </Modal>
+  );
+}
+
+// Edit an existing flock-history entry. Lets the user fix typos in count, date, or cost.
+function EditFlockEntryModal({ hobby, index, update, onClose }) {
+  const fh = (hobby.flockHistory || [])[index];
+  if (!fh) {
+    onClose();
+    return null;
+  }
+  const [count, setCount] = useState(String(fh.count || 0));
+  const [date, setDate] = useState(fh.date || todayStr());
+  const [cost, setCost] = useState(fh.cost ? String(fh.cost) : "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const save = () => {
+    const n = parseInt(count);
+    if (!n || n < 1) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      const oldCount = h.flockHistory[index].count || 0;
+      h.flockHistory[index] = { date, count: n, cost: parseFloat(cost) || 0 };
+      // Keep flockSize in sync with the change
+      h.flockSize = Math.max(0, (h.flockSize || 0) - oldCount + n);
+      return d;
+    });
+    onClose();
+  };
+
+  const remove = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      const removedCount = h.flockHistory[index].count || 0;
+      h.flockHistory.splice(index, 1);
+      h.flockSize = Math.max(0, (h.flockSize || 0) - removedCount);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Edit flock entry">
+      <Field label="How many birds?">
+        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+      </Field>
+      <Field label="Date acquired">
+        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      <Field label="Cost (optional)">
+        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+      </Field>
+      <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+        <Btn variant="primary" onClick={save}>Save changes</Btn>
+        {!confirmDelete && (
+          <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+        )}
+        {confirmDelete && (
+          <Btn variant="danger" onClick={remove}>Confirm delete</Btn>
+        )}
+      </div>
+      {confirmDelete && (
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 8, fontStyle: "italic" }}>
+          This will remove these birds from your flock count too.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// Edit the current meat-chicken batch. Lets you fix the name, date, count, or cost.
+function EditBatchModal({ hobby, update, onClose }) {
+  const batch = hobby.currentBatch;
+  if (!batch) {
+    onClose();
+    return null;
+  }
+  const [name, setName] = useState(batch.name || "");
+  const [count, setCount] = useState(String(batch.startCount || 0));
+  const [date, setDate] = useState(batch.startDate || todayStr());
+  const [cost, setCost] = useState(batch.chickCost ? String(batch.chickCost) : "");
+
+  const save = () => {
+    const n = parseInt(count);
+    if (!n || n < 1 || !name.trim()) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h || !h.currentBatch) return d;
+      h.currentBatch = {
+        ...h.currentBatch,
+        name: name.trim(),
+        startDate: date,
+        startCount: n,
+        chickCost: parseFloat(cost) || 0,
+      };
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Edit batch">
+      <Field label="Batch name">
+        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+      </Field>
+      <Field label="Number of chicks (started with)">
+        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+      </Field>
+      <Field label="Start date">
+        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      <Field label="Cost of chicks">
+        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+      </Field>
+      <Btn variant="primary" onClick={save}>Save changes</Btn>
     </Modal>
   );
 }
