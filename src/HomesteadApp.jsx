@@ -167,14 +167,33 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
       border: `1.5px solid ${palette.line}`,
       borderRadius: 12,
       padding: 14,
-      flex: 1,
-      minWidth: 0,
+      flex: "1 1 140px",   // grow + shrink, but never narrower than 140px
+      minWidth: 140,
+      boxSizing: "border-box",
+      overflow: "hidden",  // belt-and-suspenders: prevent any text overflow
+      wordBreak: "break-word",
     }}>
-      <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+      <div style={{
+        fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft,
+        textTransform: "uppercase", letterSpacing: 1, marginBottom: 6,
+        whiteSpace: "normal", wordBreak: "break-word",
+      }}>
         {label}
       </div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
-      {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
+      <div style={{
+        fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1,
+        whiteSpace: "normal", wordBreak: "break-word",
+      }}>
+        {value}
+      </div>
+      {sub && (
+        <div style={{
+          fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY,
+          whiteSpace: "normal", wordBreak: "break-word",
+        }}>
+          {sub}
+        </div>
+      )}
     </div>
   );
 }
