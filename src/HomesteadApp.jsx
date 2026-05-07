@@ -2443,6 +2443,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
+  if (modal.type === "support") return <SupportModal onClose={close} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
@@ -2612,6 +2613,14 @@ function BarnModal({ data, update, onClose, setModal, user, role }) {
         sub="Notes on homesteading, gardens & chickens"
         accent={palette.leaf}
         onClick={() => { window.location.href = "/blog/"; }}
+      />
+
+      <SectionBtn
+        icon={Heart}
+        label="Support Henalytics"
+        sub="Tip jar to help cover hosting costs"
+        accent={palette.yolk}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "support" }), 0); }}
       />
     </Modal>
   );
@@ -2852,6 +2861,95 @@ function AboutModal({ onClose }) {
 
         <div style={{ textAlign: "center", marginTop: 12, fontSize: 13, color: palette.inkSoft, fontStyle: "italic" }}>
           🌱 — the Henalytics maker
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// SUPPORT MODAL — tip jar / patron tier with Ko-fi link
+// ----------------------------------------------------------------------------
+// Warm, low-pressure copy that thanks supporters and explains the costs.
+// Two CTAs: one-time tip ("buy a bag of feed") and monthly patron tier.
+// All flow through ko-fi.com/henalytics.
+// ============================================================================
+function SupportModal({ onClose }) {
+  const KO_FI_URL = "https://ko-fi.com/henalytics";
+
+  return (
+    <Modal open onClose={onClose} title="Support Henalytics">
+      <div style={{ fontFamily: FONT_BODY, color: palette.ink, lineHeight: 1.7, fontSize: 14 }}>
+        <div style={{
+          fontFamily: FONT_DISPLAY, fontSize: 28, marginBottom: 4, color: palette.ink, lineHeight: 1.1,
+        }}>
+          🌾 Support Henalytics
+        </div>
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 18, fontStyle: "italic" }}>
+          This app is free, and it stays that way.
+        </div>
+
+        <p style={{ marginTop: 0 }}>
+          The site costs me about $10/year in domain fees, plus my time. There's no company behind it, no investors, no ads. Just me — a homesteader in Kansas — building it in the evenings.
+        </p>
+
+        <p>
+          If Henalytics has been useful and you'd like to chip in a few dollars to help keep it running, I'd genuinely appreciate it. Even a few bucks goes a long way around here.
+        </p>
+
+        <p style={{ fontStyle: "italic", color: palette.inkSoft, fontSize: 13 }}>
+          But please don't feel any pressure. The app is and will stay free for everyone, whether or not you chip in.
+        </p>
+
+        {/* Primary CTA: one-time feed bag */}
+        <a
+          href={KO_FI_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "block",
+            background: palette.ink,
+            color: palette.bg,
+            padding: "14px 18px",
+            borderRadius: 10,
+            textAlign: "center",
+            fontWeight: 600,
+            fontSize: 15,
+            textDecoration: "none",
+            marginTop: 20,
+            boxShadow: "3px 3px 0 " + palette.line,
+          }}
+        >
+          🌾 Buy my next bag of feed
+        </a>
+
+        {/* Secondary CTA: monthly patron */}
+        <a
+          href={KO_FI_URL}
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{
+            display: "block",
+            background: palette.card,
+            color: palette.ink,
+            padding: "12px 18px",
+            borderRadius: 10,
+            textAlign: "center",
+            fontWeight: 600,
+            fontSize: 14,
+            textDecoration: "none",
+            marginTop: 10,
+            border: `1.5px solid ${palette.line}`,
+            boxShadow: "2px 2px 0 " + palette.line,
+          }}
+        >
+          💚 Become a monthly supporter — $3/mo
+        </a>
+
+        <div style={{
+          marginTop: 20, textAlign: "center", fontSize: 13, color: palette.inkSoft, fontStyle: "italic",
+        }}>
+          🌱 Thanks for being here.
         </div>
       </div>
     </Modal>
