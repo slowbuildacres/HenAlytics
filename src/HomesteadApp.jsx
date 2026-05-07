@@ -2876,6 +2876,10 @@ function AboutModal({ onClose }) {
 // ============================================================================
 function SupportModal({ onClose }) {
   const KO_FI_URL = "https://ko-fi.com/henalytics";
+  // Ko-fi's official embed URL — keeps the supporter on henalytics.com instead
+  // of redirecting them to ko-fi.com. The query params hide ko-fi's feed and
+  // chrome so it looks like part of the page.
+  const KO_FI_EMBED_URL = "https://ko-fi.com/henalytics/?hidefeed=true&widget=true&embed=true&preview=true";
 
   return (
     <Modal open onClose={onClose} title="Support Henalytics">
@@ -2901,50 +2905,45 @@ function SupportModal({ onClose }) {
           But please don't feel any pressure. The app is and will stay free for everyone, whether or not you chip in.
         </p>
 
-        {/* Primary CTA: one-time feed bag */}
-        <a
-          href={KO_FI_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "block",
-            background: palette.ink,
-            color: palette.bg,
-            padding: "14px 18px",
-            borderRadius: 10,
-            textAlign: "center",
-            fontWeight: 600,
-            fontSize: 15,
-            textDecoration: "none",
-            marginTop: 20,
-            boxShadow: "3px 3px 0 " + palette.line,
-          }}
-        >
-          🌾 Buy my next bag of feed
-        </a>
+        {/* Embedded Ko-fi widget — supporters tip without leaving henalytics.com */}
+        <div style={{
+          marginTop: 18,
+          borderRadius: 10,
+          overflow: "hidden",
+          border: `1.5px solid ${palette.line}`,
+          background: "white",
+        }}>
+          <iframe
+            id="kofiframe"
+            src={KO_FI_EMBED_URL}
+            title="Support Henalytics on Ko-fi"
+            loading="lazy"
+            style={{
+              border: "none",
+              width: "100%",
+              padding: 0,
+              background: "transparent",
+              display: "block",
+              minHeight: 720,
+            }}
+            height="720"
+          />
+        </div>
 
-        {/* Secondary CTA: monthly patron */}
-        <a
-          href={KO_FI_URL}
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{
-            display: "block",
-            background: palette.card,
-            color: palette.ink,
-            padding: "12px 18px",
-            borderRadius: 10,
-            textAlign: "center",
-            fontWeight: 600,
-            fontSize: 14,
-            textDecoration: "none",
-            marginTop: 10,
-            border: `1.5px solid ${palette.line}`,
-            boxShadow: "2px 2px 0 " + palette.line,
-          }}
-        >
-          💚 Become a monthly supporter — $3/mo
-        </a>
+        {/* Fallback link — for when the iframe fails to load (some browsers/ad blockers) */}
+        <div style={{
+          marginTop: 12, textAlign: "center", fontSize: 12, color: palette.inkSoft,
+        }}>
+          Widget not loading?{" "}
+          <a
+            href={KO_FI_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{ color: palette.accent, textDecoration: "underline" }}
+          >
+            Open the support page directly →
+          </a>
+        </div>
 
         <div style={{
           marginTop: 20, textAlign: "center", fontSize: 13, color: palette.inkSoft, fontStyle: "italic",
