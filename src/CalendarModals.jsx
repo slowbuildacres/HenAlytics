@@ -274,9 +274,9 @@ export function PlanCropModal({ data, update, onClose }) {
 // PLAN BIRDS MODAL — chicken events (chicks arrive, butcher day, etc)
 // ============================================================================
 
-export function PlanBirdsModal({ update, onClose }) {
+export function PlanBirdsModal({ update, onClose, prefillDate }) {
   const [eventType, setEventType] = useState("");
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(prefillDate || todayStr());
   const [count, setCount] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -350,9 +350,9 @@ export function PlanBirdsModal({ update, onClose }) {
 // ADD CUSTOM EVENT MODAL
 // ============================================================================
 
-export function AddCalendarEventModal({ update, onClose }) {
+export function AddCalendarEventModal({ update, onClose, prefillDate }) {
   const [title, setTitle] = useState("");
-  const [date, setDate] = useState(todayStr());
+  const [date, setDate] = useState(prefillDate || todayStr());
   const [notes, setNotes] = useState("");
   const [type, setType] = useState("custom");
 
@@ -574,7 +574,99 @@ export function ViewDayEventsModal({ data, update, date, setModal, onClose }) {
           );
         })}
       </div>
+
+      {/* Add-to-this-day button: opens the planning picker pre-filled with this date */}
+      <button
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "planForDay", date }), 0); }}
+        style={{
+          width: "100%",
+          marginTop: 14,
+          padding: "12px 14px",
+          background: palette.bg,
+          color: palette.ink,
+          border: `1.5px dashed ${palette.line}`,
+          borderRadius: 8,
+          cursor: "pointer",
+          fontFamily: FONT_BODY,
+          fontSize: 14,
+          fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}
+      >
+        + Add to this day
+      </button>
     </Modal>
+  );
+}
+
+// ============================================================================
+// PLAN FOR DAY MODAL — shown when user taps an empty day, or hits "+ Add" on a
+// day-detail view. Lets them pick what kind of event to plan, then routes to
+// the corresponding planner with the date pre-filled.
+// ============================================================================
+
+export function PlanForDayModal({ date, setModal, onClose }) {
+  const choose = (type) => {
+    onClose();
+    setTimeout(() => setModal({ type, prefillDate: date }), 0);
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Plan for ${fmtFullDate(date)}`}>
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        What would you like to plan for this day?
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <PlanChoice
+          icon="🌱"
+          label="Plant a crop"
+          sub="Pick a crop and we'll generate planting dates"
+          onClick={() => {
+            // PlanCropModal generates a sequence based on frost dates,
+            // not a single date. So we just open the standard crop modal.
+            // The date the user tapped is informational only.
+            onClose();
+            setTimeout(() => setModal({ type: "planCrop" }), 0);
+          }}
+        />
+        <PlanChoice
+          icon="🐔"
+          label="Bird event"
+          sub="Order chicks, butcher day, deep clean coop, etc."
+          onClick={() => choose("planBirds")}
+        />
+        <PlanChoice
+          icon="⭐"
+          label="Custom event"
+          sub="Order feed, fix coop, anything else"
+          onClick={() => choose("addCalendarEvent")}
+        />
+      </div>
+    </Modal>
+  );
+}
+
+function PlanChoice({ icon, label, sub, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "12px 14px",
+        background: palette.card,
+        border: `1.5px solid ${palette.line}`,
+        borderRadius: 10,
+        cursor: "pointer",
+        textAlign: "left",
+        display: "flex", alignItems: "center", gap: 12,
+        fontFamily: FONT_BODY,
+      }}
+    >
+      <div style={{ fontSize: 26, flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink }}>{label}</div>
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>
+      </div>
+    </button>
   );
 }
 

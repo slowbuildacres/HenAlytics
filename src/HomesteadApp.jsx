@@ -26,6 +26,7 @@ import CalendarPage from "./Calendar.jsx";
 import {
   PlanCropModal, PlanBirdsModal, AddCalendarEventModal,
   EditCalendarEventModal, EditZoneModal, ViewDayEventsModal,
+  PlanForDayModal,
 } from "./CalendarModals.jsx";
 
 // ============ DESIGN TOKENS ============
@@ -2467,8 +2468,9 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
   if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} />;
-  if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} />;
-  if (modal.type === "addCalendarEvent") return <AddCalendarEventModal update={update} onClose={close} />;
+  if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
+  if (modal.type === "addCalendarEvent") return <AddCalendarEventModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
+  if (modal.type === "planForDay") return <PlanForDayModal date={modal.date} setModal={setModal} onClose={close} />;
   if (modal.type === "editCalendarEvent") return <EditCalendarEventModal data={data} update={update} eventId={modal.eventId} onClose={close} />;
   if (modal.type === "editZone") return <EditZoneModal data={data} update={update} onClose={close} />;
   if (modal.type === "viewDayEvents") return <ViewDayEventsModal data={data} update={update} date={modal.date} setModal={setModal} onClose={close} />;

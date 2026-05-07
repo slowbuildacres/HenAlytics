@@ -393,15 +393,22 @@ function MonthView({ events, update, setModal, userEvents }) {
           return (
             <div
               key={i}
-              onClick={cellEvents.length > 0 ? () => {
-                // If exactly one user event, edit it. Otherwise show a list of events.
-                const userEvent = cellEvents.find((e) => userEvents.some((ue) => ue.id === e.id));
-                if (cellEvents.length === 1 && userEvent) {
-                  setModal({ type: "editCalendarEvent", eventId: userEvent.id });
+              onClick={() => {
+                if (cellEvents.length === 0) {
+                  // Empty day — open the "what to plan" picker
+                  setModal({ type: "planForDay", date: cellDate });
+                } else if (cellEvents.length === 1) {
+                  const userEvent = cellEvents.find((e) => userEvents.some((ue) => ue.id === e.id));
+                  if (userEvent) {
+                    setModal({ type: "editCalendarEvent", eventId: userEvent.id });
+                  } else {
+                    // It's a frost-date marker — show the day-detail with "+ Add" option
+                    setModal({ type: "viewDayEvents", date: cellDate });
+                  }
                 } else {
                   setModal({ type: "viewDayEvents", date: cellDate });
                 }
-              } : undefined}
+              }}
               style={{
                 aspectRatio: "1 / 1.3",
                 padding: 4,
@@ -409,7 +416,7 @@ function MonthView({ events, update, setModal, userEvents }) {
                 border: `1px solid ${isToday ? palette.yolk : palette.line}`,
                 borderRadius: 6,
                 fontSize: 11,
-                cursor: cellEvents.length > 0 ? "pointer" : "default",
+                cursor: "pointer",
                 display: "flex",
                 flexDirection: "column",
                 gap: 1,
