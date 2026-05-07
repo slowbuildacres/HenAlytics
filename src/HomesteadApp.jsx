@@ -28,6 +28,7 @@ import {
   EditCalendarEventModal, EditZoneModal, ViewDayEventsModal,
   PlanForDayModal,
 } from "./CalendarModals.jsx";
+import GardenMapModal from "./GardenMap.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -1148,6 +1149,8 @@ function GardenSummary({ hobby, data, setModal }) {
   const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
   const plantings = seasonEntries.filter((e) => e.action === "planted").length;
   const days = Math.floor((Date.now() - new Date(season.startDate).getTime()) / (1000 * 60 * 60 * 24));
+  const hasMap = season.gardenMap && season.gardenMap.photoPath;
+  const pinCount = hasMap ? (season.gardenMap.pins || []).length : 0;
   return (
     <div>
       <div style={{
@@ -1160,6 +1163,43 @@ function GardenSummary({ hobby, data, setModal }) {
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.leafSoft, lineHeight: 1 }}>{plantings}</div>
           <div style={{ fontSize: 13, opacity: 0.85 }}>plantings · {totalHarvest.toFixed(1)} harvested · day {days}</div>
+        </div>
+      </div>
+
+      {/* Garden Map card — opens the photo-based visualizer */}
+      <div
+        onClick={() => setModal({ type: "gardenMap" })}
+        style={{
+          background: palette.card,
+          border: `1.5px solid ${palette.line}`,
+          borderRadius: 12,
+          padding: 14,
+          marginBottom: 10,
+          cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 12,
+        }}
+      >
+        <div style={{
+          width: 48, height: 48, borderRadius: 10, background: palette.leafSoft,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          fontSize: 24,
+        }}>
+          🗺️
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
+            Garden map
+          </div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2 }}>
+            {hasMap
+              ? `${pinCount} ${pinCount === 1 ? "plant pinned" : "plants pinned"}`
+              : "Tap to start mapping"}
+          </div>
+          {!hasMap && (
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+              Upload a photo, drop pins where things grow
+            </div>
+          )}
         </div>
       </div>
     </div>
@@ -2474,6 +2514,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "editCalendarEvent") return <EditCalendarEventModal data={data} update={update} eventId={modal.eventId} onClose={close} />;
   if (modal.type === "editZone") return <EditZoneModal data={data} update={update} onClose={close} />;
   if (modal.type === "viewDayEvents") return <ViewDayEventsModal data={data} update={update} date={modal.date} setModal={setModal} onClose={close} />;
+  if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
