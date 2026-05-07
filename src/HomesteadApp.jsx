@@ -1110,7 +1110,9 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
   const today = new Date().toISOString().slice(0, 10);
 
   // ---- Weekly stats ----
-  const eggsLaid = entries.filter((e) => e.action === "eggs_laid");
+  // Eggs laid: count both "eggs" (original quick-tile) and "eggs_laid" (egg basket commit)
+  // so both logging methods feed into the same stats.
+  const eggsLaid = entries.filter((e) => e.action === "eggs_laid" || e.action === "eggs");
   const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
   const eggsThisWeek = eggsLaid.filter((e) => e.date > oneWeekAgo).reduce((s, e) => s + (Number(e.count) || 0), 0);
@@ -1430,13 +1432,14 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
 function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
   const labels = {
     watered: "Watered", planted: "Planted", harvested: "Harvested", issue: "Issue Reported",
-    fed: "Fed", free_range: "Free range", eggs: "Eggs collected", bedding: "Bedding",
+    fed: "Fed", free_range: "Free range", eggs: "Eggs collected", eggs_laid: "Eggs collected",
+    bedding: "Bedding",
     death: "Death reported", note: "Note", butcher: "Butchered",
     sold_eggs: "Eggs sold", infrastructure: "Infrastructure",
   };
   const icons = {
     watered: Droplet, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
-    fed: Sun, free_range: Bird, eggs: Egg, bedding: Archive, death: Skull,
+    fed: Sun, free_range: Bird, eggs: Egg, eggs_laid: Egg, bedding: Archive, death: Skull,
     butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, infrastructure: Hammer,
   };
   const Icon = icons[entry.action] || Edit3;
@@ -1447,6 +1450,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     case "harvested": detail = `${entry.plant || ""} · ${entry.quantity || 0} ${entry.unit || "lbs"}`; break;
     case "fed": detail = `${entry.lbs || 0} lbs · ${fmtMoney(entry.cost)}`; break;
     case "eggs": detail = `${entry.count || 0} eggs`; break;
+    case "eggs_laid": detail = `${entry.count || 0} eggs`; break;
     case "sold_eggs": {
       const dozens = (Number(entry.count) || 0) / 12;
       const revenue = dozens * (Number(entry.pricePerDozen) || 0);
@@ -1754,7 +1758,8 @@ function GardenAnalytics({ entries, data, seasonName }) {
 }
 
 function EggLayersAnalytics({ hobby, entries }) {
-  const eggs = entries.filter((e) => e.action === "eggs");
+  // Count both "eggs" (manual quick-tile) and "eggs_laid" (egg basket commits)
+  const eggs = entries.filter((e) => e.action === "eggs" || e.action === "eggs_laid");
   const feeds = entries.filter((e) => e.action === "fed");
   const beddings = entries.filter((e) => e.action === "bedding");
   const deaths = entries.filter((e) => e.action === "death");
@@ -3784,7 +3789,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         </Field>
       )}
 
-      {action === "eggs" && (
+      {(action === "eggs" || action === "eggs_laid") && (
         <Field label="Eggs collected">
           <input type="number" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
         </Field>
