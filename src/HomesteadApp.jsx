@@ -252,6 +252,29 @@ function Tile({ icon: Icon, label, sub, onClick, color = palette.ink, bg = palet
   );
 }
 
+// Custom barn icon — lucide doesn't ship one, so this is hand-drawn to match
+// lucide's stroke-based aesthetic (1.5 stroke, rounded caps, no fills).
+function BarnIcon({ size = 22, color = "currentColor" }) {
+  return (
+    <svg
+      width={size} height={size} viewBox="0 0 24 24"
+      fill="none" stroke={color} strokeWidth="1.8"
+      strokeLinecap="round" strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {/* Barn outline: pentagon shape with peaked roof */}
+      <path d="M3 11 L12 4 L21 11 L21 20 L3 20 Z" />
+      {/* Roof line accent */}
+      <path d="M3 11 L21 11" />
+      {/* Door */}
+      <path d="M9 20 L9 14 L15 14 L15 20" />
+      {/* Tiny X detail on doors (classic barn) */}
+      <path d="M9 14 L15 17" />
+      <path d="M15 14 L9 17" />
+    </svg>
+  );
+}
+
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
@@ -668,9 +691,18 @@ export default function HomesteadApp() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <SyncIndicator status={syncStatus} signedIn={!!user} />
             <button
+              onClick={() => setModal({ type: "barn" })}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
+              title="Your homestead"
+              aria-label="Your homestead"
+            >
+              <BarnIcon size={22} />
+            </button>
+            <button
               onClick={() => setModal({ type: "settings" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
               title="Settings"
+              aria-label="Settings"
             >
               <Settings size={20} />
             </button>
@@ -2381,7 +2413,9 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
 
   const hobby = data.hobbies.find((h) => h.id === activeHobby);
 
-  if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
+  if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
+  if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
+  if (modal.type === "about") return <AboutModal onClose={close} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
@@ -2474,24 +2508,9 @@ function InviteErrorModal({ message, onClose }) {
   );
 }
 
-function SettingsModal({ data, update, onClose, setModal, user, role }) {
-  const [showReset, setShowReset] = useState(false);
-  const [signingOut, setSigningOut] = useState(false);
-
-  const handleSignOut = async () => {
-    setSigningOut(true);
-    try {
-      if (supabase) await supabase.auth.signOut();
-      // Clear the local cache so the next signed-out session doesn't see this user's data.
-      clearLocalHomestead();
-    } catch (e) {
-      console.error("Sign out failed", e);
-    }
-    setSigningOut(false);
-    onClose();
-  };
-
-  const SectionBtn = ({ icon: Icon, label, sub, onClick, accent = palette.ink }) => (
+// SectionBtn is shared by BarnModal and SettingsModal.
+function SectionBtn({ icon: Icon, label, sub, onClick, accent = palette.ink }) {
+  return (
     <button
       onClick={onClick}
       style={{
@@ -2514,9 +2533,17 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
       </div>
     </button>
   );
+}
 
+// ============================================================================
+// BARN MODAL — homestead identity + farmhands + about-the-maker
+// ----------------------------------------------------------------------------
+// "Barn" groups things that describe the homestead itself, distinct from the
+// account/preferences in SettingsModal.
+// ============================================================================
+function BarnModal({ data, update, onClose, setModal, user, role }) {
   return (
-    <Modal open onClose={onClose} title="Settings">
+    <Modal open onClose={onClose} title="Your homestead">
       <SectionBtn
         icon={Edit3}
         label="Name your homestead"
@@ -2524,6 +2551,68 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "renameHomestead" }), 0); }}
       />
 
+      <SectionBtn
+        icon={MapPin}
+        label="Homestead location"
+        sub={data.homesteadLocation
+          ? `Set: ${data.homesteadLocation.label || `${data.homesteadLocation.lat.toFixed(2)}, ${data.homesteadLocation.lon.toFixed(2)}`}`
+          : "Set your location to auto-attach weather to entries"}
+        accent={palette.leaf}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "location" }), 0); }}
+      />
+
+      {user && (
+        <SectionBtn
+          icon={UserPlus}
+          label="Farmhands"
+          sub={role === "owner" ? "Invite a farmhand to share your homestead" : "View members of this homestead"}
+          accent={palette.feather}
+          onClick={() => { onClose(); setTimeout(() => setModal({ type: "farmhand" }), 0); }}
+        />
+      )}
+
+      <SectionBtn
+        icon={Heart}
+        label="About the maker"
+        sub="Why I built Henalytics"
+        accent={palette.accent}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "about" }), 0); }}
+      />
+
+      <SectionBtn
+        icon={NotebookPen}
+        label="Blog"
+        sub="Notes on homesteading, gardens & chickens"
+        accent={palette.leaf}
+        onClick={() => { window.location.href = "/blog/"; }}
+      />
+    </Modal>
+  );
+}
+
+// ============================================================================
+// SETTINGS MODAL — account, preferences, data, support
+// ----------------------------------------------------------------------------
+// Slimmed down: no longer holds homestead-identity stuff (now in BarnModal).
+// ============================================================================
+function SettingsModal({ data, update, onClose, setModal, user }) {
+  const [showReset, setShowReset] = useState(false);
+  const [signingOut, setSigningOut] = useState(false);
+
+  const handleSignOut = async () => {
+    setSigningOut(true);
+    try {
+      if (supabase) await supabase.auth.signOut();
+      clearLocalHomestead();
+    } catch (e) {
+      console.error("Sign out failed", e);
+    }
+    setSigningOut(false);
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Settings">
       {user ? (
         <>
           <div style={{
@@ -2567,36 +2656,6 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
 
       {user && (
         <SectionBtn
-          icon={UserPlus}
-          label="Farmhands"
-          sub={role === "owner" ? "Invite a farmhand to share your homestead" : "View members of this homestead"}
-          accent={palette.feather}
-          onClick={() => { onClose(); setTimeout(() => setModal({ type: "farmhand" }), 0); }}
-        />
-      )}
-
-      <SectionBtn
-        icon={MapPin}
-        label="Homestead location"
-        sub={data.homesteadLocation
-          ? `Set: ${data.homesteadLocation.label || `${data.homesteadLocation.lat.toFixed(2)}, ${data.homesteadLocation.lon.toFixed(2)}`}`
-          : "Set your location to auto-attach weather to entries"}
-        accent={palette.leaf}
-        onClick={() => { onClose(); setTimeout(() => setModal({ type: "location" }), 0); }}
-      />
-
-      <SectionBtn
-        icon={Download}
-        label="Export to CSV"
-        sub="Download all your entries as spreadsheets"
-        accent={palette.leaf}
-        onClick={() => {
-          exportAllAsCsv(data);
-        }}
-      />
-
-      {user && (
-        <SectionBtn
           icon={Mail}
           label={data.weeklyDigestOptIn ? "Weekly summary email: ON" : "Weekly summary email: off"}
           sub={data.weeklyDigestOptIn
@@ -2611,6 +2670,16 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
           }}
         />
       )}
+
+      <SectionBtn
+        icon={Download}
+        label="Export to CSV"
+        sub="Download all your entries as spreadsheets"
+        accent={palette.leaf}
+        onClick={() => {
+          exportAllAsCsv(data);
+        }}
+      />
 
       <SectionBtn
         icon={Lightbulb}
@@ -2656,6 +2725,108 @@ function SettingsModal({ data, update, onClose, setModal, user, role }) {
           </div>
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ============================================================================
+// ABOUT MODAL — the maker's story
+// ============================================================================
+function AboutModal({ onClose }) {
+  return (
+    <Modal open onClose={onClose} title="About the maker">
+      <div style={{ fontFamily: FONT_BODY, color: palette.ink, lineHeight: 1.7, fontSize: 14 }}>
+        <div style={{
+          fontFamily: FONT_DISPLAY, fontSize: 28, marginBottom: 4, color: palette.ink, lineHeight: 1.1,
+        }}>
+          Hey 👋
+        </div>
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 18, fontStyle: "italic" }}>
+          I'm the guy who built Henalytics.
+        </div>
+
+        <p style={{ marginTop: 0 }}>
+          I'm an e-commerce manager by day, but my real passion is homesteading and regenerative farming. My wife and I have kept a backyard homestead for a while — gardening, egg layers, even quail for a stretch.
+        </p>
+
+        {/* Photo: backyard raised beds (the previous setup) */}
+        <figure style={{ margin: "20px -4px" }}>
+          <img
+            src="/about/about-garden.jpg"
+            alt="Raised-bed vegetable garden — our backyard setup before the move"
+            style={{
+              width: "100%", borderRadius: 10, display: "block",
+              border: `1.5px solid ${palette.line}`,
+            }}
+          />
+          <figcaption style={{
+            fontSize: 11, color: palette.inkSoft, fontStyle: "italic",
+            textAlign: "center", marginTop: 6,
+          }}>
+            Our backyard raised-bed garden — before the move.
+          </figcaption>
+        </figure>
+
+        <p>
+          In January 2026, we took the leap and bought 4 acres in Kansas (Zone 6a). We're new homesteaders in a real way now, with kids in tow and a lot still to learn.
+        </p>
+
+        {/* Photo: the new land */}
+        <figure style={{ margin: "20px -4px" }}>
+          <img
+            src="/about/about-land.jpg"
+            alt="Open Kansas field with cloudy sky — our new 4 acres"
+            style={{
+              width: "100%", borderRadius: 10, display: "block",
+              border: `1.5px solid ${palette.line}`,
+            }}
+          />
+          <figcaption style={{
+            fontSize: 11, color: palette.inkSoft, fontStyle: "italic",
+            textAlign: "center", marginTop: 6,
+          }}>
+            The new place. Kansas. Zone 6a. Lots of sky.
+          </figcaption>
+        </figure>
+
+        <p>
+          I'm a numbers nerd (you could probably tell from the app). I wanted a free, simple way to track our homestead over time — egg counts, garden harvests, costs, weather, photos — and to surface the patterns you don't normally see. I couldn't find one I liked, so I built it.
+        </p>
+
+        {/* Photo: meat bird tractors */}
+        <figure style={{ margin: "20px -4px" }}>
+          <img
+            src="/about/about-chickens.jpg"
+            alt="Two pasture-tractor chicken coops on a sunny day"
+            style={{
+              width: "100%", borderRadius: 10, display: "block",
+              border: `1.5px solid ${palette.line}`,
+            }}
+          />
+          <figcaption style={{
+            fontSize: 11, color: palette.inkSoft, fontStyle: "italic",
+            textAlign: "center", marginTop: 6,
+          }}>
+            Pasture tractors for our meat birds.
+          </figcaption>
+        </figure>
+
+        <p>
+          Henalytics is just me. No company, no investors, no ads. The site costs me about $10/year in domain fees and that's it. It will stay free.
+        </p>
+
+        <p style={{
+          marginTop: 24, marginBottom: 8, padding: "16px 14px",
+          background: palette.yolkSoft, borderRadius: 10, border: `1.5px solid ${palette.line}`,
+          textAlign: "center",
+        }}>
+          Thanks for being here. Whether you're tracking a backyard flock or 4 acres or 40, you're the reason this is fun to keep building.
+        </p>
+
+        <div style={{ textAlign: "center", marginTop: 12, fontSize: 13, color: palette.inkSoft, fontStyle: "italic" }}>
+          🌱 — the Henalytics maker
+        </div>
+      </div>
     </Modal>
   );
 }
