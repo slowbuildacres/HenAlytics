@@ -640,6 +640,18 @@ export default function HomesteadApp() {
     return <LoadingScene />;
   }
 
+  // ---- ONBOARDING ----
+  // Show the setup wizard if this is a fresh user (no entries logged AND no
+  // onboardedAt timestamp). Existing users with data are auto-marked as onboarded
+  // so we never show them the wizard.
+  const hasAnyEntries = Object.values(data.entries || {}).some(
+    (arr) => Array.isArray(arr) && arr.length > 0
+  );
+  const hasNotOnboarded = !data.onboardedAt;
+  const shouldShowWizard = hasNotOnboarded && !hasAnyEntries && !modal;
+  // Note: we render the wizard inline below — only ONE wizard shows at a time,
+  // and it blocks until completed/skipped.
+
   const hobby = data.hobbies.find((h) => h.id === activeHobby);
   const entries = data.entries[activeHobby] || [];
 
@@ -665,6 +677,16 @@ export default function HomesteadApp() {
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
       <SeasonalDecorations />
 
+      {/* Onboarding wizard: shown only on first-ever load with no data */}
+      {shouldShowWizard && (
+        <OnboardingWizard
+          update={update}
+          onClose={() => {
+            // Mark onboarded but don't change anything else
+            update((d) => { d.onboardedAt = Date.now(); return d; });
+          }}
+        />
+      )}
       {/* HEADER */}
       <header style={{
         padding: "20px 20px 12px",
@@ -811,6 +833,11 @@ function HomePage({ hobby, data, update, setModal }) {
 
   return (
     <div>
+      {/* WELCOME CARD — shown to recently-onboarded users until they log first entry */}
+      {data.onboardedAt && !data.welcomeCardDismissed && entries.length === 0 && (
+        <WelcomeCard data={data} update={update} setModal={setModal} />
+      )}
+
       {/* WHAT NEEDS ATTENTION — proactive nudges based on entry history */}
       <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} />
 
@@ -4143,6 +4170,384 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       <Btn variant="primary" onClick={submit} disabled={photoUploading}>
         {photoUploading ? "Uploading photo..." : (isEdit ? "Save changes" : "Save entry")}
       </Btn>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// ONBOARDING WIZARD
+// ----------------------------------------------------------------------------
+// Three-screen setup shown to brand-new users (no entries logged + no
+// onboardedAt timestamp). Captures: homestead name, location (via zip code),
+// active hobbies. All three screens are skippable individually.
+// ============================================================================
+function OnboardingWizard({ update, onClose }) {
+  const [step, setStep] = useState(1);
+  const [name, setName] = useState("");
+  const [zip, setZip] = useState("");
+  const [country, setCountry] = useState("us");
+  const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
+  const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
+  const [zipError, setZipError] = useState("");
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true });
+
+  // Look up zip code → coordinates via Zippopotam.us (free, no API key)
+  const lookupZip = async () => {
+    if (!zip.trim()) return;
+    setZipLookupStatus("loading");
+    setZipError("");
+    try {
+      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(zip.trim())}`);
+      if (!res.ok) {
+        throw new Error("Zip code not found");
+      }
+      const json = await res.json();
+      if (!json.places || json.places.length === 0) {
+        throw new Error("No location data for that zip");
+      }
+      const place = json.places[0];
+      const lat = parseFloat(place.latitude);
+      const lon = parseFloat(place.longitude);
+      const label = `${place["place name"]}, ${place["state abbreviation"] || place.state || ""}`.trim();
+      setZipResult({ lat, lon, label });
+      setZipLookupStatus("ok");
+    } catch (e) {
+      setZipError(e.message || "Couldn't find that zip code. Double-check it.");
+      setZipLookupStatus("error");
+      setZipResult(null);
+    }
+  };
+
+  const finish = () => {
+    update((d) => {
+      if (name.trim()) d.homesteadName = name.trim();
+      if (zipResult) {
+        d.homesteadLocation = { lat: zipResult.lat, lon: zipResult.lon, label: zipResult.label };
+      }
+      // Filter hobbies down to just the ones they wanted
+      const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
+      if (wantedTypes.length > 0 && wantedTypes.length < 3) {
+        d.hobbies = (d.hobbies || []).filter((h) => wantedTypes.includes(h.type));
+      }
+      d.onboardedAt = Date.now();
+      return d;
+    });
+    onClose();
+  };
+
+  // Wizard uses its own modal styling — distinct from regular modals so it
+  // feels like a welcome experience, not a settings dialog.
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 200, padding: 16,
+    }}>
+      <div style={{
+        background: palette.bg, padding: 28, borderRadius: 14,
+        maxWidth: 460, width: "100%", maxHeight: "92vh", overflowY: "auto",
+        border: `2px solid ${palette.ink}`,
+        boxShadow: "6px 6px 0 " + palette.line,
+      }}>
+        {/* Step indicator */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
+          {[1, 2, 3].map((i) => (
+            <div
+              key={i}
+              style={{
+                flex: 1, height: 4, borderRadius: 2,
+                background: i <= step ? palette.ink : palette.line,
+              }}
+            />
+          ))}
+        </div>
+
+        {step === 1 && (
+          <>
+            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, margin: "0 0 8px", color: palette.ink, lineHeight: 1.1 }}>
+              Welcome to Henalytics 🌱
+            </h2>
+            <p style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.6, marginTop: 0, marginBottom: 18 }}>
+              A free homestead tracker for gardens, egg layers, and meat birds. Just me running it, no ads, no fees.
+              Let's get you set up — should take about 30 seconds.
+            </p>
+            <Field label="What's your homestead called? (optional)">
+              <input
+                style={inputStyle}
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                placeholder="e.g. Lulay Farm"
+                autoFocus
+              />
+            </Field>
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <Btn variant="primary" onClick={() => setStep(2)}>Next</Btn>
+              <Btn variant="ghost" onClick={() => setStep(2)}>Skip</Btn>
+            </div>
+          </>
+        )}
+
+        {step === 2 && (
+          <>
+            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 8px", color: palette.ink, lineHeight: 1.2 }}>
+              Where's your homestead? 📍
+            </h2>
+            <p style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.6, marginTop: 0, marginBottom: 18 }}>
+              We use this to auto-attach weather to entries and suggest planting dates for your USDA hardiness zone. Zip code is enough.
+            </p>
+            <Field label="Country">
+              <select
+                style={inputStyle}
+                value={country}
+                onChange={(e) => { setCountry(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
+              >
+                <option value="us">United States</option>
+                <option value="ca">Canada</option>
+                <option value="gb">United Kingdom</option>
+                <option value="au">Australia</option>
+                <option value="de">Germany</option>
+                <option value="fr">France</option>
+              </select>
+            </Field>
+            <Field label="Zip / postal code">
+              <div style={{ display: "flex", gap: 6 }}>
+                <input
+                  style={{ ...inputStyle, flex: 1 }}
+                  value={zip}
+                  onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
+                  placeholder="e.g. 66002"
+                  inputMode="text"
+                  autoComplete="postal-code"
+                />
+                <Btn variant="primary" onClick={lookupZip} small>
+                  {zipLookupStatus === "loading" ? "..." : "Look up"}
+                </Btn>
+              </div>
+            </Field>
+            {zipResult && (
+              <div style={{
+                padding: 10, marginTop: -4, marginBottom: 14, borderRadius: 8,
+                background: palette.leafSoft, border: `1.5px solid ${palette.line}`, fontSize: 13, color: palette.ink,
+              }}>
+                ✓ Found: <strong>{zipResult.label}</strong>
+              </div>
+            )}
+            {zipError && (
+              <div style={{
+                padding: 10, marginTop: -4, marginBottom: 14, borderRadius: 8,
+                background: palette.card, border: `1.5px solid ${palette.accent}`, fontSize: 12, color: palette.accent,
+              }}>
+                {zipError}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+              <Btn variant="primary" onClick={() => setStep(3)}>Next</Btn>
+              <Btn variant="ghost" onClick={() => { setStep(3); }}>Skip</Btn>
+            </div>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, fontStyle: "italic" }}>
+              You can change or remove this anytime in Barn → Location.
+            </div>
+          </>
+        )}
+
+        {step === 3 && (
+          <>
+            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 8px", color: palette.ink, lineHeight: 1.2 }}>
+              What does your homestead include? 🐔
+            </h2>
+            <p style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.6, marginTop: 0, marginBottom: 18 }}>
+              Pick whichever apply. You can always change this later.
+            </p>
+
+            <HobbyCheckbox
+              checked={hobbies.garden}
+              onToggle={() => setHobbies((h) => ({ ...h, garden: !h.garden }))}
+              icon="🌱"
+              label="Garden"
+              sub="Plantings, harvests, watering"
+            />
+            <HobbyCheckbox
+              checked={hobbies.egg_layers}
+              onToggle={() => setHobbies((h) => ({ ...h, egg_layers: !h.egg_layers }))}
+              icon="🥚"
+              label="Egg layers"
+              sub="Daily egg counts, feed, costs"
+            />
+            <HobbyCheckbox
+              checked={hobbies.meat_chickens}
+              onToggle={() => setHobbies((h) => ({ ...h, meat_chickens: !h.meat_chickens }))}
+              icon="🍗"
+              label="Meat chickens"
+              sub="Per-batch tracking, butcher day"
+            />
+
+            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+              <Btn variant="primary" onClick={finish}>Done — let's go!</Btn>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function HobbyCheckbox({ checked, onToggle, icon, label, sub }) {
+  return (
+    <button
+      onClick={onToggle}
+      style={{
+        width: "100%", padding: "12px 14px", marginBottom: 8,
+        background: checked ? palette.yolkSoft : palette.card,
+        border: `1.5px solid ${checked ? palette.yolk : palette.line}`,
+        borderRadius: 10, cursor: "pointer", textAlign: "left",
+        display: "flex", alignItems: "center", gap: 12,
+        fontFamily: FONT_BODY,
+      }}
+    >
+      <div style={{ fontSize: 26, flexShrink: 0 }}>{icon}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{label}</div>
+        <div style={{ fontSize: 12, color: palette.inkSoft }}>{sub}</div>
+      </div>
+      <div style={{
+        width: 22, height: 22, borderRadius: 4,
+        border: `2px solid ${checked ? palette.ink : palette.line}`,
+        background: checked ? palette.ink : "transparent",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        flexShrink: 0,
+      }}>
+        {checked && <span style={{ color: palette.bg, fontSize: 14, lineHeight: 1, fontWeight: 700 }}>✓</span>}
+      </div>
+    </button>
+  );
+}
+
+// ============================================================================
+// WELCOME CARD
+// ----------------------------------------------------------------------------
+// Shown on the home page after onboarding completes, until the user logs their
+// first entry or dismisses the card. Suggests the first thing to try.
+// ============================================================================
+function WelcomeCard({ data, update, setModal }) {
+  const [showAddToHome, setShowAddToHome] = useState(false);
+
+  const dismiss = () => {
+    update((d) => { d.welcomeCardDismissed = true; return d; });
+  };
+
+  return (
+    <>
+      <div style={{
+        background: palette.yolkSoft,
+        border: `1.5px solid ${palette.line}`,
+        borderRadius: 12,
+        padding: 16,
+        marginBottom: 14,
+        position: "relative",
+      }}>
+        <button
+          onClick={dismiss}
+          style={{
+            position: "absolute", top: 8, right: 8,
+            background: "none", border: "none", cursor: "pointer",
+            color: palette.inkSoft, padding: 4,
+          }}
+          title="Dismiss"
+          aria-label="Dismiss welcome card"
+        >
+          <X size={16} />
+        </button>
+        <div style={{
+          fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink,
+          marginBottom: 8, lineHeight: 1.2,
+        }}>
+          👋 Try this first
+        </div>
+        <p style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, margin: "0 0 12px" }}>
+          Tap one of the quick-action tiles below to log your first entry. Everything you log builds your year-in-review and shows up in stats.
+        </p>
+        <p style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.6, margin: 0 }}>
+          💡 Want Henalytics on your home screen like an app?{" "}
+          <button
+            onClick={() => setShowAddToHome(true)}
+            style={{
+              background: "none", border: "none", padding: 0,
+              color: palette.accent, cursor: "pointer", textDecoration: "underline",
+              fontFamily: FONT_BODY, fontSize: 12,
+            }}
+          >
+            See how
+          </button>
+        </p>
+      </div>
+      {showAddToHome && <AddToHomeScreenModal onClose={() => setShowAddToHome(false)} />}
+    </>
+  );
+}
+
+// ============================================================================
+// ADD TO HOME SCREEN MODAL
+// ----------------------------------------------------------------------------
+// Tabbed iOS / Android instructions for installing the PWA to home screen.
+// ============================================================================
+function AddToHomeScreenModal({ onClose }) {
+  const [tab, setTab] = useState("ios");
+
+  return (
+    <Modal open onClose={onClose} title="Add to home screen">
+      <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+        <button
+          onClick={() => setTab("ios")}
+          style={{
+            flex: 1, padding: "8px 12px", borderRadius: 8,
+            background: tab === "ios" ? palette.ink : palette.card,
+            color: tab === "ios" ? palette.bg : palette.ink,
+            border: `1.5px solid ${palette.line}`,
+            cursor: "pointer", fontWeight: 600, fontSize: 13,
+            fontFamily: FONT_BODY,
+          }}
+        >
+          iPhone / iPad
+        </button>
+        <button
+          onClick={() => setTab("android")}
+          style={{
+            flex: 1, padding: "8px 12px", borderRadius: 8,
+            background: tab === "android" ? palette.ink : palette.card,
+            color: tab === "android" ? palette.bg : palette.ink,
+            border: `1.5px solid ${palette.line}`,
+            cursor: "pointer", fontWeight: 600, fontSize: 13,
+            fontFamily: FONT_BODY,
+          }}
+        >
+          Android
+        </button>
+      </div>
+
+      {tab === "ios" && (
+        <ol style={{ paddingLeft: 20, fontSize: 14, color: palette.ink, lineHeight: 1.7, margin: 0 }}>
+          <li>Open <strong>henalytics.com</strong> in <strong>Safari</strong> (must be Safari, not Chrome).</li>
+          <li>Tap the <strong>Share button</strong> (square with arrow pointing up) at the bottom of the screen.</li>
+          <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
+          <li>Tap <strong>Add</strong> in the top right.</li>
+        </ol>
+      )}
+
+      {tab === "android" && (
+        <ol style={{ paddingLeft: 20, fontSize: 14, color: palette.ink, lineHeight: 1.7, margin: 0 }}>
+          <li>Open <strong>henalytics.com</strong> in <strong>Chrome</strong>.</li>
+          <li>Tap the <strong>three-dot menu</strong> (top right corner).</li>
+          <li>Tap <strong>Add to Home screen</strong> or <strong>Install app</strong>.</li>
+          <li>Tap <strong>Install</strong> to confirm.</li>
+        </ol>
+      )}
+
+      <div style={{
+        marginTop: 16, padding: 12, background: palette.bgAlt, borderRadius: 8,
+        fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+      }}>
+        Once installed, Henalytics opens like a regular app. No app store needed — it just lives on your home screen.
+      </div>
     </Modal>
   );
 }
