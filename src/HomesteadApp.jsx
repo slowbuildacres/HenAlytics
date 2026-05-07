@@ -4480,6 +4480,14 @@ function OnboardingWizard({ update, onClose }) {
               sub="Per-batch tracking, butcher day"
             />
 
+            <div style={{
+              marginTop: 12, padding: "10px 12px",
+              background: palette.bgAlt, borderRadius: 8,
+              fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+            }}>
+              💡 Don't see your hobby? You can submit it through Settings → "How can I improve?" — if there's enough push from users, I'll work on adding it!
+            </div>
+
             <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
               <Btn variant="primary" onClick={finish}>Done — let's go!</Btn>
             </div>
@@ -4626,7 +4634,8 @@ function AddToHomeScreenModal({ onClose }) {
       {tab === "ios" && (
         <ol style={{ paddingLeft: 20, fontSize: 14, color: palette.ink, lineHeight: 1.7, margin: 0 }}>
           <li>Open <strong>henalytics.com</strong> in <strong>Safari</strong> (must be Safari, not Chrome).</li>
-          <li>Tap the <strong>Share button</strong> (square with arrow pointing up) at the bottom of the screen.</li>
+          <li>Tap the <strong>three-dot menu</strong> (•••) in the bottom-right corner of Safari.</li>
+          <li>Tap <strong>Share</strong>.</li>
           <li>Scroll down and tap <strong>Add to Home Screen</strong>.</li>
           <li>Tap <strong>Add</strong> in the top right.</li>
         </ol>
