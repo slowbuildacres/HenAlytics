@@ -818,7 +818,7 @@ export default function HomesteadApp() {
           ⚠️ You were signed out on this device — tap to sign back in
         </div>
       )}
-      {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */
+      {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
       <SeasonalDecorations />
 
       {/* Onboarding wizard: shown only on first-ever load with no data */}
