@@ -226,12 +226,19 @@ function scoreData(data) {
 async function safeWriteCloudHomestead(homesteadId, newData) {
   // Read current cloud state
   let currentCloud = null;
+  let readFailed = false;
   try {
     currentCloud = await readCloudHomestead(homesteadId);
   } catch (e) {
-    // If we can't read the current state, fall back to writing anyway.
-    // Read failures should be rare and we don't want to block all saves on them.
-    currentCloud = null;
+    // If we can't read the current state, REFUSE to write — we'd rather lose
+    // a save than risk clobbering real data. The old behavior of writing anyway
+    // turned out to cause real data loss for users.
+    console.warn('Cloud read failed during safe-write check; skipping save to avoid clobber.', e);
+    readFailed = true;
+  }
+
+  if (readFailed) {
+    return { skipped: true, reason: 'read-failed' };
   }
 
   const currentScore = scoreData(currentCloud);
@@ -245,7 +252,7 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
       `Refusing to clobber cloud data (current score=${currentScore}, new=${newScore}). ` +
       `This usually means a fresh page load tried to save default data. Skipping save.`
     );
-    return { skipped: true };
+    return { skipped: true, reason: 'would-clobber' };
   }
 
   await writeCloudHomestead(homesteadId, newData);

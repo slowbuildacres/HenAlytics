@@ -176,7 +176,7 @@ function exportAllAsCsv(data) {
   const url = URL.createObjectURL(blob);
   const a = document.createElement("a");
   a.href = url;
-  const dateStr = new Date().toISOString().slice(0, 10);
+  const dateStr = localDateStr(new Date());
   const safeName = (data.homesteadName || "homestead").replace(/[^a-zA-Z0-9-_]/g, "_") || "homestead";
   a.download = `${safeName}-export-${dateStr}.csv`;
   document.body.appendChild(a);
@@ -186,10 +186,39 @@ function exportAllAsCsv(data) {
 }
 
 // ============ UTIL ============
-const todayStr = () => new Date().toISOString().slice(0, 10);
+// ============ DATE UTILITIES ============
+// All entry dates are stored as "YYYY-MM-DD" strings representing the LOCAL
+// calendar date the user logged the entry. We parse and format using local
+// time, NOT UTC, so an entry logged on May 6 doesn't display as May 5 for
+// users in Western timezones.
+// Convert any Date object to "YYYY-MM-DD" using LOCAL calendar date.
+// Use this everywhere instead of `.toISOString().slice(0, 10)` which gives
+// UTC date, off-by-one for Western timezones near midnight.
+const localDateStr = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+const todayStr = () => {
+  const d = new Date();
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+};
+// Parse a "YYYY-MM-DD" string as local-time midnight (avoids the UTC drift
+// issue with `new Date("2026-05-06")` which interprets as UTC midnight and
+// shifts to the previous day for Western timezones at display time).
+const parseLocalDate = (s) => {
+  if (!s || typeof s !== "string") return new Date();
+  const [y, m, d] = s.split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+};
 const fmtDate = (s) => {
   if (!s) return "";
-  const d = new Date(s);
+  const d = parseLocalDate(s);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
 const fmtMoney = (n) => {
@@ -199,7 +228,7 @@ const fmtMoney = (n) => {
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 const getSeason = (dateStr) => {
-  const d = new Date(dateStr);
+  const d = parseLocalDate(dateStr);
   const m = d.getMonth();
   const y = d.getFullYear();
   if (m >= 2 && m <= 4) return `Spring ${y}`;
@@ -972,7 +1001,7 @@ function QuickLogTiles({ hobby, setModal }) {
 function NeedsAttentionCard({ hobby, entries, setModal }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
-  const todayIso = today.toISOString().slice(0, 10);
+  const todayIso = localDateStr(today);
   const dayMs = 24 * 60 * 60 * 1000;
 
   const daysSince = (action) => {
@@ -1207,14 +1236,14 @@ function GardenSummary({ hobby, data, setModal }) {
 }
 
 function EggLayersSummary({ hobby, entries, update, setModal }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
 
   // ---- Weekly stats ----
   // Eggs laid: count both "eggs" (original quick-tile) and "eggs_laid" (egg basket commit)
   // so both logging methods feed into the same stats.
   const eggsLaid = entries.filter((e) => e.action === "eggs_laid" || e.action === "eggs");
-  const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-  const twoWeeksAgo = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+  const oneWeekAgo = localDateStr(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
+  const twoWeeksAgo = localDateStr(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000));
   const eggsThisWeek = eggsLaid.filter((e) => e.date > oneWeekAgo).reduce((s, e) => s + (Number(e.count) || 0), 0);
   const eggsLastWeek = eggsLaid.filter((e) => e.date > twoWeeksAgo && e.date <= oneWeekAgo).reduce((s, e) => s + (Number(e.count) || 0), 0);
   const diff = eggsThisWeek - eggsLastWeek;
@@ -1342,7 +1371,7 @@ function FlockHistoryList({ hobby, setModal }) {
 // Persists in hobby.eggBasket = { date, count }. Auto-resets when the date changes.
 // Tap "Done" to commit it as a single eggs_laid entry.
 function EggBasket({ hobby, update }) {
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   const basket = hobby.eggBasket;
   const isToday = basket && basket.date === today;
   const count = isToday ? basket.count : 0;
