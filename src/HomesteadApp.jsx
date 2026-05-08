@@ -68,6 +68,7 @@ const defaultData = () => ({
   calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
   tutorialDismissed: false, // true after user completes or skips tutorial
   salesHidden: false,        // true if user hides the Sales tab
+  spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
   sales: [],            // unified sales log
   customers: [],        // repeat buyer directory
 });
@@ -81,6 +82,7 @@ function migrateData(data) {
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
   if (typeof data.salesHidden !== "boolean") data.salesHidden = false;
+  if (typeof data.spouseMode !== "boolean") data.spouseMode = false;
   if (!Array.isArray(data.customers)) data.customers = [];
   if (typeof data.homesteadName !== "string") data.homesteadName = "";
   if (data.homesteadLocation !== null && (!data.homesteadLocation || typeof data.homesteadLocation !== "object")) {
@@ -290,6 +292,11 @@ const fmtMoney = (n) => {
 };
 const newId = () => Math.random().toString(36).slice(2, 10);
 
+// Spouse Mode helpers — fudge numbers for "presentation" purposes
+// Costs shown at 10%, production shown at 200%
+const spouseCost = (n, spouseMode) => spouseMode ? (Number(n) || 0) * 0.1 : (Number(n) || 0);
+const spouseProd = (n, spouseMode) => spouseMode ? Math.round((Number(n) || 0) * 2) : (Number(n) || 0);
+
 const getSeason = (dateStr) => {
   const d = parseLocalDate(dateStr);
   const m = d.getMonth();
@@ -298,6 +305,24 @@ const getSeason = (dateStr) => {
   if (m >= 5 && m <= 7) return `Summer ${y}`;
   if (m >= 8 && m <= 10) return `Fall ${y}`;
   return `Winter ${y}`;
+};
+
+// Dark palette used in Spouse Mode
+const paletteDark = {
+  bg: "#1A1A2E",
+  bgAlt: "#16213E",
+  ink: "#E0E0E0",
+  inkSoft: "#A0A0B0",
+  accent: "#E94560",
+  accentSoft: "#FF6B8A",
+  leaf: "#4CAF7D",
+  leafSoft: "#80E0A0",
+  yolk: "#FFD700",
+  yolkSoft: "#FFE87C",
+  feather: "#9B89C4",
+  featherSoft: "#C4B5E8",
+  line: "#FFFFFF18",
+  card: "#0F3460",
 };
 
 // ============ STYLED PRIMITIVES ============
@@ -755,14 +780,17 @@ export default function HomesteadApp() {
   const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" && page !== "analytics" ? "garden" : activeHobby));
   const entries = data.entries[activeHobby] || [];
 
+  // Swap palette when spouse mode is on
+  const sp = data.spouseMode ? paletteDark : palette;
+
   return (
     <div style={{
       minHeight: "100vh",
-      background: palette.bg,
-      backgroundImage: `radial-gradient(${palette.line} 0.5px, transparent 0.5px)`,
+      background: sp.bg,
+      backgroundImage: `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
-      color: palette.ink,
+      color: sp.ink,
       paddingBottom: 100,
     }}>
       <style>{`
@@ -790,7 +818,7 @@ export default function HomesteadApp() {
           ⚠️ You were signed out on this device — tap to sign back in
         </div>
       )}
-      {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
+      {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */
       <SeasonalDecorations />
 
       {/* Onboarding wizard: shown only on first-ever load with no data */}
@@ -930,10 +958,10 @@ export default function HomesteadApp() {
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
-          <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} />
+          <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
         )}
         {page === "analytics" && activeHobby !== "rabbits" && (
-          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} />
+          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
@@ -1750,11 +1778,11 @@ function EntryPhotoThumb({ path, size = 40 }) {
 }
 
 // ============ ANALYTICS PAGE ============
-function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
+function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
   // Garden uses explicit seasons; other hobbies use date-derived seasons
   if (hobby.type === "garden") {
-    return <GardenAnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} />;
+    return <GardenAnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={spouseMode} />;
   }
 
   let entries = data.entries[hobby.id] || [];
@@ -1789,13 +1817,13 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
         </div>
       </div>
 
-      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} />}
-      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} seasonFilter={seasonFilter} />}
+      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} />}
+      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} seasonFilter={seasonFilter} spouseMode={spouseMode} />}
     </div>
   );
 }
 
-function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
+function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
   // Build season list: archived + (currently active, if any)
   const archived = hobby.archivedSeasons || [];
@@ -1855,15 +1883,17 @@ function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
         <EmptyState text="No garden seasons yet. Start one from the Home page." />
       )}
 
-      <GardenAnalytics entries={analyticsEntries} data={data} seasonName={seasonName} />
+      <GardenAnalytics entries={analyticsEntries} data={data} seasonName={seasonName} spouseMode={spouseMode} />
     </div>
   );
 }
 
-function GardenAnalytics({ entries, data, seasonName }) {
+function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
   const harvests = entries.filter((e) => e.action === "harvested");
-  const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
-  const totalCost = entries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const totalHarvestRaw = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
+  const totalHarvest = spouseProd(totalHarvestRaw, spouseMode);
+  const totalCostRaw = entries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const totalCost = spouseCost(totalCostRaw, spouseMode);
   const waterings = entries.filter((e) => e.action === "watered").length;
   const plantings = entries.filter((e) => e.action === "planted").length;
 
@@ -1921,7 +1951,7 @@ function GardenAnalytics({ entries, data, seasonName }) {
   );
 }
 
-function EggLayersAnalytics({ hobby, entries }) {
+function EggLayersAnalytics({ hobby, entries, spouseMode }) {
   // Count both "eggs" (manual quick-tile) and "eggs_laid" (egg basket commits)
   const eggs = entries.filter((e) => e.action === "eggs" || e.action === "eggs_laid");
   const feeds = entries.filter((e) => e.action === "fed");
@@ -1931,10 +1961,14 @@ function EggLayersAnalytics({ hobby, entries }) {
   const sold = entries.filter((e) => e.action === "sold_eggs");
   const infra = entries.filter((e) => e.action === "infrastructure");
 
-  const totalEggs = eggs.reduce((s, e) => s + (Number(e.count) || 0), 0);
-  const feedCost = feeds.reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  const beddingCost = beddings.reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  const infraCost = infra.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const totalEggsRaw = eggs.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const totalEggs = spouseProd(totalEggsRaw, spouseMode);
+  const feedCostRaw = feeds.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const beddingCostRaw = beddings.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const infraCostRaw = infra.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const feedCost = spouseCost(feedCostRaw, spouseMode);
+  const beddingCost = spouseCost(beddingCostRaw, spouseMode);
+  const infraCost = spouseCost(infraCostRaw, spouseMode);
   const totalCost = feedCost + beddingCost + infraCost;
   const costPerEgg = totalEggs > 0 ? totalCost / totalEggs : 0;
   const costPerDozen = costPerEgg * 12;
@@ -2074,7 +2108,7 @@ function CostRow({ label, value, total }) {
   );
 }
 
-function MeatChickensAnalytics({ hobby, entries, seasonFilter }) {
+function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
   // Combine current batch (in-progress) + archived batches
   const currentBatch = hobby.currentBatch;
   const archived = hobby.archivedBatches || [];
@@ -2126,10 +2160,15 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter }) {
     });
   });
 
-  const totalCost = totalFeedCost + totalInfraCost + totalChickCost;
+  const totalCostRaw = totalFeedCost + totalInfraCost + totalChickCost;
+  const totalCost = spouseCost(totalCostRaw, spouseMode);
+  const adjFeedCost = spouseCost(totalFeedCost, spouseMode);
+  const adjInfraCost = spouseCost(totalInfraCost, spouseMode);
+  const adjChickCost = spouseCost(totalChickCost, spouseMode);
+  const adjButchered = spouseProd(totalButchered, spouseMode);
   const mortalityRate = totalStart > 0 ? ((totalDeaths / totalStart) * 100).toFixed(1) : 0;
   const avgWeight = totalButchered > 0 ? (totalWeight / totalButchered).toFixed(2) : 0;
-  const costPerBird = totalButchered > 0 ? (totalCost / totalButchered).toFixed(2) : "—";
+  const costPerBird = adjButchered > 0 ? (totalCost / adjButchered).toFixed(2) : "—";
   const leadingCause = Object.entries(deathCauses).sort((a, b) => b[1] - a[1])[0];
   const avgDeathAge = deathAges.length > 0 ? (deathAges.reduce((a, b) => a + b, 0) / deathAges.length).toFixed(1) : null;
 
@@ -2149,11 +2188,11 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter }) {
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Total Birds Started" value={totalStart} accent={palette.feather} />
-        <StatCard label="Total Butchered" value={totalButchered} accent={palette.ink} />
+        <StatCard label="Total Butchered" value={adjButchered} accent={palette.ink} />
         <StatCard label="Mortality Rate" value={`${mortalityRate}%`} sub={`${totalDeaths} deaths`} accent={palette.accent} />
         <StatCard label="Avg Final Weight" value={`${avgWeight} lbs`} accent={palette.leaf} />
         <StatCard label="Cost / Bird" value={typeof costPerBird === "string" ? costPerBird : fmtMoney(costPerBird)} sub="all-in" accent={palette.yolk} />
-        <StatCard label="Total Cost" value={fmtMoney(totalCost)} sub={`feed ${fmtMoney(totalFeedCost)}${totalInfraCost > 0 ? " + infra " + fmtMoney(totalInfraCost) : ""}`} accent={palette.feather} />
+        <StatCard label="Total Cost" value={fmtMoney(totalCost)} sub={`feed ${fmtMoney(adjFeedCost)}${adjInfraCost > 0 ? " + infra " + fmtMoney(adjInfraCost) : ""}`} accent={palette.feather} />
       </div>
 
       {(totalChickCost > 0 || totalInfraCost > 0) && (
@@ -2795,6 +2834,12 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
 
   return (
     <Modal open onClose={onClose} title="Settings">
+      {/* Spouse Mode active banner */}
+      {data.spouseMode && (
+        <div style={{ background: "#E94560", color: "#fff", textAlign: "center", padding: "8px 12px", fontSize: 12, fontWeight: 700, letterSpacing: 0.5, borderRadius: 8, marginBottom: 12 }}>
+          🕵️ SPOUSE MODE ON — your numbers are for presentation only
+        </div>
+      )}
       {user ? (
         <>
           <div style={{
@@ -2852,6 +2897,43 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           }}
         />
       )}
+
+      {/* SPOUSE MODE */}
+      <div style={{ marginTop: 16, marginBottom: 4 }}>
+        <div style={{ fontSize: 11, color: data.spouseMode ? "#A0A0B0" : palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+          🤫 Spouse Mode
+        </div>
+        <div style={{
+          background: data.spouseMode ? "#0F3460" : palette.card,
+          border: `1.5px solid ${data.spouseMode ? "#E94560" : palette.line}`,
+          borderRadius: 12, padding: "14px 14px", marginBottom: 6,
+          transition: "all 0.3s",
+        }}>
+          <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontWeight: 700, fontSize: 14, color: data.spouseMode ? "#FFD700" : palette.ink, marginBottom: 4 }}>
+                {data.spouseMode ? "🕵️ Spouse Mode: ON" : "Spouse Mode"}
+              </div>
+              <div style={{ fontSize: 12, color: data.spouseMode ? "#A0A0B0" : palette.inkSoft, lineHeight: 1.5 }}>
+                {data.spouseMode
+                  ? "All costs shown at 10% of actual. Production shown at 200%. Your secret is safe... probably."
+                  : "Shows costs at 10% of actual and production at 200% of actual. Perfect for that "hey look how well this is going" conversation."}
+              </div>
+            </div>
+            <button
+              onClick={() => update(d => { d.spouseMode = !d.spouseMode; return d; })}
+              style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${data.spouseMode ? "#E94560" : palette.line}`, background: data.spouseMode ? "#E94560" : palette.bgAlt, color: data.spouseMode ? "#fff" : palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13, cursor: "pointer", flexShrink: 0, whiteSpace: "nowrap" }}
+            >
+              {data.spouseMode ? "ON 🔴" : "OFF"}
+            </button>
+          </div>
+          {!data.spouseMode && (
+            <div style={{ marginTop: 10, padding: "8px 10px", background: palette.yolkSoft, borderRadius: 8, fontSize: 12, color: palette.ink, lineHeight: 1.5 }}>
+              ⚠️ <strong>Heads up:</strong> This changes what numbers are displayed — not your actual data. Real data is always preserved. Also, I am not responsible if your spouse gets mad you bought another chicken. 🐔
+            </div>
+          )}
+        </div>
+      </div>
 
       <SectionBtn
         icon={Download}
