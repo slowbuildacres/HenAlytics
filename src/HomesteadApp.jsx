@@ -66,6 +66,7 @@ const defaultData = () => ({
   plantings: [], // garden plantings to track
   butchered: [], // butcher events for current batch
   calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
+  tutorialDismissed: false, // true after user completes or skips tutorial
   sales: [],            // unified sales log
   customers: [],        // repeat buyer directory
 });
@@ -564,6 +565,8 @@ export default function HomesteadApp() {
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
+  const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
+  const [showTutorial, setShowTutorial] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
@@ -793,10 +796,30 @@ export default function HomesteadApp() {
         <OnboardingWizard
           update={update}
           onClose={() => {
-            // Mark onboarded but don't change anything else
             update((d) => { d.onboardedAt = Date.now(); return d; });
+            // Show tutorial prompt after a short delay so wizard closes cleanly
+            setTimeout(() => setShowTutorialPrompt(true), 300);
           }}
         />
+      )}
+
+      {/* Tutorial prompt — shown once after onboarding */}
+      {showTutorialPrompt && !showTutorial && (
+        <TutorialPrompt
+          onStart={() => { setShowTutorialPrompt(false); setShowTutorial(true); }}
+          onSkip={() => {
+            setShowTutorialPrompt(false);
+            update((d) => { d.tutorialDismissed = true; return d; });
+          }}
+        />
+      )}
+
+      {/* Tutorial modal */}
+      {showTutorial && (
+        <TutorialModal onClose={() => {
+          setShowTutorial(false);
+          update((d) => { d.tutorialDismissed = true; return d; });
+        }} />
       )}
       {/* HEADER */}
       <header style={{
@@ -2572,6 +2595,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
+  if (modal.type === "tutorial") return <TutorialModal onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
   if (modal.type === "inviteAccepted") return <InviteAcceptedModal homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "inviteError") return <InviteErrorModal message={modal.message} onClose={close} />;
@@ -2821,6 +2845,14 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         onClick={() => {
           exportAllAsCsv(data);
         }}
+      />
+
+      <SectionBtn
+        icon={Lightbulb}
+        label="Take the tour 🌾"
+        sub="A quick walkthrough of HenAlytics features"
+        accent={palette.leaf}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "tutorial" }), 0); }}
       />
 
       <SectionBtn
@@ -4922,6 +4954,236 @@ function AddToHomeScreenModal({ onClose }) {
   );
 }
 
+
+
+// ============================================================================
+// TUTORIAL MODAL — 10-slide feature walkthrough
+// ============================================================================
+const TUTORIAL_SLIDES = [
+  {
+    emoji: "🌾",
+    title: "Welcome to HenAlytics",
+    body: "HenAlytics helps you track eggs, harvests, costs, and sales across everything on your homestead — chickens, garden, bees, rabbits, and more. This quick tour covers the essentials.",
+    tip: null,
+  },
+  {
+    emoji: "🔧",
+    title: "Enable the hobbies you do",
+    body: "You only see what's relevant to you. Hide meat chickens if you don't raise them. Enable Ducks, Rabbits, or Bees when you're ready.",
+    tip: "Find this under the 🏚 Barn icon → Manage Hobbies, or in ⚙️ Settings.",
+  },
+  {
+    emoji: "🥚",
+    title: "The egg basket",
+    body: "Tap + each time you collect an egg during your rounds. When you're done, hit "Done — log N eggs" to save it to your records.",
+    tip: "The basket resets automatically each day. Each flock has its own basket.",
+  },
+  {
+    emoji: "🐔",
+    title: "Multiple flocks",
+    body: "Chickens are the default, but you can add Duck, Turkey, Quail, Goose, or Guinea flocks too. Each flock tracks separately with its own basket and stats.",
+    tip: "Tap "Add Flock" on the Egg Layers home tab to get started.",
+  },
+  {
+    emoji: "🗺️",
+    title: "Garden map",
+    body: "Start a garden season, then tap "Garden Map" to upload a photo of your garden. Drop pins exactly where things grow — each pin tracks what's planted there.",
+    tip: "Use any photo: overhead photo, hand-drawn sketch, or satellite screenshot.",
+  },
+  {
+    emoji: "📅",
+    title: "Calendar & planting dates",
+    body: "Tap the Calendar tab and plan a crop. HenAlytics calculates suggested planting dates based on your USDA zone and last frost date.",
+    tip: "All dates are editable — adjust any of them before adding to your calendar.",
+  },
+  {
+    emoji: "💰",
+    title: "Sales tab",
+    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat chickens, rabbits, or garden produce. Track repeat customers and see revenue over time.",
+    tip: "Old "Sold Eggs" entries from Egg Layers show up here automatically.",
+  },
+  {
+    emoji: "🏚",
+    title: "The Barn icon",
+    body: "Tap the barn in the top-right corner to access: invite a farmhand (share with your partner or family), leave a tip to keep the app free, set your location for weather, and manage your photos.",
+    tip: "Farmhands see the same data in real time — great for couples running the homestead together.",
+  },
+  {
+    emoji: "✨",
+    title: "Year in Review",
+    body: "Tap the ✨ tab at any time to see a summary of your year — total eggs, harvests, costs, sales, and highlights across every hobby.",
+    tip: "It updates live as you log, so you can check it any time of year.",
+  },
+  {
+    emoji: "📬",
+    title: "Weekly digest email",
+    body: "Opt in to get a Sunday morning email recap of your week — eggs laid, feed costs, harvests, and more. A nice way to stay on top of your homestead.",
+    tip: "Enable it in ⚙️ Settings after signing in. You can turn it off anytime.",
+  },
+];
+
+export function TutorialModal({ onClose, startSlide = 0 }) {
+  const [slide, setSlide] = useState(startSlide);
+  const total = TUTORIAL_SLIDES.length;
+  const s = TUTORIAL_SLIDES[slide];
+  const isLast = slide === total - 1;
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: palette.bg, borderRadius: 20, maxWidth: 420, width: "100%",
+          border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+          fontFamily: FONT_BODY, overflow: "hidden",
+        }}
+      >
+        {/* Progress bar */}
+        <div style={{ height: 4, background: palette.bgAlt }}>
+          <div style={{ height: "100%", background: palette.leaf, width: `${((slide + 1) / total) * 100}%`, transition: "width 0.3s" }} />
+        </div>
+
+        {/* Content */}
+        <div style={{ padding: "28px 24px 20px" }}>
+          {/* Progress dots */}
+          <div style={{ display: "flex", justifyContent: "center", gap: 6, marginBottom: 24 }}>
+            {TUTORIAL_SLIDES.map((_, i) => (
+              <div
+                key={i}
+                onClick={() => setSlide(i)}
+                style={{
+                  width: i === slide ? 18 : 8, height: 8, borderRadius: 4,
+                  background: i === slide ? palette.ink : i < slide ? palette.leaf : palette.line,
+                  cursor: "pointer", transition: "all 0.2s",
+                }}
+              />
+            ))}
+          </div>
+
+          {/* Emoji */}
+          <div style={{ fontSize: 56, textAlign: "center", marginBottom: 16, lineHeight: 1 }}>
+            {s.emoji}
+          </div>
+
+          {/* Title */}
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: palette.ink, textAlign: "center", marginBottom: 12, lineHeight: 1.2 }}>
+            {s.title}
+          </div>
+
+          {/* Body */}
+          <div style={{ fontSize: 15, color: palette.ink, lineHeight: 1.6, textAlign: "center", marginBottom: s.tip ? 14 : 0 }}>
+            {s.body}
+          </div>
+
+          {/* Tip */}
+          {s.tip && (
+            <div style={{
+              background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
+              borderRadius: 10, padding: "10px 14px", fontSize: 13,
+              color: palette.ink, lineHeight: 1.5, textAlign: "left",
+            }}>
+              💡 {s.tip}
+            </div>
+          )}
+        </div>
+
+        {/* Footer buttons */}
+        <div style={{
+          display: "flex", gap: 8, padding: "0 24px 24px",
+          justifyContent: "space-between", alignItems: "center",
+        }}>
+          <button
+            onClick={onClose}
+            style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 13, padding: "8px 4px" }}
+          >
+            {isLast ? "" : "Skip tour"}
+          </button>
+          <div style={{ display: "flex", gap: 8 }}>
+            {slide > 0 && (
+              <button
+                onClick={() => setSlide(slide - 1)}
+                style={{ padding: "10px 16px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.ink, cursor: "pointer" }}
+              >
+                ← Back
+              </button>
+            )}
+            <button
+              onClick={() => isLast ? onClose() : setSlide(slide + 1)}
+              style={{ padding: "10px 20px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg, cursor: "pointer", boxShadow: "2px 2px 0 " + palette.line }}
+            >
+              {isLast ? "Let's go! 🌾" : "Next →"}
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// TUTORIAL PROMPT — shown once after onboarding finishes
+// ============================================================================
+export function TutorialPrompt({ onStart, onSkip }) {
+  return (
+    <div
+      style={{
+        position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 200, padding: 16,
+      }}
+    >
+      <div
+        style={{
+          background: palette.bg, borderRadius: 20, maxWidth: 380, width: "100%",
+          border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+          fontFamily: FONT_BODY, padding: "32px 28px",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 52, marginBottom: 16 }}>🌾</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: palette.ink, marginBottom: 10 }}>
+          Want a quick tour?
+        </div>
+        <div style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.6, marginBottom: 24 }}>
+          We'll walk you through the key features in about 2 minutes — egg tracking, the garden map, sales, and more.
+        </div>
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 20, fontStyle: "italic" }}>
+          Not now? The tour is always available in ⚙️ Settings.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          <button
+            onClick={onStart}
+            style={{
+              padding: "12px 20px", borderRadius: 10, border: `2px solid ${palette.ink}`,
+              background: palette.ink, color: palette.bg, fontFamily: FONT_BODY,
+              fontWeight: 700, fontSize: 15, cursor: "pointer",
+              boxShadow: "3px 3px 0 " + palette.line,
+            }}
+          >
+            Let's go! 🌾
+          </button>
+          <button
+            onClick={onSkip}
+            style={{
+              padding: "10px 20px", borderRadius: 10, border: `1.5px solid ${palette.line}`,
+              background: "transparent", color: palette.inkSoft, fontFamily: FONT_BODY,
+              fontWeight: 600, fontSize: 14, cursor: "pointer",
+            }}
+          >
+            Skip for now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ============ PHOTOS MODAL — accessible from Barn icon ============
 function PhotosModal({ data, user, onClose }) {
