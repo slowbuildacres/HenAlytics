@@ -1,27 +1,7 @@
-// ============================================================================
-// SYNC LAYER (Stage 4)
-// ----------------------------------------------------------------------------
-// Each user belongs to one or more homesteads via the homestead_members table.
-// In v1 of farmhand sharing we assume one homestead per user — they're the
-// owner of their own, and may also be a member of someone else's.
-// For now we always operate on the user's "primary" homestead, which is:
-//   - The first homestead they own (if they own any), or
-//   - The first homestead they're a member of (if they don't own one).
-//
-// Photos go to Supabase Storage. Files are pathed by USER ID (not homestead),
-// because Storage RLS uses auth.uid() to enforce per-user folders. Every member
-// of a homestead can see every photo path stored in the data blob — that's by
-// design. The path itself reveals only the uploader's user ID.
-// ============================================================================
-
 import { supabase, isSupabaseConfigured } from './supabase.js';
 
 const STORAGE_KEY = 'homestead_data_v1';
 const HOMESTEAD_ID_KEY = 'homestead_active_id_v1';
-
-// ============================================================================
-// LOCAL STORAGE HELPERS
-// ============================================================================
 
 export function readLocalHomestead() {
   try {
@@ -55,24 +35,9 @@ function writeActiveHomesteadId(id) {
   try { localStorage.setItem(HOMESTEAD_ID_KEY, id); } catch (e) {}
 }
 
-// ============================================================================
-// HOMESTEAD DISCOVERY / CREATION
-// ============================================================================
-
-// Find or create the user's primary homestead. Returns { id, role }.
-// Preference order:
-//   1. The homestead ID we cached locally (if user is still a member)
-//   2. Among owned homesteads, the one with the MOST data (homesteadName set,
-//      or has actual entries/seasons). This protects against bugs that created
-//      multiple empty homesteads — we always pick the user's real one.
-//   3. The oldest owned homestead
-//   4. Any membership at all
-//   5. Last resort: create a new one
 async function ensureHomestead(userId) {
   const cachedId = readActiveHomesteadId();
 
-  // Pull all memberships AND the data of each homestead, so we can pick the
-  // one that actually has the user's content rather than a freshly-created shell.
   const { data: memberships, error: mErr } = await supabase
     .from('homestead_members')
     .select('homestead_id, role, joined_at, homesteads(id, data, updated_at)')
@@ -85,8 +50,6 @@ async function ensureHomestead(userId) {
   }
 
   if (memberships && memberships.length > 0) {
-    // Score each homestead by how much "real" data it has. Higher = more likely
-    // to be the user's real one.
     const scored = memberships.map((m) => {
       const data = (m.homesteads && m.homesteads.data) || {};
       let score = 0;
@@ -112,8 +75,6 @@ async function ensureHomestead(userId) {
       return { membership: m, score };
     });
 
-    // Step 1: If we cached an ID and the user is still a member, prefer it
-    //         (but only if it has data; otherwise fall through to scoring).
     if (cachedId) {
       const cachedMatch = scored.find((s) => s.membership.homestead_id === cachedId);
       if (cachedMatch && cachedMatch.score > 0) {
@@ -121,25 +82,21 @@ async function ensureHomestead(userId) {
       }
     }
 
-    // Step 2: Among owned, pick the highest-scoring one. Ties broken by oldest.
     const owned = scored.filter((s) => s.membership.role === 'owner');
     if (owned.length > 0) {
       owned.sort((a, b) => {
         if (b.score !== a.score) return b.score - a.score;
-        // Older joined_at first
         return new Date(a.membership.joined_at) - new Date(b.membership.joined_at);
       });
       const chosen = owned[0].membership;
       return { id: chosen.homestead_id, role: chosen.role };
     }
 
-    // Step 3: No owned homesteads, just pick the highest-scoring membership.
     scored.sort((a, b) => b.score - a.score);
     const chosen = scored[0].membership;
     return { id: chosen.homestead_id, role: chosen.role };
   }
 
-  // No memberships at all — create a brand-new homestead.
   const { data: created, error: cErr } = await supabase
     .from('homesteads')
     .insert({ data: {} })
@@ -162,10 +119,6 @@ async function ensureHomestead(userId) {
 
   return { id: created.id, role: 'owner' };
 }
-
-// ============================================================================
-// CLOUD READ / WRITE
-// ============================================================================
 
 async function readCloudHomestead(homesteadId) {
   const { data, error } = await supabase
@@ -193,8 +146,6 @@ async function writeCloudHomestead(homesteadId, data) {
   }
 }
 
-// Score how much "real content" a homestead data blob has. Higher = more data.
-// Used to detect potentially-destructive saves (overwriting rich data with empty).
 function scoreData(data) {
   if (!data || typeof data !== 'object') return 0;
   let score = 0;
@@ -220,19 +171,12 @@ function scoreData(data) {
   return score;
 }
 
-// Anti-clobber save: refuses to write data that has noticeably less content than
-// what's already in the cloud. Prevents the bug where a fresh page load
-// transiently writes default/empty data over the user's real homestead.
 async function safeWriteCloudHomestead(homesteadId, newData) {
-  // Read current cloud state
   let currentCloud = null;
   let readFailed = false;
   try {
     currentCloud = await readCloudHomestead(homesteadId);
   } catch (e) {
-    // If we can't read the current state, REFUSE to write — we'd rather lose
-    // a save than risk clobbering real data. The old behavior of writing anyway
-    // turned out to cause real data loss for users.
     console.warn('Cloud read failed during safe-write check; skipping save to avoid clobber.', e);
     readFailed = true;
   }
@@ -244,13 +188,9 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
   const currentScore = scoreData(currentCloud);
   const newScore = scoreData(newData);
 
-  // If the cloud already has content and the new data has noticeably less,
-  // refuse to overwrite. Tolerance: small drops (e.g. user deleted one entry)
-  // are fine, but going from 50 entries to 0 is a clobber.
   if (currentScore >= 5 && newScore < currentScore - 10) {
     console.warn(
-      `Refusing to clobber cloud data (current score=${currentScore}, new=${newScore}). ` +
-      `This usually means a fresh page load tried to save default data. Skipping save.`
+      `Refusing to clobber cloud data (current score=${currentScore}, new=${newScore}). Skipping save.`
     );
     return { skipped: true, reason: 'would-clobber' };
   }
@@ -259,14 +199,6 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
   return { skipped: false };
 }
 
-// ============================================================================
-// PUBLIC LOAD / SAVE API
-// ============================================================================
-
-// Load homestead data. Returns { source, data, homesteadId, role }
-//   source = "cloud"        — got existing data from cloud
-//   source = "cloud-empty"  — homestead exists but data is empty
-//   source = "local"        — signed out, loaded from localStorage
 export async function loadHomestead(user) {
   if (user && isSupabaseConfigured) {
     try {
@@ -287,21 +219,16 @@ export async function loadHomestead(user) {
   return { source: 'local', data: readLocalHomestead() };
 }
 
-// Save homestead data. Writes both cloud (if signed in) and local cache.
-// Uses safeWriteCloudHomestead which refuses to clobber existing rich data
-// with empty/default data — protects against fresh-page-load bugs.
 export async function saveHomestead(user, data, cloudReady = true) {
-  // Never save stale local data over cloud — wait until cloud load is confirmed
-  if (user export async function saveHomestead(user, data) {export async function saveHomestead(user, data) { isSupabaseConfigured && !cloudReady) {
-    return { ok: false, location: "local", skipped: true };
-  }
   writeLocalHomestead(data);
 
   if (user && isSupabaseConfigured) {
+    if (!cloudReady) {
+      return { ok: false, location: 'local', skipped: true };
+    }
     try {
       let homesteadId = readActiveHomesteadId();
       if (!homesteadId) {
-        // No cached id — discover it. Rare; happens if storage was cleared.
         const { id } = await ensureHomestead(user.id);
         writeActiveHomesteadId(id);
         homesteadId = id;
@@ -318,12 +245,6 @@ export async function saveHomestead(user, data, cloudReady = true) {
   return { ok: true, location: 'local' };
 }
 
-// ============================================================================
-// FARMHAND MANAGEMENT
-// ============================================================================
-
-// Returns the list of members in the user's primary homestead.
-// Each member: { user_id, role, email, joined_at }
 export async function listMembers(user) {
   if (!user || !isSupabaseConfigured) return [];
   const homesteadId = readActiveHomesteadId();
@@ -339,8 +260,6 @@ export async function listMembers(user) {
     return [];
   }
 
-  // We can't directly query auth.users from the client, but we can get our own
-  // user's email. For other members we show a partial label.
   return (data || []).map((m) => ({
     ...m,
     email: m.user_id === user.id ? user.email : null,
@@ -348,7 +267,6 @@ export async function listMembers(user) {
   }));
 }
 
-// Returns pending invites for the user's homestead.
 export async function listPendingInvites(user) {
   if (!user || !isSupabaseConfigured) return [];
   const homesteadId = readActiveHomesteadId();
@@ -368,7 +286,6 @@ export async function listPendingInvites(user) {
   return data || [];
 }
 
-// Create a farmhand invite. Returns the invite code so we can email it.
 export async function createInvite(user, email) {
   if (!user || !isSupabaseConfigured) throw new Error('Sign in first');
   const homesteadId = readActiveHomesteadId();
@@ -396,7 +313,6 @@ export async function createInvite(user, email) {
   return data;
 }
 
-// Cancel a pending invite.
 export async function cancelInvite(inviteId) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase
@@ -406,10 +322,6 @@ export async function cancelInvite(inviteId) {
   if (error) throw error;
 }
 
-// Accept an invite by code. Adds the current user as a member of the
-// invite's homestead. Should be called after sign-in.
-// Uses a SECURITY DEFINER function so the lookup, validation, and insert
-// happen atomically and bypass RLS quirks.
 export async function acceptInvite(user, inviteCode) {
   if (!user || !isSupabaseConfigured) throw new Error('Sign in first');
 
@@ -418,7 +330,6 @@ export async function acceptInvite(user, inviteCode) {
   });
 
   if (error) {
-    // The function raises useful messages — surface them
     const msg = error.message || '';
     if (msg.includes('different email')) {
       throw new Error("This invite is for a different email address than the one you signed in with.");
@@ -436,17 +347,12 @@ export async function acceptInvite(user, inviteCode) {
   }
 
   const homesteadId = data;
-
-  // Switch their active homestead to the one they just joined
   writeActiveHomesteadId(homesteadId);
-  // Clear local cache so the joined homestead's data loads fresh
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 
   return homesteadId;
 }
 
-// Remove a member (kick a farmhand, or leave). Owner-only for kicking; anyone
-// for leaving themselves.
 export async function removeMember(homesteadId, userId) {
   if (!isSupabaseConfigured) return;
   const { error } = await supabase
@@ -457,14 +363,9 @@ export async function removeMember(homesteadId, userId) {
   if (error) throw error;
 }
 
-// Get the active homestead's ID (used by Farmhand UI).
 export function getActiveHomesteadId() {
   return readActiveHomesteadId();
 }
-
-// ============================================================================
-// EMAIL via /api/send-email (Vercel serverless function)
-// ============================================================================
 
 async function sendEmail(payload) {
   const res = await fetch('/api/send-email', {
@@ -497,10 +398,6 @@ export function sendFarmhandInvite({ inviteEmail, inviterEmail, homesteadName, i
     inviteLink,
   });
 }
-
-// ============================================================================
-// PHOTO UPLOADS  (unchanged from Stage 3)
-// ============================================================================
 
 export async function compressImage(file, maxDim = 1600, quality = 0.85) {
   const img = await fileToImage(file);
