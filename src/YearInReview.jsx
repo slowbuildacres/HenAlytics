@@ -1,11 +1,5 @@
 // ============================================================================
-// YEAR IN REVIEW
-// ----------------------------------------------------------------------------
-// Spotify-Wrapped-style summary of the user's homesteading year. Shows totals
-// for eggs, harvest, meat birds, plus a few flair stats. Each "card" is a
-// section with one big stat + visual flair.
-//
-// Year selector at the top lets users flip between past years.
+// YEAR IN REVIEW — updated to respect hidden hobbies + rabbits support
 // ============================================================================
 
 import React, { useState, useMemo, useEffect } from "react";
@@ -21,9 +15,6 @@ const palette = {
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-// ============================================================================
-// Main page
-// ============================================================================
 export default function YearInReviewPage({ data }) {
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
@@ -36,9 +27,15 @@ export default function YearInReviewPage({ data }) {
   const stats = useMemo(() => computeStats(data, year), [data, year]);
   const hasAnyData = stats.totalEntries > 0;
 
+  // Check which hobbies are enabled
+  const hobbies = data.hobbies || [];
+  const eggLayersEnabled = hobbies.some(h => h.type === "egg_layers" && !h.hidden);
+  const gardenEnabled = hobbies.some(h => h.type === "garden" && !h.hidden);
+  const meatChickensEnabled = hobbies.some(h => h.type === "meat_chickens" && !h.hidden);
+  const rabbitsEnabled = hobbies.some(h => h.type === "rabbits" && !h.hidden);
+
   return (
     <div>
-      {/* Header with year selector */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 18, flexWrap: "wrap", gap: 10,
@@ -69,10 +66,11 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
-          <HeadlinesCard stats={stats} />
-          <EggsCard stats={stats} />
-          <GardenCard stats={stats} />
-          <MeatChickensCard stats={stats} />
+          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} />
+          {eggLayersEnabled && <EggsCard stats={stats} />}
+          {gardenEnabled && <GardenCard stats={stats} />}
+          {meatChickensEnabled && <MeatChickensCard stats={stats} />}
+          {rabbitsEnabled && <RabbitsCard stats={stats} />}
           <ActivityCard stats={stats} />
           {stats.weatherStats && <WeatherCard stats={stats} />}
           {stats.photos.length > 0 && <PhotosCard stats={stats} />}
@@ -101,10 +99,6 @@ function EmptyYear({ year }) {
   );
 }
 
-// ============================================================================
-// Cards
-// ============================================================================
-
 function Card({ children, accent = palette.card, ...rest }) {
   return (
     <div
@@ -129,10 +123,7 @@ function CoverCard({ year, stats }) {
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 8 }}>
         Your homestead in
       </div>
-      <div style={{
-        fontFamily: FONT_DISPLAY, fontSize: 64, color: palette.ink,
-        lineHeight: 1, marginBottom: 12,
-      }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 64, color: palette.ink, lineHeight: 1, marginBottom: 12 }}>
         {year}
       </div>
       <div style={{ fontSize: 14, color: palette.inkSoft, fontStyle: "italic" }}>
@@ -142,33 +133,24 @@ function CoverCard({ year, stats }) {
   );
 }
 
-// Big-three headlines: eggs collected, meat birds raised, total harvest lbs.
-// Always shown (with zeros if empty) so user sees their year-at-a-glance.
-function HeadlinesCard({ stats }) {
+function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled }) {
+  const items = [];
+  if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
+  if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
+  if (gardenEnabled) items.push({ icon: "🌱", number: Math.round(stats.totalHarvestLbs), label: `lb${Math.round(stats.totalHarvestLbs) === 1 ? "" : "s"} harvested`, accent: palette.leaf });
+  if (rabbitsEnabled) items.push({ icon: "🐇", number: stats.totalKitsAlive || 0, label: `kits born`, accent: palette.leaf });
+
+  if (items.length === 0) return null;
+
   return (
     <Card accent={palette.bgAlt}>
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 12 }}>
         ✨ Your year at a glance
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
-        <BigStat
-          icon="🥚"
-          number={stats.eggsCollected}
-          label={`egg${stats.eggsCollected === 1 ? "" : "s"} laid`}
-          accent={palette.yolk}
-        />
-        <BigStat
-          icon="🍗"
-          number={Math.max(stats.birdsSurvived, stats.birdsButchered)}
-          label={`meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`}
-          accent={palette.feather}
-        />
-        <BigStat
-          icon="🌱"
-          number={Math.round(stats.totalHarvestLbs)}
-          label={`lb${Math.round(stats.totalHarvestLbs) === 1 ? "" : "s"} harvested`}
-          accent={palette.leaf}
-        />
+        {items.map((item, i) => (
+          <BigStat key={i} icon={item.icon} number={item.number} label={item.label} accent={item.accent} />
+        ))}
       </div>
     </Card>
   );
@@ -200,15 +182,10 @@ function BigStat({ icon, number, label, accent }) {
       textAlign: "center",
     }}>
       <div style={{ fontSize: 26, marginBottom: 4 }}>{icon}</div>
-      <div style={{
-        fontFamily: FONT_DISPLAY, fontSize: 32, color: palette.ink,
-        lineHeight: 1, marginBottom: 4,
-      }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 32, color: palette.ink, lineHeight: 1, marginBottom: 4 }}>
         {shown.toLocaleString()}
       </div>
-      <div style={{ fontSize: 11, color: palette.inkSoft }}>
-        {label}
-      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft }}>{label}</div>
     </div>
   );
 }
@@ -236,34 +213,21 @@ function EggsCard({ stats }) {
         {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{(eggsSold / 12).toFixed(1)} dozen</strong></>}
       </div>
 
-      {/* Money breakdown — shows cost per dozen and grocery-store savings */}
       {(eggLayerTotalCost > 0 && dozensCollected > 0) && (
         <div style={{ marginTop: 4, marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
             The numbers
           </div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {eggRevenue > 0 && (
-              <Stat big={fmtMoney(eggRevenue)} label="revenue from sold eggs" accent={palette.leaf} />
-            )}
-            <Stat
-              big={fmtMoney(eggLayerCostPerDozen)}
-              label="cost per dozen produced"
-              accent={palette.feather}
-            />
+            {eggRevenue > 0 && <Stat big={fmtMoney(eggRevenue)} label="revenue from sold eggs" accent={palette.leaf} />}
+            <Stat big={fmtMoney(eggLayerCostPerDozen)} label="cost per dozen produced" accent={palette.feather} />
             <Stat
               big={fmtMoney(moneySavedVsBuying)}
               label={`saved vs. buying pasture-raised at $${benchmarkPricePerDozen.toFixed(2)}/doz`}
               accent={moneySavedVsBuying >= 0 ? palette.leaf : palette.accent}
             />
           </div>
-
-          {/* Itemized cost breakdown */}
-          <div style={{
-            marginTop: 12, padding: 10,
-            background: palette.bgAlt, borderRadius: 8,
-            fontSize: 12, color: palette.inkSoft, lineHeight: 1.6,
-          }}>
+          <div style={{ marginTop: 12, padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, lineHeight: 1.6 }}>
             <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 4 }}>Costs broken down:</div>
             {eggLayerFeedCost > 0 && <div>🌾 Feed · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerFeedCost)}</strong></div>}
             {eggLayerInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerInfraCost)}</strong></div>}
@@ -275,17 +239,12 @@ function EggsCard({ stats }) {
         </div>
       )}
 
-      {/* Show just the cost-per-dozen even if there are no costs yet but eggs were collected */}
       {eggLayerTotalCost === 0 && dozensCollected > 0 && (
-        <div style={{
-          padding: 10, background: palette.bgAlt, borderRadius: 8, marginBottom: 14,
-          fontSize: 12, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.5,
-        }}>
+        <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, marginBottom: 14, fontSize: 12, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.5 }}>
           💡 Add costs (feed, infrastructure, birds) to your egg layer entries and we'll show you how much you saved vs. buying pasture-raised eggs at the store.
         </div>
       )}
 
-      {/* Month-by-month bar chart */}
       {peakEggMonth && (
         <div style={{ marginTop: 14 }}>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6 }}>
@@ -296,15 +255,8 @@ function EggsCard({ stats }) {
               const collected = (eggRevenueByMonth[i] && eggRevenueByMonth[i].collected) || 0;
               const h = (collected / maxBar) * 60;
               return (
-                <div
-                  key={i}
-                  style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }}
-                  title={`${label}: ${collected} eggs`}
-                >
-                  <div style={{
-                    width: "100%", height: `${h}px`, minHeight: 2,
-                    background: palette.yolk, borderRadius: "3px 3px 0 0",
-                  }} />
+                <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title={`${label}: ${collected} eggs`}>
+                  <div style={{ width: "100%", height: `${h}px`, minHeight: 2, background: palette.yolk, borderRadius: "3px 3px 0 0" }} />
                   <div style={{ fontSize: 9, color: palette.inkSoft }}>{label[0]}</div>
                 </div>
               );
@@ -326,7 +278,7 @@ function GardenCard({ stats }) {
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
         🌱 Garden
       </div>
-      <CountUp number={Math.round(totalHarvestLbs)} suffix={`lbs harvested`} big />
+      <CountUp number={Math.round(totalHarvestLbs)} suffix="lbs harvested" big />
       <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
         From <strong style={{ color: palette.ink }}>{harvestsCount}</strong> harvest{harvestsCount === 1 ? "" : "s"}
         {plantingsCount > 0 && <> · {plantingsCount} planting{plantingsCount === 1 ? "" : "s"}</>}
@@ -334,26 +286,15 @@ function GardenCard({ stats }) {
 
       {topPlants.length > 0 && (
         <div>
-          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            Top crops
-          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>Top crops</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {topPlants.slice(0, 5).map((p) => (
               <div key={p.plant} style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ minWidth: 90, fontSize: 13, color: palette.ink, fontWeight: 500 }}>
-                  {p.plant}
-                </div>
+                <div style={{ minWidth: 90, fontSize: 13, color: palette.ink, fontWeight: 500 }}>{p.plant}</div>
                 <div style={{ flex: 1, height: 14, background: palette.bgAlt, borderRadius: 7, overflow: "hidden" }}>
-                  <div style={{
-                    height: "100%",
-                    width: `${(p.lbs / maxLbs) * 100}%`,
-                    background: palette.leaf,
-                    borderRadius: 7,
-                  }} />
+                  <div style={{ height: "100%", width: `${(p.lbs / maxLbs) * 100}%`, background: palette.leaf, borderRadius: 7 }} />
                 </div>
-                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>
-                  {p.lbs.toFixed(1)} lbs
-                </div>
+                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>{p.lbs.toFixed(1)} lbs</div>
               </div>
             ))}
           </div>
@@ -382,9 +323,7 @@ function MeatChickensCard({ stats }) {
           <CountUp number={Math.round(totalMeatLbs)} suffix="lbs in the freezer" big />
           <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
             From <strong style={{ color: palette.ink }}>{birdsButchered}</strong> bird{birdsButchered === 1 ? "" : "s"} butchered
-            {birdsRaised > 0 && (
-              <> · started with <strong style={{ color: palette.ink }}>{birdsRaised}</strong></>
-            )}
+            {birdsRaised > 0 && <> · started with <strong style={{ color: palette.ink }}>{birdsRaised}</strong></>}
           </div>
         </>
       ) : (
@@ -398,33 +337,14 @@ function MeatChickensCard({ stats }) {
         </>
       )}
 
-      {/* Money breakdown for meat chickens — only shown when there are real costs */}
       {meatChickenTotalCost > 0 && (
         <div style={{ marginTop: 4, marginBottom: 14 }}>
-          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-            The numbers
-          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>The numbers</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {meatCostPerLb > 0 && (
-              <Stat
-                big={fmtMoney(meatCostPerLb)}
-                label="cost per lb of meat"
-                accent={palette.feather}
-              />
-            )}
-            <Stat
-              big={fmtMoney(meatChickenTotalCost)}
-              label="total spent on meat birds"
-              accent={palette.feather}
-            />
+            {meatCostPerLb > 0 && <Stat big={fmtMoney(meatCostPerLb)} label="cost per lb of meat" accent={palette.feather} />}
+            <Stat big={fmtMoney(meatChickenTotalCost)} label="total spent on meat birds" accent={palette.feather} />
           </div>
-
-          {/* Itemized cost breakdown */}
-          <div style={{
-            marginTop: 12, padding: 10,
-            background: palette.bgAlt, borderRadius: 8,
-            fontSize: 12, color: palette.inkSoft, lineHeight: 1.6,
-          }}>
+          <div style={{ marginTop: 12, padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, lineHeight: 1.6 }}>
             <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 4 }}>Costs broken down:</div>
             {meatChickenFeedCost > 0 && <div>🌾 Feed · <strong style={{ color: palette.ink }}>{fmtMoney(meatChickenFeedCost)}</strong></div>}
             {meatChickenInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(meatChickenInfraCost)}</strong></div>}
@@ -434,13 +354,49 @@ function MeatChickensCard({ stats }) {
       )}
 
       {birdDeaths > 0 && (
-        <div style={{
-          padding: 10, background: palette.bgAlt, borderRadius: 8,
-          fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
-        }}>
+        <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, lineHeight: 1.5 }}>
           <Heart size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
           You lost {birdDeaths} bird{birdDeaths === 1 ? "" : "s"} this year
           {mortalityRate > 0 && ` (${mortalityRate.toFixed(0)}% mortality)`}.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ============ NEW: RABBITS CARD ============
+function RabbitsCard({ stats }) {
+  const { totalLitters, totalKitsAlive, totalKitsStillborn, totalRabbitsButchered, rabbitTotalCost, rabbitCostPerRabbit, rabbitTotalMeatLbs } = stats;
+  if (!totalLitters && !totalRabbitsButchered && !rabbitTotalCost) return null;
+  const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
+        🐇 Rabbits (Beta)
+      </div>
+
+      {totalLitters > 0 && (
+        <>
+          <CountUp number={totalKitsAlive} suffix="kits born alive" big />
+          <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 12 }}>
+            From <strong style={{ color: palette.ink }}>{totalLitters}</strong> litter{totalLitters === 1 ? "" : "s"}
+            {totalKitsStillborn > 0 && <> · {totalKitsStillborn} stillborn</>}
+          </div>
+        </>
+      )}
+
+      {totalRabbitsButchered > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
+          <Stat big={totalRabbitsButchered} label="rabbits butchered" accent={palette.feather} />
+          {rabbitTotalMeatLbs > 0 && <Stat big={`${rabbitTotalMeatLbs.toFixed(1)} lbs`} label="in the freezer" accent={palette.leaf} />}
+          {rabbitCostPerRabbit > 0 && <Stat big={fmtMoney(rabbitCostPerRabbit)} label="cost per rabbit" accent={palette.yolk} />}
+        </div>
+      )}
+
+      {rabbitTotalCost > 0 && (
+        <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, lineHeight: 1.6 }}>
+          <strong style={{ color: palette.ink }}>Total spent on rabbits:</strong> {fmtMoney(rabbitTotalCost)}
         </div>
       )}
     </Card>
@@ -476,27 +432,9 @@ function WeatherCard({ stats }) {
         🌦️ Weather
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-        {weatherStats.hottestDay && (
-          <Stat
-            big={`${weatherStats.hottestDay.highF}°`}
-            label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`}
-            accent={palette.accent}
-          />
-        )}
-        {weatherStats.coldestDay && (
-          <Stat
-            big={`${weatherStats.coldestDay.lowF}°`}
-            label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`}
-            accent="#7AA8B8"
-          />
-        )}
-        {weatherStats.totalRainIn > 0 && (
-          <Stat
-            big={`${weatherStats.totalRainIn.toFixed(1)}"`}
-            label="rain logged"
-            accent={palette.leaf}
-          />
-        )}
+        {weatherStats.hottestDay && <Stat big={`${weatherStats.hottestDay.highF}°`} label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`} accent={palette.accent} />}
+        {weatherStats.coldestDay && <Stat big={`${weatherStats.coldestDay.lowF}°`} label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`} accent="#7AA8B8" />}
+        {weatherStats.totalRainIn > 0 && <Stat big={`${weatherStats.totalRainIn.toFixed(1)}"`} label="rain logged" accent={palette.leaf} />}
       </div>
     </Card>
   );
@@ -508,11 +446,7 @@ function PhotosCard({ stats }) {
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 10 }}>
         📷 Best moments
       </div>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 6,
-      }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 6 }}>
         {stats.photos.slice(0, 6).map((photoPath, i) => (
           <YearPhotoTile key={i} path={photoPath} />
         ))}
@@ -533,8 +467,7 @@ function YearPhotoTile({ path }) {
   }, [path]);
   return (
     <div style={{
-      width: "100%", aspectRatio: "1 / 1",
-      borderRadius: 6, overflow: "hidden",
+      width: "100%", aspectRatio: "1 / 1", borderRadius: 6, overflow: "hidden",
       background: url ? `url(${url}) center/cover` : palette.bgAlt,
       border: `1px solid ${palette.line}`,
     }} />
@@ -543,57 +476,24 @@ function YearPhotoTile({ path }) {
 
 function FunFactsCard({ stats }) {
   const facts = [];
-
-  if (stats.firstEntryDate) {
-    facts.push({ emoji: "🚀", label: "First entry", value: shortDate(stats.firstEntryDate) });
-  }
-  if (stats.lastEntryDate && stats.lastEntryDate !== stats.firstEntryDate) {
-    facts.push({ emoji: "📅", label: "Most recent entry", value: shortDate(stats.lastEntryDate) });
-  }
-  if (stats.heaviestDayCount > 1) {
-    facts.push({ emoji: "🔥", label: "Most active day", value: `${shortDate(stats.heaviestDay)} · ${stats.heaviestDayCount} entries` });
-  }
-  if (stats.gardenWaterCount > 0) {
-    facts.push({ emoji: "💧", label: "Garden waterings", value: stats.gardenWaterCount });
-  }
-  if (stats.totalFeedLbs > 0) {
-    facts.push({ emoji: "🌾", label: "Feed bought", value: `${Math.round(stats.totalFeedLbs)} lbs` });
-  }
-  if (stats.totalFeedCost > 0) {
-    facts.push({ emoji: "💸", label: "Spent on feed", value: `$${stats.totalFeedCost.toFixed(2)}` });
-  }
-  if (stats.freeRangeCount > 0) {
-    facts.push({ emoji: "🌳", label: "Free-range days", value: stats.freeRangeCount });
-  }
-  if (stats.photosCount > 0) {
-    facts.push({ emoji: "📷", label: "Photos taken", value: stats.photosCount });
-  }
-  if (stats.issueCount > 0) {
-    facts.push({ emoji: "⚠️", label: "Issues logged", value: stats.issueCount });
-  }
-  if (stats.plantingsCount > 0) {
-    facts.push({ emoji: "🌱", label: "Plantings", value: stats.plantingsCount });
-  }
-  if (stats.harvestsCount > 0) {
-    facts.push({ emoji: "🧺", label: "Harvest trips", value: stats.harvestsCount });
-  }
-  // Show the most-used hobby
+  if (stats.firstEntryDate) facts.push({ emoji: "🚀", label: "First entry", value: shortDate(stats.firstEntryDate) });
+  if (stats.lastEntryDate && stats.lastEntryDate !== stats.firstEntryDate) facts.push({ emoji: "📅", label: "Most recent entry", value: shortDate(stats.lastEntryDate) });
+  if (stats.heaviestDayCount > 1) facts.push({ emoji: "🔥", label: "Most active day", value: `${shortDate(stats.heaviestDay)} · ${stats.heaviestDayCount} entries` });
+  if (stats.gardenWaterCount > 0) facts.push({ emoji: "💧", label: "Garden waterings", value: stats.gardenWaterCount });
+  if (stats.totalFeedLbs > 0) facts.push({ emoji: "🌾", label: "Feed bought", value: `${Math.round(stats.totalFeedLbs)} lbs` });
+  if (stats.totalFeedCost > 0) facts.push({ emoji: "💸", label: "Spent on feed", value: `$${stats.totalFeedCost.toFixed(2)}` });
+  if (stats.freeRangeCount > 0) facts.push({ emoji: "🌳", label: "Free-range days", value: stats.freeRangeCount });
+  if (stats.photosCount > 0) facts.push({ emoji: "📷", label: "Photos taken", value: stats.photosCount });
+  if (stats.issueCount > 0) facts.push({ emoji: "⚠️", label: "Issues logged", value: stats.issueCount });
+  if (stats.plantingsCount > 0) facts.push({ emoji: "🌱", label: "Plantings", value: stats.plantingsCount });
+  if (stats.harvestsCount > 0) facts.push({ emoji: "🧺", label: "Harvest trips", value: stats.harvestsCount });
   if (stats.entryCountByHobby) {
     const top = Object.entries(stats.entryCountByHobby).sort((a, b) => b[1] - a[1])[0];
     if (top && top[1] > 0) {
-      const hobbyLabels = {
-        garden: "Garden",
-        egg_layers: "Egg Layers",
-        meat_chickens: "Meat Birds",
-      };
-      facts.push({
-        emoji: "⭐",
-        label: "Most-tracked hobby",
-        value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})`,
-      });
+      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits" };
+      facts.push({ emoji: "⭐", label: "Most-tracked hobby", value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})` });
     }
   }
-
   if (facts.length === 0) return null;
 
   return (
@@ -601,24 +501,12 @@ function FunFactsCard({ stats }) {
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 12 }}>
         🎉 Fun facts
       </div>
-      <div style={{
-        display: "grid",
-        gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))",
-        gap: 10,
-      }}>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(140px, 1fr))", gap: 10 }}>
         {facts.map((f, i) => (
-          <div key={i} style={{
-            padding: "10px 12px",
-            background: palette.bgAlt, borderRadius: 8,
-            border: `1px solid ${palette.line}`,
-          }}>
+          <div key={i} style={{ padding: "10px 12px", background: palette.bgAlt, borderRadius: 8, border: `1px solid ${palette.line}` }}>
             <div style={{ fontSize: 16, marginBottom: 2 }}>{f.emoji}</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>
-              {f.value}
-            </div>
-            <div style={{ fontSize: 10, color: palette.inkSoft }}>
-              {f.label}
-            </div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>{f.value}</div>
+            <div style={{ fontSize: 10, color: palette.inkSoft }}>{f.label}</div>
           </div>
         ))}
       </div>
@@ -630,19 +518,12 @@ function FooterCard({ year }) {
   return (
     <Card accent={palette.bgAlt} style={{ textAlign: "center" }}>
       <div style={{ fontSize: 28, marginBottom: 6 }}>🌱</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 4 }}>
-        Thanks for slow-building.
-      </div>
-      <div style={{ fontSize: 13, color: palette.inkSoft }}>
-        See you in {year + 1}.
-      </div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 4 }}>Thanks for slow-building.</div>
+      <div style={{ fontSize: 13, color: palette.inkSoft }}>See you in {year + 1}.</div>
     </Card>
   );
 }
 
-// ============================================================================
-// Helper components
-// ============================================================================
 function CountUp({ number, suffix, big }) {
   const [shown, setShown] = useState(0);
   useEffect(() => {
@@ -652,7 +533,6 @@ function CountUp({ number, suffix, big }) {
     let raf;
     const tick = (t) => {
       const p = Math.min(1, (t - start) / duration);
-      // ease-out
       const eased = 1 - Math.pow(1 - p, 3);
       setShown(Math.round(number * eased));
       if (p < 1) raf = requestAnimationFrame(tick);
@@ -662,10 +542,7 @@ function CountUp({ number, suffix, big }) {
   }, [number]);
 
   return (
-    <div style={{
-      fontFamily: FONT_DISPLAY, fontSize: big ? 56 : 36,
-      color: palette.ink, lineHeight: 1, marginBottom: 4,
-    }}>
+    <div style={{ fontFamily: FONT_DISPLAY, fontSize: big ? 56 : 36, color: palette.ink, lineHeight: 1, marginBottom: 4 }}>
       {shown.toLocaleString()} <span style={{ fontSize: big ? 16 : 14, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>{suffix}</span>
     </div>
   );
@@ -673,106 +550,38 @@ function CountUp({ number, suffix, big }) {
 
 function Stat({ big, label, accent = palette.ink }) {
   return (
-    <div style={{
-      flex: "1 1 110px", padding: 14, borderRadius: 10,
-      background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
-      borderLeft: `4px solid ${accent}`,
-    }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>
-        {big}
-      </div>
-      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
-        {label}
-      </div>
+    <div style={{ flex: "1 1 110px", padding: 14, borderRadius: 10, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderLeft: `4px solid ${accent}` }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>{big}</div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{label}</div>
     </div>
   );
 }
 
-// ============================================================================
-// Stats computation
-// ============================================================================
 const monthLabels = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
-// ============================================================================
-// REGIONAL PASTURE-RAISED EGG PRICES
-// ----------------------------------------------------------------------------
-// Default benchmarks for "what would these eggs have cost at the grocery store
-// if I bought pasture-raised". Sources: USDA Weekly Grocery Store Egg Feature
-// Activity (March 2026), state egg pricing data, and consumer reports.
-//
-// We map by US state (from the location label) since national average is too
-// blunt — Hawaii / CA / Northeast pay way more than Midwest / South.
-// ============================================================================
 const PASTURE_PRICES_BY_STATE = {
-  // Highest-priced regions
-  "Hawaii": 11.00,
-  "California": 9.50,
-  "Alaska": 9.00,
-  "New York": 8.50,
-  "Massachusetts": 8.50,
-  "Connecticut": 8.50,
-  "New Jersey": 8.50,
-  "Washington": 8.25,
-  "Oregon": 8.00,
-  "Vermont": 8.00,
-  "Maine": 7.99,
-  "New Hampshire": 7.99,
-  "Rhode Island": 7.99,
-  "Maryland": 7.75,
-  "District of Columbia": 8.00,
-  "Virginia": 7.50,
-  "Pennsylvania": 7.50,
-  "Florida": 7.50,
-  "Colorado": 7.50,
-  "Illinois": 7.25,
-  "Texas": 7.00,
-  "Arizona": 7.00,
-  "Nevada": 7.50,
-  "Michigan": 7.00,
-  "Ohio": 6.99,
-  "Indiana": 6.75,
-  "Wisconsin": 6.99,
-  "Minnesota": 6.99,
-  // Mid-tier
-  "North Carolina": 6.50,
-  "South Carolina": 6.50,
-  "Georgia": 6.50,
-  "Tennessee": 6.25,
-  "New Mexico": 6.50,
-  "Utah": 6.75,
-  "Idaho": 6.50,
-  "Montana": 6.50,
-  "Wyoming": 6.50,
-  "North Dakota": 6.25,
-  "South Dakota": 6.25,
-  "Nebraska": 6.00,
-  "Kansas": 5.99,
-  "Iowa": 5.99,
-  "Missouri": 5.99,
-  // Lower-priced regions
-  "Kentucky": 5.75,
-  "West Virginia": 5.75,
-  "Oklahoma": 5.75,
-  "Arkansas": 5.50,
-  "Alabama": 5.50,
-  "Louisiana": 5.50,
-  "Mississippi": 5.25,
+  "Hawaii": 11.00, "California": 9.50, "Alaska": 9.00, "New York": 8.50,
+  "Massachusetts": 8.50, "Connecticut": 8.50, "New Jersey": 8.50, "Washington": 8.25,
+  "Oregon": 8.00, "Vermont": 8.00, "Maine": 7.99, "New Hampshire": 7.99,
+  "Rhode Island": 7.99, "Maryland": 7.75, "District of Columbia": 8.00,
+  "Virginia": 7.50, "Pennsylvania": 7.50, "Florida": 7.50, "Colorado": 7.50,
+  "Illinois": 7.25, "Texas": 7.00, "Arizona": 7.00, "Nevada": 7.50,
+  "Michigan": 7.00, "Ohio": 6.99, "Indiana": 6.75, "Wisconsin": 6.99,
+  "Minnesota": 6.99, "North Carolina": 6.50, "South Carolina": 6.50,
+  "Georgia": 6.50, "Tennessee": 6.25, "New Mexico": 6.50, "Utah": 6.75,
+  "Idaho": 6.50, "Montana": 6.50, "Wyoming": 6.50, "North Dakota": 6.25,
+  "South Dakota": 6.25, "Nebraska": 6.00, "Kansas": 5.99, "Iowa": 5.99,
+  "Missouri": 5.99, "Kentucky": 5.75, "West Virginia": 5.75, "Oklahoma": 5.75,
+  "Arkansas": 5.50, "Alabama": 5.50, "Louisiana": 5.50, "Mississippi": 5.25,
   "Delaware": 6.99,
 };
+const PASTURE_PRICE_DEFAULT = 7.99;
 
-const PASTURE_PRICE_DEFAULT = 7.99; // National grocery feature weighted avg, March 2026
-
-// Pull the right benchmark based on the user's location label.
-// `location` is { lat, lon, label } where label is "Atchison, Kansas" or similar.
 function pickRegionalEggPrice(location) {
   if (!location || !location.label) return PASTURE_PRICE_DEFAULT;
-  // The label format is "City, State" or "City, State, US"
   const parts = location.label.split(",").map((s) => s.trim());
-  // Try each part — the state usually comes second
   for (const part of parts) {
-    if (PASTURE_PRICES_BY_STATE[part] != null) {
-      return PASTURE_PRICES_BY_STATE[part];
-    }
+    if (PASTURE_PRICES_BY_STATE[part] != null) return PASTURE_PRICES_BY_STATE[part];
   }
   return PASTURE_PRICE_DEFAULT;
 }
@@ -786,21 +595,14 @@ function shortDate(dateStr) {
 function collectYears(data) {
   const years = new Set();
   Object.values(data.entries || {}).forEach((arr) => {
-    (arr || []).forEach((e) => {
-      if (e.date) years.add(parseInt(e.date.slice(0, 4)));
-    });
+    (arr || []).forEach((e) => { if (e.date) years.add(parseInt(e.date.slice(0, 4))); });
   });
-  // Also check archived seasons/batches
   (data.hobbies || []).forEach((h) => {
     (h.archivedSeasons || []).forEach((s) => {
-      (s.finalEntries || []).forEach((e) => {
-        if (e.date) years.add(parseInt(e.date.slice(0, 4)));
-      });
+      (s.finalEntries || []).forEach((e) => { if (e.date) years.add(parseInt(e.date.slice(0, 4))); });
     });
     (h.archivedBatches || []).forEach((b) => {
-      (b.finalEntries || []).forEach((e) => {
-        if (e.date) years.add(parseInt(e.date.slice(0, 4)));
-      });
+      (b.finalEntries || []).forEach((e) => { if (e.date) years.add(parseInt(e.date.slice(0, 4))); });
     });
   });
   return Array.from(years).filter((y) => !isNaN(y)).sort((a, b) => b - a);
@@ -810,7 +612,6 @@ function computeStats(data, year) {
   const yearStr = String(year);
   const inYear = (e) => e.date && e.date.startsWith(yearStr);
 
-  // Collect ALL entries across hobbies (current + archived)
   const allEntries = [];
   (data.hobbies || []).forEach((h) => {
     const live = (data.entries[h.id] || []).filter(inYear);
@@ -825,293 +626,151 @@ function computeStats(data, year) {
     });
   });
 
-  // Eggs collected (covers both "eggs" — original quick-tile — and "eggs_laid" — egg basket commit)
+  // Eggs
   const eggLaidEntries = allEntries.filter((e) => e.action === "eggs_laid" || e.action === "eggs");
   const eggsCollected = eggLaidEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
   const dozensCollected = eggsCollected / 12;
-
-  // Eggs sold
   const soldEggsEntries = allEntries.filter((e) => e.action === "sold_eggs");
   const eggsSold = soldEggsEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
   const eggRevenue = soldEggsEntries.reduce((s, e) => {
     const dozens = (Number(e.count) || 0) / 12;
     return s + dozens * (Number(e.pricePerDozen) || 0);
   }, 0);
-
-  // Egg layer costs: feed + infrastructure on egg_layers hobby + bird purchases
-  // CRITICAL: each filter explicitly checks hobbyType to prevent meat-chicken
-  // costs from polluting egg-layer numbers (or vice versa).
-  const eggLayerFeedCost = allEntries
-    .filter((e) => e.action === "fed" && e.hobbyType === "egg_layers")
-    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  const eggLayerInfraCost = allEntries
-    .filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers")
-    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  // Bird purchases this year (from flockHistory on the egg_layers hobby ONLY)
+  const eggLayerFeedCost = allEntries.filter((e) => e.action === "fed" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const eggLayerInfraCost = allEntries.filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   let eggLayerBirdCost = 0;
   (data.hobbies || []).forEach((h) => {
     if (h.type !== "egg_layers") return;
     (h.flockHistory || []).forEach((fh) => {
-      if (fh.date && fh.date.startsWith(yearStr)) {
-        eggLayerBirdCost += Number(fh.cost) || 0;
-      }
+      if (fh.date && fh.date.startsWith(yearStr)) eggLayerBirdCost += Number(fh.cost) || 0;
     });
   });
   const eggLayerTotalCost = eggLayerFeedCost + eggLayerInfraCost + eggLayerBirdCost;
-
-  // Meat chicken costs: same filters but for meat_chickens
-  const meatChickenFeedCost = allEntries
-    .filter((e) => e.action === "fed" && e.hobbyType === "meat_chickens")
-    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  const meatChickenInfraCost = allEntries
-    .filter((e) => e.action === "infrastructure" && e.hobbyType === "meat_chickens")
-    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
-  // Chick purchases on meat_chickens hobby (from archived + current batches' chickCost)
-  let meatChickenChickCost = 0;
-  (data.hobbies || []).forEach((h) => {
-    if (h.type !== "meat_chickens") return;
-    if (h.currentBatch && h.currentBatch.startDate && h.currentBatch.startDate.startsWith(yearStr)) {
-      meatChickenChickCost += Number(h.currentBatch.chickCost) || 0;
-    }
-    (h.archivedBatches || []).forEach((b) => {
-      if (b.startDate && b.startDate.startsWith(yearStr)) {
-        meatChickenChickCost += Number(b.chickCost) || 0;
-      }
-    });
-  });
-  const meatChickenTotalCost = meatChickenFeedCost + meatChickenInfraCost + meatChickenChickCost;
-  // meatCostPerLb is computed after totalMeatLbs is defined below.
-
-  // Cost per dozen produced — what each dozen of eggs you laid actually cost you
   const eggLayerCostPerDozen = dozensCollected > 0 ? eggLayerTotalCost / dozensCollected : 0;
-
-  // Money saved by having backyard eggs vs. buying PASTURE-RAISED at the store.
-  // Pasture-raised is the right comparison because that's effectively what
-  // backyard eggs are — hens out on grass, foraging, eating bugs and scraps.
-  // Default: $7.99/dozen (USDA grocery feature data, March 2026 weighted avg).
-  // Regional adjustments based on the user's saved homesteadLocation.
-  const benchmarkPricePerDozen = (
-    data.eggBenchmarkPricePerDozen != null && data.eggBenchmarkPricePerDozen > 0
-      ? Number(data.eggBenchmarkPricePerDozen)
-      : pickRegionalEggPrice(data.homesteadLocation)
-  );
+  const benchmarkPricePerDozen = (data.eggBenchmarkPricePerDozen != null && data.eggBenchmarkPricePerDozen > 0) ? Number(data.eggBenchmarkPricePerDozen) : pickRegionalEggPrice(data.homesteadLocation);
   const groceryStoreEquivalent = dozensCollected * benchmarkPricePerDozen;
   const moneySavedVsBuying = groceryStoreEquivalent - eggLayerTotalCost;
 
-  // Eggs by month
   const eggRevenueByMonth = {};
   for (let m = 0; m < 12; m++) eggRevenueByMonth[m] = { collected: 0 };
-  eggLaidEntries.forEach((e) => {
-    const m = new Date(e.date).getMonth();
-    eggRevenueByMonth[m].collected += Number(e.count) || 0;
-  });
-  let peakEggMonth = null;
-  let peakEggMonthCount = 0;
+  eggLaidEntries.forEach((e) => { const m = new Date(e.date).getMonth(); eggRevenueByMonth[m].collected += Number(e.count) || 0; });
+  let peakEggMonth = null, peakEggMonthCount = 0;
   for (let m = 0; m < 12; m++) {
-    if (eggRevenueByMonth[m].collected > peakEggMonthCount) {
-      peakEggMonthCount = eggRevenueByMonth[m].collected;
-      peakEggMonth = monthLabels[m];
-    }
+    if (eggRevenueByMonth[m].collected > peakEggMonthCount) { peakEggMonthCount = eggRevenueByMonth[m].collected; peakEggMonth = monthLabels[m]; }
   }
 
-  // Garden harvest
+  // Garden
   const harvestEntries = allEntries.filter((e) => e.action === "harvested");
-  const totalHarvestLbs = harvestEntries.reduce((s, e) => {
-    const q = Number(e.quantity) || 0;
-    // Treat all units as lbs for simplicity (most users use lbs)
-    return s + q;
-  }, 0);
+  const totalHarvestLbs = harvestEntries.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
   const harvestsCount = harvestEntries.length;
   const plantingsCount = allEntries.filter((e) => e.action === "planted").length;
-
-  // Top plants by total lbs harvested
   const plantTotals = {};
   harvestEntries.forEach((e) => {
     const name = (e.plant || "Unknown").trim();
     if (!name) return;
     plantTotals[name] = (plantTotals[name] || 0) + (Number(e.quantity) || 0);
   });
-  const topPlants = Object.entries(plantTotals)
-    .map(([plant, lbs]) => ({ plant, lbs }))
-    .sort((a, b) => b.lbs - a.lbs);
+  const topPlants = Object.entries(plantTotals).map(([plant, lbs]) => ({ plant, lbs })).sort((a, b) => b.lbs - a.lbs);
 
   // Meat chickens
-  const butcherEntries = allEntries.filter((e) => e.action === "butcher");
+  const meatChickenFeedCost = allEntries.filter((e) => e.action === "fed" && e.hobbyType === "meat_chickens").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const meatChickenInfraCost = allEntries.filter((e) => e.action === "infrastructure" && e.hobbyType === "meat_chickens").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  let meatChickenChickCost = 0;
+  (data.hobbies || []).forEach((h) => {
+    if (h.type !== "meat_chickens") return;
+    if (h.currentBatch && h.currentBatch.startDate && h.currentBatch.startDate.startsWith(yearStr)) meatChickenChickCost += Number(h.currentBatch.chickCost) || 0;
+    (h.archivedBatches || []).forEach((b) => { if (b.startDate && b.startDate.startsWith(yearStr)) meatChickenChickCost += Number(b.chickCost) || 0; });
+  });
+  const meatChickenTotalCost = meatChickenFeedCost + meatChickenInfraCost + meatChickenChickCost;
+  const butcherEntries = allEntries.filter((e) => e.action === "butcher" && e.hobbyType === "meat_chickens");
   const birdsButchered = butcherEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
-  const totalMeatLbs = butcherEntries.reduce((s, e) => {
-    const c = Number(e.count) || 0;
-    const w = Number(e.avgWeight) || 0;
-    return s + c * w;
-  }, 0);
-  // Cost per lb of meat — only meaningful once you've butchered.
-  const meatCostPerLb = (totalMeatLbs > 0) ? meatChickenTotalCost / totalMeatLbs : 0;
-  const birdDeaths = allEntries.filter((e) => e.action === "death" && e.hobbyType === "meat_chickens")
-    .reduce((s, e) => s + (Number(e.count) || 1), 0);
-
-  // Total birds raised (start counts of batches that started this year)
+  const totalMeatLbs = butcherEntries.reduce((s, e) => s + (Number(e.count) || 0) * (Number(e.avgWeight) || 0), 0);
+  const meatCostPerLb = totalMeatLbs > 0 ? meatChickenTotalCost / totalMeatLbs : 0;
+  const birdDeaths = allEntries.filter((e) => e.action === "death" && e.hobbyType === "meat_chickens").reduce((s, e) => s + (Number(e.count) || 1), 0);
   let birdsRaised = 0;
   (data.hobbies || []).forEach((h) => {
     if (h.type !== "meat_chickens") return;
-    if (h.currentBatch && h.currentBatch.startDate && h.currentBatch.startDate.startsWith(yearStr)) {
-      birdsRaised += Number(h.currentBatch.startCount) || 0;
-    }
-    (h.archivedBatches || []).forEach((b) => {
-      if (b.startDate && b.startDate.startsWith(yearStr)) {
-        birdsRaised += Number(b.startCount) || 0;
-      }
-    });
+    if (h.currentBatch && h.currentBatch.startDate && h.currentBatch.startDate.startsWith(yearStr)) birdsRaised += Number(h.currentBatch.startCount) || 0;
+    (h.archivedBatches || []).forEach((b) => { if (b.startDate && b.startDate.startsWith(yearStr)) birdsRaised += Number(b.startCount) || 0; });
   });
-
   const mortalityRate = birdsRaised > 0 ? (birdDeaths / birdsRaised) * 100 : 0;
-  // Birds that survived to butchering (or are still alive). Excludes birds that died.
-  // Used as the "headline" raised count since "raised" implies they made it.
   const birdsSurvived = Math.max(0, birdsRaised - birdDeaths);
 
-  // Activity / streaks / busiest month
+  // Rabbits
+  const rabbitEntries = allEntries.filter((e) => e.hobbyType === "rabbits");
+  const litterEntries = rabbitEntries.filter((e) => e.action === "litter");
+  const totalLitters = litterEntries.length;
+  const totalKitsAlive = litterEntries.reduce((s, e) => s + (Number(e.kitsAlive) || 0), 0);
+  const totalKitsStillborn = litterEntries.reduce((s, e) => s + (Number(e.kitsStillborn) || 0), 0);
+  const rabbitButcherEntries = rabbitEntries.filter((e) => e.action === "butcher");
+  const totalRabbitsButchered = rabbitButcherEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const rabbitTotalMeatLbs = rabbitButcherEntries.reduce((s, e) => s + (Number(e.count) || 0) * (Number(e.avgWeight) || 0), 0);
+  const rabbitTotalCost = rabbitEntries.filter((e) => e.action === "fed" || e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const rabbitCostPerRabbit = totalRabbitsButchered > 0 ? rabbitTotalCost / totalRabbitsButchered : 0;
+
+  // Activity
   const datesSet = new Set(allEntries.map((e) => e.date));
   const activeDays = datesSet.size;
   const totalEntries = allEntries.length;
-
-  // Busiest month
   const monthCounts = new Array(12).fill(0);
-  allEntries.forEach((e) => {
-    if (e.date) monthCounts[new Date(e.date).getMonth()]++;
-  });
-  let busiestMonthIdx = -1;
-  let busiestCount = 0;
-  monthCounts.forEach((c, i) => {
-    if (c > busiestCount) { busiestCount = c; busiestMonthIdx = i; }
-  });
+  allEntries.forEach((e) => { if (e.date) monthCounts[new Date(e.date).getMonth()]++; });
+  let busiestMonthIdx = -1, busiestCount = 0;
+  monthCounts.forEach((c, i) => { if (c > busiestCount) { busiestCount = c; busiestMonthIdx = i; } });
   const busiestMonth = busiestMonthIdx >= 0 ? monthLabels[busiestMonthIdx] : null;
 
-  // Longest consecutive-day streak
   const sortedDays = Array.from(datesSet).sort();
-  let longestStreak = 0;
-  let currentStreak = 0;
-  let prevDate = null;
+  let longestStreak = 0, currentStreak = 0, prevDate = null;
   sortedDays.forEach((d) => {
-    if (prevDate) {
-      const diff = (new Date(d) - new Date(prevDate)) / (1000 * 60 * 60 * 24);
-      if (diff === 1) currentStreak++;
-      else currentStreak = 1;
-    } else {
-      currentStreak = 1;
-    }
+    if (prevDate) { const diff = (new Date(d) - new Date(prevDate)) / (1000 * 60 * 60 * 24); if (diff === 1) currentStreak++; else currentStreak = 1; }
+    else currentStreak = 1;
     if (currentStreak > longestStreak) longestStreak = currentStreak;
     prevDate = d;
   });
 
-  // ------ FUN-FACT STATS ------
-  // First and last entry dates
   const firstEntryDate = sortedDays[0] || null;
   const lastEntryDate = sortedDays[sortedDays.length - 1] || null;
-
-  // Entry count by hobby (for the activity pie / "where did your time go")
   const entryCountByHobby = {};
-  allEntries.forEach((e) => {
-    const t = e.hobbyType || "other";
-    entryCountByHobby[t] = (entryCountByHobby[t] || 0) + 1;
-  });
-
-  // Garden waterings, free-range count, feed lbs, etc.
+  allEntries.forEach((e) => { const t = e.hobbyType || "other"; entryCountByHobby[t] = (entryCountByHobby[t] || 0) + 1; });
   const gardenWaterCount = allEntries.filter((e) => e.action === "watered" && e.hobbyType === "garden").length;
   const freeRangeCount = allEntries.filter((e) => e.action === "free_range").length;
-  const totalFeedLbs = allEntries
-    .filter((e) => e.action === "fed")
-    .reduce((s, e) => s + (Number(e.lbs) || 0), 0);
-  const totalFeedCost = allEntries
-    .filter((e) => e.action === "fed")
-    .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const totalFeedLbs = allEntries.filter((e) => e.action === "fed").reduce((s, e) => s + (Number(e.lbs) || 0), 0);
+  const totalFeedCost = allEntries.filter((e) => e.action === "fed").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const photosCount = allEntries.filter((e) => e.photoPath).length;
   const issueCount = allEntries.filter((e) => e.action === "issue").length;
-
-  // Days with multiple log entries (your active homestead days)
   const entriesByDate = {};
-  allEntries.forEach((e) => {
-    if (!e.date) return;
-    entriesByDate[e.date] = (entriesByDate[e.date] || 0) + 1;
-  });
+  allEntries.forEach((e) => { if (!e.date) return; entriesByDate[e.date] = (entriesByDate[e.date] || 0) + 1; });
   const heaviestDayCount = Math.max(0, ...Object.values(entriesByDate));
   const heaviestDay = Object.entries(entriesByDate).find(([, c]) => c === heaviestDayCount)?.[0];
 
-  // Weather stats from attached weather objects
   const withWeather = allEntries.filter((e) => e.weather);
   let weatherStats = null;
   if (withWeather.length > 0) {
-    let hottestDay = null;
-    let coldestDay = null;
-    let totalRainIn = 0;
+    let hottestDay = null, coldestDay = null, totalRainIn = 0;
     withWeather.forEach((e) => {
       const w = e.weather;
-      if (w.highF != null && (!hottestDay || w.highF > hottestDay.highF)) {
-        hottestDay = { date: e.date, highF: w.highF };
-      }
-      if (w.lowF != null && (!coldestDay || w.lowF < coldestDay.lowF)) {
-        coldestDay = { date: e.date, lowF: w.lowF };
-      }
+      if (w.highF != null && (!hottestDay || w.highF > hottestDay.highF)) hottestDay = { date: e.date, highF: w.highF };
+      if (w.lowF != null && (!coldestDay || w.lowF < coldestDay.lowF)) coldestDay = { date: e.date, lowF: w.lowF };
     });
-    // Total rain: sum unique day precips (avoid double-counting if multiple entries on same date)
     const rainByDate = {};
-    withWeather.forEach((e) => {
-      if (e.weather.precipIn != null) rainByDate[e.date] = e.weather.precipIn;
-    });
+    withWeather.forEach((e) => { if (e.weather.precipIn != null) rainByDate[e.date] = e.weather.precipIn; });
     totalRainIn = Object.values(rainByDate).reduce((s, p) => s + p, 0);
     weatherStats = { hottestDay, coldestDay, totalRainIn };
   }
 
-  // Photos from this year
-  const photos = allEntries
-    .filter((e) => e.photoPath)
-    .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
-    .map((e) => e.photoPath);
+  const photos = allEntries.filter((e) => e.photoPath).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((e) => e.photoPath);
 
   return {
-    totalEntries,
-    activeDays,
-    eggsCollected,
-    dozensCollected,
-    eggsSold,
-    eggRevenue,
-    eggLayerFeedCost,
-    eggLayerInfraCost,
-    eggLayerBirdCost,
-    eggLayerTotalCost,
-    eggLayerCostPerDozen,
-    benchmarkPricePerDozen,
-    groceryStoreEquivalent,
-    moneySavedVsBuying,
-    eggRevenueByMonth,
-    peakEggMonth,
-    totalHarvestLbs,
-    harvestsCount,
-    plantingsCount,
-    topPlants,
-    birdsRaised,
-    birdsSurvived,
-    birdsButchered,
-    totalMeatLbs,
-    birdDeaths,
-    mortalityRate,
-    meatChickenFeedCost,
-    meatChickenInfraCost,
-    meatChickenChickCost,
-    meatChickenTotalCost,
-    meatCostPerLb,
-    busiestMonth,
-    longestStreak,
-    weatherStats,
-    photos,
-    // Fun-fact stats
-    firstEntryDate,
-    lastEntryDate,
-    entryCountByHobby,
-    gardenWaterCount,
-    freeRangeCount,
-    totalFeedLbs,
-    totalFeedCost,
-    photosCount,
-    issueCount,
-    heaviestDay,
-    heaviestDayCount,
+    totalEntries, activeDays, eggsCollected, dozensCollected, eggsSold, eggRevenue,
+    eggLayerFeedCost, eggLayerInfraCost, eggLayerBirdCost, eggLayerTotalCost,
+    eggLayerCostPerDozen, benchmarkPricePerDozen, groceryStoreEquivalent, moneySavedVsBuying,
+    eggRevenueByMonth, peakEggMonth, totalHarvestLbs, harvestsCount, plantingsCount, topPlants,
+    birdsRaised, birdsSurvived, birdsButchered, totalMeatLbs, birdDeaths, mortalityRate,
+    meatChickenFeedCost, meatChickenInfraCost, meatChickenChickCost, meatChickenTotalCost, meatCostPerLb,
+    // Rabbits
+    totalLitters, totalKitsAlive, totalKitsStillborn, totalRabbitsButchered, rabbitTotalMeatLbs, rabbitTotalCost, rabbitCostPerRabbit,
+    // Activity
+    busiestMonth, longestStreak, weatherStats, photos,
+    firstEntryDate, lastEntryDate, entryCountByHobby, gardenWaterCount, freeRangeCount,
+    totalFeedLbs, totalFeedCost, photosCount, issueCount, heaviestDay, heaviestDayCount,
   };
 }
