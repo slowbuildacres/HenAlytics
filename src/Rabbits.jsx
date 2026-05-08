@@ -326,7 +326,7 @@ function LogEntryModal({ hutch, action, onSave, onClose }) {
 }
 
 // ============ HUTCH DETAIL VIEW ============
-function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
+function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack, onDeleteEntry, onEditEntry }) {
   const hutchEntries = entries.filter(e => e.hatchId === hutch.id).sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const totalButchered = hutchEntries.filter(e=>e.action==="butcher").reduce((s,e)=>s+(Number(e.count)||0),0);
   const totalLitters = hutchEntries.filter(e=>e.action==="litter").length;
@@ -388,14 +388,14 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
         <div style={{ padding:24,background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft }}>No entries yet — tap a tile above to get started.</div>
       ) : (
         <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-          {hutchEntries.slice(0,10).map(e => <RabbitEntryRow key={e.id} entry={e} />)}
+          {hutchEntries.slice(0,10).map(e => <RabbitEntryRow key={e.id} entry={e} onDelete={() => onDeleteEntry(e.id)} onEdit={() => onEditEntry(e)} />)}
         </div>
       )}
     </div>
   );
 }
 
-function RabbitEntryRow({ entry }) {
+function RabbitEntryRow({ entry, onDelete, onEdit }) {
   const labels = { bred:"Breeding logged", litter:"Litter born", fed:"Fed", watered:"Watered", butcher:"Butchered", death:"Death reported", free_range:"Free ranged", infrastructure:"Infrastructure", note:"Note" };
   const emojis = { bred:"🐇", litter:"🍼", fed:"🌾", watered:"💧", butcher:"❄️", death:"💀", free_range:"🌿", infrastructure:"🔨", note:"📓" };
   let detail = "";
@@ -413,6 +413,12 @@ function RabbitEntryRow({ entry }) {
         <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>{labels[entry.action]||entry.action}</div>
         <div style={{ fontSize:12,color:palette.inkSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>{fmtDate(entry.date)}{detail?" · "+detail:""}</div>
       </div>
+      {onEdit && (
+        <button onClick={onEdit} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }} title="Edit"><Edit3 size={16}/></button>
+      )}
+      {onDelete && (
+        <button onClick={onDelete} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }} title="Delete"><Trash2 size={16}/></button>
+      )}
     </div>
   );
 }
@@ -541,6 +547,9 @@ export default function RabbitsPage({ hobby, data, update }) {
     setSelectedHutch(null);
   };
   const saveEntry = (entry) => { update(d => { if (!d.entries[hobby.id]) d.entries[hobby.id]=[]; d.entries[hobby.id].push(entry); return d; }); };
+  const deleteEntry = (entryId) => { update(d => { d.entries[hobby.id] = (d.entries[hobby.id]||[]).filter(e=>e.id!==entryId); return d; }); };
+  const [editingEntry, setEditingEntry] = useState(null);
+  const saveEditedEntry = (entry) => { update(d => { const idx = (d.entries[hobby.id]||[]).findIndex(e=>e.id===entry.id); if (idx!==-1) d.entries[hobby.id][idx]=entry; return d; }); };
   const currentHutch = hutches.find(h=>h.id===selectedHutch);
 
   return (
@@ -548,8 +557,9 @@ export default function RabbitsPage({ hobby, data, update }) {
       {showAddHutch && <HutchModal onSave={addHutch} onClose={()=>setShowAddHutch(false)} />}
       {editingHutch && <HutchModal hutch={editingHutch} onSave={editHutch} onClose={()=>setEditingHutch(null)} />}
       {logAction && currentHutch && <LogEntryModal hutch={currentHutch} action={logAction} onSave={saveEntry} onClose={()=>setLogAction(null)} />}
+      {editingEntry && currentHutch && <LogEntryModal hutch={currentHutch} action={editingEntry.action} onSave={saveEditedEntry} onClose={()=>setEditingEntry(null)} existingEntry={editingEntry} />}
       {currentHutch ? (
-        <HutchDetail hutch={currentHutch} entries={entries} onLog={setLogAction} onEdit={()=>setEditingHutch(currentHutch)} onDelete={()=>deleteHutch(currentHutch.id)} onBack={()=>setSelectedHutch(null)} />
+        <HutchDetail hutch={currentHutch} entries={entries} onLog={setLogAction} onEdit={()=>setEditingHutch(currentHutch)} onDelete={()=>deleteHutch(currentHutch.id)} onBack={()=>setSelectedHutch(null)} onDeleteEntry={deleteEntry} onEditEntry={setEditingEntry} />
       ) : (
         <div>
           <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>

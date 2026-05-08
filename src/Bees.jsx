@@ -388,7 +388,7 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
 }
 
 // ============ HIVE DETAIL VIEW ============
-function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack }) {
+function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEntry, onEditEntry }) {
   const hiveEntries = entries.filter(e => e.hiveId === hive.id).sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const totalHarvestLbs = hiveEntries.filter(e=>e.action==="harvest").reduce((s,e)=>s+(Number(e.lbs)||0),0);
   const totalJars = hiveEntries.filter(e=>e.action==="harvest").reduce((s,e)=>s+(Number(e.jars)||0),0);
@@ -485,14 +485,14 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack }) {
         </div>
       ) : (
         <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-          {hiveEntries.slice(0,10).map(e => <BeeEntryRow key={e.id} entry={e} />)}
+          {hiveEntries.slice(0,10).map(e => <BeeEntryRow key={e.id} entry={e} onDelete={() => onDeleteEntry(e.id)} onEdit={() => onEditEntry(e)} />)}
         </div>
       )}
     </div>
   );
 }
 
-function BeeEntryRow({ entry }) {
+function BeeEntryRow({ entry, onDelete, onEdit }) {
   const labels = {
     inspect:"Inspection", harvest:"Honey harvested", feed:"Fed",
     treatment:"Treatment applied", infrastructure:"Equipment",
@@ -534,6 +534,13 @@ function BeeEntryRow({ entry }) {
           {fmtDate(entry.date)}{detail?" · "+detail:""}
         </div>
       </div>
+    </div>
+      {onEdit && (
+        <button onClick={onEdit} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }} title="Edit"><Edit3 size={16}/></button>
+      )}
+      {onDelete && (
+        <button onClick={onDelete} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }} title="Delete"><Trash2 size={16}/></button>
+      )}
     </div>
   );
 }
@@ -702,6 +709,9 @@ export default function BeesPage({ hobby, data, update }) {
   const saveEntry = (entry) => {
     update(d => { if (!d.entries[hobby.id]) d.entries[hobby.id]=[]; d.entries[hobby.id].push(entry); return d; });
   };
+  const deleteEntry = (entryId) => { update(d => { d.entries[hobby.id] = (d.entries[hobby.id]||[]).filter(e=>e.id!==entryId); return d; }); };
+  const [editingEntry, setEditingEntry] = useState(null);
+  const saveEditedEntry = (entry) => { update(d => { const idx = (d.entries[hobby.id]||[]).findIndex(e=>e.id===entry.id); if (idx!==-1) d.entries[hobby.id][idx]=entry; return d; }); };
 
   const currentHive = hives.find(h=>h.id===selectedHive);
 
@@ -712,6 +722,9 @@ export default function BeesPage({ hobby, data, update }) {
       {logAction && currentHive && (
         <LogEntryModal hive={currentHive} action={logAction} onSave={saveEntry} onClose={()=>setLogAction(null)} />
       )}
+      {editingEntry && currentHive && (
+        <LogEntryModal hive={currentHive} action={editingEntry.action} onSave={saveEditedEntry} onClose={()=>setEditingEntry(null)} existingEntry={editingEntry} />
+      )}
 
       {currentHive ? (
         <HiveDetail
@@ -721,6 +734,8 @@ export default function BeesPage({ hobby, data, update }) {
           onEdit={()=>setEditingHive(currentHive)}
           onDelete={()=>deleteHive(currentHive.id)}
           onBack={()=>setSelectedHive(null)}
+          onDeleteEntry={deleteEntry}
+          onEditEntry={setEditingEntry}
         />
       ) : (
         <div>
