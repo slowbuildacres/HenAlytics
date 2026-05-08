@@ -1766,7 +1766,7 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
 
   return (
     <div>
-      {showShare && <ShareStatsModal hobby={hobby} entries={entries} data={data} onClose={() => setShowShare(false)} />}
+      {showShare && <ShareStatsModal hobby={hobby} allEntries={data.entries[hobby.id] || []} data={data} onClose={() => setShowShare(false)} />}
       {/* SEASON FILTER + SHARE */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
@@ -1828,7 +1828,7 @@ function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
 
   return (
     <div>
-      {showShare && <ShareStatsModal hobby={hobby} entries={data.entries.garden || []} data={data} onClose={() => setShowShare(false)} />}
+      {showShare && <ShareStatsModal hobby={hobby} allEntries={data.entries.garden || []} data={data} onClose={() => setShowShare(false)} />}
       {/* SEASON FILTER + SHARE */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
@@ -4994,14 +4994,40 @@ function AddToHomeScreenModal({ onClose }) {
 // ============================================================================
 // SHARE STATS MODAL — generates a shareable image card for a hobby's stats
 // ============================================================================
-function ShareStatsModal({ hobby, entries, data, onClose }) {
-  const [copied, setCopied] = useState(false);
+function ShareStatsModal({ hobby, allEntries, data, onClose }) {
+  const [filter, setFilter] = useState("week");
+  const [rendering, setRendering] = useState(false);
+  const [shareStatus, setShareStatus] = useState(""); // "", "sharing", "saving", "done", "error"
+  const cardRef = React.useRef(null);
 
   const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
-  const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  const now = new Date();
+  const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
+  const oneWeekAgo = new Date(now - 7*24*60*60*1000);
+  const oneYearAgo = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate());
 
-  // Build stats summary per hobby type
-  const buildStats = () => {
+  const FILTERS = [
+    { id: "today", label: "Today" },
+    { id: "week",  label: "This week" },
+    { id: "year",  label: "This year" },
+    { id: "all",   label: "All-time" },
+  ];
+
+  const filterLabel = FILTERS.find(f => f.id === filter)?.label || "All-time";
+
+  // Filter entries by the chosen period
+  const filteredEntries = allEntries.filter(e => {
+    if (!e.date) return filter === "all";
+    if (filter === "all") return true;
+    const d = new Date(e.date + "T12:00");
+    if (filter === "today") return e.date === todayStr;
+    if (filter === "week")  return d >= oneWeekAgo;
+    if (filter === "year")  return d >= oneYearAgo;
+    return true;
+  });
+
+  // Build stats for the filtered period
+  const buildStats = (entries) => {
     if (hobby.type === "egg_layers") {
       const eggs = entries.filter(e => e.action === "eggs" || e.action === "eggs_laid");
       const totalEggs = eggs.reduce((s, e) => s + (Number(e.count)||0), 0);
@@ -5010,21 +5036,13 @@ function ShareStatsModal({ hobby, entries, data, onClose }) {
       const costPerDozen = totalEggs > 0 ? (totalCost / totalEggs * 12) : 0;
       const flocks = hobby.flocks || [];
       const totalBirds = flocks.reduce((s, f) => s + (f.birdCount||0), 0);
-      // top week
-      const byWeek = {};
-      eggs.forEach(e => {
-        const d = new Date(e.date + "T12:00");
-        const week = `${d.getFullYear()}-W${String(Math.ceil((d - new Date(d.getFullYear(),0,1))/(7*86400000))).padStart(2,"0")}`;
-        byWeek[week] = (byWeek[week]||0) + (Number(e.count)||0);
-      });
-      const topWeek = Object.values(byWeek).length > 0 ? Math.max(...Object.values(byWeek)) : 0;
       return {
         emoji: "🥚", label: "Egg Layers",
         stats: [
-          { label: "Total eggs laid", value: totalEggs.toLocaleString() },
+          { label: "Eggs collected", value: totalEggs.toLocaleString() },
           { label: "Birds in flock", value: totalBirds },
-          { label: "Cost per dozen", value: fmtMoney(costPerDozen) },
-          { label: "Best week", value: `${topWeek} eggs` },
+          { label: "Cost / dozen", value: costPerDozen > 0 ? fmtMoney(costPerDozen) : "—" },
+          { label: "Feed cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
         ],
       };
     }
@@ -5036,45 +5054,44 @@ function ShareStatsModal({ hobby, entries, data, onClose }) {
       const totalButchered = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0), 0), 0);
       const totalWeight = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0)*(bu.avgWeight||0), 0), 0);
       const avgWeight = totalButchered > 0 ? (totalWeight/totalButchered).toFixed(1) : "—";
+      const deaths = entries.filter(e => e.action === "death").reduce((s,e)=>s+(Number(e.count)||1),0);
       return {
         emoji: "🍗", label: "Meat Chickens",
         stats: [
-          { label: "Total birds raised", value: totalBirds },
-          { label: "Total butchered", value: totalButchered },
-          { label: "Avg final weight", value: `${avgWeight} lbs` },
-          { label: "Batches", value: allBatches.length },
+          { label: "Birds raised", value: totalBirds },
+          { label: "Butchered", value: totalButchered },
+          { label: "Avg weight", value: `${avgWeight} lbs` },
+          { label: "Deaths", value: deaths },
         ],
       };
     }
     if (hobby.type === "garden") {
-      const seasonEntries = data.entries.garden || [];
-      const harvests = seasonEntries.filter(e => e.action === "harvested");
+      const harvests = entries.filter(e => e.action === "harvested");
       const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity)||0), 0);
-      const plantings = seasonEntries.filter(e => e.action === "planted").length;
-      const seasons = (hobby.archivedSeasons||[]).length + (hobby.currentSeason ? 1 : 0);
-      const seasonName = hobby.currentSeason ? hobby.currentSeason.name : (hobby.archivedSeasons||[]).slice(-1)[0]?.name || "—";
+      const plantings = entries.filter(e => e.action === "planted").length;
+      const waterings = entries.filter(e => e.action === "watered").length;
+      const seasonName = hobby.currentSeason ? hobby.currentSeason.name : "—";
       return {
         emoji: "🌱", label: "Garden",
         stats: [
-          { label: "Total harvest", value: `${totalHarvest.toFixed(1)} lbs` },
-          { label: "Plantings logged", value: plantings },
-          { label: "Seasons", value: seasons },
-          { label: "Current season", value: seasonName },
+          { label: "Harvest", value: `${totalHarvest.toFixed(1)} lbs` },
+          { label: "Plantings", value: plantings },
+          { label: "Waterings", value: waterings },
+          { label: "Season", value: seasonName },
         ],
       };
     }
     if (hobby.type === "rabbits") {
       const litters = entries.filter(e => e.action === "litter");
-      const totalLitters = litters.length;
       const totalKits = litters.reduce((s, e) => s + (Number(e.kitsAlive)||0), 0);
       const butchered = entries.filter(e => e.action === "butcher").reduce((s, e) => s + (Number(e.count)||0), 0);
       const hutches = (hobby.hutches||[]).length;
       return {
         emoji: "🐇", label: "Rabbits",
         stats: [
-          { label: "Litters born", value: totalLitters },
-          { label: "Kits born alive", value: totalKits },
-          { label: "Total butchered", value: butchered },
+          { label: "Litters", value: litters.length },
+          { label: "Kits born", value: totalKits },
+          { label: "Butchered", value: butchered },
           { label: "Hutches", value: hutches },
         ],
       };
@@ -5089,63 +5106,146 @@ function ShareStatsModal({ hobby, entries, data, onClose }) {
         stats: [
           { label: "Honey harvested", value: `${totalLbs.toFixed(1)} lbs` },
           { label: "Hives", value: hives },
-          { label: "Inspections logged", value: inspections },
+          { label: "Inspections", value: inspections },
+          { label: "Harvests", value: harvests.length },
         ],
       };
     }
     return { emoji: "📊", label: hobby.name, stats: [] };
   };
 
-  const { emoji, label, stats } = buildStats();
+  const { emoji, label, stats } = buildStats(filteredEntries);
   const homesteadName = data.homesteadName || "My Homestead";
+  const dateLabel = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-  const shareText = `${emoji} ${homesteadName} — ${label} stats on HenAlytics\n` +
-    stats.map(s => `${s.label}: ${s.value}`).join("\n") +
-    "\n\nhenalytics.com";
+  // Load html2canvas dynamically
+  const loadHtml2Canvas = () => new Promise((resolve, reject) => {
+    if (window.html2canvas) { resolve(window.html2canvas); return; }
+    const s = document.createElement("script");
+    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+    s.onload = () => resolve(window.html2canvas);
+    s.onerror = reject;
+    document.head.appendChild(s);
+  });
+
+  const captureCard = async () => {
+    const h2c = await loadHtml2Canvas();
+    const canvas = await h2c(cardRef.current, {
+      scale: 3,
+      useCORS: true,
+      backgroundColor: null,
+      logging: false,
+    });
+    return canvas;
+  };
 
   const handleShare = async () => {
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: `${homesteadName} — ${label} Stats`, text: shareText, url: "https://henalytics.com" });
-      } catch (e) { /* user cancelled */ }
-    } else {
-      await navigator.clipboard.writeText(shareText);
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
+    setShareStatus("sharing");
+    try {
+      const canvas = await captureCard();
+      canvas.toBlob(async (blob) => {
+        const file = new File([blob], "henalytics-stats.png", { type: "image/png" });
+        if (navigator.canShare && navigator.canShare({ files: [file] })) {
+          try {
+            await navigator.share({
+              files: [file],
+              title: `${homesteadName} — ${label} Stats`,
+            });
+            setShareStatus("");
+          } catch (e) {
+            // User cancelled — fall back to download
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = "henalytics-stats.png"; a.click();
+            URL.revokeObjectURL(url);
+            setShareStatus("done");
+            setTimeout(() => setShareStatus(""), 2000);
+          }
+        } else {
+          // Desktop fallback — download
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url; a.download = "henalytics-stats.png"; a.click();
+          URL.revokeObjectURL(url);
+          setShareStatus("done");
+          setTimeout(() => setShareStatus(""), 2000);
+        }
+      }, "image/png");
+    } catch (e) {
+      console.error("Share failed:", e);
+      setShareStatus("error");
+      setTimeout(() => setShareStatus(""), 3000);
     }
   };
 
-  return (
-    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:380,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+  const btnLabel = () => {
+    if (shareStatus === "sharing") return "Preparing image...";
+    if (shareStatus === "done") return "✓ Image saved!";
+    if (shareStatus === "error") return "Something went wrong";
+    // On mobile with Web Share API, show Share; otherwise Download
+    const canShareFiles = navigator.canShare && navigator.canShare({ files: [new File([""], "t.png", { type: "image/png" })] });
+    return canShareFiles ? "Share image 📤" : "Download image 💾";
+  };
 
-        {/* Share card preview */}
-        <div style={{ background:palette.ink,padding:"28px 24px 24px",textAlign:"center" }}>
-          <div style={{ fontSize:11,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:2,marginBottom:8 }}>
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,overflowY:"auto" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+
+        {/* Period filter */}
+        <div style={{ padding:"16px 16px 0",display:"flex",gap:6,justifyContent:"center" }}>
+          {FILTERS.map(f => (
+            <button key={f.id} onClick={() => setFilter(f.id)} style={{
+              padding:"6px 12px",borderRadius:8,border:`1.5px solid ${filter===f.id?palette.ink:palette.line}`,
+              background:filter===f.id?palette.ink:palette.card,
+              color:filter===f.id?palette.bg:palette.ink,
+              fontFamily:FONT_BODY,fontWeight:600,fontSize:12,cursor:"pointer",
+            }}>{f.label}</button>
+          ))}
+        </div>
+
+        {/* Card — this is what gets captured */}
+        <div ref={cardRef} style={{
+          margin:"14px 16px 0",
+          background:"#2C1810",
+          borderRadius:16,
+          padding:"28px 24px 24px",
+          textAlign:"center",
+          fontFamily:"Georgia, serif",
+        }}>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.45)",textTransform:"uppercase",letterSpacing:2,marginBottom:6 }}>
             {homesteadName}
           </div>
-          <div style={{ fontSize:52,marginBottom:8,lineHeight:1 }}>{emoji}</div>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:palette.yolk,marginBottom:20,lineHeight:1.2 }}>
+          <div style={{ fontSize:46,marginBottom:6,lineHeight:1 }}>{emoji}</div>
+          <div style={{ fontSize:22,color:"#E8B547",marginBottom:4,fontWeight:700,lineHeight:1.2 }}>
             {label}
           </div>
-          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.4)",marginBottom:20,textTransform:"uppercase",letterSpacing:1 }}>
+            {filterLabel}
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:8 }}>
             {stats.map((s,i) => (
-              <div key={i} style={{ background:"rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 10px" }}>
-                <div style={{ fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:0.8 }}>{s.label}</div>
-                <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:"#fff",lineHeight:1 }}>{s.value}</div>
+              <div key={i} style={{ background:"rgba(255,255,255,0.07)",borderRadius:10,padding:"12px 8px" }}>
+                <div style={{ fontSize:10,color:"rgba(255,255,255,0.45)",marginBottom:4,textTransform:"uppercase",letterSpacing:0.8 }}>{s.label}</div>
+                <div style={{ fontSize:20,color:"#fff",fontWeight:700,lineHeight:1 }}>{s.value}</div>
               </div>
             ))}
           </div>
-          <div style={{ fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:16 }}>henalytics.com · {today}</div>
+          <div style={{ fontSize:10,color:"rgba(255,255,255,0.25)",marginTop:18,letterSpacing:1 }}>
+            HENALYTICS.COM · {dateLabel.toUpperCase()}
+          </div>
         </div>
 
         {/* Actions */}
-        <div style={{ padding:"16px 20px 20px",display:"flex",flexDirection:"column",gap:10 }}>
+        <div style={{ padding:"14px 16px 18px",display:"flex",flexDirection:"column",gap:8 }}>
+          <div style={{ fontSize:11,color:palette.inkSoft,textAlign:"center",marginBottom:2 }}>
+            Save the image, then share it to Instagram, Facebook, or anywhere 📱
+          </div>
           <button
             onClick={handleShare}
-            style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}
+            disabled={shareStatus === "sharing"}
+            style={{ width:"100%",padding:"13px",borderRadius:10,border:`2px solid ${palette.ink}`,background:shareStatus==="done"?palette.leaf:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:shareStatus==="sharing"?"wait":"pointer",boxShadow:"2px 2px 0 "+palette.line,opacity:shareStatus==="sharing"?0.7:1 }}
           >
-            {copied ? "✓ Copied to clipboard!" : (navigator.share ? "Share 📤" : "Copy stats 📋")}
+            {btnLabel()}
           </button>
           <button
             onClick={onClose}
