@@ -534,7 +534,6 @@ function BeeEntryRow({ entry, onDelete, onEdit }) {
           {fmtDate(entry.date)}{detail?" · "+detail:""}
         </div>
       </div>
-    </div>
       {onEdit && (
         <button onClick={onEdit} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }} title="Edit"><Edit3 size={16}/></button>
       )}
