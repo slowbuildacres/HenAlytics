@@ -859,7 +859,7 @@ export default function HomesteadApp() {
         {page === "year" && (
           <YearInReviewPage data={data} />
         )}
-        {page === "rabbits" {page === "calendar" && ({page === "calendar" && ( activeHobby === "rabbits" && (
+        {page === "rabbits" && (
           <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (
