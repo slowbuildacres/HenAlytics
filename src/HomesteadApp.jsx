@@ -4975,7 +4975,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "🥚",
     title: "The egg basket",
-    body: "Tap + each time you collect an egg during your rounds. When you're done, hit "Done — log N eggs" to save it to your records.",
+    body: "Tap + each time you collect an egg during your rounds. When you're done, hit 'Done — log N eggs' to save it to your records.",
     tip: "The basket resets automatically each day. Each flock has its own basket.",
   },
   {
