@@ -4987,7 +4987,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "🗺️",
     title: "Garden map",
-    body: "Start a garden season, then tap "Garden Map" to upload a photo of your garden. Drop pins exactly where things grow — each pin tracks what's planted there.",
+    body: "Start a garden season, then tap 'Garden Map' to upload a photo of your garden. Drop pins exactly where things grow — each pin tracks what's planted there.",
     tip: "Use any photo: overhead photo, hand-drawn sketch, or satellite screenshot.",
   },
   {
