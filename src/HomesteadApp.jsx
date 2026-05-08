@@ -29,7 +29,7 @@ import {
   PlanForDayModal,
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
-import RabbitsPage from "./Rabbits.jsx";
+import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -856,7 +856,10 @@ export default function HomesteadApp() {
         {page === "home" && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} />
         )}
-        {page === "analytics" && (
+        {page === "analytics" && activeHobby === "rabbits" && (
+          <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} />
+        )}
+        {page === "analytics" && activeHobby !== "rabbits" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} />
         )}
         {page === "photos" && (
@@ -894,7 +897,7 @@ export default function HomesteadApp() {
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
         <NavTab active={page === "home" || page === "rabbits"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else setPage("home"); }} icon={Home} label="Home" />
-        <NavTab active={page === "analytics"} onClick={() => { setPage("analytics"); if (activeHobby === "rabbits") setActiveHobby("egg_layers"); }} icon={BarChart3} label="Stats" />
+        <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         <NavTab active={page === "photos"} onClick={() => setPage("photos")} icon={ImageIcon} label="Photos" />
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
