@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { Plus, Trash2, Edit3, X, Skull, Droplet, Sun, NotebookPen, Hammer, Snowflake, Heart } from "lucide-react";
+import { X, Edit3, Trash2 } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -49,6 +50,32 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
   );
 }
 
+function StatCard({ label, value, sub, accent = palette.accent }) {
+  return (
+    <div style={{
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
+    }}>
+      <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
+        {label}
+      </div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>
+        {value}
+      </div>
+      {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
+    </div>
+  );
+}
+
+function ChartCard({ title, children }) {
+  return (
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+      {children}
+    </div>
+  );
+}
+
 // ============ ADD / EDIT HUTCH MODAL ============
 function HutchModal({ hutch, onSave, onClose }) {
   const [name, setName] = useState(hutch?.name || "");
@@ -60,16 +87,7 @@ function HutchModal({ hutch, onSave, onClose }) {
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onSave({
-      id: hutch?.id || newId(),
-      name: name.trim(),
-      breed,
-      does: Number(does) || 0,
-      bucks: Number(bucks) || 0,
-      startDate,
-      notes,
-      active: hutch?.active !== false,
-    });
+    onSave({ id: hutch?.id || newId(), name: name.trim(), breed, does: Number(does)||0, bucks: Number(bucks)||0, startDate, notes, active: hutch?.active !== false });
     onClose();
   };
 
@@ -80,7 +98,7 @@ function HutchModal({ hutch, onSave, onClose }) {
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{hutch ? "Edit Hutch" : "Add Hutch"}</div>
           <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
-        <div style={{ padding:20, display:"flex",flexDirection:"column",gap:14 }}>
+        <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hutch Name</div>
             <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Hutch 1, East Run, Mama's hutch" autoFocus />
@@ -123,67 +141,46 @@ function HutchModal({ hutch, onSave, onClose }) {
 function LogEntryModal({ hutch, action, onSave, onClose }) {
   const [date, setDate] = useState(todayStr());
   const [note, setNote] = useState("");
-  // breeding
   const [breedDate, setBreedDate] = useState(todayStr());
   const [doeName, setDoeName] = useState("");
-  // litter
   const [kitsAlive, setKitsAlive] = useState("");
   const [kitsStillborn, setKitsStillborn] = useState("");
   const [litterDate, setLitterDate] = useState(todayStr());
-  // butcher
   const [count, setCount] = useState("");
   const [avgWeight, setAvgWeight] = useState("");
-  // death
   const [deathCount, setDeathCount] = useState(1);
   const [cause, setCause] = useState("Unknown");
-  // feed
   const [lbs, setLbs] = useState("");
   const [cost, setCost] = useState("");
-  // infrastructure
   const [item, setItem] = useState("");
   const [infraCost, setInfraCost] = useState("");
 
-  // Expected kindle date = breed date + 31 days
   const kindleDate = breedDate ? localDateStr(new Date(parseLocalDate(breedDate).getTime() + 31*24*60*60*1000)) : "";
 
   const handleSave = () => {
     let entry = { id: newId(), date, action, hatchId: hutch.id, created: Date.now() };
-    if (action === "bred") {
-      entry = { ...entry, date: breedDate, doeName, kindleDate };
-    } else if (action === "litter") {
-      entry = { ...entry, date: litterDate, kitsAlive: Number(kitsAlive)||0, kitsStillborn: Number(kitsStillborn)||0 };
-    } else if (action === "butcher") {
-      entry = { ...entry, count: Number(count)||0, avgWeight: Number(avgWeight)||0 };
-    } else if (action === "death") {
-      entry = { ...entry, count: Number(deathCount)||1, cause };
-    } else if (action === "fed") {
-      entry = { ...entry, lbs: Number(lbs)||0, cost: Number(cost)||0 };
-    } else if (action === "infrastructure") {
-      entry = { ...entry, item, cost: Number(infraCost)||0 };
-    } else if (action === "note" || action === "watered" || action === "free_range") {
-      entry = { ...entry, note };
-    }
+    if (action === "bred") entry = { ...entry, date: breedDate, doeName, kindleDate };
+    else if (action === "litter") entry = { ...entry, date: litterDate, kitsAlive: Number(kitsAlive)||0, kitsStillborn: Number(kitsStillborn)||0, note };
+    else if (action === "butcher") entry = { ...entry, count: Number(count)||0, avgWeight: Number(avgWeight)||0, note };
+    else if (action === "death") entry = { ...entry, count: Number(deathCount)||1, cause };
+    else if (action === "fed") entry = { ...entry, lbs: Number(lbs)||0, cost: Number(cost)||0 };
+    else if (action === "infrastructure") entry = { ...entry, item, cost: Number(infraCost)||0 };
+    else entry = { ...entry, note };
     onSave(entry);
     onClose();
   };
 
   const titles = {
-    bred: "🐇 Log Breeding",
-    litter: "🍼 Log Litter",
-    fed: "🌾 Log Feed",
-    watered: "💧 Log Watering",
-    butcher: "❄️ Log Butcher",
-    death: "💀 Report Death",
-    infrastructure: "🔨 Infrastructure",
-    note: "📓 Note",
-    free_range: "🌿 Free Range",
+    bred:"🐇 Log Breeding", litter:"🍼 Log Litter", fed:"🌾 Log Feed",
+    watered:"💧 Log Watering", butcher:"❄️ Log Butcher", death:"💀 Report Death",
+    infrastructure:"🔨 Infrastructure", note:"📓 Note", free_range:"🌿 Free Range",
   };
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{titles[action] || action}</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{titles[action]||action}</div>
           <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
@@ -338,24 +335,17 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
   const feedCost = hutchEntries.filter(e=>e.action==="fed").reduce((s,e)=>s+(Number(e.cost)||0),0);
   const infraCost = hutchEntries.filter(e=>e.action==="infrastructure").reduce((s,e)=>s+(Number(e.cost)||0),0);
   const totalCost = feedCost + infraCost;
-
-  // Next expected kindle
   const lastBred = [...hutchEntries].filter(e=>e.action==="bred").sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
 
   return (
     <div>
-      {/* Back button */}
       <button onClick={onBack} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY,fontSize:13,display:"flex",alignItems:"center",gap:6,marginBottom:16,padding:0 }}>
         ← All Hutches
       </button>
-
-      {/* Hutch header */}
       <div style={{ background:palette.ink,color:palette.bg,borderRadius:12,padding:14,marginBottom:12 }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"flex-start" }}>
           <div>
-            <div style={{ fontSize:10,opacity:0.7,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4 }}>
-              Active Hutch · {hutch.breed}
-            </div>
+            <div style={{ fontSize:10,opacity:0.7,textTransform:"uppercase",letterSpacing:1.5,marginBottom:4 }}>Active Hutch · {hutch.breed}</div>
             <div style={{ fontFamily:FONT_DISPLAY,fontSize:28,color:palette.yolk,lineHeight:1 }}>{hutch.name}</div>
             <div style={{ fontSize:13,opacity:0.85,marginTop:4 }}>
               {hutch.does} doe{hutch.does!==1?"s":""} · {hutch.bucks} buck{hutch.bucks!==1?"s":""} · since {fmtDate(hutch.startDate)}
@@ -368,7 +358,6 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
         </div>
       </div>
 
-      {/* Expected kindle banner */}
       {lastBred && lastBred.kindleDate && (
         <div style={{ background:palette.yolkSoft,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
           🍼 Next expected kindle: <strong>{fmtDate(lastBred.kindleDate)}</strong>
@@ -376,7 +365,6 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
         </div>
       )}
 
-      {/* Stats row */}
       {hutchEntries.length > 0 && (
         <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
           {totalLitters > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
@@ -395,7 +383,6 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
         </div>
       )}
 
-      {/* Quick log tiles */}
       <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"16px 0 10px",color:palette.ink }}>quick log</h3>
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(100px,1fr))",gap:10,marginBottom:20 }}>
         {[
@@ -421,7 +408,6 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
         ))}
       </div>
 
-      {/* Recent entries */}
       <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 10px",color:palette.ink }}>recent activity</h3>
       {hutchEntries.length === 0 ? (
         <div style={{ padding:24,background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft }}>
@@ -429,9 +415,7 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
         </div>
       ) : (
         <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-          {hutchEntries.slice(0,10).map(e => (
-            <RabbitEntryRow key={e.id} entry={e} />
-          ))}
+          {hutchEntries.slice(0,10).map(e => <RabbitEntryRow key={e.id} entry={e} />)}
         </div>
       )}
     </div>
@@ -439,18 +423,10 @@ function HutchDetail({ hutch, entries, onLog, onEdit, onDelete, onBack }) {
 }
 
 function RabbitEntryRow({ entry }) {
-  const labels = {
-    bred:"Breeding logged", litter:"Litter born", fed:"Fed", watered:"Watered",
-    butcher:"Butchered", death:"Death reported", free_range:"Free ranged",
-    infrastructure:"Infrastructure", note:"Note",
-  };
-  const emojis = {
-    bred:"🐇", litter:"🍼", fed:"🌾", watered:"💧", butcher:"❄️",
-    death:"💀", free_range:"🌿", infrastructure:"🔨", note:"📓",
-  };
-  const fmtDate2 = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
+  const labels = { bred:"Breeding logged", litter:"Litter born", fed:"Fed", watered:"Watered", butcher:"Butchered", death:"Death reported", free_range:"Free ranged", infrastructure:"Infrastructure", note:"Note" };
+  const emojis = { bred:"🐇", litter:"🍼", fed:"🌾", watered:"💧", butcher:"❄️", death:"💀", free_range:"🌿", infrastructure:"🔨", note:"📓" };
   let detail = "";
-  if (entry.action==="bred") detail = `Expected kindle ${fmtDate2(entry.kindleDate)}${entry.doeName?" · "+entry.doeName:""}`;
+  if (entry.action==="bred") detail = `Expected kindle ${fmtDate(entry.kindleDate)}${entry.doeName?" · "+entry.doeName:""}`;
   else if (entry.action==="litter") detail = `${entry.kitsAlive||0} alive${entry.kitsStillborn>0?" · "+entry.kitsStillborn+" stillborn":""}`;
   else if (entry.action==="fed") detail = `${entry.lbs||0} lbs · ${fmtMoney(entry.cost)}`;
   else if (entry.action==="butcher") detail = `${entry.count||0} rabbits · avg ${entry.avgWeight||0} lbs`;
@@ -464,76 +440,190 @@ function RabbitEntryRow({ entry }) {
       <div style={{ flex:1,minWidth:0 }}>
         <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>{labels[entry.action]||entry.action}</div>
         <div style={{ fontSize:12,color:palette.inkSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>
-          {fmtDate2(entry.date)}{detail?" · "+detail:""}
+          {fmtDate(entry.date)}{detail?" · "+detail:""}
         </div>
       </div>
     </div>
   );
 }
 
+// ============ STATS PAGE ============
+function RabbitsStatsPage({ hutches, entries }) {
+  const allLitters = entries.filter(e=>e.action==="litter");
+  const allBreedings = entries.filter(e=>e.action==="bred");
+  const allButcher = entries.filter(e=>e.action==="butcher");
+  const allDeaths = entries.filter(e=>e.action==="death");
+  const allFeed = entries.filter(e=>e.action==="fed");
+  const allInfra = entries.filter(e=>e.action==="infrastructure");
+
+  const totalLitters = allLitters.length;
+  const totalKitsAlive = allLitters.reduce((s,e)=>s+(Number(e.kitsAlive)||0),0);
+  const totalStillborn = allLitters.reduce((s,e)=>s+(Number(e.kitsStillborn)||0),0);
+  const totalKitsBorn = totalKitsAlive + totalStillborn;
+  const avgLitterSize = totalLitters > 0 ? (totalKitsAlive / totalLitters).toFixed(1) : "—";
+  const stillbornRate = totalKitsBorn > 0 ? ((totalStillborn/totalKitsBorn)*100).toFixed(1) : "0";
+  const breedingSuccessRate = allBreedings.length > 0 ? ((totalLitters/allBreedings.length)*100).toFixed(0) : "—";
+
+  const totalButchered = allButcher.reduce((s,e)=>s+(Number(e.count)||0),0);
+  const totalWeight = allButcher.reduce((s,e)=>s+(Number(e.count)||0)*(Number(e.avgWeight)||0),0);
+  const avgButcherWeight = totalButchered > 0 ? (totalWeight/totalButchered).toFixed(2) : "—";
+
+  const totalDeaths = allDeaths.reduce((s,e)=>s+(Number(e.count)||1),0);
+
+  const feedCost = allFeed.reduce((s,e)=>s+(Number(e.cost)||0),0);
+  const infraCost = allInfra.reduce((s,e)=>s+(Number(e.cost)||0),0);
+  const totalCost = feedCost + infraCost;
+  const costPerRabbit = totalButchered > 0 ? (totalCost/totalButchered).toFixed(2) : "—";
+
+  // Death causes breakdown
+  const deathCauses = {};
+  allDeaths.forEach(e => {
+    const c = e.cause || "Unknown";
+    deathCauses[c] = (deathCauses[c]||0) + (Number(e.count)||1);
+  });
+
+  // Litters per hutch for chart
+  const littersByHutch = hutches.map(h => ({
+    name: h.name,
+    litters: entries.filter(e=>e.hatchId===h.id&&e.action==="litter").length,
+    kits: entries.filter(e=>e.hatchId===h.id&&e.action==="litter").reduce((s,e)=>s+(Number(e.kitsAlive)||0),0),
+  })).filter(h=>h.litters>0);
+
+  if (entries.length === 0) {
+    return (
+      <div style={{ padding:32,background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft }}>
+        No entries yet — start logging from your hutches to see stats here.
+      </div>
+    );
+  }
+
+  return (
+    <div>
+      {/* Breeding stats */}
+      <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink }}>breeding</h3>
+      <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
+        <StatCard label="Total Litters" value={totalLitters} accent={palette.leaf} />
+        <StatCard label="Avg Litter Size" value={avgLitterSize} sub="kits alive" accent={palette.leaf} />
+        <StatCard label="Breeding Success" value={breedingSuccessRate !== "—" ? breedingSuccessRate+"%" : "—"} sub="breedings → litters" accent={palette.feather} />
+        <StatCard label="Stillborn Rate" value={stillbornRate+"%"} sub={`${totalStillborn} of ${totalKitsBorn} kits`} accent={totalStillborn > 0 ? palette.accent : palette.inkSoft} />
+      </div>
+
+      {/* Butcher stats */}
+      <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink }}>meat production</h3>
+      <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
+        <StatCard label="Total Butchered" value={totalButchered} accent={palette.ink} />
+        <StatCard label="Avg Final Weight" value={avgButcherWeight !== "—" ? avgButcherWeight+" lbs" : "—"} accent={palette.feather} />
+        <StatCard label="Total Meat" value={totalWeight > 0 ? totalWeight.toFixed(1)+" lbs" : "—"} accent={palette.leaf} />
+        {totalDeaths > 0 && <StatCard label="Total Deaths" value={totalDeaths} accent={palette.accent} />}
+      </div>
+
+      {/* Cost stats */}
+      <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink }}>costs</h3>
+      <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
+        <StatCard label="Total Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
+        <StatCard label="Feed Cost" value={fmtMoney(feedCost)} sub={`${((feedCost/totalCost)||0*100).toFixed(0)}% of total`} accent={palette.feather} />
+        {infraCost > 0 && <StatCard label="Infrastructure" value={fmtMoney(infraCost)} accent={palette.feather} />}
+        <StatCard label="Cost / Rabbit" value={costPerRabbit !== "—" ? fmtMoney(costPerRabbit) : "—"} sub="all-in" accent={palette.yolk} />
+      </div>
+
+      {/* Litters by hutch chart */}
+      {littersByHutch.length > 1 && (
+        <ChartCard title="Kits born by hutch">
+          <ResponsiveContainer width="100%" height={200}>
+            <BarChart data={littersByHutch}>
+              <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
+              <YAxis stroke={palette.inkSoft} fontSize={11} />
+              <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} />
+              <Bar dataKey="kits" fill={palette.leaf} radius={[6,6,0,0]} name="Kits alive" />
+            </BarChart>
+          </ResponsiveContainer>
+        </ChartCard>
+      )}
+
+      {/* Death causes */}
+      {Object.keys(deathCauses).length > 0 && (
+        <ChartCard title={`Deaths by cause (${totalDeaths} total)`}>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            {Object.entries(deathCauses).sort((a,b)=>b[1]-a[1]).map(([cause, count]) => (
+              <div key={cause} style={{ display:"flex",justifyContent:"space-between",padding:"8px 10px",background:palette.bgAlt,borderRadius:6,fontSize:13 }}>
+                <span style={{ textTransform:"capitalize" }}>{cause}</span>
+                <strong>{count}</strong>
+              </div>
+            ))}
+          </div>
+        </ChartCard>
+      )}
+
+      {/* Per hutch breakdown */}
+      {hutches.length > 0 && (
+        <ChartCard title="Per hutch breakdown">
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            {hutches.map(h => {
+              const he = entries.filter(e=>e.hatchId===h.id);
+              const litters = he.filter(e=>e.action==="litter").length;
+              const kits = he.filter(e=>e.action==="litter").reduce((s,e)=>s+(Number(e.kitsAlive)||0),0);
+              const butchered = he.filter(e=>e.action==="butcher").reduce((s,e)=>s+(Number(e.count)||0),0);
+              const cost = he.filter(e=>e.action==="fed"||e.action==="infrastructure").reduce((s,e)=>s+(Number(e.cost)||0),0);
+              return (
+                <div key={h.id} style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6 }}>
+                  <div>
+                    <strong>{h.name}</strong>
+                    <div style={{ fontSize:12,color:palette.inkSoft }}>{h.breed} · {h.does} does · {h.bucks} bucks</div>
+                  </div>
+                  <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"right" }}>
+                    {litters > 0 && <div>{litters} litters · {kits} kits</div>}
+                    {butchered > 0 && <div>{butchered} butchered</div>}
+                    {cost > 0 && <div>{fmtMoney(cost)}</div>}
+                    {litters === 0 && butchered === 0 && cost === 0 && <div style={{ fontStyle:"italic" }}>No entries yet</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </ChartCard>
+      )}
+    </div>
+  );
+}
+
 // ============ MAIN RABBITS PAGE ============
-export default function RabbitsPage({ hobby, data, update, setModal: _setModal }) {
+export default function RabbitsPage({ hobby, data, update }) {
   const [selectedHutch, setSelectedHutch] = useState(null);
   const [showAddHutch, setShowAddHutch] = useState(false);
   const [editingHutch, setEditingHutch] = useState(null);
   const [logAction, setLogAction] = useState(null);
+  const [view, setView] = useState("hutches"); // "hutches" | "stats"
 
   const hutches = hobby.hutches || [];
   const entries = data.entries[hobby.id] || [];
 
   const addHutch = (hutch) => {
-    update(d => {
-      const h = d.hobbies.find(x => x.id === hobby.id);
-      if (!h) return d;
-      if (!h.hutches) h.hutches = [];
-      h.hutches.push(hutch);
-      return d;
-    });
+    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; if (!h.hutches) h.hutches=[]; h.hutches.push(hutch); return d; });
   };
 
   const editHutch = (hutch) => {
-    update(d => {
-      const h = d.hobbies.find(x => x.id === hobby.id);
-      if (!h) return d;
-      h.hutches = (h.hutches||[]).map(x => x.id === hutch.id ? hutch : x);
-      return d;
-    });
+    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; h.hutches=(h.hutches||[]).map(x=>x.id===hutch.id?hutch:x); return d; });
   };
 
   const deleteHutch = (hutchId) => {
     if (!window.confirm("Delete this hutch and all its entries?")) return;
-    update(d => {
-      const h = d.hobbies.find(x => x.id === hobby.id);
-      if (!h) return d;
-      h.hutches = (h.hutches||[]).filter(x => x.id !== hutchId);
-      d.entries[hobby.id] = (d.entries[hobby.id]||[]).filter(e => e.hatchId !== hutchId);
-      return d;
-    });
+    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; h.hutches=(h.hutches||[]).filter(x=>x.id!==hutchId); d.entries[hobby.id]=(d.entries[hobby.id]||[]).filter(e=>e.hatchId!==hutchId); return d; });
     setSelectedHutch(null);
   };
 
   const saveEntry = (entry) => {
-    update(d => {
-      if (!d.entries[hobby.id]) d.entries[hobby.id] = [];
-      d.entries[hobby.id].push(entry);
-      return d;
-    });
+    update(d => { if (!d.entries[hobby.id]) d.entries[hobby.id]=[]; d.entries[hobby.id].push(entry); return d; });
   };
 
-  const currentHutch = hutches.find(h => h.id === selectedHutch);
+  const currentHutch = hutches.find(h=>h.id===selectedHutch);
 
   return (
     <div>
       {/* Modals */}
-      {showAddHutch && <HutchModal onSave={addHutch} onClose={() => setShowAddHutch(false)} />}
-      {editingHutch && <HutchModal hutch={editingHutch} onSave={editHutch} onClose={() => setEditingHutch(null)} />}
+      {showAddHutch && <HutchModal onSave={addHutch} onClose={()=>setShowAddHutch(false)} />}
+      {editingHutch && <HutchModal hutch={editingHutch} onSave={editHutch} onClose={()=>setEditingHutch(null)} />}
       {logAction && currentHutch && (
-        <LogEntryModal
-          hutch={currentHutch}
-          action={logAction}
-          onSave={saveEntry}
-          onClose={() => setLogAction(null)}
-        />
+        <LogEntryModal hutch={currentHutch} action={logAction} onSave={saveEntry} onClose={()=>setLogAction(null)} />
       )}
 
       {/* Hutch detail view */}
@@ -542,87 +632,67 @@ export default function RabbitsPage({ hobby, data, update, setModal: _setModal }
           hutch={currentHutch}
           entries={entries}
           onLog={setLogAction}
-          onEdit={() => setEditingHutch(currentHutch)}
-          onDelete={() => deleteHutch(currentHutch.id)}
-          onBack={() => setSelectedHutch(null)}
+          onEdit={()=>setEditingHutch(currentHutch)}
+          onDelete={()=>deleteHutch(currentHutch.id)}
+          onBack={()=>setSelectedHutch(null)}
         />
       ) : (
-        /* Hutch list view */
         <div>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
-            <h2 style={{ fontFamily:FONT_DISPLAY,fontSize:26,margin:0,color:palette.ink }}>your hutches</h2>
-            <Btn small onClick={() => setShowAddHutch(true)}>+ Add Hutch</Btn>
+          {/* Tab switcher: Hutches / Stats */}
+          <div style={{ display:"flex",gap:4,padding:4,marginBottom:18,background:palette.bgAlt,borderRadius:10 }}>
+            <button onClick={()=>setView("hutches")} style={{ flex:1,padding:"8px 12px",border:"none",background:view==="hutches"?palette.card:"transparent",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:FONT_BODY,color:palette.ink,boxShadow:view==="hutches"?`1px 1px 0 ${palette.line}`:"none" }}>
+              🐇 Hutches
+            </button>
+            <button onClick={()=>setView("stats")} style={{ flex:1,padding:"8px 12px",border:"none",background:view==="stats"?palette.card:"transparent",borderRadius:8,cursor:"pointer",fontWeight:600,fontSize:13,fontFamily:FONT_BODY,color:palette.ink,boxShadow:view==="stats"?`1px 1px 0 ${palette.line}`:"none" }}>
+              📊 Stats
+            </button>
           </div>
 
-          {hutches.length === 0 ? (
-            <div style={{ padding:32,background:palette.card,border:`2px dashed ${palette.ink}`,borderRadius:12,textAlign:"center" }}>
-              <div style={{ fontSize:40,marginBottom:10 }}>🐇</div>
-              <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:6,color:palette.ink }}>No hutches yet</div>
-              <div style={{ color:palette.inkSoft,marginBottom:16,fontSize:14 }}>Add your first hutch to start tracking your rabbits.</div>
-              <Btn variant="accent" onClick={() => setShowAddHutch(true)}>+ Add your first hutch</Btn>
-            </div>
+          {view === "stats" ? (
+            <RabbitsStatsPage hutches={hutches} entries={entries} />
           ) : (
-            <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
-              {hutches.map(hutch => {
-                const hutchEntries = entries.filter(e => e.hatchId === hutch.id);
-                const lastBred = [...hutchEntries].filter(e=>e.action==="bred").sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
-                const totalKits = hutchEntries.filter(e=>e.action==="litter").reduce((s,e)=>s+(Number(e.kitsAlive)||0),0);
-                const totalButchered = hutchEntries.filter(e=>e.action==="butcher").reduce((s,e)=>s+(Number(e.count)||0),0);
-                return (
-                  <div
-                    key={hutch.id}
-                    onClick={() => setSelectedHutch(hutch.id)}
-                    style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}
-                  >
-                    <div style={{ fontSize:32,flexShrink:0 }}>🐇</div>
-                    <div style={{ flex:1,minWidth:0 }}>
-                      <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,lineHeight:1.2 }}>{hutch.name}</div>
-                      <div style={{ fontSize:12,color:palette.inkSoft,marginTop:2 }}>
-                        {hutch.breed} · {hutch.does} doe{hutch.does!==1?"s":""} · {hutch.bucks} buck{hutch.bucks!==1?"s":""}
+            <div>
+              <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16 }}>
+                <h2 style={{ fontFamily:FONT_DISPLAY,fontSize:26,margin:0,color:palette.ink }}>your hutches</h2>
+                <Btn small onClick={()=>setShowAddHutch(true)}>+ Add Hutch</Btn>
+              </div>
+
+              {hutches.length === 0 ? (
+                <div style={{ padding:32,background:palette.card,border:`2px dashed ${palette.ink}`,borderRadius:12,textAlign:"center" }}>
+                  <div style={{ fontSize:40,marginBottom:10 }}>🐇</div>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,marginBottom:6,color:palette.ink }}>No hutches yet</div>
+                  <div style={{ color:palette.inkSoft,marginBottom:16,fontSize:14 }}>Add your first hutch to start tracking your rabbits.</div>
+                  <Btn variant="accent" onClick={()=>setShowAddHutch(true)}>+ Add your first hutch</Btn>
+                </div>
+              ) : (
+                <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
+                  {hutches.map(hutch => {
+                    const hutchEntries = entries.filter(e=>e.hatchId===hutch.id);
+                    const lastBred = [...hutchEntries].filter(e=>e.action==="bred").sort((a,b)=>(b.date||"").localeCompare(a.date||""))[0];
+                    const totalKits = hutchEntries.filter(e=>e.action==="litter").reduce((s,e)=>s+(Number(e.kitsAlive)||0),0);
+                    const totalButchered = hutchEntries.filter(e=>e.action==="butcher").reduce((s,e)=>s+(Number(e.count)||0),0);
+                    return (
+                      <div key={hutch.id} onClick={()=>setSelectedHutch(hutch.id)} style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,cursor:"pointer",display:"flex",alignItems:"center",gap:14 }}>
+                        <div style={{ fontSize:32,flexShrink:0 }}>🐇</div>
+                        <div style={{ flex:1,minWidth:0 }}>
+                          <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,lineHeight:1.2 }}>{hutch.name}</div>
+                          <div style={{ fontSize:12,color:palette.inkSoft,marginTop:2 }}>
+                            {hutch.breed} · {hutch.does} doe{hutch.does!==1?"s":""} · {hutch.bucks} buck{hutch.bucks!==1?"s":""}
+                          </div>
+                          <div style={{ display:"flex",gap:10,marginTop:4,flexWrap:"wrap" }}>
+                            {totalKits > 0 && <span style={{ fontSize:11,background:palette.leafSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>{totalKits} kits</span>}
+                            {totalButchered > 0 && <span style={{ fontSize:11,background:palette.bgAlt,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>{totalButchered} butchered</span>}
+                            {lastBred?.kindleDate && <span style={{ fontSize:11,background:palette.yolkSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍼 {fmtDate(lastBred.kindleDate)}</span>}
+                          </div>
+                        </div>
+                        <div style={{ color:palette.inkSoft,fontSize:18 }}>›</div>
                       </div>
-                      <div style={{ display:"flex",gap:10,marginTop:4,flexWrap:"wrap" }}>
-                        {totalKits > 0 && <span style={{ fontSize:11,background:palette.leafSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>{totalKits} kits</span>}
-                        {totalButchered > 0 && <span style={{ fontSize:11,background:palette.bgAlt,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>{totalButchered} butchered</span>}
-                        {lastBred?.kindleDate && <span style={{ fontSize:11,background:palette.yolkSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍼 {fmtDate(lastBred.kindleDate)}</span>}
-                      </div>
-                    </div>
-                    <div style={{ color:palette.inkSoft,fontSize:18 }}>›</div>
-                  </div>
-                );
-              })}
+                    );
+                  })}
+                </div>
+              )}
             </div>
           )}
-
-          {/* Overall stats if multiple hutches */}
-          {hutches.length > 1 && (() => {
-            const totalKits = entries.filter(e=>e.action==="litter").reduce((s,e)=>s+(Number(e.kitsAlive)||0),0);
-            const totalButchered = entries.filter(e=>e.action==="butcher").reduce((s,e)=>s+(Number(e.count)||0),0);
-            const totalCost = entries.filter(e=>e.action==="fed"||e.action==="infrastructure").reduce((s,e)=>s+(Number(e.cost)||0),0);
-            const costPerRabbit = totalButchered > 0 ? totalCost/totalButchered : 0;
-            return (
-              <div style={{ marginTop:20 }}>
-                <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 10px",color:palette.ink }}>all hutches — overview</h3>
-                <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
-                  <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
-                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Total Kits</div>
-                    <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.leaf }}>{totalKits}</div>
-                  </div>
-                  <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
-                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Total Butchered</div>
-                    <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.ink }}>{totalButchered}</div>
-                  </div>
-                  {totalCost > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
-                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Total Cost</div>
-                    <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.accent }}>{fmtMoney(totalCost)}</div>
-                  </div>}
-                  {costPerRabbit > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
-                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Cost / Rabbit</div>
-                    <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.yolk }}>{fmtMoney(costPerRabbit)}</div>
-                  </div>}
-                </div>
-              </div>
-            );
-          })()}
         </div>
       )}
     </div>
