@@ -29,6 +29,7 @@ import {
   PlanForDayModal,
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
+import RabbitsPage from "./Rabbits.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -56,6 +57,7 @@ const defaultData = () => ({
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flockSize: 0, flockHistory: [] },
     { id: "meat_chickens", name: "Meat Chickens", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
+    { id: "rabbits", name: "Rabbits", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -83,6 +85,10 @@ function migrateData(data) {
     if (h.type === "egg_layers") {
       if (typeof h.flockSize !== "number") h.flockSize = 0;
       if (!Array.isArray(h.flockHistory)) h.flockHistory = [];
+    }
+    if (h.type === "rabbits") {
+      if (!Array.isArray(h.hutches)) h.hutches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
     }
     if (h.type === "meat_chickens") {
       if (!("currentBatch" in h)) h.currentBatch = null;
@@ -446,7 +452,7 @@ function NavTab({ active, onClick, icon: Icon, label }) {
 }
 
 // ============ ICON RESOLVER ============
-const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick };
+const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick, rabbit: Bird };
 const HobbyIcon = ({ name, ...props }) => {
   const I = iconMap[name] || Sprout;
   return <I {...props} />;
@@ -808,10 +814,10 @@ export default function HomesteadApp() {
               borderRadius: 10, zIndex: 60, overflow: "hidden",
               boxShadow: "3px 4px 0 " + palette.line,
             }}>
-              {data.hobbies.map((h) => (
+              {data.hobbies.filter((h) => !h.hidden).map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); }}
+                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits") setPage("rabbits"); else setPage("home"); }}
                   style={{
                     width: "100%", padding: "12px 16px", background: h.id === activeHobby ? palette.bgAlt : "transparent",
                     border: "none", borderBottom: `1px solid ${palette.line}`,
@@ -852,6 +858,9 @@ export default function HomesteadApp() {
         )}
         {page === "year" && (
           <YearInReviewPage data={data} />
+        )}
+        {page === "rabbits" {page === "calendar" && ({page === "calendar" && ( activeHobby === "rabbits" && (
+          <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (
           <CalendarPage data={data} update={update} setModal={setModal} />
@@ -2830,7 +2839,26 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         accent={palette.yolk}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "feedback" }), 0); }}
       />
-
+{/* MANAGE HOBBIES */}
+      <div style={{ marginTop: 16, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+          Your Hobbies
+        </div>
+        {data.hobbies.map(h => (
+          <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
+              <div style={{ fontSize: 11, color: palette.inkSoft }}>{h.type}</div>
+            </div>
+            <button
+              onClick={() => update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; })}
+              style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.bgAlt : palette.leaf, color: h.hidden ? palette.inkSoft : palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+            >
+              {h.hidden ? "Hidden" : "Visible"}
+            </button>
+          </div>
+        ))}
+      </div>
       <div style={{
         marginTop: 16, padding: 12, background: palette.bgAlt, borderRadius: 8,
         fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
