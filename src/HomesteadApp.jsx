@@ -32,7 +32,6 @@ import GardenMapModal from "./GardenMap.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
 import SalesPage from "./Sales.jsx";
 import BeesPage, { BeesAnalytics } from "./Bees.jsx";
-import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
