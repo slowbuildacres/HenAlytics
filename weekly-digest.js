@@ -3,31 +3,17 @@
 // Triggered by a Vercel cron job every Sunday at 8 AM UTC. Walks every
 // homestead in the database where the owner has opted in to weekly summaries,
 // computes the past 7 days of stats, and sends each owner a personalized email.
-//
-// Authentication: this endpoint must only be callable by Vercel's cron system
-// (not by random visitors). We check the `Authorization` header against the
-// CRON_SECRET environment variable.
-//
-// Required env vars:
-//   - SUPABASE_URL          : your project's URL
-//   - SUPABASE_SERVICE_ROLE : the service-role key (NOT the anon key — needs
-//                              full read access to query owner emails)
-//   - RESEND_API_KEY        : Resend API key
-//   - CRON_SECRET           : a random string, also configured in vercel.json
-//   - EMAIL_FROM            : (optional) sender address for digest emails
 
 const RESEND_API = 'https://api.resend.com/emails';
 const FROM_ADDRESS = process.env.EMAIL_FROM || 'Henalytics <hello@henalytics.com>';
 
 export default async function handler(req, res) {
-  // ---- Auth check: only Vercel cron should be calling this ----
   const auth = req.headers.authorization || '';
   const expected = `Bearer ${process.env.CRON_SECRET}`;
   if (!process.env.CRON_SECRET || auth !== expected) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  // Required env
   if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) {
     return res.status(500).json({ error: 'Supabase not configured' });
   }
@@ -39,45 +25,32 @@ export default async function handler(req, res) {
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE;
 
   try {
-    // ---- 1. Fetch all homesteads (we'll filter for opt-ins in JS) ----
     const homesteadsRes = await fetch(`${SUPABASE}/rest/v1/homesteads?select=id,data,updated_at`, {
-      headers: {
-        apikey: SERVICE_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-      },
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
     });
     if (!homesteadsRes.ok) {
       const errText = await homesteadsRes.text();
-      console.error('Failed to fetch homesteads', errText);
       return res.status(502).json({ error: 'Failed to fetch homesteads', detail: errText });
     }
     const homesteads = await homesteadsRes.json();
 
-    // ---- 2. Fetch homestead_members (owners only) so we can find each homestead's owner ----
     const membersRes = await fetch(
       `${SUPABASE}/rest/v1/homestead_members?select=homestead_id,user_id,role&role=eq.owner`,
       { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
     );
     if (!membersRes.ok) {
       const errText = await membersRes.text();
-      console.error('Failed to fetch members', errText);
       return res.status(502).json({ error: 'Failed to fetch members', detail: errText });
     }
     const owners = await membersRes.json();
     const ownerByHomestead = {};
     owners.forEach((m) => { ownerByHomestead[m.homestead_id] = m.user_id; });
 
-    // ---- 3. Resolve user_ids to emails via the auth admin endpoint ----
-    // We fetch all users in one go, then map by id.
     const usersRes = await fetch(`${SUPABASE}/auth/v1/admin/users?per_page=1000`, {
-      headers: {
-        apikey: SERVICE_KEY,
-        Authorization: `Bearer ${SERVICE_KEY}`,
-      },
+      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
     });
     if (!usersRes.ok) {
       const errText = await usersRes.text();
-      console.error('Failed to fetch users', errText);
       return res.status(502).json({ error: 'Failed to fetch users', detail: errText });
     }
     const usersJson = await usersRes.json();
@@ -85,47 +58,26 @@ export default async function handler(req, res) {
     const emailByUser = {};
     userList.forEach((u) => { emailByUser[u.id] = u.email; });
 
-    // ---- 4. For each opted-in homestead, compute weekly stats and send email ----
-    const sent = [];
-    const skipped = [];
-    const failed = [];
+    const sent = [], skipped = [], failed = [];
 
     for (const h of homesteads) {
       const data = h.data || {};
-      if (!data.weeklyDigestOptIn) {
-        skipped.push({ id: h.id, reason: 'not opted in' });
-        continue;
-      }
+      if (!data.weeklyDigestOptIn) { skipped.push({ id: h.id, reason: 'not opted in' }); continue; }
       const ownerId = ownerByHomestead[h.id];
-      if (!ownerId) {
-        skipped.push({ id: h.id, reason: 'no owner found' });
-        continue;
-      }
+      if (!ownerId) { skipped.push({ id: h.id, reason: 'no owner found' }); continue; }
       const email = emailByUser[ownerId];
-      if (!email) {
-        skipped.push({ id: h.id, reason: 'no email for owner' });
-        continue;
-      }
+      if (!email) { skipped.push({ id: h.id, reason: 'no email for owner' }); continue; }
 
-      // Compute the past 7 days of stats
       const stats = computeWeeklyStats(data);
 
-      // Skip sending entirely if there was zero activity AND nothing tracked.
-      // Avoid spamming dormant accounts with empty digests.
-      if (stats.totalEntries === 0) {
-        skipped.push({ id: h.id, reason: 'no activity this week' });
-        continue;
-      }
+      if (stats.totalEntries === 0) { skipped.push({ id: h.id, reason: 'no activity this week' }); continue; }
 
       const payload = buildDigestEmail(email, data, stats);
 
       try {
         const send = await fetch(RESEND_API, {
           method: 'POST',
-          headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify(payload),
         });
         if (!send.ok) {
@@ -139,13 +91,7 @@ export default async function handler(req, res) {
       }
     }
 
-    return res.status(200).json({
-      ok: true,
-      sent: sent.length,
-      skipped: skipped.length,
-      failed: failed.length,
-      details: { sent, skipped, failed },
-    });
+    return res.status(200).json({ ok: true, sent: sent.length, skipped: skipped.length, failed: failed.length, details: { sent, skipped, failed } });
   } catch (err) {
     console.error('Weekly digest error', err);
     return res.status(500).json({ error: 'Internal error', detail: String(err) });
@@ -153,7 +99,7 @@ export default async function handler(req, res) {
 }
 
 // ============================================================================
-// STATS COMPUTATION (server-side mirror of client-side logic)
+// STATS COMPUTATION
 // ============================================================================
 
 function computeWeeklyStats(data) {
@@ -167,7 +113,7 @@ function computeWeeklyStats(data) {
     const live = (data.entries[h.id] || []);
     live.forEach((e) => {
       if (e.date >= sevenDaysAgoIso) {
-        allEntries.push({ ...e, hobbyType: h.type, hobbyName: h.name });
+        allEntries.push({ ...e, hobbyType: h.type, hobbyName: h.name, hobbyHidden: h.hidden });
       }
     });
   });
@@ -191,14 +137,14 @@ function computeWeeklyStats(data) {
   const watered = allEntries.filter((e) => e.action === 'watered').length;
   const planted = allEntries.filter((e) => e.action === 'planted').length;
   const issues = allEntries.filter((e) => e.action === 'issue').length;
-  const deaths = allEntries.filter((e) => e.action === 'death').reduce((s, e) => s + (Number(e.count) || 1), 0);
+  const deaths = allEntries.filter((e) => e.action === 'death' && e.hobbyType !== 'rabbits').reduce((s, e) => s + (Number(e.count) || 1), 0);
+
   const photoCount = allEntries.filter((e) => {
     if (Array.isArray(e.photoPaths) && e.photoPaths.length > 0) return true;
     if (e.photoPath) return true;
     return false;
   }).length;
 
-  // Top harvested plant
   const harvestEntries = allEntries.filter((e) => e.action === 'harvested');
   const plantTotals = {};
   harvestEntries.forEach((e) => {
@@ -208,18 +154,23 @@ function computeWeeklyStats(data) {
   });
   const topPlant = Object.entries(plantTotals).sort((a, b) => b[1] - a[1])[0];
 
+  // Rabbit stats — only if rabbits hobby is visible
+  const rabbitsHobby = hobbies.find(h => h.type === 'rabbits' && !h.hidden);
+  let rabbitLitters = 0, rabbitKits = 0, rabbitDeaths = 0;
+  if (rabbitsHobby) {
+    const rabbitEntries = allEntries.filter((e) => e.hobbyType === 'rabbits');
+    rabbitLitters = rabbitEntries.filter((e) => e.action === 'litter').length;
+    rabbitKits = rabbitEntries.filter((e) => e.action === 'litter').reduce((s, e) => s + (Number(e.kitsAlive) || 0), 0);
+    rabbitDeaths = rabbitEntries.filter((e) => e.action === 'death').reduce((s, e) => s + (Number(e.count) || 1), 0);
+  }
+
   return {
     totalEntries: allEntries.length,
-    eggsCollected,
-    eggsSold,
-    harvestLbs,
-    totalSpent,
-    watered,
-    planted,
-    issues,
-    deaths,
-    photoCount,
+    eggsCollected, eggsSold, harvestLbs, totalSpent,
+    watered, planted, issues, deaths, photoCount,
     topPlant: topPlant ? { name: topPlant[0], lbs: topPlant[1] } : null,
+    rabbitLitters, rabbitKits, rabbitDeaths,
+    hasRabbits: !!rabbitsHobby,
   };
 }
 
@@ -253,6 +204,12 @@ function buildDigestEmail(email, data, stats) {
   if (stats.issues > 0) lines.push(`⚠️ <strong>${stats.issues}</strong> issue${stats.issues === 1 ? '' : 's'} reported`);
   if (stats.photoCount > 0) lines.push(`📷 <strong>${stats.photoCount}</strong> photo${stats.photoCount === 1 ? '' : 's'} captured`);
 
+  // Rabbit lines — only shown if rabbits hobby is enabled
+  if (stats.hasRabbits) {
+    if (stats.rabbitLitters > 0) lines.push(`🐇 <strong>${stats.rabbitLitters}</strong> litter${stats.rabbitLitters === 1 ? '' : 's'} born · <strong>${stats.rabbitKits}</strong> kits alive`);
+    if (stats.rabbitDeaths > 0) lines.push(`💔 <strong>${stats.rabbitDeaths}</strong> rabbit${stats.rabbitDeaths === 1 ? '' : 's'} lost`);
+  }
+
   const totalEntries = stats.totalEntries;
 
   const html = `
@@ -273,7 +230,7 @@ function buildDigestEmail(email, data, stats) {
         </div>
 
         <p style="font-size:13px;color:#5C4530;line-height:1.6">
-          Tap below to log this week's eggs, log your harvest, or just look at your photos.
+          Tap below to log this week's entries or check your stats.
         </p>
 
         <p style="margin:20px 0">
