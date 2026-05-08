@@ -4982,7 +4982,7 @@ const TUTORIAL_SLIDES = [
     emoji: "🐔",
     title: "Multiple flocks",
     body: "Chickens are the default, but you can add Duck, Turkey, Quail, Goose, or Guinea flocks too. Each flock tracks separately with its own basket and stats.",
-    tip: "Tap "Add Flock" on the Egg Layers home tab to get started.",
+    tip: "Tap 'Add Flock' on the Egg Layers home tab to get started.",
   },
   {
     emoji: "🗺️",
