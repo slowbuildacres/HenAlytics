@@ -96,6 +96,12 @@ function migrateData(data) {
     }
   });
 
+  // Add rabbits hobby if missing (added in later version)
+  const hasRabbits = data.hobbies.some(h => h.id === "rabbits");
+  if (!hasRabbits) {
+    data.hobbies.push({ id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true });
+  }
+
   return data;
 }
 
@@ -3602,8 +3608,14 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage }) 
           </div>
         ))}
       </div>
-      <div style={{ fontSize: 11, color: palette.inkSoft, textAlign: "center" }}>
-        Go to Settings to toggle visibility anytime.
+      <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1.5px solid ${palette.line}`, display: "flex", flexDirection: "column", gap: 8 }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, textAlign: "center" }}>Go to Settings to toggle visibility anytime.</div>
+        <button
+          onClick={() => { onClose(); setTimeout(() => setModal({ type: "feedback", presetCategory: "hobby" }), 100); }}
+          style={{ width: "100%", padding: "10px", background: palette.yolkSoft, border: `1.5px solid ${palette.line}`, borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink }}
+        >
+          💡 Suggest a new hobby
+        </button>
       </div>
     </Modal>
   );
