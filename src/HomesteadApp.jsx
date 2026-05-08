@@ -830,7 +830,7 @@ export default function HomesteadApp() {
                 </button>
               ))}
               <button
-                onClick={() => { setHobbyMenuOpen(false); setModal({ type: "feedback", presetCategory: "hobby" }); }}
+                onClick={() => { setHobbyMenuOpen(false); setModal({ type: "manageHobbies" }); }}
                 style={{
                   width: "100%", padding: "12px 16px", background: palette.yolkSoft,
                   border: "none", cursor: "pointer", textAlign: "left",
@@ -895,7 +895,7 @@ export default function HomesteadApp() {
       </nav>
 
       {/* MODALS */}
-      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} />
+      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} />
     </div>
   );
 }
@@ -2547,7 +2547,7 @@ function PhotoTile({ photo }) {
 }
 
 // ============ MODAL ROUTER & FORMS ============
-function ModalRouter({ modal, setModal, data, update, activeHobby, user, role }) {
+function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, setActiveHobby, setPage }) {
   const close = () => setModal(null);
   if (!modal) return null;
 
@@ -2563,6 +2563,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role })
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
+  if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} />
   if (modal.type === "addBirds") return <AddBirdsModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "editFlockEntry") {
@@ -2848,7 +2849,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
-              <div style={{ fontSize: 11, color: palette.inkSoft }}>{h.type}</div>
+              <div style={{ fontSize: 11, color: palette.inkSoft }}>{{ garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits" }[h.type] || h.type}</div>
             </div>
             <button
               onClick={() => update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; })}
@@ -3567,6 +3568,43 @@ function AddHobbyModal({ update, onClose }) {
         });
         onClose();
       }}>Add hobby</Btn>
+    </Modal>
+  );
+}
+
+function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage }) {
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits" };
+  return (
+    <Modal open onClose={onClose} title="Manage Hobbies">
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        Toggle hobbies on or off. Hidden hobbies keep their data — they just won't show in the menu.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
+        {data.hobbies.map(h => (
+          <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+            <div>
+              <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
+              <div style={{ fontSize: 11, color: palette.inkSoft }}>{friendlyType[h.type] || h.type}</div>
+            </div>
+            <button
+              onClick={() => {
+                update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
+                if (h.hidden) {
+                  if (h.type === "rabbits") { setActiveHobby("rabbits"); setPage("rabbits"); }
+                  else { setActiveHobby(h.id); setPage("home"); }
+                  onClose();
+                }
+              }}
+              style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.ink : palette.bgAlt, color: h.hidden ? palette.bg : palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+            >
+              {h.hidden ? "Enable" : "Visible ✓"}
+            </button>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, textAlign: "center" }}>
+        Go to Settings to toggle visibility anytime.
+      </div>
     </Modal>
   );
 }
