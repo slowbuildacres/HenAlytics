@@ -30,6 +30,8 @@ import {
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
+import SalesPage from "./Sales.jsx";
+import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 
 // ============ DESIGN TOKENS ============
@@ -65,6 +67,8 @@ const defaultData = () => ({
   plantings: [], // garden plantings to track
   butchered: [], // butcher events for current batch
   calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
+  sales: [],            // unified sales log
+  customers: [],        // repeat buyer directory
 });
 
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
@@ -74,6 +78,8 @@ function migrateData(data) {
   if (!data.entries || typeof data.entries !== "object") data.entries = {};
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
+  if (!Array.isArray(data.sales)) data.sales = [];
+  if (!Array.isArray(data.customers)) data.customers = [];
   if (typeof data.homesteadName !== "string") data.homesteadName = "";
   if (data.homesteadLocation !== null && (!data.homesteadLocation || typeof data.homesteadLocation !== "object")) {
     data.homesteadLocation = null;
@@ -806,7 +812,7 @@ export default function HomesteadApp() {
         </div>
 
         {/* HOBBY PICKER (hidden on Photos page since it shows all hobbies) */}
-        {page !== "photos" && page !== "year" && page !== "calendar" && (
+        {page !== "sales" && page !== "year" && page !== "calendar" && (
         <div style={{ maxWidth: 720, margin: "16px auto 0", position: "relative" }}>
           <button
             onClick={() => setHobbyMenuOpen(!hobbyMenuOpen)}
@@ -888,6 +894,9 @@ export default function HomesteadApp() {
         {page === "calendar" && (
           <CalendarPage data={data} update={update} setModal={setModal} />
         )}
+        {page === "sales" && (
+          <SalesPage data={data} update={update} />
+        )}
       </main>
 
       {/* COPYRIGHT FOOTER */}
@@ -913,7 +922,7 @@ export default function HomesteadApp() {
         <NavTab active={page === "home" || page === "rabbits"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
-        <NavTab active={page === "photos"} onClick={() => setPage("photos")} icon={ImageIcon} label="Photos" />
+        <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
       </nav>
 
@@ -2613,6 +2622,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
+  if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
   if (modal.type === "inviteAccepted") return <InviteAcceptedModal homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "inviteError") return <InviteErrorModal message={modal.message} onClose={close} />;
@@ -2737,6 +2747,14 @@ function BarnModal({ data, update, onClose, setModal, user, role }) {
           onClick={() => { onClose(); setTimeout(() => setModal({ type: "farmhand" }), 0); }}
         />
       )}
+
+      <SectionBtn
+        icon={ImageIcon}
+        label="Photo library"
+        sub="All your homestead photos"
+        accent={palette.feather}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "photos" }), 0); }}
+      />
 
       <SectionBtn
         icon={Heart}
@@ -4873,5 +4891,29 @@ function AddToHomeScreenModal({ onClose }) {
         Once installed, Henalytics opens like a regular app. No app store needed — it just lives on your home screen.
       </div>
     </Modal>
+  );
+}
+
+
+// ============ PHOTOS MODAL — accessible from Barn icon ============
+function PhotosModal({ data, user, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}
+      >
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Photo library</div>
+          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20 }}>
+          <PhotoLibraryPage data={data} user={user} />
+        </div>
+      </div>
+    </div>
   );
 }
