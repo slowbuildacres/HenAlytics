@@ -699,7 +699,7 @@ export default function HomesteadApp() {
   // Note: we render the wizard inline below — only ONE wizard shows at a time,
   // and it blocks until completed/skipped.
 
-  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" ? "garden" : activeHobby));
+  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" && page !== "analytics" ? "garden" : activeHobby));
   const entries = data.entries[activeHobby] || [];
 
   return (
@@ -823,7 +823,7 @@ export default function HomesteadApp() {
               {data.hobbies.filter((h) => !h.hidden).map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits") setPage("rabbits"); else setPage("home"); }}
+                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); }}
                   style={{
                     width: "100%", padding: "12px 16px", background: h.id === activeHobby ? palette.bgAlt : "transparent",
                     border: "none", borderBottom: `1px solid ${palette.line}`,
@@ -2560,7 +2560,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   const close = () => setModal(null);
   if (!modal) return null;
 
-  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" ? "garden" : activeHobby));
+  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" && page !== "analytics" ? "garden" : activeHobby));
 
   if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
@@ -3600,7 +3600,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage }) 
                 update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
                 if (h.hidden) {
                   if (h.type === "rabbits") { setActiveHobby("rabbits"); setPage("rabbits"); }
-                  else { setActiveHobby(h.id); setPage("home"); }
+                  else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
                 }
               }}
