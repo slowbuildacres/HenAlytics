@@ -57,7 +57,7 @@ const defaultData = () => ({
   homesteadLocation: null, // { lat, lon, label } once set
   hobbies: [
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
-    { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flockSize: 0, flockHistory: [] },
+    { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flocks: [] },
     { id: "meat_chickens", name: "Meat Chickens", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
     { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
     { id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true },
@@ -90,8 +90,32 @@ function migrateData(data) {
       if (!Array.isArray(h.archivedSeasons)) h.archivedSeasons = [];
     }
     if (h.type === "egg_layers") {
-      if (typeof h.flockSize !== "number") h.flockSize = 0;
-      if (!Array.isArray(h.flockHistory)) h.flockHistory = [];
+      // Multi-flock migration: convert old flockSize/flockHistory/eggBasket to flocks[]
+      if (!Array.isArray(h.flocks)) {
+        h.flocks = [];
+        // If there's legacy single-flock data, migrate it to flocks[0]
+        if (typeof h.flockSize === "number" && h.flockSize > 0) {
+          const flockId = h._defaultFlockId || Math.random().toString(36).slice(2, 10);
+          h._defaultFlockId = flockId;
+          h.flocks.push({
+            id: flockId,
+            name: "My Flock",
+            birdType: "Chicken",
+            birdCount: h.flockSize,
+            startDate: (h.flockHistory && h.flockHistory[0] && h.flockHistory[0].date) || null,
+            cost: (h.flockHistory && h.flockHistory[0] && h.flockHistory[0].cost) || 0,
+            history: h.flockHistory || [],
+            eggBasket: h.eggBasket || null,
+          });
+        }
+      }
+      // Ensure all flocks have required fields
+      h.flocks.forEach(fl => {
+        if (!fl.id) fl.id = Math.random().toString(36).slice(2, 10);
+        if (!fl.birdType) fl.birdType = "Chicken";
+        if (!Array.isArray(fl.history)) fl.history = [];
+        if (fl.eggBasket === undefined) fl.eggBasket = null;
+      });
     }
     if (h.type === "rabbits") {
       if (!Array.isArray(h.hutches)) h.hutches = [];
@@ -102,6 +126,14 @@ function migrateData(data) {
       if (!Array.isArray(h.archivedBatches)) h.archivedBatches = [];
     }
   });
+
+  // Tag old egg_layers entries with flockId if missing
+  const eggLayersHobby = data.hobbies.find(h => h.type === "egg_layers");
+  if (eggLayersHobby && eggLayersHobby._defaultFlockId && Array.isArray(data.entries["egg_layers"])) {
+    data.entries["egg_layers"].forEach(e => {
+      if (!e.flockId) e.flockId = eggLayersHobby._defaultFlockId;
+    });
+  }
 
   // Add rabbits hobby if missing (added in later version)
   const hasRabbits = data.hobbies.some(h => h.id === "rabbits");
@@ -1030,7 +1062,7 @@ function QuickLogTiles({ hobby, setModal }) {
         <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
         <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
-        <Tile icon={Plus} label="Add Birds" color={palette.ink} onClick={() => setModal({ type: "addBirds" })} />
+        <Tile icon={Plus} label="Add Flock" color={palette.ink} onClick={() => setModal({ type: "addFlock", hobbyId: hobby.id })} />
       </div>
     );
   }
@@ -1088,11 +1120,11 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
 
   const nudges = [];
 
-  if (hobby.type === "egg_layers" && hobby.flockSize > 0) {
-    // Eggs not collected today
+  if (hobby.type === "egg_layers" && (hobby.flocks || []).some(f => f.birdCount > 0)) {
+    // Eggs not collected today (check baskets across all flocks)
     const collectedToday = entries.some((e) => e.date === todayIso && (e.action === "eggs" || e.action === "eggs_laid"));
-    const basketCount = (hobby.eggBasket && hobby.eggBasket.date === todayIso) ? hobby.eggBasket.count : 0;
-    if (!collectedToday && basketCount === 0) {
+    const anyBasketToday = (hobby.flocks || []).some(f => f.eggBasket && f.eggBasket.date === todayIso && f.eggBasket.count > 0);
+    if (!collectedToday && !anyBasketToday) {
       nudges.push({
         icon: "🥚",
         text: "No eggs logged yet today",
@@ -1311,10 +1343,10 @@ function GardenSummary({ hobby, data, setModal }) {
 
 function EggLayersSummary({ hobby, entries, update, setModal }) {
   const today = todayStr();
+  const flocks = hobby.flocks || [];
+  const totalBirds = flocks.reduce((s, f) => s + (f.birdCount || 0), 0);
 
-  // ---- Weekly stats ----
-  // Eggs laid: count both "eggs" (original quick-tile) and "eggs_laid" (egg basket commit)
-  // so both logging methods feed into the same stats.
+  // Weekly egg stats across all flocks
   const eggsLaid = entries.filter((e) => e.action === "eggs_laid" || e.action === "eggs");
   const oneWeekAgo = localDateStr(new Date(Date.now() - 7 * 24 * 60 * 60 * 1000));
   const twoWeeksAgo = localDateStr(new Date(Date.now() - 14 * 24 * 60 * 60 * 1000));
@@ -1322,67 +1354,48 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
   const eggsLastWeek = eggsLaid.filter((e) => e.date > twoWeeksAgo && e.date <= oneWeekAgo).reduce((s, e) => s + (Number(e.count) || 0), 0);
   const diff = eggsThisWeek - eggsLastWeek;
 
+  // Bird type emoji map
+  const birdEmoji = { Chicken: "🐔", Duck: "🦆", Turkey: "🦃", Quail: "🐦", Goose: "🪿", Guinea: "🐦", Other: "🐣" };
+
+  if (flocks.length === 0) {
+    return (
+      <div style={{ background: palette.card, border: `2px dashed ${palette.ink}`, borderRadius: 12, padding: 24, textAlign: "center", marginBottom: 14 }}>
+        <Egg size={32} color={palette.ink} strokeWidth={1.5} style={{ marginBottom: 10 }} />
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginBottom: 6 }}>No flocks yet</div>
+        <div style={{ color: palette.inkSoft, marginBottom: 14, fontSize: 14 }}>Add your first flock to start tracking eggs.</div>
+        <Btn variant="accent" onClick={() => setModal({ type: "addFlock", hobbyId: hobby.id })}>🐔 Add your first flock</Btn>
+      </div>
+    );
+  }
+
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
-      {/* Top row: flock + flock-started */}
-      <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-        <div style={{
-          flex: 1, minWidth: 160, background: palette.card, border: `1.5px solid ${palette.line}`,
-          borderRadius: 12, padding: 14,
-        }}>
-          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-            Current Flock
-          </div>
-          <div style={{ fontSize: 32, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>
-            {hobby.flockSize || 0}
-          </div>
-          <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 6 }}>
-            {hobby.flockSize ? "hens" : "Tap +Add Birds to start"}
-          </div>
-        </div>
-        {(hobby.flockHistory || []).length > 0 && (
-          <div style={{
-            flex: 1, minWidth: 160, background: palette.card, border: `1.5px solid ${palette.line}`,
-            borderRadius: 12, padding: 14,
-          }}>
-            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>
-              Flock Started
-            </div>
-            <div style={{ fontSize: 16, fontWeight: 600 }}>
-              {fmtDate(hobby.flockHistory[0].date)}
-            </div>
-          </div>
-        )}
-      </div>
+      {/* All flocks egg baskets */}
+      {flocks.map(flock => (
+        <FlockBasket key={flock.id} flock={flock} hobby={hobby} entries={entries} update={update} setModal={setModal} birdEmoji={birdEmoji} />
+      ))}
 
-      {/* Egg basket (only show if there's a flock) */}
-      {hobby.flockSize > 0 && <EggBasket hobby={hobby} update={update} />}
+      {/* + Add Flock button */}
+      <button
+        onClick={() => setModal({ type: "addFlock", hobbyId: hobby.id })}
+        style={{ padding: "10px 14px", background: palette.bgAlt, border: `1.5px dashed ${palette.line}`, borderRadius: 10, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.inkSoft, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+      >
+        <Plus size={16} /> Add another flock
+      </button>
 
-      {/* Weekly stats */}
-      {hobby.flockSize > 0 && eggsLaid.length > 0 && (
-        <div style={{
-          background: palette.card, border: `1.5px solid ${palette.line}`,
-          borderRadius: 12, padding: 14,
-          display: "flex", alignItems: "center", gap: 14,
-        }}>
-          <div style={{
-            width: 48, height: 48, borderRadius: 24, background: palette.yolkSoft,
-            display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          }}>
+      {/* Weekly summary across all flocks */}
+      {eggsLaid.length > 0 && (
+        <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, display: "flex", alignItems: "center", gap: 14 }}>
+          <div style={{ width: 48, height: 48, borderRadius: 24, background: palette.yolkSoft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
             <Egg size={24} strokeWidth={1.8} color={palette.ink} />
           </div>
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
-              This week
-            </div>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>This week · all flocks</div>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>
               {eggsThisWeek} <span style={{ fontSize: 14, color: palette.inkSoft }}>egg{eggsThisWeek === 1 ? "" : "s"}</span>
             </div>
             {eggsLastWeek > 0 && (
-              <div style={{
-                fontSize: 12, marginTop: 4,
-                color: diff > 0 ? palette.leaf : diff < 0 ? palette.accent : palette.inkSoft,
-              }}>
+              <div style={{ fontSize: 12, marginTop: 4, color: diff > 0 ? palette.leaf : diff < 0 ? palette.accent : palette.inkSoft }}>
                 {diff > 0 && <>▲ {diff} more than last week</>}
                 {diff < 0 && <>▼ {Math.abs(diff)} fewer than last week</>}
                 {diff === 0 && <>= same as last week</>}
@@ -1391,16 +1404,109 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
           </div>
         </div>
       )}
+    </div>
+  );
+}
 
-      {/* Flock history — shows each "Add Birds" event so user can edit/delete */}
-      {(hobby.flockHistory || []).length > 0 && (
-        <FlockHistoryList hobby={hobby} setModal={setModal} />
+// Per-flock egg basket with edit/delete flock controls
+function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
+  const today = todayStr();
+  const basket = flock.eggBasket;
+  const isToday = basket && basket.date === today;
+  const count = isToday ? basket.count : 0;
+  const emoji = birdEmoji[flock.birdType] || "🐣";
+
+  // Flock-specific egg entries
+  const flockEggs = entries.filter(e => e.flockId === flock.id && (e.action === "eggs_laid" || e.action === "eggs"));
+  const todayLogged = entries.some(e => e.flockId === flock.id && e.date === today && (e.action === "eggs" || e.action === "eggs_laid"));
+
+  const inc = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      const fl = (h.flocks || []).find(x => x.id === flock.id);
+      if (!fl) return d;
+      const cur = fl.eggBasket && fl.eggBasket.date === today ? fl.eggBasket.count : 0;
+      fl.eggBasket = { date: today, count: cur + 1 };
+      return d;
+    });
+  };
+
+  const dec = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      const fl = (h.flocks || []).find(x => x.id === flock.id);
+      if (!fl || !fl.eggBasket) return d;
+      const cur = fl.eggBasket.date === today ? fl.eggBasket.count : 0;
+      const next = Math.max(0, cur - 1);
+      fl.eggBasket = next === 0 ? null : { date: today, count: next };
+      return d;
+    });
+  };
+
+  const commit = () => {
+    if (count <= 0) return;
+    update(d => {
+      d.entries[hobby.id] = d.entries[hobby.id] || [];
+      d.entries[hobby.id].push({ id: Math.random().toString(36).slice(2,10), date: today, action: "eggs_laid", count, flockId: flock.id, birdType: flock.birdType, created: Date.now() });
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (h) { const fl = (h.flocks||[]).find(x=>x.id===flock.id); if (fl) fl.eggBasket = null; }
+      return d;
+    });
+  };
+
+  const reset = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (h) { const fl = (h.flocks||[]).find(x=>x.id===flock.id); if (fl) fl.eggBasket = null; }
+      return d;
+    });
+  };
+
+  return (
+    <div style={{ background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+      {/* Flock header */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10 }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+            <span style={{ fontSize: 18 }}>{emoji}</span>
+            <span style={{ fontWeight: 600, fontSize: 15, color: palette.ink }}>{flock.name}</span>
+            <span style={{ fontSize: 11, color: palette.inkSoft, background: palette.card, padding: "2px 8px", borderRadius: 4 }}>{flock.birdType} · {flock.birdCount} birds</span>
+          </div>
+          {flock.startDate && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2, marginLeft: 26 }}>Since {flock.startDate}</div>}
+        </div>
+        <div style={{ display: "flex", gap: 6 }}>
+          <button onClick={() => setModal({ type: "editFlock", hobbyId: hobby.id, flockId: flock.id })} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}><Edit3 size={14}/></button>
+        </div>
+      </div>
+
+      {/* Egg basket counter */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 14 }}>
+        <button onClick={dec} disabled={count === 0} style={{ width: 44, height: 44, borderRadius: 22, fontSize: 22, fontWeight: 700, border: `1.5px solid ${palette.line}`, background: palette.card, cursor: count === 0 ? "default" : "pointer", color: palette.ink, opacity: count === 0 ? 0.4 : 1, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>−</button>
+        <div style={{ flex: 1, textAlign: "center" }}>
+          <div style={{ fontSize: 48, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>{count}</div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{count === 0 ? (todayLogged ? `✓ logged today` : "tap + to collect") : `egg${count===1?"":"s"} so far today`}</div>
+        </div>
+        <button onClick={inc} style={{ width: 52, height: 52, borderRadius: 26, fontSize: 28, fontWeight: 700, border: `2px solid ${palette.ink}`, background: palette.yolk, cursor: "pointer", color: palette.ink, boxShadow: "2px 2px 0 " + palette.line, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
+      </div>
+
+      {count > 0 && (
+        <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+          <button onClick={commit} style={{ flex: 1, padding: "9px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, color: palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
+            Done — log {count} {flock.birdType.toLowerCase()} egg{count===1?"":"s"}
+          </button>
+          <button onClick={reset} style={{ padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: "transparent", color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12, cursor: "pointer" }}>Clear</button>
+        </div>
       )}
     </div>
   );
 }
 
-// Lists each flock-history entry (one per Add Birds event), with tap-to-edit
+// ---- LEGACY: kept for backwards compat reference but no longer rendered ----
+// (old FlockHistoryList and EggBasket replaced by FlockBasket above)
+
+ (one per Add Birds event), with tap-to-edit
 function FlockHistoryList({ hobby, setModal }) {
   const history = [...(hobby.flockHistory || [])].sort((a, b) => b.date.localeCompare(a.date));
 
@@ -1977,8 +2083,9 @@ function EggLayersAnalytics({ hobby, entries }) {
   const totalCost = feedCost + beddingCost + infraCost;
   const costPerEgg = totalEggs > 0 ? totalCost / totalEggs : 0;
   const costPerDozen = costPerEgg * 12;
-  const flockSize = hobby.flockSize || 0;
-  const eggsPerHen = flockSize > 0 ? (totalEggs / flockSize).toFixed(1) : "—";
+  const flocks = hobby.flocks || [];
+  const totalBirds = flocks.reduce((s, f) => s + (f.birdCount || 0), 0);
+  const eggsPerHen = totalBirds > 0 ? (totalEggs / totalBirds).toFixed(1) : "—";
 
   // Revenue from selling eggs
   const totalEggsSold = sold.reduce((s, e) => s + (Number(e.count) || 0), 0);
@@ -2075,6 +2182,28 @@ function EggLayersAnalytics({ hobby, entries }) {
         </ChartCard>
       )}
 
+      {/* Per-flock breakdown */}
+      {(hobby.flocks || []).length > 1 && (
+        <ChartCard title="Per flock breakdown">
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {(hobby.flocks || []).map(fl => {
+              const flockEggs = eggs.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.count)||0),0);
+              const birdEmoji = { Chicken:"🐔", Duck:"🦆", Turkey:"🦃", Quail:"🐦", Goose:"🪿", Guinea:"🐦", Other:"🐣" };
+              return (
+                <div key={fl.id} style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
+                  <div>
+                    <strong>{birdEmoji[fl.birdType]||"🐣"} {fl.name}</strong>
+                    <div style={{ fontSize:12,color:palette.inkSoft }}>{fl.birdType} · {fl.birdCount} birds</div>
+                  </div>
+                  <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"right" }}>
+                    {flockEggs > 0 ? <div>{flockEggs} eggs</div> : <div style={{fontStyle:"italic"}}>No eggs yet</div>}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </ChartCard>
+      )}
       {entries.length === 0 && <EmptyState text="No egg layer entries yet for this view." />}
     </div>
   );
@@ -2595,13 +2724,18 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} />
-  if (modal.type === "addBirds") return <AddBirdsModal hobby={hobby} update={update} onClose={close} />;
-  if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
-  if (modal.type === "editFlockEntry") {
-    const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
+  if (modal.type === "addFlock") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <EditFlockEntryModal hobby={targetHobby} index={modal.index} update={update} onClose={close} />;
+    return <AddFlockModal hobbyId={modal.hobbyId} update={update} onClose={close} />;
   }
+  if (modal.type === "editFlock") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <EditFlockModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} />;
+  }
+  if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
+  // editFlockEntry removed — replaced by editFlock
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
@@ -3656,14 +3790,27 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
   );
 }
 
-function AddBirdsModal({ hobby, update, onClose }) {
+function AddFlockModal({ hobbyId, update, onClose }) {
+  const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Other"];
+  const [name, setName] = useState("");
+  const [birdType, setBirdType] = useState("Chicken");
   const [count, setCount] = useState("");
   const [date, setDate] = useState(todayStr());
   const [cost, setCost] = useState("");
   return (
-    <Modal open onClose={onClose} title="Add birds to flock">
+    <Modal open onClose={onClose} title="Add a flock">
+      <Field label="Flock name">
+        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main Flock, Duck Pen, Turkey Run" autoFocus />
+      </Field>
+      <Field label="Bird type">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {BIRD_TYPES.map(t => (
+            <button key={t} onClick={() => setBirdType(t)} style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${birdType===t?palette.ink:palette.line}`, background: birdType===t?palette.ink:palette.card, color: birdType===t?palette.bg:palette.ink, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer" }}>{t}</button>
+          ))}
+        </div>
+      </Field>
       <Field label="How many birds?">
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
       </Field>
       <Field label="Date acquired">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -3673,16 +3820,77 @@ function AddBirdsModal({ hobby, update, onClose }) {
       </Field>
       <Btn variant="primary" onClick={() => {
         const n = parseInt(count);
-        if (!n || n < 1) return;
+        if (!n || n < 1 || !name.trim()) return;
         update((d) => {
-          const h = d.hobbies.find((x) => x.id === hobby.id);
-          h.flockSize = (h.flockSize || 0) + n;
-          h.flockHistory = h.flockHistory || [];
-          h.flockHistory.push({ date, count: n, cost: parseFloat(cost) || 0 });
+          const h = d.hobbies.find((x) => x.id === hobbyId);
+          if (!h) return d;
+          if (!Array.isArray(h.flocks)) h.flocks = [];
+          h.flocks.push({ id: Math.random().toString(36).slice(2,10), name: name.trim(), birdType, birdCount: n, startDate: date, cost: parseFloat(cost) || 0, history: [{ date, count: n, cost: parseFloat(cost)||0 }], eggBasket: null });
           return d;
         });
         onClose();
-      }}>Add {count || "0"} birds</Btn>
+      }}>Add flock</Btn>
+    </Modal>
+  );
+}
+
+function EditFlockModal({ hobbyId, flockId, hobby, update, onClose }) {
+  const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Other"];
+  const flock = (hobby.flocks || []).find(f => f.id === flockId);
+  const [name, setName] = useState(flock?.name || "");
+  const [birdType, setBirdType] = useState(flock?.birdType || "Chicken");
+  const [count, setCount] = useState(String(flock?.birdCount || 0));
+  const [date, setDate] = useState(flock?.startDate || todayStr());
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  if (!flock) { onClose(); return null; }
+
+  const save = () => {
+    const n = parseInt(count);
+    if (!n || n < 1 || !name.trim()) return;
+    update((d) => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const fl = (h.flocks||[]).find(x=>x.id===flockId);
+      if (fl) { fl.name = name.trim(); fl.birdType = birdType; fl.birdCount = n; fl.startDate = date; }
+      return d;
+    });
+    onClose();
+  };
+
+  const remove = () => {
+    update((d) => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (h) h.flocks = (h.flocks||[]).filter(x=>x.id!==flockId);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Edit flock">
+      <Field label="Flock name">
+        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} />
+      </Field>
+      <Field label="Bird type">
+        <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
+          {BIRD_TYPES.map(t=>(
+            <button key={t} onClick={()=>setBirdType(t)} style={{ padding:"8px 12px",borderRadius:8,border:`1.5px solid ${birdType===t?palette.ink:palette.line}`,background:birdType===t?palette.ink:palette.card,color:birdType===t?palette.bg:palette.ink,fontFamily:FONT_BODY,fontSize:13,fontWeight:600,cursor:"pointer" }}>{t}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Number of birds">
+        <input type="number" style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} />
+      </Field>
+      <Field label="Start date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+      </Field>
+      <div style={{ display:"flex",gap:8,marginTop:8 }}>
+        <Btn variant="primary" onClick={save}>Save changes</Btn>
+        {!confirmDelete && <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete flock</Btn>}
+        {confirmDelete && <Btn variant="danger" onClick={remove}>Confirm delete</Btn>}
+      </div>
+      {confirmDelete && <div style={{ fontSize:12,color:palette.inkSoft,marginTop:8,fontStyle:"italic" }}>This will delete the flock but keep its egg entries.</div>}
     </Modal>
   );
 }
@@ -4152,6 +4360,11 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         // attach to current batch for meat chickens
         if (hobby.type === "meat_chickens" && hobby.currentBatch) {
           entry.batchId = hobby.currentBatch.id;
+        }
+        // tag egg entries with first flock if not already tagged
+        if (hobby.type === "egg_layers" && !entry.flockId) {
+          const firstFlock = (hobby.flocks || [])[0];
+          if (firstFlock) entry.flockId = firstFlock.id;
         }
 
         // attach to current season for garden

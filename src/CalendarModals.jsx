@@ -114,10 +114,12 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
 // ============================================================================
 
 export function PlanCropModal({ data, update, onClose }) {
-  const [step, setStep] = useState(1); // 1 = pick crop, 2 = pick method, 3 = preview
+  const [step, setStep] = useState(1); // 1 = pick crop, 2 = pick method, 3 = editable preview
   const [cropId, setCropId] = useState(null);
   const [method, setMethod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
+  // editableDates: { [eventId]: dateString } — user-overridden dates
+  const [editableDates, setEditableDates] = useState({});
 
   const userZone = data.userZone || estimateZone(
     data.homesteadLocation?.lat,
@@ -128,13 +130,24 @@ export function PlanCropModal({ data, update, onClose }) {
   const methods = cropId ? methodsForCrop(cropId) : [];
   const generatedEvents = (cropId && method) ? generateCropEvents(cropId, method, frostDates) : [];
 
+  // When year or method changes, reset editable dates so suggestions refresh
+  const handleSetMethod = (m) => { setMethod(m); setEditableDates({}); setStep(3); };
+  const handleSetYear = (y) => { setYear(y); setEditableDates({}); };
+
+  // Get the final date for an event (user override or generated)
+  const getDate = (evt) => editableDates[evt.id] || evt.date;
+
   const confirm = () => {
     if (generatedEvents.length === 0) return;
     update((d) => {
       d.calendarEvents = d.calendarEvents || [];
       // Replace any existing events for this crop/year combo so re-planning doesn't double up
       d.calendarEvents = d.calendarEvents.filter((e) => !(e.cropId === cropId && e.date.startsWith(String(year))));
-      d.calendarEvents.push(...generatedEvents.map((e) => ({ ...e, planYear: year })));
+      d.calendarEvents.push(...generatedEvents.map((e) => ({
+        ...e,
+        date: getDate(e),   // use user's edited date if set
+        planYear: year,
+      })));
       return d;
     });
     onClose();
@@ -204,7 +217,7 @@ export function PlanCropModal({ data, update, onClose }) {
             {methods.map((m) => (
               <button
                 key={m.id}
-                onClick={() => { setMethod(m.id); setStep(3); }}
+                onClick={() => handleSetMethod(m.id)}
                 style={{
                   padding: "12px 14px",
                   background: palette.card,
@@ -235,32 +248,45 @@ export function PlanCropModal({ data, update, onClose }) {
               type="number"
               style={inputStyle}
               value={year}
-              onChange={(e) => setYear(parseInt(e.target.value) || new Date().getFullYear())}
+              onChange={(e) => handleSetYear(parseInt(e.target.value) || new Date().getFullYear())}
               min={2024} max={2030}
             />
           </Field>
-          <div style={{
-            padding: 12, background: palette.bgAlt, borderRadius: 8, marginBottom: 14,
-          }}>
-            <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>
-              Will add these events:
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {generatedEvents.map((e) => (
-                <div key={e.id} style={{
-                  fontSize: 13, color: palette.ink, lineHeight: 1.4,
-                }}>
-                  <div style={{ fontWeight: 600 }}>{e.title}</div>
-                  <div style={{ fontSize: 11, color: palette.inkSoft }}>
-                    {fmtFullDate(e.date)}
-                  </div>
-                </div>
-              ))}
-            </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+            Dates are suggested based on your zone. Tap any date to adjust it.
           </div>
-          <div style={{ display: "flex", gap: 8 }}>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+            {generatedEvents.map((e) => (
+              <div key={e.id} style={{
+                background: palette.card, border: `1.5px solid ${palette.line}`,
+                borderRadius: 8, padding: "10px 12px",
+                display: "flex", alignItems: "center", gap: 12, flexWrap: "wrap",
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 13, color: palette.ink }}>{e.title}</div>
+                  {editableDates[e.id] && editableDates[e.id] !== e.date && (
+                    <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, fontStyle: "italic" }}>
+                      Suggested: {fmtFullDate(e.date)}
+                    </div>
+                  )}
+                </div>
+                <input
+                  type="date"
+                  value={getDate(e)}
+                  onChange={(ev) => setEditableDates(prev => ({ ...prev, [e.id]: ev.target.value }))}
+                  style={{
+                    padding: "6px 10px", borderRadius: 6,
+                    border: `1.5px solid ${editableDates[e.id] && editableDates[e.id] !== e.date ? palette.yolk : palette.line}`,
+                    fontFamily: "inherit", fontSize: 13, background: "white",
+                    color: palette.ink, flexShrink: 0,
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn variant="primary" onClick={confirm}>
-              Add {generatedEvents.length} event{generatedEvents.length === 1 ? "" : "s"}
+              Add {generatedEvents.length} event{generatedEvents.length === 1 ? "" : "s"} to Calendar
             </Btn>
             <Btn variant="ghost" onClick={() => setStep(2)}>← Back</Btn>
           </div>
