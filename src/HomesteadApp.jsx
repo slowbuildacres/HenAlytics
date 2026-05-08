@@ -5,7 +5,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
-  MapPin, CloudRain, Thermometer
+  MapPin, CloudRain, Thermometer, Share2
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
@@ -67,6 +67,7 @@ const defaultData = () => ({
   butchered: [], // butcher events for current batch
   calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
   tutorialDismissed: false, // true after user completes or skips tutorial
+  salesHidden: false,        // true if user hides the Sales tab
   sales: [],            // unified sales log
   customers: [],        // repeat buyer directory
 });
@@ -79,6 +80,7 @@ function migrateData(data) {
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
+  if (typeof data.salesHidden !== "boolean") data.salesHidden = false;
   if (!Array.isArray(data.customers)) data.customers = [];
   if (typeof data.homesteadName !== "string") data.homesteadName = "";
   if (data.homesteadLocation !== null && (!data.homesteadLocation || typeof data.homesteadLocation !== "object")) {
@@ -976,7 +978,7 @@ export default function HomesteadApp() {
         <NavTab active={page === "home" || page === "rabbits"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
-        <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />
+        {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
       </nav>
 
@@ -1749,6 +1751,7 @@ function EntryPhotoThumb({ path, size = 40 }) {
 
 // ============ ANALYTICS PAGE ============
 function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
+  const [showShare, setShowShare] = useState(false);
   // Garden uses explicit seasons; other hobbies use date-derived seasons
   if (hobby.type === "garden") {
     return <GardenAnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} />;
@@ -1763,10 +1766,16 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
 
   return (
     <div>
-      {/* SEASON FILTER */}
+      {showShare && <ShareStatsModal hobby={hobby} entries={entries} data={data} onClose={() => setShowShare(false)} />}
+      {/* SEASON FILTER + SHARE */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6, fontWeight: 600 }}>
-          View
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
+          <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
+            View
+          </div>
+          <button onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
+            <Share2 size={13} /> Share stats
+          </button>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn small variant={seasonFilter === "all" ? "primary" : "ghost"} onClick={() => setSeasonFilter("all")}>
@@ -1787,6 +1796,7 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
 }
 
 function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
+  const [showShare, setShowShare] = useState(false);
   // Build season list: archived + (currently active, if any)
   const archived = hobby.archivedSeasons || [];
   const current = hobby.currentSeason;
@@ -1818,10 +1828,16 @@ function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter }) {
 
   return (
     <div>
-      {/* SEASON FILTER */}
+      {showShare && <ShareStatsModal hobby={hobby} entries={data.entries.garden || []} data={data} onClose={() => setShowShare(false)} />}
+      {/* SEASON FILTER + SHARE */}
       <div style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6, fontWeight: 600 }}>
-          View
+        <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
+          <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
+            View
+          </div>
+          <button onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
+            <Share2 size={13} /> Share stats
+          </button>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn small variant={seasonFilter === "all" ? "primary" : "ghost"} onClick={() => setSeasonFilter("all")}>
@@ -2882,6 +2898,25 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           </div>
         ))}
       </div>
+      {/* TABS SECTION */}
+      <div style={{ marginTop: 16, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+          Tabs
+        </div>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>💰 Sales tab</div>
+            <div style={{ fontSize: 11, color: palette.inkSoft }}>Track what you sell across all hobbies</div>
+          </div>
+          <button
+            onClick={() => update(d => { d.salesHidden = !d.salesHidden; return d; })}
+            style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: data.salesHidden ? palette.bgAlt : palette.leaf, color: data.salesHidden ? palette.inkSoft : palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+          >
+            {data.salesHidden ? "Hidden" : "Visible"}
+          </button>
+        </div>
+      </div>
+
       <div style={{
         marginTop: 16, padding: 12, background: palette.bgAlt, borderRadius: 8,
         fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
@@ -4957,6 +4992,174 @@ function AddToHomeScreenModal({ onClose }) {
 
 
 // ============================================================================
+// SHARE STATS MODAL — generates a shareable image card for a hobby's stats
+// ============================================================================
+function ShareStatsModal({ hobby, entries, data, onClose }) {
+  const [copied, setCopied] = useState(false);
+
+  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
+  const today = new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+
+  // Build stats summary per hobby type
+  const buildStats = () => {
+    if (hobby.type === "egg_layers") {
+      const eggs = entries.filter(e => e.action === "eggs" || e.action === "eggs_laid");
+      const totalEggs = eggs.reduce((s, e) => s + (Number(e.count)||0), 0);
+      const feeds = entries.filter(e => e.action === "fed");
+      const totalCost = feeds.reduce((s, e) => s + (Number(e.cost)||0), 0);
+      const costPerDozen = totalEggs > 0 ? (totalCost / totalEggs * 12) : 0;
+      const flocks = hobby.flocks || [];
+      const totalBirds = flocks.reduce((s, f) => s + (f.birdCount||0), 0);
+      // top week
+      const byWeek = {};
+      eggs.forEach(e => {
+        const d = new Date(e.date + "T12:00");
+        const week = `${d.getFullYear()}-W${String(Math.ceil((d - new Date(d.getFullYear(),0,1))/(7*86400000))).padStart(2,"0")}`;
+        byWeek[week] = (byWeek[week]||0) + (Number(e.count)||0);
+      });
+      const topWeek = Object.values(byWeek).length > 0 ? Math.max(...Object.values(byWeek)) : 0;
+      return {
+        emoji: "🥚", label: "Egg Layers",
+        stats: [
+          { label: "Total eggs laid", value: totalEggs.toLocaleString() },
+          { label: "Birds in flock", value: totalBirds },
+          { label: "Cost per dozen", value: fmtMoney(costPerDozen) },
+          { label: "Best week", value: `${topWeek} eggs` },
+        ],
+      };
+    }
+    if (hobby.type === "meat_chickens") {
+      const archived = hobby.archivedBatches || [];
+      const current = hobby.currentBatch;
+      const allBatches = current ? [...archived, current] : archived;
+      const totalBirds = allBatches.reduce((s, b) => s + (b.startCount||0), 0);
+      const totalButchered = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0), 0), 0);
+      const totalWeight = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0)*(bu.avgWeight||0), 0), 0);
+      const avgWeight = totalButchered > 0 ? (totalWeight/totalButchered).toFixed(1) : "—";
+      return {
+        emoji: "🍗", label: "Meat Chickens",
+        stats: [
+          { label: "Total birds raised", value: totalBirds },
+          { label: "Total butchered", value: totalButchered },
+          { label: "Avg final weight", value: `${avgWeight} lbs` },
+          { label: "Batches", value: allBatches.length },
+        ],
+      };
+    }
+    if (hobby.type === "garden") {
+      const seasonEntries = data.entries.garden || [];
+      const harvests = seasonEntries.filter(e => e.action === "harvested");
+      const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity)||0), 0);
+      const plantings = seasonEntries.filter(e => e.action === "planted").length;
+      const seasons = (hobby.archivedSeasons||[]).length + (hobby.currentSeason ? 1 : 0);
+      const seasonName = hobby.currentSeason ? hobby.currentSeason.name : (hobby.archivedSeasons||[]).slice(-1)[0]?.name || "—";
+      return {
+        emoji: "🌱", label: "Garden",
+        stats: [
+          { label: "Total harvest", value: `${totalHarvest.toFixed(1)} lbs` },
+          { label: "Plantings logged", value: plantings },
+          { label: "Seasons", value: seasons },
+          { label: "Current season", value: seasonName },
+        ],
+      };
+    }
+    if (hobby.type === "rabbits") {
+      const litters = entries.filter(e => e.action === "litter");
+      const totalLitters = litters.length;
+      const totalKits = litters.reduce((s, e) => s + (Number(e.kitsAlive)||0), 0);
+      const butchered = entries.filter(e => e.action === "butcher").reduce((s, e) => s + (Number(e.count)||0), 0);
+      const hutches = (hobby.hutches||[]).length;
+      return {
+        emoji: "🐇", label: "Rabbits",
+        stats: [
+          { label: "Litters born", value: totalLitters },
+          { label: "Kits born alive", value: totalKits },
+          { label: "Total butchered", value: butchered },
+          { label: "Hutches", value: hutches },
+        ],
+      };
+    }
+    if (hobby.type === "bees") {
+      const harvests = entries.filter(e => e.action === "harvest");
+      const totalLbs = harvests.reduce((s, e) => s + (Number(e.lbs)||0), 0);
+      const inspections = entries.filter(e => e.action === "inspect").length;
+      const hives = (hobby.hives||[]).length;
+      return {
+        emoji: "🐝", label: "Beekeeping",
+        stats: [
+          { label: "Honey harvested", value: `${totalLbs.toFixed(1)} lbs` },
+          { label: "Hives", value: hives },
+          { label: "Inspections logged", value: inspections },
+        ],
+      };
+    }
+    return { emoji: "📊", label: hobby.name, stats: [] };
+  };
+
+  const { emoji, label, stats } = buildStats();
+  const homesteadName = data.homesteadName || "My Homestead";
+
+  const shareText = `${emoji} ${homesteadName} — ${label} stats on HenAlytics\n` +
+    stats.map(s => `${s.label}: ${s.value}`).join("\n") +
+    "\n\nhenalytics.com";
+
+  const handleShare = async () => {
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${homesteadName} — ${label} Stats`, text: shareText, url: "https://henalytics.com" });
+      } catch (e) { /* user cancelled */ }
+    } else {
+      await navigator.clipboard.writeText(shareText);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:380,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+
+        {/* Share card preview */}
+        <div style={{ background:palette.ink,padding:"28px 24px 24px",textAlign:"center" }}>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.5)",textTransform:"uppercase",letterSpacing:2,marginBottom:8 }}>
+            {homesteadName}
+          </div>
+          <div style={{ fontSize:52,marginBottom:8,lineHeight:1 }}>{emoji}</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:palette.yolk,marginBottom:20,lineHeight:1.2 }}>
+            {label}
+          </div>
+          <div style={{ display:"grid",gridTemplateColumns:"1fr 1fr",gap:10 }}>
+            {stats.map((s,i) => (
+              <div key={i} style={{ background:"rgba(255,255,255,0.08)",borderRadius:10,padding:"12px 10px" }}>
+                <div style={{ fontSize:11,color:"rgba(255,255,255,0.55)",marginBottom:4,textTransform:"uppercase",letterSpacing:0.8 }}>{s.label}</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:"#fff",lineHeight:1 }}>{s.value}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ fontSize:11,color:"rgba(255,255,255,0.3)",marginTop:16 }}>henalytics.com · {today}</div>
+        </div>
+
+        {/* Actions */}
+        <div style={{ padding:"16px 20px 20px",display:"flex",flexDirection:"column",gap:10 }}>
+          <button
+            onClick={handleShare}
+            style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}
+          >
+            {copied ? "✓ Copied to clipboard!" : (navigator.share ? "Share 📤" : "Copy stats 📋")}
+          </button>
+          <button
+            onClick={onClose}
+            style={{ width:"100%",padding:"10px",borderRadius:10,border:`1.5px solid ${palette.line}`,background:"transparent",color:palette.inkSoft,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer" }}
+          >
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // TUTORIAL MODAL — 10-slide feature walkthrough
 // ============================================================================
 const TUTORIAL_SLIDES = [
@@ -4970,7 +5173,7 @@ const TUTORIAL_SLIDES = [
     emoji: "🔧",
     title: "Enable the hobbies you do",
     body: "You only see what's relevant to you. Hide meat chickens if you don't raise them. Enable Ducks, Rabbits, or Bees when you're ready.",
-    tip: "Find this under the 🏚 Barn icon → Manage Hobbies, or in ⚙️ Settings.",
+    tip: "Tap 'More hobbies?' on the home screen, or go to ⚙️ Settings. You can also hide the Sales tab there if you don't sell anything.",
   },
   {
     emoji: "🥚",
@@ -5000,7 +5203,7 @@ const TUTORIAL_SLIDES = [
     emoji: "💰",
     title: "Sales tab",
     body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat chickens, rabbits, or garden produce. Track repeat customers and see revenue over time.",
-    tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically.",
+    tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically. Don't sell anything? Hide this tab in ⚙️ Settings.",
   },
   {
     emoji: "🏚",
