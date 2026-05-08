@@ -2917,7 +2917,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
               <div style={{ fontSize: 12, color: data.spouseMode ? "#A0A0B0" : palette.inkSoft, lineHeight: 1.5 }}>
                 {data.spouseMode
                   ? "All costs shown at 10% of actual. Production shown at 200%. Your secret is safe... probably."
-                  : "Shows costs at 10% of actual and production at 200% of actual. Perfect for that "hey look how well this is going" conversation."}
+                  : "Shows costs at 10% of actual and production at 200% of actual. Perfect for that 'hey look how well this is going' conversation."}
               </div>
             </div>
             <button
