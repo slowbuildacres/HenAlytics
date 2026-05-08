@@ -2586,7 +2586,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
-  if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} />
+  if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} />
   if (modal.type === "addBirds") return <AddBirdsModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "editFlockEntry") {
@@ -3595,7 +3595,7 @@ function AddHobbyModal({ update, onClose }) {
   );
 }
 
-function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage }) {
+function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
   const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping" };
   return (
     <Modal open onClose={onClose} title="Manage Hobbies">
