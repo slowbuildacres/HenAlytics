@@ -640,8 +640,8 @@ export default function HomesteadApp() {
         setData(result.data ? migrateData(result.data) : defaultData());
       }
 
-      prevUserRef.current = user;
       cloudLoadedRef.current = true;
+      prevUserRef.current = user;
     })();
     return () => { cancelled = true; };
   }, [user, authReady]);
@@ -657,7 +657,7 @@ export default function HomesteadApp() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSyncStatus("saving");
     saveTimerRef.current = setTimeout(async () => {
-      const result = await saveHomestead(user, data, cloudLoadedRef.current);
+      const result = await saveHomestead(user, data);
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       // After "saved" briefly shows, fade back to "idle"
       if (result.ok) {
