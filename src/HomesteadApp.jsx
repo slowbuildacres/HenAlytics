@@ -515,7 +515,8 @@ export default function HomesteadApp() {
     const id = setTimeout(() => setMinLoadDone(true), 3000);
     return () => clearTimeout(id);
   }, []);
-  const [syncStatus, setSyncStatus] = useState("idle"); // idle | saving | saved | error
+  const [syncStatus, setSyncStatus] = useState("idle");
+  const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
 
@@ -556,7 +557,8 @@ export default function HomesteadApp() {
       setUser(session?.user || null);
       setAuthReady(true);
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === "SIGNED_OUT") setSignedOutRemotely(true);
       setUser(session?.user || null);
       setAuthReady(true);
     });
@@ -707,6 +709,22 @@ export default function HomesteadApp() {
         .tile:hover { background: ${palette.bgAlt} !important; }
       `}</style>
 
+      {signedOutRemotely && (
+        <div
+          onClick={() => setModal({ type: "auth" })}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
+            background: "#C84B31", color: "#FAF5EA",
+            padding: "12px 20px",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 10, cursor: "pointer",
+            fontFamily: "'Be Vietnam Pro', sans-serif",
+            fontWeight: 600, fontSize: 14,
+          }}
+        >
+          ⚠️ You were signed out on this device — tap to sign back in
+        </div>
+      )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
       <SeasonalDecorations />
 
