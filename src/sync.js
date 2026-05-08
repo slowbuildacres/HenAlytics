@@ -290,7 +290,11 @@ export async function loadHomestead(user) {
 // Save homestead data. Writes both cloud (if signed in) and local cache.
 // Uses safeWriteCloudHomestead which refuses to clobber existing rich data
 // with empty/default data — protects against fresh-page-load bugs.
-export async function saveHomestead(user, data) {
+export async function saveHomestead(user, data, cloudReady = true) {
+  // Never save stale local data over cloud — wait until cloud load is confirmed
+  if (user export async function saveHomestead(user, data) {export async function saveHomestead(user, data) { isSupabaseConfigured && !cloudReady) {
+    return { ok: false, location: "local", skipped: true };
+  }
   writeLocalHomestead(data);
 
   if (user && isSupabaseConfigured) {

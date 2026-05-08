@@ -546,7 +546,8 @@ export default function HomesteadApp() {
   // Refs let us detect transitions like "user just signed in"
   const prevUserRef = useRef(null);
   const saveTimerRef = useRef(null);
-  const skipNextSaveRef = useRef(false); // used when we set state from cloud load — don't re-save it
+  const skipNextSaveRef = useRef(false);
+  const cloudLoadedRef = useRef(!isSupabaseConfigured); // true once cloud data is confirmed loaded // used when we set state from cloud load — don't re-save it
 
   // ---- Auth state listener ----
   useEffect(() => {
@@ -638,6 +639,7 @@ export default function HomesteadApp() {
       }
 
       prevUserRef.current = user;
+      cloudLoadedRef.current = true;
     })();
     return () => { cancelled = true; };
   }, [user, authReady]);
@@ -653,7 +655,7 @@ export default function HomesteadApp() {
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSyncStatus("saving");
     saveTimerRef.current = setTimeout(async () => {
-      const result = await saveHomestead(user, data);
+      const result = await saveHomestead(user, data, cloudLoadedRef.current);
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       // After "saved" briefly shows, fade back to "idle"
       if (result.ok) {
