@@ -699,7 +699,7 @@ export default function HomesteadApp() {
   // Note: we render the wizard inline below — only ONE wizard shows at a time,
   // and it blocks until completed/skipped.
 
-  const hobby = data.hobbies.find((h) => h.id === activeHobby);
+  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" ? "garden" : activeHobby));
   const entries = data.entries[activeHobby] || [];
 
   return (
@@ -893,8 +893,8 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home"} onClick={() => setPage("home")} icon={Home} label="Home" />
-        <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
+        <NavTab active={page === "home" || page === "rabbits"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "analytics"} onClick={() => { setPage("analytics"); if (activeHobby === "rabbits") setActiveHobby("egg_layers"); }} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         <NavTab active={page === "photos"} onClick={() => setPage("photos")} icon={ImageIcon} label="Photos" />
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
@@ -2557,7 +2557,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   const close = () => setModal(null);
   if (!modal) return null;
 
-  const hobby = data.hobbies.find((h) => h.id === activeHobby);
+  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" ? "garden" : activeHobby));
 
   if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
