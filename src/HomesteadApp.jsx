@@ -81,6 +81,33 @@ function migrateData(data) {
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
+
+  // Migrate legacy sold_eggs entries from egg_layers entries into data.sales
+  const eggLayerEntries = data.entries["egg_layers"] || [];
+  const existingSaleIds = new Set((data.sales || []).map(s => s.id));
+  eggLayerEntries.forEach(e => {
+    if (e.action === "sold_eggs" && !existingSaleIds.has(e.id)) {
+      const qty = Number(e.count) || 0;
+      const pricePerDozen = Number(e.pricePerDozen) || 0;
+      const revenue = (qty / 12) * pricePerDozen;
+      data.sales.push({
+        id: e.id,
+        date: e.date,
+        hobbyType: "eggs",
+        eggType: "Chicken",
+        eggPurpose: "Eating",
+        qty,
+        unit: "eggs",
+        pricePerUnit: pricePerDozen,
+        totalRevenue: revenue,
+        note: e.note || "",
+        buyerId: null,
+        created: e.created || Date.now(),
+        migratedFromEntries: true,
+      });
+      existingSaleIds.add(e.id);
+    }
+  });
   if (typeof data.salesHidden !== "boolean") data.salesHidden = false;
   if (typeof data.spouseMode !== "boolean") data.spouseMode = false;
   if (!Array.isArray(data.customers)) data.customers = [];
@@ -1958,7 +1985,6 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
   const beddings = entries.filter((e) => e.action === "bedding");
   const deaths = entries.filter((e) => e.action === "death");
   const totalDeathCount = deaths.reduce((s, e) => s + (Number(e.count) || 1), 0);
-  const sold = entries.filter((e) => e.action === "sold_eggs");
   const infra = entries.filter((e) => e.action === "infrastructure");
 
   const totalEggsRaw = eggs.reduce((s, e) => s + (Number(e.count) || 0), 0);
@@ -1976,17 +2002,6 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
   const totalBirds = flocks.reduce((s, f) => s + (f.birdCount || 0), 0);
   const eggsPerHen = totalBirds > 0 ? (totalEggs / totalBirds).toFixed(1) : "—";
 
-  // Revenue from selling eggs
-  const totalEggsSold = sold.reduce((s, e) => s + (Number(e.count) || 0), 0);
-  const totalRevenue = sold.reduce((s, e) => {
-    const dozens = (Number(e.count) || 0) / 12;
-    return s + dozens * (Number(e.pricePerDozen) || 0);
-  }, 0);
-  const dozensSold = totalEggsSold / 12;
-  const avgPricePerDozen = dozensSold > 0 ? totalRevenue / dozensSold : 0;
-  const profitPerDozen = avgPricePerDozen - costPerDozen;
-  const netProfit = totalRevenue - totalCost;
-
   // egg trend
   const byDate = {};
   eggs.forEach((e) => { byDate[e.date] = (byDate[e.date] || 0) + (Number(e.count) || 0); });
@@ -2000,35 +2015,6 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
         <StatCard label="Eggs / Hen" value={eggsPerHen} sub="lifetime" accent={palette.leaf} />
         {totalDeathCount > 0 && <StatCard label="Deaths" value={totalDeathCount} accent={palette.ink} />}
       </div>
-
-      <ChartCard title="💰 Revenue & profit">
-        {sold.length === 0 ? (
-          <div style={{
-            padding: "12px 14px", background: palette.bgAlt, borderRadius: 8,
-            fontSize: 13, color: palette.inkSoft, textAlign: "center", lineHeight: 1.5,
-          }}>
-            No egg sales logged yet. Tap the <strong>Sold Eggs</strong> tile on the Home page to record a sale and start tracking revenue.
-          </div>
-        ) : (
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-            <StatCard label="Eggs Sold" value={totalEggsSold} sub={`${dozensSold.toFixed(1)} dozen`} accent={palette.yolk} />
-            <StatCard label="Total Revenue" value={fmtMoney(totalRevenue)} accent={palette.leaf} />
-            <StatCard label="Avg Price / Dozen" value={fmtMoney(avgPricePerDozen)} accent={palette.feather} />
-            <StatCard
-              label="Profit / Dozen"
-              value={fmtMoney(profitPerDozen)}
-              sub={`sold ${fmtMoney(avgPricePerDozen)} − cost ${fmtMoney(costPerDozen)}`}
-              accent={profitPerDozen >= 0 ? palette.leaf : palette.accent}
-            />
-            <StatCard
-              label="Net Profit"
-              value={fmtMoney(netProfit)}
-              sub="revenue − all costs"
-              accent={netProfit >= 0 ? palette.leaf : palette.accent}
-            />
-          </div>
-        )}
-      </ChartCard>
 
       <ChartCard title="📊 Cost breakdown">
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -2093,6 +2079,11 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
           </div>
         </ChartCard>
       )}
+      {/* Revenue nudge */}
+      <div style={{ padding: "10px 14px", background: palette.yolkSoft, borderRadius: 8, fontSize: 13, color: palette.ink, lineHeight: 1.5, marginTop: 8 }}>
+        💰 Track egg sales revenue in the <strong>Sales tab</strong> — log by bird type, eating vs hatching, customer, and more.
+      </div>
+
       {entries.length === 0 && <EmptyState text="No egg layer entries yet for this view." />}
     </div>
   );
