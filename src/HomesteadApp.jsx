@@ -5000,7 +5000,7 @@ const TUTORIAL_SLIDES = [
     emoji: "💰",
     title: "Sales tab",
     body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat chickens, rabbits, or garden produce. Track repeat customers and see revenue over time.",
-    tip: "Old "Sold Eggs" entries from Egg Layers show up here automatically.",
+    tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically.",
   },
   {
     emoji: "🏚",
