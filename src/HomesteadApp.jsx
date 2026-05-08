@@ -57,7 +57,7 @@ const defaultData = () => ({
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flockSize: 0, flockHistory: [] },
     { id: "meat_chickens", name: "Meat Chickens", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
-    { id: "rabbits", name: "Rabbits", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
+    { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
