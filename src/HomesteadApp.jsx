@@ -654,7 +654,7 @@ export default function HomesteadApp() {
     setSyncStatus("saving");
     saveTimerRef.current = setTimeout(async () => {
       const result = await saveHomestead(user, data);
-      setSyncStatus(result.ok ? "saved" : "error");
+      setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       // After "saved" briefly shows, fade back to "idle"
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
@@ -679,7 +679,7 @@ export default function HomesteadApp() {
     (arr) => Array.isArray(arr) && arr.length > 0
   );
   const hasNotOnboarded = !data.onboardedAt;
-  const shouldShowWizard = hasNotOnboarded && !hasAnyEntries && !modal;
+  const shouldShowWizard = hasNotOnboarded && !hasAnyEntries && !modal && role !== "member";
   // Note: we render the wizard inline below — only ONE wizard shows at a time,
   // and it blocks until completed/skipped.
 
