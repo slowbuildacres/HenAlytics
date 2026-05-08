@@ -30,6 +30,7 @@ import {
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
+import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -58,6 +59,7 @@ const defaultData = () => ({
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flockSize: 0, flockHistory: [] },
     { id: "meat_chickens", name: "Meat Chickens", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
     { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
+    { id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -101,7 +103,16 @@ function migrateData(data) {
   if (!hasRabbits) {
     data.hobbies.push({ id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true });
   }
-
+const hasBees = data.hobbies.some(h => h.id === "bees");
+  if (!hasBees) {
+    data.hobbies.push({ id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "bees") {
+      if (!Array.isArray(h.hives)) h.hives = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
   return data;
 }
 
@@ -458,7 +469,7 @@ function NavTab({ active, onClick, icon: Icon, label }) {
 }
 
 // ============ ICON RESOLVER ============
-const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick, rabbit: Bird };
+const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick, rabbit: Bird, bee: Bird };
 const HobbyIcon = ({ name, ...props }) => {
   const I = iconMap[name] || Sprout;
   return <I {...props} />;
@@ -823,7 +834,7 @@ export default function HomesteadApp() {
               {data.hobbies.filter((h) => !h.hidden).map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); }}
+                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); else if (h.type === "bees" && page !== "analytics") setPage("bees"); }}
                   style={{
                     width: "100%", padding: "12px 16px", background: h.id === activeHobby ? palette.bgAlt : "transparent",
                     border: "none", borderBottom: `1px solid ${palette.line}`,
@@ -867,6 +878,9 @@ export default function HomesteadApp() {
         )}
         {page === "year" && (
           <YearInReviewPage data={data} />
+        )}
+        {page === "bees" && (
+          <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
         )}
         {page === "rabbits" && (
           <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
@@ -2858,7 +2872,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
-              <div style={{ fontSize: 11, color: palette.inkSoft }}>{{ garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits" }[h.type] || h.type}</div>
+              <div style={{ fontSize: 11, color: palette.inkSoft }}>{{ garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping" }[h.type] || h.type}</div>
             </div>
             <button
               onClick={() => update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; })}
@@ -3582,7 +3596,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping" };
   return (
     <Modal open onClose={onClose} title="Manage Hobbies">
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
@@ -3600,6 +3614,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage }) 
                 update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
                 if (h.hidden) {
                   if (h.type === "rabbits") { setActiveHobby("rabbits"); setPage("rabbits"); }
+                  else if (h.type === "bees") { setActiveHobby("bees"); setPage("bees"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
                 }
@@ -4473,7 +4488,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -4510,12 +4525,12 @@ function OnboardingWizard({ update, onClose }) {
       }
       // Filter hobbies down to just the ones they wanted
       const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
-      if (wantedTypes.length > 0 && wantedTypes.length < 3) {
-        d.hobbies = (d.hobbies || []).filter((h) => wantedTypes.includes(h.type));
-      }
-      d.onboardedAt = Date.now();
-      return d;
-    });
+      d.hobbies = (d.hobbies || []).map((h) => {
+        if (["garden","egg_layers","meat_chickens","rabbits","bees"].includes(h.type)) {
+          h.hidden = !wantedTypes.includes(h.type);
+        }
+        return h;
+      });
     onClose();
   };
 
@@ -4663,6 +4678,20 @@ function OnboardingWizard({ update, onClose }) {
               icon="🍗"
               label="Meat chickens"
               sub="Per-batch tracking, butcher day"
+            />
+            <HobbyCheckbox
+              checked={hobbies.rabbits}
+              onToggle={() => setHobbies((h) => ({ ...h, rabbits: !h.rabbits }))}
+              icon="🐇"
+              label="Rabbits (Beta)"
+              sub="Hutch management, breeding reminders, kindle dates"
+            />
+            <HobbyCheckbox
+              checked={hobbies.bees}
+              onToggle={() => setHobbies((h) => ({ ...h, bees: !h.bees }))}
+              icon="🐝"
+              label="Beekeeping (Beta)"
+              sub="Per-hive inspections, honey harvests, mite counts"
             />
 
             <div style={{
