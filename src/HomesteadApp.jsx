@@ -4531,6 +4531,8 @@ function OnboardingWizard({ update, onClose }) {
         }
         return h;
       });
+      return d;
+    });
     onClose();
   };
 
