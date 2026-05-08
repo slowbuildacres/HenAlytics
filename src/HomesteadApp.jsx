@@ -858,6 +858,20 @@ export default function HomesteadApp() {
         )}
       </main>
 
+      {/* COPYRIGHT FOOTER */}
+      <div style={{
+        textAlign: "center",
+        padding: "12px 20px",
+        paddingBottom: "max(12px, env(safe-area-inset-bottom))",
+        fontSize: 11,
+        color: palette.inkSoft,
+        fontFamily: FONT_BODY,
+        lineHeight: 1.6,
+        maxWidth: 720,
+        margin: "0 auto",
+      }}>
+        © {new Date().getFullYear()} Henalytics · Built by a homesteader, for homesteaders. Not a company — just someone who wanted to better understand their chickens, garden, and land. Free forever, by intention. Unauthorized commercial use is prohibited.
+      </div>
       {/* BOTTOM NAV — 5 tabs, compact layout */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
