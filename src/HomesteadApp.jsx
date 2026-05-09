@@ -5344,7 +5344,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, farmstand: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -5382,7 +5382,7 @@ function OnboardingWizard({ update, onClose }) {
       // Filter hobbies down to just the ones they wanted
       const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
       d.hobbies = (d.hobbies || []).map((h) => {
-        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs"].includes(h.type)) {
+        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs","farmstand"].includes(h.type)) {
           h.hidden = !wantedTypes.includes(h.type);
         }
         return h;
@@ -5577,6 +5577,13 @@ function OnboardingWizard({ update, onClose }) {
               icon="🐷"
               label="Pigs"
               sub="Growth tracking, FCR, litters, butcher"
+            />
+            <HobbyCheckbox
+              checked={hobbies.farmstand || false}
+              onToggle={() => setHobbies((h) => ({ ...h, farmstand: !h.farmstand }))}
+              icon="🧾"
+              label="Farmstand"
+              sub="Saved items with cost & price for one-tap sales"
             />
 
             <div style={{
