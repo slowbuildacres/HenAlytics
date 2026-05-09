@@ -3293,6 +3293,26 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           </div>
         </div>
       )}
+
+      {/* Owner-only debug tools — only visible to slowbuildacres@gmail.com */}
+      {user?.email === "slowbuildacres@gmail.com" && (
+        <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1.5px dashed ${palette.line}` }}>
+          <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, marginBottom: 10 }}>
+            🔧 Owner debug tools
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+            Reset popup dismissal flags so What's New and the monthly supporter thank-you re-fire on next page load. Only you can see this.
+          </div>
+          <Btn variant="ghost" small onClick={() => {
+            update((d) => {
+              d.lastSeenVersion = 0;
+              d.supportersDismissedMonth = null;
+              return d;
+            });
+            onClose();
+          }}>Reset popups</Btn>
+        </div>
+      )}
     </Modal>
   );
 }
