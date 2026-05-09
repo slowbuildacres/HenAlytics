@@ -350,14 +350,14 @@ const fmtMoney = (n) => {
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // What's New version — bump this with each notable release
-const CURRENT_VERSION = 5;
+const CURRENT_VERSION = 6;
 
 const WHATS_NEW = [
-  "🐐 Goats hobby — track dairy and meat goats per animal, log milk, kids, and feed",
-  "🐄 Cows hobby — dairy or beef cattle with per-animal milk tracking and FCR",
-  "🐷 Pigs hobby — track growth, feed conversion, litters, and butcher weight",
-  "🥚 Incubator hobby — track hatching runs by bird type with auto calendar reminders",
-  "🏪 Farm Stand in Sales — track items, cost, revenue, and profit margin",
+  "🐐 Goats, 🐄 Cows & 🐷 Pigs — three new hobbies with per-animal tracking, milk logging, FCR, and butcher stats",
+  "✏️ Edit & delete everywhere — perennials, harvest logs, and livestock entries can now all be edited or removed",
+  "✨ Year in Review — now includes Bees, Incubator, Goats, Cows, and Pigs cards when those hobbies are enabled",
+  "🌳 Perennial garden — track fruit trees, asparagus, and berry bushes with harvest history outside of seasons",
+  "🐣 Loading screen — quick chicken animation when the app starts up",
 ];
 
 // Spouse Mode helpers — fudge numbers for "presentation" purposes
