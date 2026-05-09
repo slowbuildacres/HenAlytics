@@ -233,6 +233,22 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       if (h.name === "Farmstand 🏪") h.name = "Farmstand 🧾";
     }
   });
+  // Backfill onboardedAt for existing accounts that have data but somehow
+  // never had the flag set (e.g. old test accounts, or pre-onboarding-wizard
+  // signups). Anyone with a homestead name OR any entries OR any hobbies
+  // beyond the defaults is treated as already-onboarded.
+  if (!data.onboardedAt) {
+    const hasName = typeof data.homesteadName === "string" && data.homesteadName.trim().length > 0;
+    const hasEntries = Object.values(data.entries || {}).some(
+      (arr) => Array.isArray(arr) && arr.length > 0
+    );
+    const hasFlocks = (data.hobbies || []).some(h => Array.isArray(h.flocks) && h.flocks.length > 0);
+    const hasItems = (data.hobbies || []).some(h => Array.isArray(h.items) && h.items.length > 0);
+    const hasSales = Array.isArray(data.sales) && data.sales.length > 0;
+    if (hasName || hasEntries || hasFlocks || hasItems || hasSales) {
+      data.onboardedAt = Date.now();
+    }
+  }
   return data;
 }
 
@@ -712,13 +728,10 @@ export default function HomesteadApp() {
   const whatsNewShownRef = React.useRef(false);
   const whatsNewDismissedRef = React.useRef(false);
   useEffect(() => {
-    // [DEBUG] remove these logs once popup behavior is confirmed working
-    console.log("[Henalytics][WhatsNew check] onboardedAt:", data?.onboardedAt, "lastSeenVersion:", data?.lastSeenVersion, "CURRENT_VERSION:", CURRENT_VERSION);
-    if (whatsNewShownRef.current) { console.log("[Henalytics][WhatsNew] skipped: already shown this session"); return; }
-    if (whatsNewDismissedRef.current) { console.log("[Henalytics][WhatsNew] skipped: already dismissed this session"); return; }
-    if (!data?.onboardedAt) { console.log("[Henalytics][WhatsNew] skipped: not onboarded"); return; }
-    if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) { console.log("[Henalytics][WhatsNew] skipped: already seen this version"); return; }
-    console.log("[Henalytics][WhatsNew] WILL SHOW in 1.5s");
+    if (whatsNewShownRef.current) return;
+    if (whatsNewDismissedRef.current) return;
+    if (!data?.onboardedAt) return;
+    if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) return;
     whatsNewShownRef.current = true;
     const timer = setTimeout(() => setShowWhatsNew(true), 1500);
     return () => clearTimeout(timer);
@@ -730,16 +743,13 @@ export default function HomesteadApp() {
   // 3-day window so users who don't open the app on the 9th still see it.
   const supporterThanksShownRef = React.useRef(false);
   useEffect(() => {
-    // [DEBUG] remove these logs once popup behavior is confirmed working
+    if (supporterThanksShownRef.current) return;
+    if (!data?.onboardedAt) return;
     const now = new Date();
     const dayOfMonth = now.getDate();
+    if (dayOfMonth < 9 || dayOfMonth > 11) return; // only show 9th-11th of the month
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    console.log("[Henalytics][Supporter check] day:", dayOfMonth, "monthKey:", monthKey, "supportersDismissedMonth:", data?.supportersDismissedMonth, "onboardedAt:", data?.onboardedAt);
-    if (supporterThanksShownRef.current) { console.log("[Henalytics][Supporter] skipped: already shown this session"); return; }
-    if (!data?.onboardedAt) { console.log("[Henalytics][Supporter] skipped: not onboarded"); return; }
-    if (dayOfMonth < 9 || dayOfMonth > 11) { console.log("[Henalytics][Supporter] skipped: outside 9th-11th window"); return; }
-    if (data?.supportersDismissedMonth === monthKey) { console.log("[Henalytics][Supporter] skipped: already dismissed this month"); return; }
-    console.log("[Henalytics][Supporter] WILL SHOW in 2.2s");
+    if (data?.supportersDismissedMonth === monthKey) return;
     supporterThanksShownRef.current = true;
     const timer = setTimeout(() => setShowSupporterThanks(true), 2200);
     return () => clearTimeout(timer);
