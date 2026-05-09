@@ -645,7 +645,7 @@ export default function HomesteadApp() {
   const [modal, setModal] = useState(null);
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [showWhatsNew, setShowWhatsNew] = useState(true);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
@@ -658,16 +658,16 @@ export default function HomesteadApp() {
     return () => clearTimeout(id);
   }, []);
 
-  // Show what's new popup for returning users when version bumps
-  const shouldShowWhatsNew = !showWhatsNew &&
-    !!data?.onboardedAt &&
-    (data?.lastSeenVersion || 0) < CURRENT_VERSION;
+  // Show what's new popup once after Supabase data loads
+  const whatsNewShownRef = React.useRef(false);
   useEffect(() => {
-    if (shouldShowWhatsNew) {
-      const timer = setTimeout(() => setShowWhatsNew(true), 1500);
-      return () => clearTimeout(timer);
-    }
-  }, [shouldShowWhatsNew]);
+    if (whatsNewShownRef.current) return;
+    if (!data?.onboardedAt) return;
+    if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) return;
+    whatsNewShownRef.current = true;
+    const timer = setTimeout(() => setShowWhatsNew(true), 1500);
+    return () => clearTimeout(timer);
+  });
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
