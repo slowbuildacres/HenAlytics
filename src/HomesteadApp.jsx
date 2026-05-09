@@ -800,6 +800,34 @@ export default function HomesteadApp() {
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.supportersDismissedMonth]);
 
+  // ---- Auto-redirect when the active hobby becomes hidden ----
+  // If the user hides their currently-active hobby in Settings, we need to
+  // switch them to a visible hobby; otherwise the home/stats pages keep
+  // rendering the now-hidden hobby (since activeHobby still points to it).
+  useEffect(() => {
+    if (!data?.hobbies) return;
+    const current = data.hobbies.find(h => h.id === activeHobby);
+    // If the active hobby exists and is visible, no action needed
+    if (current && !current.hidden) return;
+    // Otherwise: pick the first visible hobby, falling back to garden
+    const firstVisible = data.hobbies.find(h => !h.hidden);
+    const newActive = firstVisible ? firstVisible.id : "garden";
+    if (newActive !== activeHobby) {
+      setActiveHobby(newActive);
+      // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
+      // bounce to "home" so we don't stay on a page tied to the hidden hobby.
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "farmstand"];
+      if (hobbyPages.includes(page)) {
+        const newHobbyType = (firstVisible || {}).type;
+        if (hobbyPages.includes(newHobbyType)) {
+          setPage(newHobbyType);
+        } else {
+          setPage("home");
+        }
+      }
+    }
+  }, [data?.hobbies, activeHobby, page]);
+
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
