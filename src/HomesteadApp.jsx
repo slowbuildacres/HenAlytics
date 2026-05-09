@@ -1189,7 +1189,28 @@ export default function HomesteadApp() {
               {data.hobbies.filter((h) => !h.hidden).map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); else if (h.type === "bees" && page !== "analytics") setPage("bees"); else if (h.type === "incubator" && page !== "analytics") setPage("incubator"); else if (h.type === "goats" && page !== "analytics") setPage("goats"); else if (h.type === "cows" && page !== "analytics") setPage("cows"); else if (h.type === "pigs" && page !== "analytics") setPage("pigs"); else if (h.type === "farmstand" && page !== "analytics") setPage("farmstand"); }}
+                  onClick={() => {
+                    setActiveHobby(h.id);
+                    setSeasonFilter("all");
+                    setHobbyMenuOpen(false);
+                    // Set the right page for the picked hobby. Stay on
+                    // analytics if user was already there. Otherwise route
+                    // to the hobby's home page (or "home" for core hobbies).
+                    if (page !== "analytics") {
+                      const hobbyTypePages = {
+                        rabbits: "rabbits",
+                        bees: "bees",
+                        incubator: "incubator",
+                        goats: "goats",
+                        cows: "cows",
+                        pigs: "pigs",
+                        farmstand: "farmstand",
+                      };
+                      // Garden, egg_layers, meat_chickens all share the
+                      // generic "home" page (which keys off activeHobby).
+                      setPage(hobbyTypePages[h.type] || "home");
+                    }
+                  }}
                   style={{
                     width: "100%", padding: "12px 16px", background: h.id === activeHobby ? palette.bgAlt : "transparent",
                     border: "none", borderBottom: `1px solid ${palette.line}`,
