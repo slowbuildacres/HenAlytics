@@ -1013,13 +1013,14 @@ export default function HomesteadApp() {
             update(d => { d.supportersDismissedMonth = monthKey; return d; });
           }}
           onLeaveTip={() => {
-            // Mark dismissed for this month, then open the Support modal
-            // (which has the embedded Ko-fi widget)
+            // User tapped a Stripe button. The href opens Stripe in a new
+            // tab (the <a> tag handles that natively). We just need to
+            // mark this month as dismissed and close the popup so they
+            // come back to a clean app, not the popup again.
             setShowSupporterThanks(false);
             const now = new Date();
             const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
             update(d => { d.supportersDismissedMonth = monthKey; return d; });
-            setTimeout(() => setModal({ type: "support" }), 0);
           }}
         />
       )}
@@ -3450,14 +3451,16 @@ function AboutModal({ onClose }) {
 // ----------------------------------------------------------------------------
 // Warm, low-pressure copy that thanks supporters and explains the costs.
 // Two CTAs: one-time tip ("buy a bag of feed") and monthly patron tier.
-// All flow through ko-fi.com/henalytics.
+// All flow through Stripe Payment Links (Ko-fi kept commented as backup).
 // ============================================================================
 function SupportModal({ onClose }) {
-  const KO_FI_URL = "https://ko-fi.com/henalytics";
-  // Ko-fi's official embed URL — keeps the supporter on henalytics.com instead
-  // of redirecting them to ko-fi.com. The query params hide ko-fi's feed and
-  // chrome so it looks like part of the page.
-  const KO_FI_EMBED_URL = "https://ko-fi.com/henalytics/?hidefeed=true&widget=true&embed=true&preview=true";
+  // Stripe Payment Links — Apple Pay / Google Pay show automatically on supported devices
+  const STRIPE_ONE_TIME_URL = "https://buy.stripe.com/dRmdRbb3K2kWbDj2XK9MY00"; // $5 one-time
+  const STRIPE_MONTHLY_URL = "https://buy.stripe.com/cNi9AV7Ry4t4cHnfKw9MY02"; // $5/month, qty adjustable
+
+  // Ko-fi kept commented out as backup — flip back if Stripe doesn't work out
+  // const KO_FI_URL = "https://ko-fi.com/henalytics";
+  // const KO_FI_EMBED_URL = "https://ko-fi.com/henalytics/?hidefeed=true&widget=true&embed=true&preview=true";
 
   return (
     <Modal open onClose={onClose} title="Support Henalytics">
@@ -3483,44 +3486,71 @@ function SupportModal({ onClose }) {
           But please don't feel any pressure. The app is and will stay free for everyone, whether or not you chip in.
         </p>
 
-        {/* Embedded Ko-fi widget — supporters tip without leaving henalytics.com */}
+        {/* Stripe Payment Link buttons — secure checkout with Apple Pay / Google Pay */}
         <div style={{
-          marginTop: 18,
-          borderRadius: 10,
-          overflow: "hidden",
-          border: `1.5px solid ${palette.line}`,
-          background: "white",
+          marginTop: 20,
+          display: "flex",
+          gap: 10,
+          flexWrap: "wrap",
         }}>
-          <iframe
-            id="kofiframe"
-            src={KO_FI_EMBED_URL}
-            title="Support Henalytics on Ko-fi"
-            loading="lazy"
-            style={{
-              border: "none",
-              width: "100%",
-              padding: 0,
-              background: "transparent",
-              display: "block",
-              minHeight: 720,
-            }}
-            height="720"
-          />
-        </div>
-
-        {/* Fallback link — for when the iframe fails to load (some browsers/ad blockers) */}
-        <div style={{
-          marginTop: 12, textAlign: "center", fontSize: 12, color: palette.inkSoft,
-        }}>
-          Widget not loading?{" "}
           <a
-            href={KO_FI_URL}
+            href={STRIPE_ONE_TIME_URL}
             target="_blank"
             rel="noopener noreferrer"
-            style={{ color: palette.accent, textDecoration: "underline" }}
+            style={{
+              flex: "1 1 140px",
+              padding: "16px 14px",
+              borderRadius: 12,
+              border: `2px solid ${palette.ink}`,
+              background: palette.yolk,
+              color: palette.ink,
+              textDecoration: "none",
+              textAlign: "center",
+              fontFamily: FONT_BODY,
+              fontWeight: 700,
+              fontSize: 15,
+              boxShadow: "2px 2px 0 " + palette.line,
+              display: "block",
+            }}
           >
-            Open the support page directly →
+            <div style={{ fontSize: 20, marginBottom: 4 }}>🌾</div>
+            <div>One-time</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 2 }}>$5</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: palette.inkSoft, marginTop: 2 }}>Bag of feed</div>
           </a>
+          <a
+            href={STRIPE_MONTHLY_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            style={{
+              flex: "1 1 140px",
+              padding: "16px 14px",
+              borderRadius: 12,
+              border: `2px solid ${palette.ink}`,
+              background: palette.leaf,
+              color: palette.bg,
+              textDecoration: "none",
+              textAlign: "center",
+              fontFamily: FONT_BODY,
+              fontWeight: 700,
+              fontSize: 15,
+              boxShadow: "2px 2px 0 " + palette.line,
+              display: "block",
+            }}
+          >
+            <div style={{ fontSize: 20, marginBottom: 4 }}>💚</div>
+            <div>Monthly</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 2 }}>$5</div>
+            <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Sustaining tip</div>
+          </a>
+        </div>
+
+        <div style={{
+          marginTop: 12, textAlign: "center", fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+        }}>
+          Secure checkout via Stripe — Apple Pay & Google Pay supported.
+          <br/>
+          You can adjust the amount on the next page.
         </div>
 
         <div style={{
@@ -6240,51 +6270,119 @@ function WhatsNewModal({ onClose }) {
 }
 
 // ============ SUPPORTER THANKS MODAL — shown on the 9th-11th of each month ============
-// Generic thank-you to everyone who tipped via Ko-fi.
-// Includes mission statement and a 'Leave a tip' button that opens the
-// Support modal (which has the embedded Ko-fi widget).
+// Generic thank-you to everyone who's chipped in.
+// Includes mission statement and two Stripe Payment Link buttons (one-time + monthly).
+// Marks the month as dismissed when the user closes OR taps a tip button.
 function SupporterThanksModal({ onClose, onLeaveTip }) {
+  // Stripe Payment Links — same URLs as SupportModal
+  const STRIPE_ONE_TIME_URL = "https://buy.stripe.com/dRmdRbb3K2kWbDj2XK9MY00";
+  const STRIPE_MONTHLY_URL = "https://buy.stripe.com/cNi9AV7Ry4t4cHnfKw9MY02";
+
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
-        <div style={{ background:palette.leaf,padding:"28px 24px 22px",textAlign:"center",flexShrink:0 }}>
-          <div style={{ fontSize:44,marginBottom:8 }}>🙏</div>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:"#FAF5EA",lineHeight:1.2 }}>Thank you</div>
-          <div style={{ fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:6 }}>From the whole flock</div>
+        <div style={{ background:palette.leaf,padding:"24px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position:"absolute",top:12,right:12,
+              background:"rgba(255,255,255,0.15)",border:"none",borderRadius:"50%",
+              width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",
+              color:"#FAF5EA",cursor:"pointer",padding:0,
+            }}
+          >
+            <X size={18}/>
+          </button>
+          <div style={{ fontSize:40,marginBottom:6 }}>🙏</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:"#FAF5EA",lineHeight:1.2 }}>Thank you</div>
+          <div style={{ fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:4 }}>From the whole flock</div>
         </div>
-        <div style={{ padding:"22px 24px",overflowY:"auto" }}>
-          <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 14px" }}>
-            A huge thank-you to every supporter who chipped in via Ko-fi this past month. Your tips are what keep Henalytics running and free for every homestead — no ads, no paywalls, no upsells.
+        <div style={{ padding:"20px 24px",overflowY:"auto",flex:1,minHeight:0 }}>
+          <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 12px" }}>
+            A huge thank-you to every supporter who chipped in this past month. Your tips are what keep Henalytics running and free for every homestead — no ads, no paywalls, no upsells.
           </p>
-          <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 14px" }}>
+          <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 12px" }}>
             My goal is to let as many homesteaders as possible benefit from this app without ever needing a paid subscription. Honestly, that wouldn't be possible without your feedback and the tips you leave — they're what let me keep working on it and making it better.
           </p>
-          <p style={{ fontStyle:"italic",fontSize:13,color:palette.inkSoft,margin:"0 0 18px" }}>
+          <p style={{ fontStyle:"italic",fontSize:13,color:palette.inkSoft,margin:"0 0 16px" }}>
             🌾 With gratitude, from one homestead to another.
           </p>
-          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
-            <button
+
+          {/* Two big buttons side-by-side — One-time / Monthly. Tapping either
+              dismisses this popup for the month (via onLeaveTip) and opens
+              the Stripe payment page in a new tab. */}
+          <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
+            <a
+              href={STRIPE_ONE_TIME_URL}
+              target="_blank"
+              rel="noopener noreferrer"
               onClick={onLeaveTip}
               style={{
-                width:"100%",padding:"12px",borderRadius:10,
-                border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.ink,
-                fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",
-                boxShadow:"2px 2px 0 "+palette.line,
+                flex: "1 1 140px",
+                padding: "14px 12px",
+                borderRadius: 12,
+                border: `2px solid ${palette.ink}`,
+                background: palette.yolk,
+                color: palette.ink,
+                textDecoration: "none",
+                textAlign: "center",
+                fontFamily: FONT_BODY,
+                fontWeight: 700,
+                fontSize: 14,
+                boxShadow: "2px 2px 0 " + palette.line,
+                display: "block",
               }}
             >
-              🌾 Buy Henalytics a bag of feed
-            </button>
-            <button
-              onClick={onClose}
+              <div style={{ fontSize: 18, marginBottom: 2 }}>🌾</div>
+              <div>One-time</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, marginTop: 2 }}>$5</div>
+              <div style={{ fontSize: 10, fontWeight: 500, color: palette.inkSoft, marginTop: 2 }}>Bag of feed</div>
+            </a>
+            <a
+              href={STRIPE_MONTHLY_URL}
+              target="_blank"
+              rel="noopener noreferrer"
+              onClick={onLeaveTip}
               style={{
-                width:"100%",padding:"10px",borderRadius:10,
-                border:`1.5px solid ${palette.line}`,background:"transparent",color:palette.inkSoft,
-                fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",
+                flex: "1 1 140px",
+                padding: "14px 12px",
+                borderRadius: 12,
+                border: `2px solid ${palette.ink}`,
+                background: palette.leaf,
+                color: palette.bg,
+                textDecoration: "none",
+                textAlign: "center",
+                fontFamily: FONT_BODY,
+                fontWeight: 700,
+                fontSize: 14,
+                boxShadow: "2px 2px 0 " + palette.line,
+                display: "block",
               }}
             >
-              Maybe later
-            </button>
+              <div style={{ fontSize: 18, marginBottom: 2 }}>💚</div>
+              <div>Monthly</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, marginTop: 2 }}>$5</div>
+              <div style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Sustaining tip</div>
+            </a>
           </div>
+
+          <div style={{
+            marginTop: 10, textAlign: "center", fontSize: 11, color: palette.inkSoft, lineHeight: 1.5,
+          }}>
+            Secure checkout via Stripe — Apple Pay & Google Pay supported.
+          </div>
+
+          <button
+            onClick={onClose}
+            style={{
+              width:"100%",padding:"10px",borderRadius:10,marginTop:14,
+              border:`1.5px solid ${palette.line}`,background:"transparent",color:palette.inkSoft,
+              fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",
+            }}
+          >
+            Maybe later
+          </button>
         </div>
       </div>
     </div>
