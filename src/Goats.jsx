@@ -222,17 +222,12 @@ function GoatModalRouter({modal,hobby,update,onClose}){
 }
 
 export default function GoatsPage({hobby,data,update}){
-  const[tab,setTab]=useState("home");
   const[localModal,setLocalModal]=useState(null);
   const entries=data.entries[hobby.id]||[];
   return(
     <div>
       <GoatModalRouter modal={localModal} hobby={hobby} update={update} onClose={()=>setLocalModal(null)}/>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {["home","stats"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"8px 18px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",border:`1.5px solid ${tab===t?palette.ink:palette.line}`,background:tab===t?palette.ink:palette.card,color:tab===t?palette.bg:palette.ink}}>{t==="home"?"🐐 Home":"📊 Stats"}</button>)}
-      </div>
-      {tab==="home"&&<GoatHome hobby={hobby} entries={entries} update={update} setModal={setLocalModal}/>}
-      {tab==="stats"&&<GoatsAnalytics hobby={hobby} entries={entries}/>}
+      <GoatHome hobby={hobby} entries={entries} update={update} setModal={setLocalModal}/>
     </div>
   );
 }

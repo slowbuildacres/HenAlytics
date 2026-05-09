@@ -202,33 +202,24 @@ function PigModalRouter({modal,hobby,update,onClose}){
 }
 
 export default function PigsPage({hobby,data,update}){
-  const[tab,setTab]=useState("home");
   const[localModal,setLocalModal]=useState(null);
   const entries=data.entries[hobby.id]||[];
   const animals=hobby.animals||[];
   return(
     <div>
       <PigModalRouter modal={localModal} hobby={hobby} update={update} onClose={()=>setLocalModal(null)}/>
-      <div style={{display:"flex",gap:8,marginBottom:16}}>
-        {["home","stats"].map(t=><button key={t} onClick={()=>setTab(t)} style={{padding:"8px 18px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",border:`1.5px solid ${tab===t?palette.ink:palette.line}`,background:tab===t?palette.ink:palette.card,color:tab===t?palette.bg:palette.ink}}>{t==="home"?"🐷 Home":"📊 Stats"}</button>)}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your pigs</div>
+        <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add pig</button>
       </div>
-      {tab==="home"&&(
-        <div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-            <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your pigs</div>
-            <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add pig</button>
-          </div>
-          {animals.length===0?(
-            <div style={{padding:28,background:palette.card,border:`2px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft}}>
-              <div style={{fontSize:36,marginBottom:10}}>🐷</div>
-              <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:6}}>No pigs yet</div>
-              <div style={{fontSize:13,marginBottom:14}}>Add your first pig to track growth, feed, and butcher stats.</div>
-              <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer"}}>Add first pig</button>
-            </div>
-          ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} entries={entries} update={update} setModal={setLocalModal}/>)}
+      {animals.length===0?(
+        <div style={{padding:28,background:palette.card,border:`2px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft}}>
+          <div style={{fontSize:36,marginBottom:10}}>🐷</div>
+          <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:6}}>No pigs yet</div>
+          <div style={{fontSize:13,marginBottom:14}}>Add your first pig to track growth, feed, and butcher stats.</div>
+          <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer"}}>Add first pig</button>
         </div>
-      )}
-      {tab==="stats"&&<PigsAnalytics hobby={hobby} entries={entries}/>}
+      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} entries={entries} update={update} setModal={setLocalModal}/>)}
     </div>
   );
 }

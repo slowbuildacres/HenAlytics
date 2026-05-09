@@ -350,7 +350,7 @@ const fmtMoney = (n) => {
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // What's New version — bump this with each notable release
-const CURRENT_VERSION = 4;
+const CURRENT_VERSION = 5;
 
 const WHATS_NEW = [
   "🐐 Goats hobby — track dairy and meat goats per animal, log milk, kids, and feed",
