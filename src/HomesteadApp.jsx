@@ -21,7 +21,6 @@ import {
 } from "./weather.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
-import LoadingScene from "./LoadingScene.jsx";
 import CalendarPage from "./Calendar.jsx";
 import {
   PlanCropModal, PlanBirdsModal, AddCalendarEventModal,
@@ -765,13 +764,6 @@ export default function HomesteadApp() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
-  const [minLoadDone, setMinLoadDone] = useState(false);
-
-  // Show the loading scene for at least 3 seconds — one full animation cycle.
-  useEffect(() => {
-    const id = setTimeout(() => setMinLoadDone(true), 500);
-    return () => clearTimeout(id);
-  }, []);
 
   // Show what's new popup once after Supabase data loads.
   // Triggers when (a) onboarding is complete and (b) the user's saved
@@ -964,8 +956,8 @@ export default function HomesteadApp() {
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
 
-  if (!authReady || !data || !minLoadDone) {
-    return <LoadingScene />;
+  if (!authReady || !data) {
+    return null;
   }
 
   // ---- ONBOARDING ----
@@ -2125,6 +2117,8 @@ function EntryPhotoThumb({ path, size = 40 }) {
 // ============ ANALYTICS PAGE ============
 function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
+  // Defensive: hobby may be undefined for one render frame during transitions
+  if (!hobby) return <EmptyState text="Loading…" />;
   // Garden uses explicit seasons; other hobbies use date-derived seasons
   if (hobby.type === "garden") {
     return <GardenAnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={spouseMode} />;
@@ -2170,6 +2164,7 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode 
 
 function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
+  if (!hobby) return <EmptyState text="Loading…" />;
   // Build season list: archived + (currently active, if any)
   const archived = hobby.archivedSeasons || [];
   const current = hobby.currentSeason;
@@ -2297,6 +2292,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
 }
 
 function EggLayersAnalytics({ hobby, entries, spouseMode }) {
+  if (!hobby) return <EmptyState text="Loading…" />;
   // Count both "eggs" (manual quick-tile) and "eggs_laid" (egg basket commits)
   const eggs = entries.filter((e) => e.action === "eggs" || e.action === "eggs_laid");
   const feeds = entries.filter((e) => e.action === "fed");
@@ -2418,6 +2414,10 @@ function CostRow({ label, value, total }) {
 }
 
 function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
+  // Defensive: hobby may be undefined for one render frame during hobby
+  // transitions (e.g. switching activeHobby while still on the analytics tab).
+  if (!hobby) return <EmptyState text="Loading…" />;
+
   // Combine current batch (in-progress) + archived batches
   const currentBatch = hobby.currentBatch;
   const archived = hobby.archivedBatches || [];
@@ -2481,7 +2481,7 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
 
   // Feed Conversion Ratio: lbs feed consumed / lbs meat produced
   let totalFeedLbs = 0;
-  filteredBatches.forEach(b => {
+  batches.forEach(b => {
     const bEntries = entries.filter(e => e.batchId === b.id && e.action === "fed");
     totalFeedLbs += bEntries.reduce((s, e) => s + (Number(e.lbs)||0), 0);
   });
