@@ -6163,22 +6163,74 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
 // ============================================================================
 function WhatsNewModal({ onClose }) {
   return (
-    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
-        <div style={{ background:palette.ink,padding:"24px 24px 20px",textAlign:"center" }}>
-          <div style={{ fontSize:36,marginBottom:8 }}>🌾</div>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:palette.yolk,lineHeight:1.2 }}>What's new</div>
-          <div style={{ fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:6 }}>Fresh off the tractor</div>
+    <div
+      onClick={onClose}
+      style={{
+        position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",
+        display:"flex",alignItems:"center",justifyContent:"center",
+        zIndex:200,padding:16,
+      }}
+    >
+      <div
+        onClick={e=>e.stopPropagation()}
+        style={{
+          background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",
+          maxHeight:"min(85vh, 600px)",
+          border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,
+          fontFamily:FONT_BODY,overflow:"hidden",
+          display:"flex",flexDirection:"column",
+        }}
+      >
+        {/* Header — fixed, with close button */}
+        <div style={{ background:palette.ink,padding:"20px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position:"absolute",top:12,right:12,
+              background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",
+              width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",
+              color:palette.bg,cursor:"pointer",padding:0,
+            }}
+          >
+            <X size={18}/>
+          </button>
+          <div style={{ fontSize:32,marginBottom:6 }}>🌾</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.yolk,lineHeight:1.2 }}>What's new</div>
+          <div style={{ fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:4 }}>Fresh off the tractor</div>
         </div>
-        <div style={{ padding:"20px 24px" }}>
-          <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
+
+        {/* Scrollable list — caps around 4 items visible, scrolls for the rest */}
+        <div style={{ padding:"16px 20px 8px",overflowY:"auto",flex:1,minHeight:0 }}>
+          <div style={{ display:"flex",flexDirection:"column",gap:10 }}>
             {WHATS_NEW.map((item,i) => (
-              <div key={i} style={{ display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,fontSize:13,color:palette.ink,lineHeight:1.5 }}>
+              <div
+                key={i}
+                style={{
+                  display:"flex",gap:10,alignItems:"flex-start",
+                  padding:"10px 12px",background:palette.card,
+                  border:`1.5px solid ${palette.line}`,borderRadius:10,
+                  fontSize:13,color:palette.ink,lineHeight:1.5,
+                  flexShrink:0,
+                }}
+              >
                 {item}
               </div>
             ))}
           </div>
-          <button onClick={onClose} style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}>
+        </div>
+
+        {/* Footer button — sticky bottom */}
+        <div style={{ padding:"12px 20px 16px",flexShrink:0,background:palette.bg,borderTop:`1px solid ${palette.line}` }}>
+          <button
+            onClick={onClose}
+            style={{
+              width:"100%",padding:"12px",borderRadius:10,
+              border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,
+              fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",
+              boxShadow:"2px 2px 0 "+palette.line,
+            }}
+          >
             Got it — let's go! 🌾
           </button>
         </div>
