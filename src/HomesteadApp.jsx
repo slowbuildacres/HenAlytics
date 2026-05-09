@@ -5,7 +5,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
-  MapPin, CloudRain, Thermometer, Share2
+  MapPin, CloudRain, Thermometer, Share2, Store
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
@@ -36,6 +36,7 @@ import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 import GoatsPage, { GoatsAnalytics } from "./Goats.jsx";
 import CowsPage, { CowsAnalytics } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
+import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -69,6 +70,7 @@ const defaultData = () => ({
     { id: "goats", name: "Goats 🐐", type: "goats", icon: "sprout", animals: [], hidden: true },
     { id: "cows", name: "Cows 🐄", type: "cows", icon: "sprout", animals: [], hidden: true },
     { id: "pigs", name: "Pigs 🐷", type: "pigs", icon: "sprout", animals: [], hidden: true },
+    { id: "farmstand", name: "Farmstand 🏪", type: "farmstand", icon: "store", items: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -218,6 +220,17 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       if (typeof h.hidden === "undefined") h.hidden = true;
     }
   });
+  // ---- Farmstand hobby ----
+  const hasFarmstand = data.hobbies.some(h => h.id === "farmstand");
+  if (!hasFarmstand) {
+    data.hobbies.push({ id: "farmstand", name: "Farmstand 🏪", type: "farmstand", icon: "store", items: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "farmstand") {
+      if (!Array.isArray(h.items)) h.items = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
   return data;
 }
 
@@ -355,10 +368,15 @@ const fmtMoney = (n) => {
 };
 const newId = () => Math.random().toString(36).slice(2, 10);
 
-// What's New version — bump this with each notable release
-const CURRENT_VERSION = 7;
+// What's New version — bump this with each notable release.
+// Convention: when adding a new release item, prepend it to the top of
+// WHATS_NEW and trim the array to keep ~6-8 items (oldest roll off).
+// Bumping CURRENT_VERSION causes the popup to re-show once for every user
+// who hasn't seen this version yet.
+const CURRENT_VERSION = 8;
 
 const WHATS_NEW = [
+  "🏪 Farmstand hobby — saved items with cost & price for one-tap sales, plus profit + top-seller analytics in the Stats tab",
   "❄️ Butcher any bird — chickens, ducks, quail, geese, turkeys all go to the freezer log with date + weight",
   "💵 Hatchery tracking — log where you got each flock and how much you paid",
   "🙏 Monthly thank-you — a quick note on the 1st each month for everyone who tipped via Ko-fi",
@@ -366,7 +384,6 @@ const WHATS_NEW = [
   "✏️ Edit & delete everywhere — perennials, harvest logs, and livestock entries can now all be edited or removed",
   "✨ Year in Review — now includes Bees, Incubator, Goats, Cows, and Pigs cards when those hobbies are enabled",
   "🌳 Perennial garden — track fruit trees, asparagus, and berry bushes with harvest history outside of seasons",
-  "🐣 Loading screen — quick chicken animation when the app starts up",
 ];
 
 // Spouse Mode helpers — fudge numbers for "presentation" purposes
@@ -611,7 +628,7 @@ function NavTab({ active, onClick, icon: Icon, label }) {
 }
 
 // ============ ICON RESOLVER ============
-const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick, rabbit: Bird, bee: Bird };
+const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick, rabbit: Bird, bee: Bird, store: Store };
 const HobbyIcon = ({ name, ...props }) => {
   const I = iconMap[name] || Sprout;
   return <I {...props} />;
@@ -1059,7 +1076,7 @@ export default function HomesteadApp() {
               {data.hobbies.filter((h) => !h.hidden).map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); else if (h.type === "bees" && page !== "analytics") setPage("bees"); else if (h.type === "incubator" && page !== "analytics") setPage("incubator"); else if (h.type === "goats" && page !== "analytics") setPage("goats"); else if (h.type === "cows" && page !== "analytics") setPage("cows"); else if (h.type === "pigs" && page !== "analytics") setPage("pigs"); }}
+                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); else if (h.type === "bees" && page !== "analytics") setPage("bees"); else if (h.type === "incubator" && page !== "analytics") setPage("incubator"); else if (h.type === "goats" && page !== "analytics") setPage("goats"); else if (h.type === "cows" && page !== "analytics") setPage("cows"); else if (h.type === "pigs" && page !== "analytics") setPage("pigs"); else if (h.type === "farmstand" && page !== "analytics") setPage("farmstand"); }}
                   style={{
                     width: "100%", padding: "12px 16px", background: h.id === activeHobby ? palette.bgAlt : "transparent",
                     border: "none", borderBottom: `1px solid ${palette.line}`,
@@ -1110,7 +1127,10 @@ export default function HomesteadApp() {
         {page === "analytics" && activeHobby === "pigs" && (
           <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && (
+        {page === "analytics" && activeHobby === "farmstand" && (
+          <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} spouseMode={data.spouseMode} />
+        )}
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "farmstand" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -1136,6 +1156,9 @@ export default function HomesteadApp() {
         )}
         {page === "rabbits" && (
           <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "farmstand" && (
+          <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (
           <CalendarPage data={data} update={update} setModal={setModal} />
@@ -1165,7 +1188,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "farmstand"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "farmstand") setPage("farmstand"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
@@ -3957,6 +3980,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
                   else if (h.type === "goats") { setActiveHobby("goats"); setPage("goats"); }
                   else if (h.type === "cows") { setActiveHobby("cows"); setPage("cows"); }
                   else if (h.type === "pigs") { setActiveHobby("pigs"); setPage("pigs"); }
+                  else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
                 }
