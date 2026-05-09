@@ -137,6 +137,34 @@ export function PlanCropModal({ data, update, onClose }) {
   // Get the final date for an event (user override or generated)
   const getDate = (evt) => editableDates[evt.id] || evt.date;
 
+  // When user changes a date, auto-shift all subsequent event dates by the same delta
+  const handleDateChange = (changedEvt, newDateStr) => {
+    if (!newDateStr) return;
+    const oldDate = getDate(changedEvt);
+    const oldMs = new Date(oldDate + "T12:00").getTime();
+    const newMs = new Date(newDateStr + "T12:00").getTime();
+    const deltaDays = Math.round((newMs - oldMs) / (24 * 60 * 60 * 1000));
+    if (deltaDays === 0) return;
+
+    // Find index of changed event in generatedEvents
+    const changedIdx = generatedEvents.findIndex(e => e.id === changedEvt.id);
+
+    setEditableDates(prev => {
+      const next = { ...prev, [changedEvt.id]: newDateStr };
+      // Shift all subsequent events by the same delta
+      generatedEvents.forEach((evt, idx) => {
+        if (idx <= changedIdx) return; // only shift events AFTER the changed one
+        const currentDate = prev[evt.id] || evt.date;
+        const shifted = new Date(new Date(currentDate + "T12:00").getTime() + deltaDays * 24 * 60 * 60 * 1000);
+        const y = shifted.getFullYear();
+        const m = String(shifted.getMonth()+1).padStart(2,"0");
+        const d = String(shifted.getDate()).padStart(2,"0");
+        next[evt.id] = `${y}-${m}-${d}`;
+      });
+      return next;
+    });
+  };
+
   const confirm = () => {
     if (generatedEvents.length === 0) return;
     update((d) => {
@@ -273,7 +301,7 @@ export function PlanCropModal({ data, update, onClose }) {
                 <input
                   type="date"
                   value={getDate(e)}
-                  onChange={(ev) => setEditableDates(prev => ({ ...prev, [e.id]: ev.target.value }))}
+                  onChange={(ev) => handleDateChange(e, ev.target.value)}
                   style={{
                     padding: "6px 10px", borderRadius: 6,
                     border: `1.5px solid ${editableDates[e.id] && editableDates[e.id] !== e.date ? palette.yolk : palette.line}`,
@@ -418,6 +446,8 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
           <option value="garden">Garden</option>
           <option value="chicken">Meat chicken</option>
           <option value="egg_layers">Egg layers</option>
+          <option value="incubator">Incubator</option>
+          <option value="rabbits">Rabbits</option>
         </select>
       </Field>
       <Field label="Notes (optional)">

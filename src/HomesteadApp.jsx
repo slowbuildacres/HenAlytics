@@ -32,6 +32,7 @@ import GardenMapModal from "./GardenMap.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
 import SalesPage from "./Sales.jsx";
 import BeesPage, { BeesAnalytics } from "./Bees.jsx";
+import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -61,12 +62,14 @@ const defaultData = () => ({
     { id: "meat_chickens", name: "Meat Chickens", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
     { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
     { id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true },
+    { id: "incubator", name: "Incubator 🥚", type: "incubator", icon: "egg", runs: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
   butchered: [], // butcher events for current batch
   calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
   tutorialDismissed: false, // true after user completes or skips tutorial
+  lastSeenVersion: 0,        // tracks what's new popup
   salesHidden: false,        // true if user hides the Sales tab
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
   sales: [],            // unified sales log
@@ -172,7 +175,17 @@ function migrateData(data) {
   if (!hasRabbits) {
     data.hobbies.push({ id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true });
   }
-const hasBees = data.hobbies.some(h => h.id === "bees");
+const hasIncubator = data.hobbies.some(h => h.id === "incubator");
+  if (!hasIncubator) {
+    data.hobbies.push({ id: "incubator", name: "Incubator 🥚", type: "incubator", icon: "egg", runs: [], hidden: true });
+  }
+  data.hobbies.forEach(h => {
+    if (h.type === "incubator") { if (!Array.isArray(h.runs)) h.runs = []; }
+  });
+  const gardenHobby = data.hobbies.find(h => h.type === "garden");
+  if (gardenHobby && !Array.isArray(gardenHobby.perennials)) gardenHobby.perennials = [];
+  if (typeof data.lastSeenVersion !== "number") data.lastSeenVersion = 0;
+  const hasBees = data.hobbies.some(h => h.id === "bees");
   if (!hasBees) {
     data.hobbies.push({ id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true });
   }
@@ -318,6 +331,17 @@ const fmtMoney = (n) => {
   return `$${num.toFixed(2)}`;
 };
 const newId = () => Math.random().toString(36).slice(2, 10);
+
+// What's New version — bump this with each notable release
+const CURRENT_VERSION = 2;
+
+const WHATS_NEW = [
+  "🥚 Incubator hobby — track hatching runs by bird type with auto calendar reminders",
+  "🏪 Farm Stand in Sales — track items, cost, revenue, and profit margin",
+  "📅 Calendar auto-shifts subsequent dates when you adjust a planting date",
+  "⚖️ Feed-to-meat conversion ratio (FCR) in Meat Chickens and Rabbits stats",
+  "🌳 Perennial garden section — track fruit trees, asparagus, berries across seasons",
+];
 
 // Spouse Mode helpers — fudge numbers for "presentation" purposes
 // Costs shown at 10%, production shown at 200%
@@ -621,6 +645,7 @@ export default function HomesteadApp() {
   const [modal, setModal] = useState(null);
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
@@ -632,6 +657,14 @@ export default function HomesteadApp() {
     const id = setTimeout(() => setMinLoadDone(true), 3000);
     return () => clearTimeout(id);
   }, []);
+
+  // Show what's new popup for returning users when version bumps
+  useEffect(() => {
+    if (data.onboardedAt && data.lastSeenVersion < CURRENT_VERSION) {
+      const timer = setTimeout(() => setShowWhatsNew(true), 1200);
+      return () => clearTimeout(timer);
+    }
+  }, [data.onboardedAt, data.lastSeenVersion]);
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
@@ -860,6 +893,14 @@ export default function HomesteadApp() {
         />
       )}
 
+      {/* What's New popup */}
+      {showWhatsNew && (
+        <WhatsNewModal onClose={() => {
+          setShowWhatsNew(false);
+          update(d => { d.lastSeenVersion = CURRENT_VERSION; return d; });
+        }} />
+      )}
+
       {/* Tutorial prompt — shown once after onboarding */}
       {showTutorialPrompt && !showTutorial && (
         <TutorialPrompt
@@ -951,7 +992,7 @@ export default function HomesteadApp() {
               {data.hobbies.filter((h) => !h.hidden).map((h) => (
                 <button
                   key={h.id}
-                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); else if (h.type === "bees" && page !== "analytics") setPage("bees"); }}
+                  onClick={() => { setActiveHobby(h.id); setSeasonFilter("all"); setHobbyMenuOpen(false); if (h.type === "rabbits" && page !== "analytics") setPage("rabbits"); else if (h.type === "bees" && page !== "analytics") setPage("bees"); else if (h.type === "incubator" && page !== "analytics") setPage("incubator"); }}
                   style={{
                     width: "100%", padding: "12px 16px", background: h.id === activeHobby ? palette.bgAlt : "transparent",
                     border: "none", borderBottom: `1px solid ${palette.line}`,
@@ -987,7 +1028,13 @@ export default function HomesteadApp() {
         {page === "analytics" && activeHobby === "rabbits" && (
           <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && (
+        {page === "analytics" && activeHobby === "bees" && (
+          <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
+        )}
+        {page === "analytics" && activeHobby === "incubator" && (
+          <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
+        )}
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -998,6 +1045,9 @@ export default function HomesteadApp() {
         )}
         {page === "bees" && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "incubator" && (
+          <IncubatorPage hobby={data.hobbies.find(h=>h.id==="incubator")} data={data} update={update} setModal={setModal} />
         )}
         {page === "rabbits" && (
           <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
@@ -1338,6 +1388,9 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
 
 // ============ HOBBY SUMMARIES ============
 function GardenSummary({ hobby, data, setModal }) {
+  // Perennials section shown at bottom of garden home regardless of season
+  const perennials = hobby.perennials || [];
+
   if (!hobby.currentSeason) {
     const seasonCount = (hobby.archivedSeasons || []).length;
     return (
@@ -1368,6 +1421,31 @@ function GardenSummary({ hobby, data, setModal }) {
   const pinCount = hasMap ? (season.gardenMap.pins || []).length : 0;
   return (
     <div>
+      {/* Perennials section */}
+      {perennials.length > 0 && (
+        <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
+          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink }}>🌳 Perennials</div>
+            <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}>+ Add</button>
+          </div>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            {perennials.map(p => (
+              <div key={p.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:palette.bgAlt,borderRadius:8 }}>
+                <div>
+                  <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>{p.name}{p.variety ? ` — ${p.variety}` : ""}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>Planted {p.plantDate||"unknown"}{p.totalHarvest ? ` · ${p.totalHarvest} lbs harvested` : ""}</div>
+                </div>
+                <button onClick={() => setModal({ type:"logPerennialHarvest",hobbyId:hobby.id,perennialId:p.id })} style={{ background:palette.leaf,border:"none",borderRadius:6,padding:"4px 10px",fontSize:12,color:"#fff",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600 }}>Log harvest</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+      {perennials.length === 0 && (
+        <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"10px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
+          🌳 Track perennials (fruit trees, asparagus, berry bushes...)
+        </button>
+      )}
       <div style={{
         background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
         marginBottom: 10,
@@ -2160,6 +2238,15 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
   const mortalityRate = totalStart > 0 ? ((totalDeaths / totalStart) * 100).toFixed(1) : 0;
   const avgWeight = totalButchered > 0 ? (totalWeight / totalButchered).toFixed(2) : 0;
   const costPerBird = adjButchered > 0 ? (totalCost / adjButchered).toFixed(2) : "—";
+
+  // Feed Conversion Ratio: lbs feed consumed / lbs meat produced
+  let totalFeedLbs = 0;
+  filteredBatches.forEach(b => {
+    const bEntries = entries.filter(e => e.batchId === b.id && e.action === "fed");
+    totalFeedLbs += bEntries.reduce((s, e) => s + (Number(e.lbs)||0), 0);
+  });
+  const totalMeatLbs = totalWeight;
+  const fcr = totalFeedLbs > 0 && totalMeatLbs > 0 ? (totalFeedLbs / totalMeatLbs).toFixed(2) : "—";
   const leadingCause = Object.entries(deathCauses).sort((a, b) => b[1] - a[1])[0];
   const avgDeathAge = deathAges.length > 0 ? (deathAges.reduce((a, b) => a + b, 0) / deathAges.length).toFixed(1) : null;
 
@@ -2182,6 +2269,7 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
         <StatCard label="Total Butchered" value={adjButchered} accent={palette.ink} />
         <StatCard label="Mortality Rate" value={`${mortalityRate}%`} sub={`${totalDeaths} deaths`} accent={palette.accent} />
         <StatCard label="Avg Final Weight" value={`${avgWeight} lbs`} accent={palette.leaf} />
+        {fcr !== "—" && <StatCard label="Feed Conversion (FCR)" value={fcr} sub="lbs feed per lb meat" accent={palette.feather} />}
         <StatCard label="Cost / Bird" value={typeof costPerBird === "string" ? costPerBird : fmtMoney(costPerBird)} sub="all-in" accent={palette.yolk} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} sub={`feed ${fmtMoney(adjFeedCost)}${adjInfraCost > 0 ? " + infra " + fmtMoney(adjInfraCost) : ""}`} accent={palette.feather} />
       </div>
@@ -2621,6 +2709,18 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   // editFlockEntry removed — replaced by editFlock
+
+  if (modal.type === "addPerennial") {
+    const gardenHobby = data.hobbies.find(h => h.type === "garden");
+    return <AddPerennialModal hobbyId={modal.hobbyId} update={update} onClose={close} />;
+  }
+  if (modal.type === "logPerennialHarvest") {
+    const gardenHobby = data.hobbies.find(h => h.type === "garden");
+    if (!gardenHobby) { close(); return null; }
+    const perennial = (gardenHobby.perennials||[]).find(p => p.id === modal.perennialId);
+    if (!perennial) { close(); return null; }
+    return <LogPerennialHarvestModal hobbyId={modal.hobbyId} perennial={perennial} update={update} onClose={close} />;
+  }
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
@@ -2642,6 +2742,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
   if (modal.type === "tutorial") return <TutorialModal onClose={close} />;
+  if (modal.type === "whatsNew") return <WhatsNewModal onClose={close} />;
   if (modal.type === "inviteSignIn") return <InviteSignInModal onClose={close} setModal={setModal} />;
   if (modal.type === "inviteAccepted") return <InviteAcceptedModal homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "inviteError") return <InviteErrorModal message={modal.message} onClose={close} />;
@@ -2938,6 +3039,14 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
 
       <SectionBtn
         icon={Lightbulb}
+        label="What's new 🌾"
+        sub="See the latest features added to HenAlytics"
+        accent={palette.yolk}
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "whatsNew" }), 0); }}
+      />
+
+      <SectionBtn
+        icon={Lightbulb}
         label="Take the tour 🌾"
         sub="A quick walkthrough of HenAlytics features"
         accent={palette.leaf}
@@ -2960,7 +3069,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
             <div>
               <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
-              <div style={{ fontSize: 11, color: palette.inkSoft }}>{{ garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping" }[h.type] || h.type}</div>
+              <div style={{ fontSize: 11, color: palette.inkSoft }}>{{ garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator" }[h.type] || h.type}</div>
             </div>
             <button
               onClick={() => update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; })}
@@ -3703,7 +3812,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator" };
   return (
     <Modal open onClose={onClose} title="Manage Hobbies">
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
@@ -3722,6 +3831,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
                 if (h.hidden) {
                   if (h.type === "rabbits") { setActiveHobby("rabbits"); setPage("rabbits"); }
                   else if (h.type === "bees") { setActiveHobby("bees"); setPage("bees"); }
+                  else if (h.type === "incubator") { setActiveHobby("incubator"); setPage("incubator"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
                 }
@@ -4674,7 +4784,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -4879,6 +4989,13 @@ function OnboardingWizard({ update, onClose }) {
               onToggle={() => setHobbies((h) => ({ ...h, bees: !h.bees }))}
               icon="🐝"
               label="Beekeeping (Beta)"
+              checked={hobbies.bees}
+              onChange={e => setHobbies(prev => ({ ...prev, bees: e.target.checked }))}
+            />
+            <HobbyCheckbox
+              label="Incubator (Beta)"
+              checked={hobbies.incubator || false}
+              onChange={e => setHobbies(prev => ({ ...prev, incubator: e.target.checked }))}
               sub="Per-hive inspections, honey harvests, mite counts"
             />
 
@@ -5554,6 +5671,125 @@ export function TutorialPrompt({ onStart, onSkip }) {
             }}
           >
             Skip for now
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// ADD PERENNIAL MODAL
+// ============================================================================
+function AddPerennialModal({ hobbyId, update, onClose }) {
+  const [name, setName] = useState("");
+  const [variety, setVariety] = useState("");
+  const [plantDate, setPlantDate] = useState("");
+  const [notes, setNotes] = useState("");
+  const SUGGESTIONS = ["Apple tree","Pear tree","Peach tree","Cherry tree","Plum tree","Fig tree","Blueberry bush","Raspberry bush","Blackberry bush","Strawberry bed","Asparagus","Rhubarb","Horseradish","Artichoke","Grape vine","Kiwi vine"];
+  return (
+    <Modal open onClose={onClose} title="Add a perennial">
+      <Field label="Plant / tree name">
+        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="Apple tree, asparagus, blueberries..." autoFocus />
+        {!name && (
+          <div style={{ display:"flex",flexWrap:"wrap",gap:4,marginTop:6 }}>
+            {SUGGESTIONS.slice(0,8).map(s=>(
+              <button key={s} onClick={()=>setName(s)} style={{ padding:"3px 8px",fontSize:11,borderRadius:6,border:`1px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",fontFamily:FONT_BODY }}>{s}</button>
+            ))}
+          </div>
+        )}
+      </Field>
+      <Field label="Variety (optional)">
+        <input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp, Jersey Giant..." />
+      </Field>
+      <Field label="Plant date (optional)">
+        <input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} />
+      </Field>
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, notes..." />
+      </Field>
+      <Btn variant="primary" onClick={() => {
+        if (!name.trim()) return;
+        update(d => {
+          const h = d.hobbies.find(x => x.id === hobbyId);
+          if (!h) return d;
+          if (!Array.isArray(h.perennials)) h.perennials = [];
+          h.perennials.push({ id: newId(), name: name.trim(), variety, plantDate, notes, totalHarvest: 0, harvests: [], created: Date.now() });
+          return d;
+        });
+        onClose();
+      }}>Add {name || "perennial"}</Btn>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// LOG PERENNIAL HARVEST MODAL
+// ============================================================================
+function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
+  const [qty, setQty] = useState("");
+  const [unit, setUnit] = useState("lbs");
+  const [date, setDate] = useState(todayStr());
+  const [notes, setNotes] = useState("");
+  return (
+    <Modal open onClose={onClose} title={`Harvest — ${perennial.name}`}>
+      <div style={{ display:"flex",gap:12 }}>
+        <div style={{ flex:2 }}>
+          <Field label="Quantity">
+            <input type="number" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
+          </Field>
+        </div>
+        <div style={{ flex:1 }}>
+          <Field label="Unit">
+            <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
+              {["lbs","oz","count","quart","pint","bunch"].map(u=><option key={u}>{u}</option>)}
+            </select>
+          </Field>
+        </div>
+      </div>
+      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
+      <Btn onClick={() => {
+        const q = Number(qty);
+        if (!q) return;
+        update(d => {
+          const h = d.hobbies.find(x => x.id === hobbyId);
+          if (!h) return d;
+          const p = (h.perennials||[]).find(x => x.id === perennial.id);
+          if (!p) return d;
+          p.harvests = p.harvests || [];
+          p.harvests.push({ id: newId(), date, qty: q, unit, notes });
+          p.totalHarvest = (p.totalHarvest||0) + (unit === "lbs" ? q : 0);
+          return d;
+        });
+        onClose();
+      }}>Log {qty||"0"} {unit}</Btn>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// WHAT'S NEW MODAL
+// ============================================================================
+function WhatsNewModal({ onClose }) {
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+        <div style={{ background:palette.ink,padding:"24px 24px 20px",textAlign:"center" }}>
+          <div style={{ fontSize:36,marginBottom:8 }}>🌾</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:palette.yolk,lineHeight:1.2 }}>What's new</div>
+          <div style={{ fontSize:12,color:"rgba(255,255,255,0.5)",marginTop:6 }}>Fresh off the tractor</div>
+        </div>
+        <div style={{ padding:"20px 24px" }}>
+          <div style={{ display:"flex",flexDirection:"column",gap:10,marginBottom:20 }}>
+            {WHATS_NEW.map((item,i) => (
+              <div key={i} style={{ display:"flex",gap:10,alignItems:"flex-start",padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,fontSize:13,color:palette.ink,lineHeight:1.5 }}>
+                {item}
+              </div>
+            ))}
+          </div>
+          <button onClick={onClose} style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}>
+            Got it — let's go! 🌾
           </button>
         </div>
       </div>
