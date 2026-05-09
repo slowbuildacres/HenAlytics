@@ -218,6 +218,11 @@ function computeWeeklyStats(data) {
   const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
   const farmstandProfit = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0) - (Number(x.totalCost) || 0), 0);
 
+  // Freezer log — universal butcher records (any bird from any flock)
+  const freezerLogWeek = (data.freezerLog || []).filter(r => r.date >= sevenDaysAgoIso);
+  const freezerBirds = freezerLogWeek.reduce((s, r) => s + (Number(r.count) || 0), 0);
+  const freezerLbs = freezerLogWeek.reduce((s, r) => s + ((Number(r.count) || 0) * (Number(r.avgWeight) || 0)), 0);
+
   return {
     totalEntries: allEntries.length,
     eggsCollected, eggsSold, harvestLbs, totalSpent,
@@ -230,6 +235,7 @@ function computeWeeklyStats(data) {
     goatMilkOz, goatKids, hasGoats: !!goatsHobby,
     cowMilkGal, cowCalves, hasCows: !!cowsHobby,
     pigLitters, pigButchered, pigMeatLbs, hasPigs: !!pigsHobby,
+    freezerBirds, freezerLbs,
   };
 }
 
@@ -301,7 +307,12 @@ function buildDigestEmail(email, data, stats) {
 
   // Farm stand lines
   if (stats.hasFarmstand) {
-    if (stats.farmstandRevenue > 0) lines.push(`🏪 Farm stand: <strong>${fmtMoney(stats.farmstandRevenue)}</strong> revenue · <strong>${fmtMoney(stats.farmstandProfit)}</strong> profit`);
+    if (stats.farmstandRevenue > 0) lines.push(`🧾 Farm stand: <strong>${fmtMoney(stats.farmstandRevenue)}</strong> revenue · <strong>${fmtMoney(stats.farmstandProfit)}</strong> profit`);
+  }
+
+  // Freezer log — universal butcher records (any bird, any flock)
+  if (stats.freezerBirds > 0) {
+    lines.push(`❄️ <strong>${stats.freezerBirds}</strong> bird${stats.freezerBirds === 1 ? '' : 's'} to the freezer · <strong>${stats.freezerLbs.toFixed(1)} lbs</strong> total`);
   }
 
   const totalEntries = stats.totalEntries;

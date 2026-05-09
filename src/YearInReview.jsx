@@ -38,6 +38,7 @@ export default function YearInReviewPage({ data }) {
   const goatsEnabled = hobbies.some(h => h.type === "goats" && !h.hidden);
   const cowsEnabled = hobbies.some(h => h.type === "cows" && !h.hidden);
   const pigsEnabled = hobbies.some(h => h.type === "pigs" && !h.hidden);
+  const farmstandEnabled = hobbies.some(h => h.type === "farmstand" && !h.hidden);
 
   return (
     <div>
@@ -71,7 +72,7 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
-          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} />
+          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} farmstandEnabled={farmstandEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
           {meatChickensEnabled && <MeatChickensCard stats={stats} />}
@@ -81,6 +82,8 @@ export default function YearInReviewPage({ data }) {
           {goatsEnabled && <GoatsCard stats={stats} />}
           {cowsEnabled && <CowsCard stats={stats} />}
           {pigsEnabled && <PigsCard stats={stats} />}
+          {farmstandEnabled && <FarmstandCard stats={stats} />}
+          {stats.freezerBirds > 0 && <FreezerCard stats={stats} />}
           <ActivityCard stats={stats} />
           {stats.weatherStats && <WeatherCard stats={stats} />}
           {stats.photos.length > 0 && <PhotosCard stats={stats} />}
@@ -143,7 +146,7 @@ function CoverCard({ year, stats }) {
   );
 }
 
-function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled }) {
+function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, farmstandEnabled }) {
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
@@ -153,6 +156,7 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   if (goatsEnabled && stats.goatMilkOz > 0) items.push({ icon: "🐐", number: Math.round(stats.goatMilkOz / 128), label: `gal goat milk`, accent: palette.leaf });
   if (cowsEnabled && stats.cowMilkGal > 0) items.push({ icon: "🐄", number: Math.round(stats.cowMilkGal), label: `gal cow milk`, accent: palette.leaf });
   if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
+  if (farmstandEnabled && stats.farmstandRevenue > 0) items.push({ icon: "🧾", number: `$${Math.round(stats.farmstandRevenue)}`, label: `farmstand revenue`, accent: palette.leaf });
 
   if (items.length === 0) return null;
 
@@ -500,6 +504,51 @@ function PigsCard({ stats }) {
         {pigLitters > 0 && <Stat big={pigLitters} label="piglets born" accent={palette.yolk}/>}
         {pigFeedCost > 0 && <Stat big={fmtMoney(pigFeedCost)} label="feed cost" accent={palette.feather}/>}
         {pigFCR && <Stat big={pigFCR} label="feed conversion ratio" accent={palette.feather}/>}
+      </div>
+    </Card>
+  );
+}
+
+function FarmstandCard({ stats }) {
+  const { farmstandRevenue, farmstandCost, farmstandProfit, farmstandSaleCount, farmstandTopItem, farmstandItemCount } = stats;
+  if (!farmstandSaleCount && !farmstandItemCount) return null;
+  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
+  const margin = farmstandRevenue > 0 ? ((farmstandProfit / farmstandRevenue) * 100).toFixed(0) : null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🧾 Farmstand</div>
+      {farmstandRevenue > 0 && (
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 48, color: palette.ink, lineHeight: 1, marginBottom: 4 }}>
+          {fmtMoney(farmstandRevenue)} <span style={{ fontSize: 16, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>in farmstand revenue</span>
+        </div>
+      )}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {farmstandSaleCount > 0 && <Stat big={farmstandSaleCount} label={`sale${farmstandSaleCount===1?"":"s"} this year`} accent={palette.leaf} />}
+        {farmstandProfit !== 0 && <Stat big={fmtMoney(farmstandProfit)} label="total profit" accent={farmstandProfit >= 0 ? palette.leaf : palette.accent} />}
+        {margin !== null && <Stat big={`${margin}%`} label="profit margin" accent={palette.feather} />}
+        {farmstandItemCount > 0 && <Stat big={farmstandItemCount} label={`item${farmstandItemCount===1?"":"s"} on the stand`} accent={palette.yolk} />}
+      </div>
+      {farmstandTopItem && (
+        <div style={{ marginTop:12,fontSize:13,color:palette.inkSoft }}>
+          Top seller: <strong style={{ color:palette.ink }}>{farmstandTopItem.name}</strong> — {fmtMoney(farmstandTopItem.revenue)}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function FreezerCard({ stats }) {
+  const { freezerBirds, freezerLbs } = stats;
+  if (!freezerBirds) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>❄️ Freezer log</div>
+      <CountUp number={freezerBirds} suffix={`bird${freezerBirds===1?"":"s"} to the freezer`} big />
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {freezerLbs > 0 && <Stat big={freezerLbs.toFixed(1)} label="lbs total" accent={palette.feather} />}
+      </div>
+      <div style={{ marginTop:10,fontSize:12,color:palette.inkSoft,fontStyle:"italic" }}>
+        Includes any bird butchered from your flocks — chickens, ducks, quail, geese, and more.
       </div>
     </Card>
   );
@@ -858,6 +907,34 @@ function computeStats(data, year) {
   const pigsHobby = (data.hobbies||[]).find(h => h.type === "pigs");
   const pigCount = (pigsHobby?.animals||[]).length;
 
+  // Farmstand — sales for this year tagged as farmstand
+  const yearStart = `${year}-01-01`;
+  const yearEnd = `${year}-12-31`;
+  const farmstandSales = (data.sales || []).filter(s =>
+    s.hobbyType === "farmstand" && s.date >= yearStart && s.date <= yearEnd
+  );
+  const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const farmstandCost = farmstandSales.reduce((s, x) => s + (Number(x.totalCost) || 0), 0);
+  const farmstandProfit = farmstandRevenue - farmstandCost;
+  const farmstandSaleCount = farmstandSales.length;
+  // Top item by revenue
+  const farmstandByItem = {};
+  farmstandSales.forEach(s => {
+    const name = s.crop || "Other";
+    farmstandByItem[name] = (farmstandByItem[name] || 0) + (Number(s.totalRevenue) || 0);
+  });
+  const farmstandTopItemEntry = Object.entries(farmstandByItem).sort((a,b) => b[1]-a[1])[0];
+  const farmstandTopItem = farmstandTopItemEntry ? { name: farmstandTopItemEntry[0], revenue: farmstandTopItemEntry[1] } : null;
+  const farmstandHobby = (data.hobbies||[]).find(h => h.type === "farmstand");
+  const farmstandItemCount = (farmstandHobby?.items || []).filter(i => !i.archived).length;
+
+  // Freezer log — universal butcher records this year
+  const freezerLogYear = (data.freezerLog || []).filter(r =>
+    r.date >= yearStart && r.date <= yearEnd
+  );
+  const freezerBirds = freezerLogYear.reduce((s, r) => s + (Number(r.count) || 0), 0);
+  const freezerLbs = freezerLogYear.reduce((s, r) => s + ((Number(r.count) || 0) * (Number(r.avgWeight) || 0)), 0);
+
   // Activity
   const datesSet = new Set(allEntries.map((e) => e.date));
   const activeDays = datesSet.size;
@@ -928,6 +1005,10 @@ function computeStats(data, year) {
     cowMilkGal, cowCalves, cowFeedCost, cowButchered, cowMeatLbs, cowCount,
     // Pigs
     pigLitters, pigsButchered, pigMeatLbs, pigFeedCost, pigFCR, pigCount,
+    // Farmstand
+    farmstandRevenue, farmstandCost, farmstandProfit, farmstandSaleCount, farmstandTopItem, farmstandItemCount,
+    // Freezer log (universal butcher records — any flock, any bird type)
+    freezerBirds, freezerLbs,
     // Activity
     busiestMonth, longestStreak, weatherStats, photos,
     firstEntryDate, lastEntryDate, entryCountByHobby, gardenWaterCount, freeRangeCount,
