@@ -164,13 +164,40 @@ function computeWeeklyStats(data) {
     rabbitDeaths = rabbitEntries.filter((e) => e.action === 'death').reduce((s, e) => s + (Number(e.count) || 1), 0);
   }
 
+  // Bees stats — only if bees hobby is visible
+  const beesHobby = hobbies.find(h => h.type === 'bees' && !h.hidden);
+  let honeyHarvested = 0, hiveInspections = 0;
+  if (beesHobby) {
+    const beeEntries = allEntries.filter((e) => e.hobbyType === 'bees');
+    honeyHarvested = beeEntries.filter((e) => e.action === 'harvest').reduce((s, e) => s + (Number(e.lbs) || 0), 0);
+    hiveInspections = beeEntries.filter((e) => e.action === 'inspect').length;
+  }
+
+  // Incubator stats — only if incubator hobby is visible
+  const incubatorHobby = hobbies.find(h => h.type === 'incubator' && !h.hidden);
+  let eggsSet = 0, eggsHatched = 0;
+  if (incubatorHobby) {
+    const runs = incubatorHobby.runs || [];
+    const recentRuns = runs.filter(r => r.dateSet >= sevenDaysAgoIso);
+    eggsSet = recentRuns.reduce((s, r) => s + (Number(r.eggsSet) || 0), 0);
+    const recentHatched = runs.filter(r => r.hatchedDate >= sevenDaysAgoIso && r.eggsHatched != null);
+    eggsHatched = recentHatched.reduce((s, r) => s + (Number(r.eggsHatched) || 0), 0);
+  }
+
+  // Farm stand sales stats
+  const farmstandSales = (data.sales || []).filter(s => s.hobbyType === 'farmstand' && s.date >= sevenDaysAgoIso);
+  const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const farmstandProfit = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0) - (Number(x.totalCost) || 0), 0);
+
   return {
     totalEntries: allEntries.length,
     eggsCollected, eggsSold, harvestLbs, totalSpent,
     watered, planted, issues, deaths, photoCount,
     topPlant: topPlant ? { name: topPlant[0], lbs: topPlant[1] } : null,
-    rabbitLitters, rabbitKits, rabbitDeaths,
-    hasRabbits: !!rabbitsHobby,
+    rabbitLitters, rabbitKits, rabbitDeaths, hasRabbits: !!rabbitsHobby,
+    honeyHarvested, hiveInspections, hasBees: !!beesHobby,
+    eggsSet, eggsHatched, hasIncubator: !!incubatorHobby,
+    farmstandRevenue, farmstandProfit, hasFarmstand: farmstandSales.length > 0,
   };
 }
 
@@ -204,10 +231,27 @@ function buildDigestEmail(email, data, stats) {
   if (stats.issues > 0) lines.push(`⚠️ <strong>${stats.issues}</strong> issue${stats.issues === 1 ? '' : 's'} reported`);
   if (stats.photoCount > 0) lines.push(`📷 <strong>${stats.photoCount}</strong> photo${stats.photoCount === 1 ? '' : 's'} captured`);
 
-  // Rabbit lines — only shown if rabbits hobby is enabled
+  // Rabbit lines
   if (stats.hasRabbits) {
     if (stats.rabbitLitters > 0) lines.push(`🐇 <strong>${stats.rabbitLitters}</strong> litter${stats.rabbitLitters === 1 ? '' : 's'} born · <strong>${stats.rabbitKits}</strong> kits alive`);
     if (stats.rabbitDeaths > 0) lines.push(`💔 <strong>${stats.rabbitDeaths}</strong> rabbit${stats.rabbitDeaths === 1 ? '' : 's'} lost`);
+  }
+
+  // Bees lines
+  if (stats.hasBees) {
+    if (stats.honeyHarvested > 0) lines.push(`🍯 <strong>${stats.honeyHarvested.toFixed(1)} lbs</strong> of honey harvested`);
+    if (stats.hiveInspections > 0) lines.push(`🐝 <strong>${stats.hiveInspections}</strong> hive inspection${stats.hiveInspections === 1 ? '' : 's'} logged`);
+  }
+
+  // Incubator lines
+  if (stats.hasIncubator) {
+    if (stats.eggsSet > 0) lines.push(`🥚 <strong>${stats.eggsSet}</strong> egg${stats.eggsSet === 1 ? '' : 's'} set in incubator`);
+    if (stats.eggsHatched > 0) lines.push(`🐣 <strong>${stats.eggsHatched}</strong> egg${stats.eggsHatched === 1 ? '' : 's'} hatched this week`);
+  }
+
+  // Farm stand lines
+  if (stats.hasFarmstand) {
+    if (stats.farmstandRevenue > 0) lines.push(`🏪 Farm stand: <strong>${fmtMoney(stats.farmstandRevenue)}</strong> revenue · <strong>${fmtMoney(stats.farmstandProfit)}</strong> profit`);
   }
 
   const totalEntries = stats.totalEntries;

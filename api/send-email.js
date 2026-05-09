@@ -6,7 +6,6 @@
 //
 // Three email types supported, distinguished by `kind`:
 //   "feedback"        — feedback from the in-app form, sent to OWNER_EMAIL
-//   "signup_notify"   — automatic notification when someone new signs up
 //   "farmhand_invite" — invitation email to a prospective farmhand
 
 const RESEND_API = 'https://api.resend.com/emails';
@@ -50,8 +49,6 @@ export default async function handler(req, res) {
     let payload;
     if (kind === 'feedback') {
       payload = buildFeedbackEmail(body);
-    } else if (kind === 'signup_notify') {
-      payload = buildSignupEmail(body);
     } else if (kind === 'farmhand_invite') {
       payload = buildFarmhandInviteEmail(body);
     } else {
@@ -111,20 +108,7 @@ function buildFeedbackEmail({ category, message, fromEmail }) {
   };
 }
 
-function buildSignupEmail({ newUserEmail }) {
-  return {
-    from: FROM_ADDRESS,
-    to: [OWNER_EMAIL],
-    subject: `New Henalytics signup: ${newUserEmail}`,
-    html: `
-      <h2>Someone new signed up for Henalytics 🎉</h2>
-      <p><strong>Email:</strong> ${escape(newUserEmail)}</p>
-      <p><strong>When:</strong> ${new Date().toLocaleString('en-US', { timeZone: 'America/Chicago' })} (Central)</p>
-      <p style="color:#888;font-size:12px">Automatic notification from the Henalytics signup flow.</p>
-    `,
-    text: `New signup: ${newUserEmail}`,
-  };
-}
+// signup_notify removed — feedback and farmhand_invite only
 
 function buildFarmhandInviteEmail({ inviteEmail, inviterEmail, homesteadName, inviteLink }) {
   const homestead = homesteadName || 'a homestead';

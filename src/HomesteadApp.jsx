@@ -4989,14 +4989,13 @@ function OnboardingWizard({ update, onClose }) {
               onToggle={() => setHobbies((h) => ({ ...h, bees: !h.bees }))}
               icon="🐝"
               label="Beekeeping (Beta)"
-              checked={hobbies.bees}
-              onChange={e => setHobbies(prev => ({ ...prev, bees: e.target.checked }))}
             />
             <HobbyCheckbox
-              label="Incubator (Beta)"
               checked={hobbies.incubator || false}
-              onChange={e => setHobbies(prev => ({ ...prev, incubator: e.target.checked }))}
-              sub="Per-hive inspections, honey harvests, mite counts"
+              onToggle={() => setHobbies((h) => ({ ...h, incubator: !h.incubator }))}
+              icon="🥚"
+              label="Incubator (Beta)"
+              sub="Track hatching runs and hatch rates"
             />
 
             <div style={{
