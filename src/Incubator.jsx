@@ -509,34 +509,17 @@ function IncubatorModalRouter({ modal, hobby, update, setModal, onClose }) {
 // ============================================================================
 // MAIN INCUBATOR PAGE
 // ============================================================================
+// The app's main nav already provides Home and Stats tabs. The Stats tab
+// routes to <IncubatorAnalytics /> in HomesteadApp.jsx, so this page only
+// renders the Home content — no internal tab bar needed.
 export default function IncubatorPage({ hobby, data, update, setModal }) {
-  const [tab, setTab] = useState("home");
   const [localModal, setLocalModal] = useState(null);
-
   const closeModal = () => setLocalModal(null);
 
   return (
     <div>
       <IncubatorModalRouter modal={localModal} hobby={hobby} update={update} setModal={setLocalModal} onClose={closeModal} />
-
-      {/* Tab bar */}
-      <div style={{ display:"flex",gap:8,marginBottom:16 }}>
-        {["home","stats"].map(t => (
-          <button key={t} onClick={() => setTab(t)} style={{
-            padding:"8px 18px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",
-            border:`1.5px solid ${tab===t?palette.ink:palette.line}`,
-            background:tab===t?palette.ink:palette.card,
-            color:tab===t?palette.bg:palette.ink,
-          }}>{t === "home" ? "🥚 Home" : "📊 Stats"}</button>
-        ))}
-      </div>
-
-      {tab === "home" && (
-        <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} data={data} />
-      )}
-      {tab === "stats" && (
-        <IncubatorAnalytics hobby={hobby} />
-      )}
+      <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} data={data} />
     </div>
   );
 }

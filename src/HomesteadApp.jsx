@@ -80,6 +80,8 @@ const defaultData = () => ({
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
   sales: [],            // unified sales log
   customers: [],        // repeat buyer directory
+  freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
+  supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
 });
 
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
@@ -90,6 +92,10 @@ function migrateData(data) {
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
+  if (!Array.isArray(data.freezerLog)) data.freezerLog = [];
+  if (typeof data.supportersDismissedMonth !== "string" && data.supportersDismissedMonth !== null) {
+    data.supportersDismissedMonth = null;
+  }
 
   // Migrate legacy sold_eggs entries from egg_layers entries into data.sales
   const eggLayerEntries = data.entries["egg_layers"] || [];
@@ -350,9 +356,12 @@ const fmtMoney = (n) => {
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // What's New version — bump this with each notable release
-const CURRENT_VERSION = 6;
+const CURRENT_VERSION = 7;
 
 const WHATS_NEW = [
+  "❄️ Butcher any bird — chickens, ducks, quail, geese, turkeys all go to the freezer log with date + weight",
+  "💵 Hatchery tracking — log where you got each flock and how much you paid",
+  "🙏 Monthly thank-you — a quick note on the 1st each month for everyone who tipped via Ko-fi",
   "🐐 Goats, 🐄 Cows & 🐷 Pigs — three new hobbies with per-animal tracking, milk logging, FCR, and butcher stats",
   "✏️ Edit & delete everywhere — perennials, harvest logs, and livestock entries can now all be edited or removed",
   "✨ Year in Review — now includes Bees, Incubator, Goats, Cows, and Pigs cards when those hobbies are enabled",
@@ -663,6 +672,7 @@ export default function HomesteadApp() {
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
@@ -675,16 +685,42 @@ export default function HomesteadApp() {
     return () => clearTimeout(id);
   }, []);
 
-  // Show what's new popup once after Supabase data loads
+  // Show what's new popup once after Supabase data loads.
+  // Triggers when (a) onboarding is complete and (b) the user's saved
+  // lastSeenVersion is below CURRENT_VERSION. The ref guards against
+  // re-triggering inside the same session even if `data` reloads from
+  // Supabase mid-flight before the dismiss-write has synced back.
   const whatsNewShownRef = React.useRef(false);
+  const whatsNewDismissedRef = React.useRef(false);
   useEffect(() => {
     if (whatsNewShownRef.current) return;
+    if (whatsNewDismissedRef.current) return;
     if (!data?.onboardedAt) return;
     if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) return;
     whatsNewShownRef.current = true;
     const timer = setTimeout(() => setShowWhatsNew(true), 1500);
     return () => clearTimeout(timer);
-  });
+  }, [data?.onboardedAt, data?.lastSeenVersion]);
+
+  // ---- Monthly supporter thank-you ----
+  // Shows once on the 1st-3rd of each month if the user hasn't dismissed it yet
+  // for this calendar month. Tracked in data.supportersDismissedMonth ("YYYY-MM").
+  // 3-day window so users who don't open the app on the 1st still see it.
+  const supporterThanksShownRef = React.useRef(false);
+  useEffect(() => {
+    if (supporterThanksShownRef.current) return;
+    if (!data?.onboardedAt) return;
+    const now = new Date();
+    const dayOfMonth = now.getDate();
+    if (dayOfMonth > 3) return; // only show in first 3 days of the month
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    if (data?.supportersDismissedMonth === monthKey) return;
+    supporterThanksShownRef.current = true;
+    // Small extra delay so it doesn't collide with What's New
+    const timer = setTimeout(() => setShowSupporterThanks(true), 2200);
+    return () => clearTimeout(timer);
+  }, [data?.onboardedAt, data?.supportersDismissedMonth]);
+
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
@@ -916,8 +952,19 @@ export default function HomesteadApp() {
       {/* What's New popup */}
       {showWhatsNew && (
         <WhatsNewModal onClose={() => {
+          whatsNewDismissedRef.current = true;
           setShowWhatsNew(false);
           update(d => { d.lastSeenVersion = CURRENT_VERSION; return d; });
+        }} />
+      )}
+
+      {/* Monthly supporter thank-you popup (1st-3rd of each month) */}
+      {showSupporterThanks && !showWhatsNew && (
+        <SupporterThanksModal onClose={() => {
+          setShowSupporterThanks(false);
+          const now = new Date();
+          const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+          update(d => { d.supportersDismissedMonth = monthKey; return d; });
         }} />
       )}
 
@@ -2766,7 +2813,14 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "editFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <EditFlockModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} />;
+    return <EditFlockModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} setModal={setModal} />;
+  }
+  if (modal.type === "butcherFlock") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    const targetFlock = (targetHobby.flocks || []).find(f => f.id === modal.flockId);
+    if (!targetFlock) { close(); return null; }
+    return <ButcherFlockModal hobby={targetHobby} flock={targetFlock} update={update} onClose={close} />;
   }
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   // editFlockEntry removed — replaced by editFlock
@@ -3934,6 +3988,7 @@ function AddFlockModal({ hobbyId, update, onClose }) {
   const [count, setCount] = useState("");
   const [date, setDate] = useState(todayStr());
   const [cost, setCost] = useState("");
+  const [purchasedFrom, setPurchasedFrom] = useState("");
   return (
     <Modal open onClose={onClose} title="Add a flock">
       <Field label="Flock name">
@@ -3955,6 +4010,9 @@ function AddFlockModal({ hobbyId, update, onClose }) {
       <Field label="Cost (optional)">
         <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
+      <Field label="Where purchased (optional)">
+        <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
+      </Field>
       <Btn variant="primary" onClick={() => {
         const n = parseInt(count);
         if (!n || n < 1 || !name.trim()) return;
@@ -3962,7 +4020,7 @@ function AddFlockModal({ hobbyId, update, onClose }) {
           const h = d.hobbies.find((x) => x.id === hobbyId);
           if (!h) return d;
           if (!Array.isArray(h.flocks)) h.flocks = [];
-          h.flocks.push({ id: Math.random().toString(36).slice(2,10), name: name.trim(), birdType, birdCount: n, startDate: date, cost: parseFloat(cost) || 0, history: [{ date, count: n, cost: parseFloat(cost)||0 }], eggBasket: null });
+          h.flocks.push({ id: Math.random().toString(36).slice(2,10), name: name.trim(), birdType, birdCount: n, startDate: date, cost: parseFloat(cost) || 0, purchasedFrom: purchasedFrom.trim(), history: [{ date, count: n, cost: parseFloat(cost)||0, purchasedFrom: purchasedFrom.trim() }], eggBasket: null });
           return d;
         });
         onClose();
@@ -3971,13 +4029,15 @@ function AddFlockModal({ hobbyId, update, onClose }) {
   );
 }
 
-function EditFlockModal({ hobbyId, flockId, hobby, update, onClose }) {
+function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) {
   const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Other"];
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
   const [name, setName] = useState(flock?.name || "");
   const [birdType, setBirdType] = useState(flock?.birdType || "Chicken");
   const [count, setCount] = useState(String(flock?.birdCount || 0));
   const [date, setDate] = useState(flock?.startDate || todayStr());
+  const [cost, setCost] = useState(flock?.cost ? String(flock.cost) : "");
+  const [purchasedFrom, setPurchasedFrom] = useState(flock?.purchasedFrom || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   if (!flock) { onClose(); return null; }
@@ -3989,7 +4049,14 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose }) {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const fl = (h.flocks||[]).find(x=>x.id===flockId);
-      if (fl) { fl.name = name.trim(); fl.birdType = birdType; fl.birdCount = n; fl.startDate = date; }
+      if (fl) {
+        fl.name = name.trim();
+        fl.birdType = birdType;
+        fl.birdCount = n;
+        fl.startDate = date;
+        fl.cost = parseFloat(cost) || 0;
+        fl.purchasedFrom = purchasedFrom.trim();
+      }
       return d;
     });
     onClose();
@@ -4002,6 +4069,13 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose }) {
       return d;
     });
     onClose();
+  };
+
+  const openButcher = () => {
+    onClose();
+    if (setModal) {
+      setTimeout(() => setModal({ type: "butcherFlock", hobbyId, flockId }), 0);
+    }
   };
 
   return (
@@ -4022,8 +4096,15 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose }) {
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
-      <div style={{ display:"flex",gap:8,marginTop:8 }}>
+      <Field label="Total cost (optional)">
+        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+      </Field>
+      <Field label="Where purchased (optional)">
+        <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
+      </Field>
+      <div style={{ display:"flex",gap:8,marginTop:8,flexWrap:"wrap" }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
+        <Btn variant="accent" onClick={openButcher}>❄️ Butcher</Btn>
         {!confirmDelete && <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete flock</Btn>}
         {confirmDelete && <Btn variant="danger" onClick={remove}>Confirm delete</Btn>}
       </div>
@@ -4273,6 +4354,86 @@ function ButcherModal({ hobby, entries, update, onClose }) {
           </div>
         </>
       )}
+    </Modal>
+  );
+}
+
+// ============ BUTCHER FLOCK MODAL — universal: any flock, any bird type ============
+// Used for chickens/ducks/quail/etc. butchered out of a regular egg-layer flock,
+// not just dedicated meat-bird batches. Writes to the top-level data.freezerLog
+// so it survives flock deletes and is visible across hobbies.
+function ButcherFlockModal({ hobby, flock, update, onClose }) {
+  const [count, setCount] = useState("");
+  const [avgWeight, setAvgWeight] = useState("");
+  const [date, setDate] = useState(todayStr());
+  const [note, setNote] = useState("");
+
+  const remaining = Number(flock.birdCount) || 0;
+
+  return (
+    <Modal open onClose={onClose} title={`❄️ Butcher · ${flock.name}`}>
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
+        {remaining} {flock.birdType?.toLowerCase() || "bird"}{remaining === 1 ? "" : "s"} in this flock.
+        Butchered birds go to your freezer log and the flock count is reduced.
+      </div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      <Field label="How many butchered?">
+        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
+      </Field>
+      <Field label="Average weight (lbs)">
+        <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything notable..." />
+      </Field>
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn variant="primary" onClick={() => {
+          const n = parseInt(count);
+          const w = parseFloat(avgWeight);
+          if (!n || n < 1 || !w) return;
+          if (n > remaining) return;
+          update((d) => {
+            // Decrement flock count
+            const h = d.hobbies.find((x) => x.id === hobby.id);
+            if (!h) return d;
+            const fl = (h.flocks || []).find((x) => x.id === flock.id);
+            if (fl) fl.birdCount = Math.max(0, (fl.birdCount || 0) - n);
+
+            // Append to freezer log
+            if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
+            d.freezerLog.push({
+              id: newId(),
+              date,
+              hobbyId: hobby.id,
+              flockId: flock.id,
+              flockName: flock.name,
+              birdType: flock.birdType || "Bird",
+              count: n,
+              avgWeight: w,
+              note: note.trim(),
+              created: Date.now(),
+            });
+
+            // Also write a normal entry on the hobby for the activity log
+            d.entries[hobby.id] = d.entries[hobby.id] || [];
+            d.entries[hobby.id].push({
+              id: newId(),
+              date,
+              action: "butcher",
+              count: n,
+              avgWeight: w,
+              flockId: flock.id,
+              note: note.trim(),
+              created: Date.now(),
+            });
+            return d;
+          });
+          onClose();
+        }}>Save to freezer log</Btn>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+      </div>
     </Modal>
   );
 }
@@ -5541,7 +5702,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 }
 
 // ============================================================================
-// TUTORIAL MODAL — 10-slide feature walkthrough
+// TUTORIAL MODAL — 12-slide feature walkthrough
 // ============================================================================
 const TUTORIAL_SLIDES = [
   {
@@ -5567,6 +5728,18 @@ const TUTORIAL_SLIDES = [
     title: "Multiple flocks",
     body: "Chickens are the default, but you can add Duck, Turkey, Quail, Goose, or Guinea flocks too. Each flock tracks separately with its own basket and stats.",
     tip: "Tap 'Add Flock' on the Egg Layers home tab to get started.",
+  },
+  {
+    emoji: "💵",
+    title: "Track what your birds cost",
+    body: "When you add a flock, log the cost and where you bought them — hatchery name, feed store, or a neighbor. Pairs with feed costs to give you real cost-per-egg numbers later.",
+    tip: "Already added a flock? Tap it on the home screen to edit and add the cost + source.",
+  },
+  {
+    emoji: "❄️",
+    title: "Butcher any bird",
+    body: "It's not just for meat chickens. Process a few quail, an extra rooster, a duck — any bird from any flock can go to the freezer log with date, count, and average weight.",
+    tip: "Tap a flock on the Egg Layers home tab and choose 'Butcher' to send some birds to the freezer log.",
   },
   {
     emoji: "🗺️",
@@ -5924,6 +6097,37 @@ function WhatsNewModal({ onClose }) {
           </div>
           <button onClick={onClose} style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}>
             Got it — let's go! 🌾
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ SUPPORTER THANKS MODAL — shown on the 1st of each month ============
+// Generic thank-you to everyone who tipped via Ko-fi the previous month.
+// No names — Ko-fi tips don't carry homestead identity, so we keep it warm and anonymous.
+function SupporterThanksModal({ onClose }) {
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+        <div style={{ background:palette.leaf,padding:"28px 24px 22px",textAlign:"center" }}>
+          <div style={{ fontSize:44,marginBottom:8 }}>🙏</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:"#FAF5EA",lineHeight:1.2 }}>Thank you</div>
+          <div style={{ fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:6 }}>From the whole flock</div>
+        </div>
+        <div style={{ padding:"22px 24px" }}>
+          <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 14px" }}>
+            A huge thank-you to every supporter who chipped in via Ko-fi this past month. Your tips are what keep Henalytics running and free for every homestead — no ads, no paywalls, no upsells.
+          </p>
+          <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 14px" }}>
+            Whether you sent a few bucks or a few more, it genuinely makes a difference. The hens, the bees, the garden, and I appreciate it.
+          </p>
+          <p style={{ fontStyle:"italic",fontSize:13,color:palette.inkSoft,margin:"0 0 18px" }}>
+            🌾 With gratitude, from one homestead to another.
+          </p>
+          <button onClick={onClose} style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}>
+            You're welcome 🌻
           </button>
         </div>
       </div>
