@@ -184,6 +184,35 @@ function computeWeeklyStats(data) {
     eggsHatched = recentHatched.reduce((s, r) => s + (Number(r.eggsHatched) || 0), 0);
   }
 
+  // Goats stats
+  const goatsHobby = hobbies.find(h => h.type === 'goats' && !h.hidden);
+  let goatMilkOz = 0, goatKids = 0;
+  if (goatsHobby) {
+    const goatEntries = allEntries.filter(e => e.hobbyType === 'goats');
+    goatMilkOz = goatEntries.filter(e => e.action === 'milk').reduce((s,e) => s+(Number(e.oz)||0), 0);
+    goatKids = goatEntries.filter(e => e.action === 'kid').reduce((s,e) => s+(Number(e.count)||1), 0);
+  }
+
+  // Cows stats
+  const cowsHobby = hobbies.find(h => h.type === 'cows' && !h.hidden);
+  let cowMilkGal = 0, cowCalves = 0;
+  if (cowsHobby) {
+    const cowEntries = allEntries.filter(e => e.hobbyType === 'cows');
+    cowMilkGal = cowEntries.filter(e => e.action === 'milk').reduce((s,e) => s+(Number(e.gallons)||0), 0);
+    cowCalves = cowEntries.filter(e => e.action === 'calf').reduce((s,e) => s+(Number(e.count)||1), 0);
+  }
+
+  // Pigs stats
+  const pigsHobby = hobbies.find(h => h.type === 'pigs' && !h.hidden);
+  let pigLitters = 0, pigButchered = 0, pigMeatLbs = 0;
+  if (pigsHobby) {
+    const pigEntries = allEntries.filter(e => e.hobbyType === 'pigs');
+    pigLitters = pigEntries.filter(e => e.action === 'litter').reduce((s,e) => s+(Number(e.count)||1), 0);
+    const butchered = pigEntries.filter(e => e.action === 'butcher');
+    pigButchered = butchered.length;
+    pigMeatLbs = butchered.reduce((s,e) => s+(Number(e.weight)||0), 0);
+  }
+
   // Farm stand sales stats
   const farmstandSales = (data.sales || []).filter(s => s.hobbyType === 'farmstand' && s.date >= sevenDaysAgoIso);
   const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
@@ -198,6 +227,9 @@ function computeWeeklyStats(data) {
     honeyHarvested, hiveInspections, hasBees: !!beesHobby,
     eggsSet, eggsHatched, hasIncubator: !!incubatorHobby,
     farmstandRevenue, farmstandProfit, hasFarmstand: farmstandSales.length > 0,
+    goatMilkOz, goatKids, hasGoats: !!goatsHobby,
+    cowMilkGal, cowCalves, hasCows: !!cowsHobby,
+    pigLitters, pigButchered, pigMeatLbs, hasPigs: !!pigsHobby,
   };
 }
 
@@ -247,6 +279,24 @@ function buildDigestEmail(email, data, stats) {
   if (stats.hasIncubator) {
     if (stats.eggsSet > 0) lines.push(`🥚 <strong>${stats.eggsSet}</strong> egg${stats.eggsSet === 1 ? '' : 's'} set in incubator`);
     if (stats.eggsHatched > 0) lines.push(`🐣 <strong>${stats.eggsHatched}</strong> egg${stats.eggsHatched === 1 ? '' : 's'} hatched this week`);
+  }
+
+  // Goats lines
+  if (stats.hasGoats) {
+    if (stats.goatMilkOz > 0) lines.push(`🐐 <strong>${(stats.goatMilkOz/128).toFixed(1)} gallons</strong> of goat milk collected`);
+    if (stats.goatKids > 0) lines.push(`🍼 <strong>${stats.goatKids}</strong> goat kid${stats.goatKids===1?'':'s'} born`);
+  }
+
+  // Cows lines
+  if (stats.hasCows) {
+    if (stats.cowMilkGal > 0) lines.push(`🐄 <strong>${stats.cowMilkGal.toFixed(1)} gallons</strong> of cow milk collected`);
+    if (stats.cowCalves > 0) lines.push(`🍼 <strong>${stats.cowCalves}</strong> calf${stats.cowCalves===1?'':'s'} born`);
+  }
+
+  // Pigs lines
+  if (stats.hasPigs) {
+    if (stats.pigLitters > 0) lines.push(`🐷 <strong>${stats.pigLitters}</strong> piglet${stats.pigLitters===1?'':'s'} born`);
+    if (stats.pigButchered > 0) lines.push(`🔪 <strong>${stats.pigButchered}</strong> pig${stats.pigButchered===1?'':'s'} butchered · <strong>${stats.pigMeatLbs.toFixed(0)} lbs</strong> meat`);
   }
 
   // Farm stand lines
