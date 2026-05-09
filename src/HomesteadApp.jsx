@@ -720,16 +720,16 @@ export default function HomesteadApp() {
   }, [data?.onboardedAt, data?.lastSeenVersion]);
 
   // ---- Monthly supporter thank-you ----
-  // Shows once on the 1st-3rd of each month if the user hasn't dismissed it yet
+  // Shows once on the 9th-11th of each month if the user hasn't dismissed it yet
   // for this calendar month. Tracked in data.supportersDismissedMonth ("YYYY-MM").
-  // 3-day window so users who don't open the app on the 1st still see it.
+  // 3-day window so users who don't open the app on the 9th still see it.
   const supporterThanksShownRef = React.useRef(false);
   useEffect(() => {
     if (supporterThanksShownRef.current) return;
     if (!data?.onboardedAt) return;
     const now = new Date();
     const dayOfMonth = now.getDate();
-    if (dayOfMonth > 3) return; // only show in first 3 days of the month
+    if (dayOfMonth < 9 || dayOfMonth > 11) return; // only show 9th-11th of the month
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     if (data?.supportersDismissedMonth === monthKey) return;
     supporterThanksShownRef.current = true;
@@ -975,14 +975,25 @@ export default function HomesteadApp() {
         }} />
       )}
 
-      {/* Monthly supporter thank-you popup (1st-3rd of each month) */}
+      {/* Monthly supporter thank-you popup (9th-11th of each month) */}
       {showSupporterThanks && !showWhatsNew && (
-        <SupporterThanksModal onClose={() => {
-          setShowSupporterThanks(false);
-          const now = new Date();
-          const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-          update(d => { d.supportersDismissedMonth = monthKey; return d; });
-        }} />
+        <SupporterThanksModal
+          onClose={() => {
+            setShowSupporterThanks(false);
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            update(d => { d.supportersDismissedMonth = monthKey; return d; });
+          }}
+          onLeaveTip={() => {
+            // Mark dismissed for this month, then open the Support modal
+            // (which has the embedded Ko-fi widget)
+            setShowSupporterThanks(false);
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            update(d => { d.supportersDismissedMonth = monthKey; return d; });
+            setTimeout(() => setModal({ type: "support" }), 0);
+          }}
+        />
       )}
 
       {/* Tutorial prompt — shown once after onboarding */}
@@ -6128,31 +6139,52 @@ function WhatsNewModal({ onClose }) {
   );
 }
 
-// ============ SUPPORTER THANKS MODAL — shown on the 1st of each month ============
-// Generic thank-you to everyone who tipped via Ko-fi the previous month.
-// No names — Ko-fi tips don't carry homestead identity, so we keep it warm and anonymous.
-function SupporterThanksModal({ onClose }) {
+// ============ SUPPORTER THANKS MODAL — shown on the 9th-11th of each month ============
+// Generic thank-you to everyone who tipped via Ko-fi.
+// Includes mission statement and a 'Leave a tip' button that opens the
+// Support modal (which has the embedded Ko-fi widget).
+function SupporterThanksModal({ onClose, onLeaveTip }) {
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
-        <div style={{ background:palette.leaf,padding:"28px 24px 22px",textAlign:"center" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
+        <div style={{ background:palette.leaf,padding:"28px 24px 22px",textAlign:"center",flexShrink:0 }}>
           <div style={{ fontSize:44,marginBottom:8 }}>🙏</div>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:26,color:"#FAF5EA",lineHeight:1.2 }}>Thank you</div>
           <div style={{ fontSize:12,color:"rgba(255,255,255,0.7)",marginTop:6 }}>From the whole flock</div>
         </div>
-        <div style={{ padding:"22px 24px" }}>
+        <div style={{ padding:"22px 24px",overflowY:"auto" }}>
           <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 14px" }}>
             A huge thank-you to every supporter who chipped in via Ko-fi this past month. Your tips are what keep Henalytics running and free for every homestead — no ads, no paywalls, no upsells.
           </p>
           <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 14px" }}>
-            Whether you sent a few bucks or a few more, it genuinely makes a difference. The hens, the bees, the garden, and I appreciate it.
+            My goal is to let as many homesteaders as possible benefit from this app without ever needing a paid subscription. Honestly, that wouldn't be possible without your feedback and the tips you leave — they're what let me keep working on it and making it better.
           </p>
           <p style={{ fontStyle:"italic",fontSize:13,color:palette.inkSoft,margin:"0 0 18px" }}>
             🌾 With gratitude, from one homestead to another.
           </p>
-          <button onClick={onClose} style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",boxShadow:"2px 2px 0 "+palette.line }}>
-            You're welcome 🌻
-          </button>
+          <div style={{ display:"flex",flexDirection:"column",gap:8 }}>
+            <button
+              onClick={onLeaveTip}
+              style={{
+                width:"100%",padding:"12px",borderRadius:10,
+                border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.ink,
+                fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",
+                boxShadow:"2px 2px 0 "+palette.line,
+              }}
+            >
+              🌾 Buy Henalytics a bag of feed
+            </button>
+            <button
+              onClick={onClose}
+              style={{
+                width:"100%",padding:"10px",borderRadius:10,
+                border:`1.5px solid ${palette.line}`,background:"transparent",color:palette.inkSoft,
+                fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",
+              }}
+            >
+              Maybe later
+            </button>
+          </div>
         </div>
       </div>
     </div>
