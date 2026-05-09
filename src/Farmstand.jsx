@@ -488,12 +488,14 @@ function ArchivedItemsList({ hobby, update }) {
 // FARMSTAND ANALYTICS — rendered under the Stats tab when farmstand is active
 // ============================================================================
 export function FarmstandAnalytics({ hobby, sales = [], spouseMode = false }) {
+  // Defensive: hobby may be undefined if data is mid-load or migration hasn't
+  // applied yet. Treat that as an empty state rather than crashing.
   const farmstandSales = useMemo(
-    () => (sales || []).filter(s => s.hobbyType === "farmstand"),
+    () => (Array.isArray(sales) ? sales : []).filter(s => s && s.hobbyType === "farmstand"),
     [sales]
   );
 
-  if (farmstandSales.length === 0) {
+  if (!hobby || farmstandSales.length === 0) {
     return (
       <div style={{ padding: 40, textAlign: "center", color: palette.inkSoft }}>
         <div style={{ fontSize: 36, marginBottom: 8 }}>📊</div>

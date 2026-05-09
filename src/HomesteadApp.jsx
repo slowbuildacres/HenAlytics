@@ -645,6 +645,59 @@ function NavTab({ active, onClick, icon: Icon, label }) {
   );
 }
 
+// ============ ERROR BOUNDARY ============
+// Catches render errors in child components and shows a friendly fallback
+// instead of a white screen. Resets when the `resetKey` prop changes
+// (e.g. when the user switches pages or hobbies).
+class ErrorBoundary extends React.Component {
+  constructor(props) {
+    super(props);
+    this.state = { hasError: false, error: null };
+  }
+  static getDerivedStateFromError(error) {
+    return { hasError: true, error };
+  }
+  componentDidCatch(error, info) {
+    console.error("[Henalytics] Render error in", this.props.label || "component", error, info);
+  }
+  componentDidUpdate(prevProps) {
+    // Reset boundary when user navigates to a different page/hobby
+    if (prevProps.resetKey !== this.props.resetKey && this.state.hasError) {
+      this.setState({ hasError: false, error: null });
+    }
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div style={{
+          padding: 32, textAlign: "center",
+          background: palette.card, border: `1.5px solid ${palette.line}`,
+          borderRadius: 12, color: palette.ink, fontFamily: FONT_BODY,
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 8 }}>🪴</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 6 }}>
+            Something hiccupped here
+          </div>
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+            This page hit an unexpected error. Try switching to another tab and back, or reload the page. Your data is safe.
+          </div>
+          <button
+            onClick={() => this.setState({ hasError: false, error: null })}
+            style={{
+              padding: "8px 16px", borderRadius: 8,
+              border: `1.5px solid ${palette.ink}`, background: palette.ink, color: palette.bg,
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
 // ============ ICON RESOLVER ============
 const iconMap = { sprout: Sprout, egg: Egg, drumstick: Drumstick, rabbit: Bird, bee: Bird, store: Store };
 const HobbyIcon = ({ name, ...props }) => {
@@ -1146,6 +1199,7 @@ export default function HomesteadApp() {
 
       {/* MAIN */}
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "20px 20px 40px" }}>
+        <ErrorBoundary resetKey={`${page}|${activeHobby}`} label={`${page}/${activeHobby}`}>
         {page === "home" && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} />
         )}
@@ -1206,6 +1260,7 @@ export default function HomesteadApp() {
         {page === "sales" && (
           <SalesPage data={data} update={update} />
         )}
+        </ErrorBoundary>
       </main>
 
       {/* COPYRIGHT FOOTER */}
