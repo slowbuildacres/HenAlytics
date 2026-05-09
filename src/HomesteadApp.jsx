@@ -645,7 +645,7 @@ export default function HomesteadApp() {
   const [modal, setModal] = useState(null);
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
-  const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [showWhatsNew, setShowWhatsNew] = useState(true);
   const [seasonFilter, setSeasonFilter] = useState("all");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
