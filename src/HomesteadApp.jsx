@@ -3305,8 +3305,8 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         </div>
       )}
 
-      {/* Owner-only debug tools — only visible to slowbuildacres@gmail.com */}
-      {user?.email === "slowbuildacres@gmail.com" && (
+      {/* Owner-only debug tools — only visible to 416lulays@gmail.com */}
+      {user?.email === "416lulays@gmail.com" && (
         <div style={{ marginTop: 24, paddingTop: 16, borderTop: `1.5px dashed ${palette.line}` }}>
           <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 700, marginBottom: 10 }}>
             🔧 Owner debug tools
