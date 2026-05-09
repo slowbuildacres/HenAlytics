@@ -3089,6 +3089,121 @@ function BarnModal({ data, update, onClose, setModal, user, role }) {
 }
 
 // ============================================================================
+// MANAGE HOBBIES SECTION — collapsible folder inside Settings
+// ----------------------------------------------------------------------------
+// Replaces the always-expanded Your Hobbies list. Closed by default to keep
+// Settings tidy; one tap opens it and shows the full list with hide/show toggles.
+// ============================================================================
+function ManageHobbiesSection({ data, update }) {
+  const [open, setOpen] = useState(false);
+  const visibleCount = (data.hobbies || []).filter(h => !h.hidden).length;
+  const totalCount = (data.hobbies || []).length;
+  const HOBBY_LABELS = {
+    garden: "Garden",
+    egg_layers: "Egg Layers",
+    meat_chickens: "Meat Chickens",
+    rabbits: "Rabbits",
+    bees: "Beekeeping",
+    incubator: "Incubator",
+    goats: "Goats",
+    cows: "Cows",
+    pigs: "Pigs",
+    farmstand: "Farmstand",
+  };
+
+  return (
+    <div style={{ marginTop: 16, marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+        Your Hobbies
+      </div>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          padding: "12px 14px",
+          background: palette.card,
+          border: `1.5px solid ${palette.line}`,
+          borderRadius: 8,
+          cursor: "pointer",
+          fontFamily: FONT_BODY,
+          color: palette.ink,
+          textAlign: "left",
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            {open ? "Hide hobby list" : "Show & manage hobbies"}
+          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+            {visibleCount} of {totalCount} visible · tap to {open ? "collapse" : "expand"}
+          </div>
+        </div>
+        <ChevronDown
+          size={18}
+          style={{
+            transform: open ? "rotate(180deg)" : "",
+            transition: "transform 0.2s",
+            flexShrink: 0,
+          }}
+        />
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 8 }}>
+          {(data.hobbies || []).map(h => (
+            <div
+              key={h.id}
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                padding: "10px 12px",
+                background: palette.card,
+                border: `1.5px solid ${palette.line}`,
+                borderRadius: 8,
+                marginBottom: 6,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink, wordBreak: "break-word" }}>{h.name}</div>
+                <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                  {HOBBY_LABELS[h.type] || h.type}
+                </div>
+              </div>
+              <button
+                onClick={() => update(d => {
+                  const hob = d.hobbies.find(x => x.id === h.id);
+                  if (hob) hob.hidden = !hob.hidden;
+                  return d;
+                })}
+                style={{
+                  padding: "6px 12px",
+                  borderRadius: 6,
+                  border: `1.5px solid ${palette.line}`,
+                  background: h.hidden ? palette.bgAlt : palette.leaf,
+                  color: h.hidden ? palette.inkSoft : palette.bg,
+                  fontFamily: FONT_BODY,
+                  fontWeight: 600,
+                  fontSize: 12,
+                  cursor: "pointer",
+                  flexShrink: 0,
+                  marginLeft: 8,
+                }}
+              >
+                {h.hidden ? "Hidden" : "Visible"}
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // SETTINGS MODAL — account, preferences, data, support
 // ----------------------------------------------------------------------------
 // Slimmed down: no longer holds homestead-identity stuff (now in BarnModal).
@@ -3245,26 +3360,8 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         accent={palette.yolk}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "feedback" }), 0); }}
       />
-{/* MANAGE HOBBIES */}
-      <div style={{ marginTop: 16, marginBottom: 8 }}>
-        <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
-          Your Hobbies
-        </div>
-        {data.hobbies.map(h => (
-          <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
-              <div style={{ fontSize: 11, color: palette.inkSoft }}>{{ garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" }[h.type] || h.type}</div>
-            </div>
-            <button
-              onClick={() => update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; })}
-              style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.bgAlt : palette.leaf, color: h.hidden ? palette.inkSoft : palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
-            >
-              {h.hidden ? "Hidden" : "Visible"}
-            </button>
-          </div>
-        ))}
-      </div>
+{/* MANAGE HOBBIES — collapsible to reduce visual clutter */}
+      <ManageHobbiesSection data={data} update={update} />
       {/* TABS SECTION */}
       <div style={{ marginTop: 16, marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
