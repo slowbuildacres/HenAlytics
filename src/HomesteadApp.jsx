@@ -1468,12 +1468,35 @@ function GardenSummary({ hobby, data, setModal }) {
           </div>
           <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
             {perennials.map(p => (
-              <div key={p.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 10px",background:palette.bgAlt,borderRadius:8 }}>
-                <div>
+              <div key={p.id} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:8 }}>
+                <div style={{ flex:1,minWidth:0 }}>
                   <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>{p.name}{p.variety ? ` — ${p.variety}` : ""}</div>
                   <div style={{ fontSize:11,color:palette.inkSoft }}>Planted {p.plantDate||"unknown"}{p.totalHarvest ? ` · ${p.totalHarvest} lbs harvested` : ""}</div>
+                  {p.harvests && p.harvests.length > 0 && (
+                    <div style={{ marginTop:4,display:"flex",flexDirection:"column",gap:2 }}>
+                      {[...p.harvests].reverse().slice(0,3).map(h => (
+                        <div key={h.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:palette.inkSoft,gap:6 }}>
+                          <span>{h.date} · {h.qty} {h.unit}</span>
+                          <button onClick={() => update(d => {
+                            const hob = d.hobbies.find(x => x.id === hobby.id);
+                            if (!hob) return d;
+                            const per = (hob.perennials||[]).find(x => x.id === p.id);
+                            if (!per) return d;
+                            const removed = per.harvests.find(x => x.id === h.id);
+                            per.harvests = per.harvests.filter(x => x.id !== h.id);
+                            if (removed && h.unit === "lbs") per.totalHarvest = Math.max(0,(per.totalHarvest||0)-(removed.qty||0));
+                            return d;
+                          })} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,fontSize:11,padding:"0 2px",lineHeight:1 }}>✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
-                <button onClick={() => setModal({ type:"logPerennialHarvest",hobbyId:hobby.id,perennialId:p.id })} style={{ background:palette.leaf,border:"none",borderRadius:6,padding:"4px 10px",fontSize:12,color:"#fff",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600 }}>Log harvest</button>
+                <div style={{ display:"flex",gap:5,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end" }}>
+                  <button onClick={() => setModal({ type:"logPerennialHarvest",hobbyId:hobby.id,perennialId:p.id })} style={{ background:palette.leaf,border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,color:"#fff",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap" }}>Log harvest</button>
+                  <button onClick={() => setModal({ type:"editPerennial",hobbyId:hobby.id,perennialId:p.id })} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY }}>Edit</button>
+                  <button onClick={() => { if (window.confirm("Delete " + p.name + "?")) update(d => { const h=d.hobbies.find(x=>x.id===hobby.id); if(h) h.perennials=(h.perennials||[]).filter(x=>x.id!==p.id); return d; }); }} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.accent,fontFamily:FONT_BODY }}>Delete</button>
+                </div>
               </div>
             ))}
           </div>
@@ -2748,6 +2771,13 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   // editFlockEntry removed — replaced by editFlock
 
+  if (modal.type === "editPerennial") {
+    const gardenHobbyEdit = data.hobbies.find(h => h.type === "garden");
+    if (!gardenHobbyEdit) { close(); return null; }
+    const perennialToEdit = (gardenHobbyEdit.perennials||[]).find(p => p.id === modal.perennialId);
+    if (!perennialToEdit) { close(); return null; }
+    return <EditPerennialModal hobbyId={modal.hobbyId} perennial={perennialToEdit} update={update} onClose={close} />;
+  }
   if (modal.type === "addPerennial") {
     const gardenHobby = data.hobbies.find(h => h.type === "garden");
     return <AddPerennialModal hobbyId={modal.hobbyId} update={update} onClose={close} />;
@@ -5780,6 +5810,49 @@ function AddPerennialModal({ hobbyId, update, onClose }) {
         });
         onClose();
       }}>Add {name || "perennial"}</Btn>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// EDIT PERENNIAL MODAL
+// ============================================================================
+function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
+  const [name, setName] = useState(perennial.name || "");
+  const [variety, setVariety] = useState(perennial.variety || "");
+  const [plantDate, setPlantDate] = useState(perennial.plantDate || "");
+  const [notes, setNotes] = useState(perennial.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const save = () => {
+    if (!name.trim()) return;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const p = (h.perennials||[]).find(x => x.id === perennial.id);
+      if (p) { p.name = name.trim(); p.variety = variety; p.plantDate = plantDate; p.notes = notes; }
+      return d;
+    });
+    onClose();
+  };
+  const remove = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (h) h.perennials = (h.perennials||[]).filter(x => x.id !== perennial.id);
+      return d;
+    });
+    onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title="Edit perennial">
+      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} autoFocus /></Field>
+      <Field label="Variety (optional)"><input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp" /></Field>
+      <Field label="Plant date (optional)"><input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
+      <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+        <Btn variant="primary" onClick={save}>Save changes</Btn>
+        {!confirmDelete && <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete</Btn>}
+        {confirmDelete && <Btn variant="danger" onClick={remove}>Confirm delete</Btn>}
+      </div>
     </Modal>
   );
 }

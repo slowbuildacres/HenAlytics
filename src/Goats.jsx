@@ -147,11 +147,19 @@ function AnimalCard({animal,hobbyId,entries,update,setModal}){
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {recentEntries.map(e=>{
             let detail="";
-            if(e.action==="milk")detail=`${e.oz} oz`;
+            if(e.action==="milk")detail=`${e.oz||e.gallons} ${e.oz!=null?"oz":"gal"}`;
             else if(e.action==="fed")detail=`${e.lbs} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
-            else if(e.action==="kid")detail=`${e.count} kid${e.count!==1?"s":""}`;
+            else if(e.action==="kid"||e.action==="calf"||e.action==="litter")detail=`${e.count} ${e.action==="litter"?"piglets":e.action==="calf"?"calf":"kid"}${e.count!==1?"s":""}`;
             else if(e.action==="weight"||e.action==="butcher")detail=`${e.weight} lbs`;
-            return <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between"}}><span>{fmtDate(e.date)} · {actionLabels[e.action]||e.action}</span><span>{detail}</span></div>;
+            return (
+              <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
+                <span>{fmtDate(e.date)} · {actionLabels[e.action]||e.action}</span>
+                <div style={{display:"flex",alignItems:"center",gap:6}}>
+                  <span>{detail}</span>
+                  <button onClick={()=>update(d=>{d.entries[hobbyId]=(d.entries[hobbyId]||[]).filter(x=>x.id!==e.id);return d;})} style={{background:"none",border:"none",cursor:"pointer",color:palette.accent,fontSize:11,padding:"0 2px",lineHeight:1}}>✕</button>
+                </div>
+              </div>
+            );
           })}
         </div>
       )}
