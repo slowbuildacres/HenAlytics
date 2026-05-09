@@ -671,7 +671,7 @@ export default function HomesteadApp() {
 
   // Show the loading scene for at least 3 seconds — one full animation cycle.
   useEffect(() => {
-    const id = setTimeout(() => setMinLoadDone(true), 3000);
+    const id = setTimeout(() => setMinLoadDone(true), 500);
     return () => clearTimeout(id);
   }, []);
 
