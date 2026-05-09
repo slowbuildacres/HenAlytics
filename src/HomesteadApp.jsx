@@ -70,7 +70,7 @@ const defaultData = () => ({
     { id: "goats", name: "Goats 🐐", type: "goats", icon: "sprout", animals: [], hidden: true },
     { id: "cows", name: "Cows 🐄", type: "cows", icon: "sprout", animals: [], hidden: true },
     { id: "pigs", name: "Pigs 🐷", type: "pigs", icon: "sprout", animals: [], hidden: true },
-    { id: "farmstand", name: "Farmstand 🏪", type: "farmstand", icon: "store", items: [], hidden: true },
+    { id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -223,12 +223,14 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   // ---- Farmstand hobby ----
   const hasFarmstand = data.hobbies.some(h => h.id === "farmstand");
   if (!hasFarmstand) {
-    data.hobbies.push({ id: "farmstand", name: "Farmstand 🏪", type: "farmstand", icon: "store", items: [], hidden: true });
+    data.hobbies.push({ id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true });
   }
   data.hobbies.forEach((h) => {
     if (h.type === "farmstand") {
       if (!Array.isArray(h.items)) h.items = [];
       if (typeof h.hidden === "undefined") h.hidden = true;
+      // Auto-rename users who got the old 🏪 emoji to the new 🧾 (one-time)
+      if (h.name === "Farmstand 🏪") h.name = "Farmstand 🧾";
     }
   });
   return data;
@@ -373,13 +375,13 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 // WHATS_NEW and trim the array to keep ~6-8 items (oldest roll off).
 // Bumping CURRENT_VERSION causes the popup to re-show once for every user
 // who hasn't seen this version yet.
-const CURRENT_VERSION = 8;
+const CURRENT_VERSION = 9;
 
 const WHATS_NEW = [
-  "🏪 Farmstand hobby — saved items with cost & price for one-tap sales, plus profit + top-seller analytics in the Stats tab",
+  "🙏 Monthly thank-you got an upgrade — clearer mission note + a 'Buy Henalytics a bag of feed' button to support the app",
+  "🧾 Farmstand hobby — saved items with cost & price for one-tap sales, plus profit + top-seller analytics in the Stats tab",
   "❄️ Butcher any bird — chickens, ducks, quail, geese, turkeys all go to the freezer log with date + weight",
   "💵 Hatchery tracking — log where you got each flock and how much you paid",
-  "🙏 Monthly thank-you — a quick note on the 1st each month for everyone who tipped via Ko-fi",
   "🐐 Goats, 🐄 Cows & 🐷 Pigs — three new hobbies with per-animal tracking, milk logging, FCR, and butcher stats",
   "✏️ Edit & delete everywhere — perennials, harvest logs, and livestock entries can now all be edited or removed",
   "✨ Year in Review — now includes Bees, Incubator, Goats, Cows, and Pigs cards when those hobbies are enabled",
