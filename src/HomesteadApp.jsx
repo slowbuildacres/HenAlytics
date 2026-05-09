@@ -1204,25 +1204,39 @@ export default function HomesteadApp() {
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
-          <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data}>
+            <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "bees" && (
-          <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data}>
+            <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "incubator" && (
-          <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="incubator")} entries={data.entries["incubator"] || []} data={data}>
+            <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "goats" && (
-          <GoatsAnalytics hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data}>
+            <GoatsAnalytics hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "cows" && (
-          <CowsAnalytics hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} data={data}>
+            <CowsAnalytics hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "pigs" && (
-          <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} data={data}>
+            <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "farmstand" && (
-          <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} spouseMode={data.spouseMode} />
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data}>
+            <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "farmstand" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
@@ -5699,6 +5713,43 @@ function AddToHomeScreenModal({ onClose }) {
 
 
 // ============================================================================
+// ANALYTICS SHARE WRAPPER — adds a "Share stats" button above any analytics
+// component. Used for hobbies whose analytics live in separate files
+// (Rabbits, Bees, Incubator, Goats, Cows, Pigs, Farmstand).
+// ============================================================================
+function AnalyticsShareWrapper({ hobby, entries, data, children }) {
+  const [showShare, setShowShare] = useState(false);
+  if (!hobby) return children; // safety: don't render the button if hobby missing
+  return (
+    <>
+      {showShare && (
+        <ShareStatsModal
+          hobby={hobby}
+          allEntries={entries || []}
+          data={data}
+          onClose={() => setShowShare(false)}
+        />
+      )}
+      <div style={{ display:"flex",justifyContent:"flex-end",marginBottom:10 }}>
+        <button
+          onClick={() => setShowShare(true)}
+          style={{
+            display:"flex",alignItems:"center",gap:6,
+            padding:"6px 12px",borderRadius:8,
+            border:`1.5px solid ${palette.line}`,background:palette.card,
+            fontFamily:FONT_BODY,fontWeight:600,fontSize:12,
+            color:palette.ink,cursor:"pointer",
+          }}
+        >
+          <Share2 size={13} /> Share stats
+        </button>
+      </div>
+      {children}
+    </>
+  );
+}
+
+// ============================================================================
 // SHARE STATS MODAL — generates a shareable image card for a hobby's stats
 // ============================================================================
 function ShareStatsModal({ hobby, allEntries, data, onClose }) {
@@ -5815,6 +5866,113 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           { label: "Hives", value: hives },
           { label: "Inspections", value: inspections },
           { label: "Harvests", value: harvests.length },
+        ],
+      };
+    }
+    if (hobby.type === "incubator") {
+      // Incubator data lives on hobby.runs[], not entries — but entries are
+      // the date-filterable thing. We filter runs by setDate falling in window.
+      const allRuns = hobby.runs || [];
+      const runsInRange = allRuns.filter(r => {
+        if (!r.setDate) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(r.setDate + "T12:00");
+        if (filter === "today") return r.setDate === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const eggsSet = runsInRange.reduce((s,r) => s + (Number(r.eggsSet)||0), 0);
+      const eggsHatched = runsInRange.reduce((s,r) => s + (Number(r.hatched)||0), 0);
+      const hatchRate = eggsSet > 0 ? Math.round((eggsHatched/eggsSet)*100) : 0;
+      return {
+        emoji: "🥚", label: "Incubator",
+        stats: [
+          { label: "Eggs set", value: eggsSet },
+          { label: "Hatched", value: eggsHatched },
+          { label: "Hatch rate", value: eggsSet > 0 ? `${hatchRate}%` : "—" },
+          { label: "Runs", value: runsInRange.length },
+        ],
+      };
+    }
+    if (hobby.type === "goats") {
+      const milk = entries.filter(e => e.action === "milk");
+      const milkOz = milk.reduce((s,e) => s + (Number(e.oz)||0), 0);
+      const milkGal = milkOz / 128;
+      const kids = entries.filter(e => e.action === "kid").reduce((s,e) => s + (Number(e.count)||1), 0);
+      const goatCount = (hobby.animals||[]).length;
+      const butchered = entries.filter(e => e.action === "butcher").length;
+      return {
+        emoji: "🐐", label: "Goats",
+        stats: [
+          { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
+          { label: "Goats", value: goatCount },
+          { label: "Kids born", value: kids },
+          { label: "Butchered", value: butchered },
+        ],
+      };
+    }
+    if (hobby.type === "cows") {
+      const milk = entries.filter(e => e.action === "milk");
+      const milkGal = milk.reduce((s,e) => s + (Number(e.gallons)||Number(e.gal)||0), 0);
+      const calves = entries.filter(e => e.action === "calf").reduce((s,e) => s + (Number(e.count)||1), 0);
+      const cowCount = (hobby.animals||[]).length;
+      const butchered = entries.filter(e => e.action === "butcher").length;
+      return {
+        emoji: "🐄", label: "Cows",
+        stats: [
+          { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
+          { label: "Cows", value: cowCount },
+          { label: "Calves born", value: calves },
+          { label: "Butchered", value: butchered },
+        ],
+      };
+    }
+    if (hobby.type === "pigs") {
+      const litters = entries.filter(e => e.action === "litter").reduce((s,e) => s + (Number(e.count)||1), 0);
+      const butchered = entries.filter(e => e.action === "butcher");
+      const meatLbs = butchered.reduce((s,e) => s + (Number(e.weight)||0), 0);
+      const pigCount = (hobby.animals||[]).length;
+      return {
+        emoji: "🐷", label: "Pigs",
+        stats: [
+          { label: "Pigs", value: pigCount },
+          { label: "Butchered", value: butchered.length },
+          { label: "Meat", value: meatLbs > 0 ? `${Math.round(meatLbs)} lbs` : "—" },
+          { label: "Piglets born", value: litters },
+        ],
+      };
+    }
+    if (hobby.type === "farmstand") {
+      // Farmstand data lives in data.sales[] tagged hobbyType === "farmstand",
+      // not in entries. Filter sales by date instead.
+      const allSales = (data.sales || []).filter(s => s.hobbyType === "farmstand");
+      const salesInRange = allSales.filter(s => {
+        if (!s.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(s.date + "T12:00");
+        if (filter === "today") return s.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const revenue = salesInRange.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+      const cost = salesInRange.reduce((s,x) => s + (Number(x.totalCost)||0), 0);
+      const profit = revenue - cost;
+      // Top item
+      const byItem = {};
+      salesInRange.forEach(s => {
+        const n = s.crop || "Other";
+        byItem[n] = (byItem[n]||0) + (Number(s.totalRevenue)||0);
+      });
+      const top = Object.entries(byItem).sort((a,b) => b[1]-a[1])[0];
+      return {
+        emoji: "🧾", label: "Farmstand",
+        stats: [
+          { label: "Revenue", value: fmtMoney(revenue) },
+          { label: "Profit", value: fmtMoney(profit) },
+          { label: "Sales", value: salesInRange.length },
+          { label: "Top seller", value: top ? top[0] : "—" },
         ],
       };
     }
