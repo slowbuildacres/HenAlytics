@@ -33,6 +33,11 @@ export default function YearInReviewPage({ data }) {
   const gardenEnabled = hobbies.some(h => h.type === "garden" && !h.hidden);
   const meatChickensEnabled = hobbies.some(h => h.type === "meat_chickens" && !h.hidden);
   const rabbitsEnabled = hobbies.some(h => h.type === "rabbits" && !h.hidden);
+  const beesEnabled = hobbies.some(h => h.type === "bees" && !h.hidden);
+  const incubatorEnabled = hobbies.some(h => h.type === "incubator" && !h.hidden);
+  const goatsEnabled = hobbies.some(h => h.type === "goats" && !h.hidden);
+  const cowsEnabled = hobbies.some(h => h.type === "cows" && !h.hidden);
+  const pigsEnabled = hobbies.some(h => h.type === "pigs" && !h.hidden);
 
   return (
     <div>
@@ -66,11 +71,16 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
-          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} />
+          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
           {meatChickensEnabled && <MeatChickensCard stats={stats} />}
           {rabbitsEnabled && <RabbitsCard stats={stats} />}
+          {beesEnabled && <BeesCard stats={stats} />}
+          {incubatorEnabled && <IncubatorCard stats={stats} />}
+          {goatsEnabled && <GoatsCard stats={stats} />}
+          {cowsEnabled && <CowsCard stats={stats} />}
+          {pigsEnabled && <PigsCard stats={stats} />}
           <ActivityCard stats={stats} />
           {stats.weatherStats && <WeatherCard stats={stats} />}
           {stats.photos.length > 0 && <PhotosCard stats={stats} />}
@@ -133,12 +143,16 @@ function CoverCard({ year, stats }) {
   );
 }
 
-function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled }) {
+function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled }) {
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
   if (gardenEnabled) items.push({ icon: "🌱", number: Math.round(stats.totalHarvestLbs), label: `lb${Math.round(stats.totalHarvestLbs) === 1 ? "" : "s"} harvested`, accent: palette.leaf });
   if (rabbitsEnabled) items.push({ icon: "🐇", number: stats.totalKitsAlive || 0, label: `kits born`, accent: palette.leaf });
+  if (beesEnabled && stats.honeyHarvestedLbs > 0) items.push({ icon: "🍯", number: Math.round(stats.honeyHarvestedLbs), label: `lbs honey harvested`, accent: palette.yolk });
+  if (goatsEnabled && stats.goatMilkOz > 0) items.push({ icon: "🐐", number: Math.round(stats.goatMilkOz / 128), label: `gal goat milk`, accent: palette.leaf });
+  if (cowsEnabled && stats.cowMilkGal > 0) items.push({ icon: "🐄", number: Math.round(stats.cowMilkGal), label: `gal cow milk`, accent: palette.leaf });
+  if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
 
   if (items.length === 0) return null;
 
@@ -403,6 +417,94 @@ function RabbitsCard({ stats }) {
   );
 }
 
+
+function BeesCard({ stats }) {
+  const { honeyHarvestedLbs, hiveInspections, hiveTreatments } = stats;
+  if (!honeyHarvestedLbs && !hiveInspections) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🍯 Bees</div>
+      {honeyHarvestedLbs > 0 && <CountUp number={Math.round(honeyHarvestedLbs)} suffix="lbs of honey harvested" big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {hiveInspections > 0 && <Stat big={hiveInspections} label="hive inspections" accent={palette.yolk}/>}
+        {hiveTreatments > 0 && <Stat big={hiveTreatments} label="treatments" accent={palette.feather}/>}
+      </div>
+    </Card>
+  );
+}
+
+function IncubatorCard({ stats }) {
+  const { incubatorEggsSet, incubatorEggsHatched, avgHatchRate } = stats;
+  if (!incubatorEggsSet) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🥚 Incubator</div>
+      <CountUp number={incubatorEggsHatched} suffix="eggs hatched" big />
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        <Stat big={incubatorEggsSet} label="eggs set" accent={palette.yolk}/>
+        {avgHatchRate && <Stat big={`${avgHatchRate}%`} label="avg hatch rate" accent={palette.leaf}/>}
+      </div>
+    </Card>
+  );
+}
+
+function GoatsCard({ stats }) {
+  const { goatMilkOz, goatKids, goatFeedCost, goatButchered, goatMeatLbs, goatCount } = stats;
+  if (!goatMilkOz && !goatKids && !goatFeedCost) return null;
+  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐐 Goats</div>
+      {goatMilkOz > 0 && <CountUp number={Math.round(goatMilkOz/128)} suffix={`gallons of milk (${goatMilkOz.toFixed(0)} oz)`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {goatCount > 0 && <Stat big={goatCount} label="goats in herd" accent={palette.leaf}/>}
+        {goatKids > 0 && <Stat big={goatKids} label="kids born" accent={palette.yolk}/>}
+        {goatFeedCost > 0 && <Stat big={fmtMoney(goatFeedCost)} label="feed cost" accent={palette.feather}/>}
+        {goatButchered > 0 && <Stat big={goatButchered} label="butchered" accent={palette.accent}/>}
+        {goatMeatLbs > 0 && <Stat big={`${goatMeatLbs.toFixed(0)} lbs`} label="in the freezer" accent={palette.leaf}/>}
+      </div>
+    </Card>
+  );
+}
+
+function CowsCard({ stats }) {
+  const { cowMilkGal, cowCalves, cowFeedCost, cowButchered, cowMeatLbs, cowCount } = stats;
+  if (!cowMilkGal && !cowCalves && !cowFeedCost) return null;
+  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐄 Cows</div>
+      {cowMilkGal > 0 && <CountUp number={Math.round(cowMilkGal)} suffix="gallons of milk" big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {cowCount > 0 && <Stat big={cowCount} label="cattle" accent={palette.leaf}/>}
+        {cowCalves > 0 && <Stat big={cowCalves} label="calves born" accent={palette.yolk}/>}
+        {cowFeedCost > 0 && <Stat big={fmtMoney(cowFeedCost)} label="feed cost" accent={palette.feather}/>}
+        {cowButchered > 0 && <Stat big={cowButchered} label="butchered" accent={palette.accent}/>}
+        {cowMeatLbs > 0 && <Stat big={`${cowMeatLbs.toFixed(0)} lbs`} label="in the freezer" accent={palette.leaf}/>}
+      </div>
+    </Card>
+  );
+}
+
+function PigsCard({ stats }) {
+  const { pigLitters, pigsButchered, pigMeatLbs, pigFeedCost, pigFCR, pigCount } = stats;
+  if (!pigsButchered && !pigLitters && !pigFeedCost) return null;
+  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐷 Pigs</div>
+      {pigMeatLbs > 0 && <CountUp number={Math.round(pigMeatLbs)} suffix="lbs pork in the freezer" big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {pigCount > 0 && <Stat big={pigCount} label="pigs" accent={palette.leaf}/>}
+        {pigsButchered > 0 && <Stat big={pigsButchered} label="butchered" accent={palette.accent}/>}
+        {pigLitters > 0 && <Stat big={pigLitters} label="piglets born" accent={palette.yolk}/>}
+        {pigFeedCost > 0 && <Stat big={fmtMoney(pigFeedCost)} label="feed cost" accent={palette.feather}/>}
+        {pigFCR && <Stat big={pigFCR} label="feed conversion ratio" accent={palette.feather}/>}
+      </div>
+    </Card>
+  );
+}
+
 function ActivityCard({ stats }) {
   const { totalEntries, busiestMonth, longestStreak, activeDays } = stats;
   return (
@@ -490,7 +592,7 @@ function FunFactsCard({ stats }) {
   if (stats.entryCountByHobby) {
     const top = Object.entries(stats.entryCountByHobby).sort((a, b) => b[1] - a[1])[0];
     if (top && top[1] > 0) {
-      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits" };
+      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" };
       facts.push({ emoji: "⭐", label: "Most-tracked hobby", value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})` });
     }
   }
@@ -708,6 +810,54 @@ function computeStats(data, year) {
   const rabbitTotalCost = rabbitEntries.filter((e) => e.action === "fed" || e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const rabbitCostPerRabbit = totalRabbitsButchered > 0 ? rabbitTotalCost / totalRabbitsButchered : 0;
 
+  // Bees
+  const beeEntries = allEntries.filter(e => e.hobbyType === "bees");
+  const honeyHarvestedLbs = beeEntries.filter(e => e.action === "harvest").reduce((s,e) => s+(Number(e.lbs)||0), 0);
+  const hiveInspections = beeEntries.filter(e => e.action === "inspect").length;
+  const hiveTreatments = beeEntries.filter(e => e.action === "treatment").length;
+
+  // Incubator
+  const incubatorHobby = (data.hobbies||[]).find(h => h.type === "incubator");
+  const incubatorRuns = incubatorHobby?.runs || [];
+  const yearRuns = incubatorRuns.filter(r => r.dateSet && r.dateSet.startsWith(yearStr));
+  const incubatorEggsSet = yearRuns.reduce((s,r) => s+(Number(r.eggsSet)||0), 0);
+  const completedRuns = yearRuns.filter(r => r.eggsHatched != null);
+  const incubatorEggsHatched = completedRuns.reduce((s,r) => s+(Number(r.eggsHatched)||0), 0);
+  const avgHatchRate = completedRuns.length > 0
+    ? (completedRuns.reduce((s,r) => s+(r.eggsHatched/r.eggsSet)*100, 0) / completedRuns.length).toFixed(0)
+    : null;
+
+  // Goats
+  const goatEntries = allEntries.filter(e => e.hobbyType === "goats");
+  const goatMilkOz = goatEntries.filter(e => e.action === "milk").reduce((s,e) => s+(Number(e.oz)||0), 0);
+  const goatKids = goatEntries.filter(e => e.action === "kid").reduce((s,e) => s+(Number(e.count)||1), 0);
+  const goatFeedCost = goatEntries.filter(e => e.action === "fed").reduce((s,e) => s+(Number(e.cost)||0), 0);
+  const goatButchered = goatEntries.filter(e => e.action === "butcher").length;
+  const goatMeatLbs = goatEntries.filter(e => e.action === "butcher").reduce((s,e) => s+(Number(e.weight)||0), 0);
+  const goatsHobby = (data.hobbies||[]).find(h => h.type === "goats");
+  const goatCount = (goatsHobby?.animals||[]).length;
+
+  // Cows
+  const cowEntries = allEntries.filter(e => e.hobbyType === "cows");
+  const cowMilkGal = cowEntries.filter(e => e.action === "milk").reduce((s,e) => s+(Number(e.gallons)||0), 0);
+  const cowCalves = cowEntries.filter(e => e.action === "calf").reduce((s,e) => s+(Number(e.count)||1), 0);
+  const cowFeedCost = cowEntries.filter(e => e.action === "fed").reduce((s,e) => s+(Number(e.cost)||0), 0);
+  const cowButchered = cowEntries.filter(e => e.action === "butcher").length;
+  const cowMeatLbs = cowEntries.filter(e => e.action === "butcher").reduce((s,e) => s+(Number(e.weight)||0), 0);
+  const cowsHobby = (data.hobbies||[]).find(h => h.type === "cows");
+  const cowCount = (cowsHobby?.animals||[]).length;
+
+  // Pigs
+  const pigEntries = allEntries.filter(e => e.hobbyType === "pigs");
+  const pigLitters = pigEntries.filter(e => e.action === "litter").reduce((s,e) => s+(Number(e.count)||1), 0);
+  const pigsButchered = pigEntries.filter(e => e.action === "butcher").length;
+  const pigMeatLbs = pigEntries.filter(e => e.action === "butcher").reduce((s,e) => s+(Number(e.weight)||0), 0);
+  const pigFeedCost = pigEntries.filter(e => e.action === "fed").reduce((s,e) => s+(Number(e.cost)||0), 0);
+  const pigFeedLbs = pigEntries.filter(e => e.action === "fed").reduce((s,e) => s+(Number(e.lbs)||0), 0);
+  const pigFCR = pigFeedLbs > 0 && pigMeatLbs > 0 ? (pigFeedLbs/pigMeatLbs).toFixed(2) : null;
+  const pigsHobby = (data.hobbies||[]).find(h => h.type === "pigs");
+  const pigCount = (pigsHobby?.animals||[]).length;
+
   // Activity
   const datesSet = new Set(allEntries.map((e) => e.date));
   const activeDays = datesSet.size;
@@ -768,6 +918,16 @@ function computeStats(data, year) {
     meatChickenFeedCost, meatChickenInfraCost, meatChickenChickCost, meatChickenTotalCost, meatCostPerLb,
     // Rabbits
     totalLitters, totalKitsAlive, totalKitsStillborn, totalRabbitsButchered, rabbitTotalMeatLbs, rabbitTotalCost, rabbitCostPerRabbit,
+    // Bees
+    honeyHarvestedLbs, hiveInspections, hiveTreatments,
+    // Incubator
+    incubatorEggsSet, incubatorEggsHatched, avgHatchRate,
+    // Goats
+    goatMilkOz, goatKids, goatFeedCost, goatButchered, goatMeatLbs, goatCount,
+    // Cows
+    cowMilkGal, cowCalves, cowFeedCost, cowButchered, cowMeatLbs, cowCount,
+    // Pigs
+    pigLitters, pigsButchered, pigMeatLbs, pigFeedCost, pigFCR, pigCount,
     // Activity
     busiestMonth, longestStreak, weatherStats, photos,
     firstEntryDate, lastEntryDate, entryCountByHobby, gardenWaterCount, freeRangeCount,
