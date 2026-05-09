@@ -961,7 +961,18 @@ export default function HomesteadApp() {
         <OnboardingWizard
           update={update}
           onClose={() => {
-            update((d) => { d.onboardedAt = Date.now(); return d; });
+            update((d) => {
+              d.onboardedAt = Date.now();
+              // Brand-new users start fresh — mark What's New and the
+              // monthly supporter thanks as already-seen so they don't
+              // get hit with extra popups right after the wizard + tutorial.
+              // They'll start seeing popups normally on the next release /
+              // next month.
+              d.lastSeenVersion = CURRENT_VERSION;
+              const now = new Date();
+              d.supportersDismissedMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+              return d;
+            });
             // Show tutorial prompt after a short delay so wizard closes cleanly
             setTimeout(() => setShowTutorialPrompt(true), 300);
           }}
