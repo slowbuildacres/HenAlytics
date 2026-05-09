@@ -333,7 +333,7 @@ const fmtMoney = (n) => {
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // What's New version — bump this with each notable release
-const CURRENT_VERSION = 2;
+const CURRENT_VERSION = 3;
 
 const WHATS_NEW = [
   "🥚 Incubator hobby — track hatching runs by bird type with auto calendar reminders",
@@ -664,7 +664,7 @@ export default function HomesteadApp() {
       const timer = setTimeout(() => setShowWhatsNew(true), 1200);
       return () => clearTimeout(timer);
     }
-  }, [data && data.onboardedAt, data && data.lastSeenVersion]);
+  }, [data?.onboardedAt, data?.lastSeenVersion]);
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
