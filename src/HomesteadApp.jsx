@@ -660,11 +660,11 @@ export default function HomesteadApp() {
 
   // Show what's new popup for returning users when version bumps
   useEffect(() => {
-    if (data.onboardedAt && data.lastSeenVersion < CURRENT_VERSION) {
+    if (data && data.onboardedAt && (data.lastSeenVersion || 0) < CURRENT_VERSION) {
       const timer = setTimeout(() => setShowWhatsNew(true), 1200);
       return () => clearTimeout(timer);
     }
-  }, [data.onboardedAt, data.lastSeenVersion]);
+  }, [data && data.onboardedAt, data && data.lastSeenVersion]);
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
