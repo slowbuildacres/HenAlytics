@@ -213,6 +213,21 @@ function computeWeeklyStats(data) {
     pigMeatLbs = butchered.reduce((s,e) => s+(Number(e.weight)||0), 0);
   }
 
+  // Sheep stats
+  const sheepHobby = hobbies.find(h => h.type === 'sheep' && !h.hidden);
+  let sheepMilkGal = 0, sheepLambsBorn = 0, sheepWoolLbs = 0, sheepButchered = 0;
+  if (sheepHobby) {
+    const sheepEntries = allEntries.filter(e => e.hobbyType === 'sheep');
+    sheepMilkGal = sheepEntries.filter(e => e.action === 'milk').reduce((s,e) => s+(Number(e.oz)||0), 0) / 128;
+    sheepButchered = sheepEntries.filter(e => e.action === 'butcher').length;
+    // Lambings completed this week
+    const weekLambings = (sheepHobby.breedings || []).filter(b => b.lambedDate && b.lambedDate >= sevenDaysAgoIso);
+    sheepLambsBorn = weekLambings.reduce((s,b) => s+(Number(b.lambsBorn)||0), 0);
+    // Shearings this week
+    const weekShearings = (sheepHobby.shearings || []).filter(sh => sh.date >= sevenDaysAgoIso);
+    sheepWoolLbs = weekShearings.reduce((s,sh) => s+(Number(sh.woolLbs)||0), 0);
+  }
+
   // Farm stand sales stats
   const farmstandSales = (data.sales || []).filter(s => s.hobbyType === 'farmstand' && s.date >= sevenDaysAgoIso);
   const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
@@ -235,6 +250,7 @@ function computeWeeklyStats(data) {
     goatMilkOz, goatKids, hasGoats: !!goatsHobby,
     cowMilkGal, cowCalves, hasCows: !!cowsHobby,
     pigLitters, pigButchered, pigMeatLbs, hasPigs: !!pigsHobby,
+    sheepMilkGal, sheepLambsBorn, sheepWoolLbs, sheepButchered, hasSheep: !!sheepHobby,
     freezerBirds, freezerLbs,
   };
 }
@@ -303,6 +319,14 @@ function buildDigestEmail(email, data, stats) {
   if (stats.hasPigs) {
     if (stats.pigLitters > 0) lines.push(`🐷 <strong>${stats.pigLitters}</strong> piglet${stats.pigLitters===1?'':'s'} born`);
     if (stats.pigButchered > 0) lines.push(`🔪 <strong>${stats.pigButchered}</strong> pig${stats.pigButchered===1?'':'s'} butchered · <strong>${stats.pigMeatLbs.toFixed(0)} lbs</strong> meat`);
+  }
+
+  // Sheep lines
+  if (stats.hasSheep) {
+    if (stats.sheepLambsBorn > 0) lines.push(`🐑 <strong>${stats.sheepLambsBorn}</strong> lamb${stats.sheepLambsBorn===1?'':'s'} born`);
+    if (stats.sheepMilkGal > 0) lines.push(`🥛 <strong>${stats.sheepMilkGal.toFixed(1)} gal</strong> sheep milk`);
+    if (stats.sheepWoolLbs > 0) lines.push(`✂️ <strong>${stats.sheepWoolLbs.toFixed(1)} lbs</strong> wool sheared`);
+    if (stats.sheepButchered > 0) lines.push(`🥩 <strong>${stats.sheepButchered}</strong> sheep butchered`);
   }
 
   // Farm stand lines

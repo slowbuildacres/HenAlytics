@@ -35,6 +35,7 @@ import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 import GoatsPage, { GoatsAnalytics } from "./Goats.jsx";
 import CowsPage, { CowsAnalytics } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
+import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 
 // ============ DESIGN TOKENS ============
@@ -69,6 +70,7 @@ const defaultData = () => ({
     { id: "goats", name: "Goats 🐐", type: "goats", icon: "sprout", animals: [], hidden: true },
     { id: "cows", name: "Cows 🐄", type: "cows", icon: "sprout", animals: [], hidden: true },
     { id: "pigs", name: "Pigs 🐷", type: "pigs", icon: "sprout", animals: [], hidden: true },
+    { id: "sheep", name: "Sheep 🐑", type: "sheep", icon: "sprout", animals: [], breedings: [], shearings: [], subType: "mixed", hidden: true },
     { id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
@@ -224,6 +226,20 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   if (!hasFarmstand) {
     data.hobbies.push({ id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true });
   }
+  // ---- Sheep hobby ----
+  const hasSheep = data.hobbies.some(h => h.id === "sheep");
+  if (!hasSheep) {
+    data.hobbies.push({ id: "sheep", name: "Sheep 🐑", type: "sheep", icon: "sprout", animals: [], breedings: [], shearings: [], subType: "mixed", hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "sheep") {
+      if (!Array.isArray(h.animals)) h.animals = [];
+      if (!Array.isArray(h.breedings)) h.breedings = [];
+      if (!Array.isArray(h.shearings)) h.shearings = [];
+      if (!h.subType) h.subType = "mixed";
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
   data.hobbies.forEach((h) => {
     if (h.type === "farmstand") {
       if (!Array.isArray(h.items)) h.items = [];
@@ -247,6 +263,22 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
     if (hasName || hasEntries || hasFlocks || hasItems || hasSales) {
       data.onboardedAt = Date.now();
     }
+  }
+  // Backfill flockId on un-flocked egg-layer entries. Existing accounts with
+  // entries logged before flock-scoping was added had no flockId. Assign them
+  // all to the first flock for that hobby so per-flock analytics work cleanly.
+  // This is a one-time backfill — once entries have flockId, this runs without
+  // effect. Only touches entries with actions that are flock-scoped.
+  const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue"];
+  const eggLayersHobby = (data.hobbies || []).find(h => h.type === "egg_layers");
+  if (eggLayersHobby && Array.isArray(eggLayersHobby.flocks) && eggLayersHobby.flocks.length > 0) {
+    const defaultFlockId = eggLayersHobby.flocks[0].id;
+    const eggLayerEntries = data.entries[eggLayersHobby.id] || [];
+    eggLayerEntries.forEach(e => {
+      if (!e.flockId && flockScopedActions.includes(e.action)) {
+        e.flockId = defaultFlockId;
+      }
+    });
   }
   return data;
 }
@@ -390,17 +422,17 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 // WHATS_NEW and trim the array to keep ~6-8 items (oldest roll off).
 // Bumping CURRENT_VERSION causes the popup to re-show once for every user
 // who hasn't seen this version yet.
-const CURRENT_VERSION = 9;
+const CURRENT_VERSION = 10;
 
 const WHATS_NEW = [
+  "🐑 Sheep hobby — dairy, meat, wool, or mixed flocks with lambing tracking, shearing logs, and calendar reminders",
+  "🐔 Per-flock tracking — feed, bedding, deaths, and sold eggs now attach to a specific flock so you get real per-flock cost-per-egg numbers",
   "🙏 Monthly thank-you got an upgrade — clearer mission note + a 'Buy Henalytics a bag of feed' button to support the app",
   "🧾 Farmstand hobby — saved items with cost & price for one-tap sales, plus profit + top-seller analytics in the Stats tab",
   "❄️ Butcher any bird — chickens, ducks, quail, geese, turkeys all go to the freezer log with date + weight",
   "💵 Hatchery tracking — log where you got each flock and how much you paid",
   "🐐 Goats, 🐄 Cows & 🐷 Pigs — three new hobbies with per-animal tracking, milk logging, FCR, and butcher stats",
   "✏️ Edit & delete everywhere — perennials, harvest logs, and livestock entries can now all be edited or removed",
-  "✨ Year in Review — now includes Bees, Incubator, Goats, Cows, and Pigs cards when those hobbies are enabled",
-  "🌳 Perennial garden — track fruit trees, asparagus, and berry bushes with harvest history outside of seasons",
 ];
 
 // Spouse Mode helpers — fudge numbers for "presentation" purposes
@@ -816,7 +848,7 @@ export default function HomesteadApp() {
       setActiveHobby(newActive);
       // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
       // bounce to "home" so we don't stay on a page tied to the hidden hobby.
-      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "farmstand"];
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "farmstand"];
       if (hobbyPages.includes(page)) {
         const newHobbyType = (firstVisible || {}).type;
         if (hobbyPages.includes(newHobbyType)) {
@@ -1204,6 +1236,7 @@ export default function HomesteadApp() {
                         goats: "goats",
                         cows: "cows",
                         pigs: "pigs",
+                        sheep: "sheep",
                         farmstand: "farmstand",
                       };
                       // Garden, egg_layers, meat_chickens all share the
@@ -1274,12 +1307,17 @@ export default function HomesteadApp() {
             <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
           </AnalyticsShareWrapper>
         )}
+        {page === "analytics" && activeHobby === "sheep" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data}>
+            <SheepAnalytics hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} />
+          </AnalyticsShareWrapper>
+        )}
         {page === "analytics" && activeHobby === "farmstand" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data}>
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "farmstand" && (
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "farmstand" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -1308,6 +1346,9 @@ export default function HomesteadApp() {
         )}
         {page === "farmstand" && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "sheep" && (
+          <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (
           <CalendarPage data={data} update={update} setModal={setModal} />
@@ -1338,7 +1379,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "farmstand"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "farmstand") setPage("farmstand"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "farmstand"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "farmstand") setPage("farmstand"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
@@ -2426,16 +2467,31 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {(hobby.flocks || []).map(fl => {
               const flockEggs = eggs.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.count)||0),0);
+              const flockFeedCost = feeds.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.cost)||0),0);
+              const flockBeddingCost = beddings.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.cost)||0),0);
+              const flockDeaths = deaths.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.count)||1),0);
+              const flockTotalCost = flockFeedCost + flockBeddingCost;
+              const flockCostPerEgg = flockEggs > 0 ? flockTotalCost / flockEggs : 0;
               const birdEmoji = { Chicken:"🐔", Duck:"🦆", Turkey:"🦃", Quail:"🐦", Goose:"🪿", Guinea:"🐦", Other:"🐣" };
               return (
-                <div key={fl.id} style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center" }}>
-                  <div>
-                    <strong>{birdEmoji[fl.birdType]||"🐣"} {fl.name}</strong>
-                    <div style={{ fontSize:12,color:palette.inkSoft }}>{fl.birdType} · {fl.birdCount} birds</div>
+                <div key={fl.id} style={{ padding:"12px 14px",background:palette.bgAlt,borderRadius:8 }}>
+                  <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6 }}>
+                    <div>
+                      <strong>{birdEmoji[fl.birdType]||"🐣"} {fl.name}</strong>
+                      <div style={{ fontSize:12,color:palette.inkSoft }}>{fl.birdType} · {fl.birdCount} birds</div>
+                    </div>
+                    <div style={{ fontSize:18,fontWeight:700,color:palette.yolk,fontFamily:FONT_DISPLAY }}>
+                      {flockEggs}
+                      <span style={{ fontSize:11,color:palette.inkSoft,fontWeight:500,marginLeft:4 }}>eggs</span>
+                    </div>
                   </div>
-                  <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"right" }}>
-                    {flockEggs > 0 ? <div>{flockEggs} eggs</div> : <div style={{fontStyle:"italic"}}>No eggs yet</div>}
-                  </div>
+                  {(flockTotalCost > 0 || flockDeaths > 0) && (
+                    <div style={{ display:"flex",gap:12,fontSize:11,color:palette.inkSoft,paddingTop:6,borderTop:`1px solid ${palette.line}` }}>
+                      {flockTotalCost > 0 && <span>💰 {fmtMoney(flockTotalCost)} in costs</span>}
+                      {flockEggs > 0 && flockTotalCost > 0 && <span>{fmtMoney(flockCostPerEgg)}/egg</span>}
+                      {flockDeaths > 0 && <span>💀 {flockDeaths} death{flockDeaths===1?"":"s"}</span>}
+                    </div>
+                  )}
                 </div>
               );
             })}
@@ -3226,6 +3282,7 @@ function ManageHobbiesSection({ data, update }) {
     goats: "Goats",
     cows: "Cows",
     pigs: "Pigs",
+    sheep: "Sheep",
     farmstand: "Farmstand",
   };
 
@@ -4284,6 +4341,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
                   else if (h.type === "goats") { setActiveHobby("goats"); setPage("goats"); }
                   else if (h.type === "cows") { setActiveHobby("cows"); setPage("cows"); }
                   else if (h.type === "pigs") { setActiveHobby("pigs"); setPage("pigs"); }
+                  else if (h.type === "sheep") { setActiveHobby("sheep"); setPage("sheep"); }
                   else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
@@ -4987,8 +5045,12 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         if (hobby.type === "meat_chickens" && hobby.currentBatch) {
           entry.batchId = hobby.currentBatch.id;
         }
-        // tag egg entries with first flock if not already tagged
-        if (hobby.type === "egg_layers" && !entry.flockId) {
+        // tag egg-layer entries with flock so per-flock analytics work.
+        // Picker UI sets flockId for multi-flock users; this fallback covers
+        // single-flock users (no picker shown) AND any edge case where the
+        // picker was missed.
+        const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue"];
+        if (hobby.type === "egg_layers" && !entry.flockId && flockScopedActions.includes(action)) {
           const firstFlock = (hobby.flocks || [])[0];
           if (firstFlock) entry.flockId = firstFlock.id;
         }
@@ -5053,6 +5115,27 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
+
+      {/* Flock picker — egg-layer actions get scoped to a specific flock so
+          per-flock cost/death/feed analytics work. Auto-attached to the first
+          flock if only one exists; on submit, falls back to the first flock
+          to keep entries from going un-flocked. */}
+      {hobby.type === "egg_layers" && Array.isArray(hobby.flocks) && hobby.flocks.length > 1 &&
+        ["fed","bedding","death","eggs","sold_eggs","note","issue"].includes(action) && (
+        <Field label="Which flock?">
+          <select
+            style={inputStyle}
+            value={fields.flockId || hobby.flocks[0]?.id || ""}
+            onChange={(e) => set("flockId", e.target.value)}
+          >
+            {hobby.flocks.map(f => (
+              <option key={f.id} value={f.id}>
+                {f.name}{f.birdType ? ` (${f.birdType})` : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       {action === "watered" && hobby.type === "garden" && (
         <Field label="Notes (amount, beds, etc.)">
@@ -5344,7 +5427,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, farmstand: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, farmstand: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -5382,7 +5465,7 @@ function OnboardingWizard({ update, onClose }) {
       // Filter hobbies down to just the ones they wanted
       const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
       d.hobbies = (d.hobbies || []).map((h) => {
-        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs","farmstand"].includes(h.type)) {
+        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs","sheep","farmstand"].includes(h.type)) {
           h.hidden = !wantedTypes.includes(h.type);
         }
         return h;
@@ -5584,6 +5667,13 @@ function OnboardingWizard({ update, onClose }) {
               icon="🐷"
               label="Pigs"
               sub="Growth tracking, FCR, litters, butcher"
+            />
+            <HobbyCheckbox
+              checked={hobbies.sheep || false}
+              onToggle={() => setHobbies((h) => ({ ...h, sheep: !h.sheep }))}
+              icon="🐑"
+              label="Sheep"
+              sub="Dairy, meat, wool, lambing schedules"
             />
             <HobbyCheckbox
               checked={hobbies.farmstand || false}
@@ -6015,6 +6105,27 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           { label: "Butchered", value: butchered.length },
           { label: "Meat", value: meatLbs > 0 ? `${Math.round(meatLbs)} lbs` : "—" },
           { label: "Piglets born", value: litters },
+        ],
+      };
+    }
+    if (hobby.type === "sheep") {
+      const milk = entries.filter(e => e.action === "milk");
+      const milkOz = milk.reduce((s,e) => s + (Number(e.oz)||0), 0);
+      const milkGal = milkOz / 128;
+      const butchered = entries.filter(e => e.action === "butcher");
+      const meatLbs = butchered.reduce((s,e) => s + (Number(e.weight)||0), 0);
+      const liveCount = (hobby.animals || []).filter(a => !a.archived).length;
+      const breedings = hobby.breedings || [];
+      const completedLambings = breedings.filter(b => b.lambedDate);
+      const lambsBorn = completedLambings.reduce((s,b) => s + (Number(b.lambsBorn)||0), 0);
+      const woolLbs = (hobby.shearings || []).reduce((s,sh) => s + (Number(sh.woolLbs)||0), 0);
+      return {
+        emoji: "🐑", label: "Sheep",
+        stats: [
+          { label: "Sheep", value: liveCount },
+          { label: "Lambs born", value: lambsBorn },
+          { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
+          { label: "Wool", value: woolLbs > 0 ? `${woolLbs.toFixed(1)} lbs` : (meatLbs > 0 ? `${Math.round(meatLbs)} lbs meat` : "—") },
         ],
       };
     }
