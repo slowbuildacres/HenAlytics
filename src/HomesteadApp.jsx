@@ -5401,10 +5401,17 @@ function OnboardingWizard({ update, onClose }) {
       zIndex: 200, padding: 16,
     }}>
       <div style={{
-        background: palette.bg, padding: 28, borderRadius: 14,
-        maxWidth: 460, width: "100%", maxHeight: "92vh", overflowY: "auto",
+        background: palette.bg, borderRadius: 14,
+        maxWidth: 460, width: "100%", maxHeight: "92vh",
         border: `2px solid ${palette.ink}`,
         boxShadow: "6px 6px 0 " + palette.line,
+        // Use overflow:auto with safe-area-aware bottom padding so iOS
+        // rubber-band bounce doesn't snap users back before they can tap
+        // the Done button at the bottom of the hobby list.
+        overflowY: "auto",
+        WebkitOverflowScrolling: "touch",
+        overscrollBehavior: "contain",
+        padding: "28px 28px max(28px, env(safe-area-inset-bottom)) 28px",
       }}>
         {/* Step indicator */}
         <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
@@ -5594,8 +5601,20 @@ function OnboardingWizard({ update, onClose }) {
               💡 Don't see your hobby? You can submit it through Settings → "How can I improve?" — if there's enough push from users, I'll work on adding it!
             </div>
 
-            <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-              <Btn variant="primary" onClick={finish}>Done — let's go!</Btn>
+            <div style={{
+              position: "sticky",
+              bottom: 0,
+              marginTop: 14,
+              marginLeft: -28,
+              marginRight: -28,
+              marginBottom: -28,
+              padding: "14px 28px max(14px, env(safe-area-inset-bottom)) 28px",
+              background: palette.bg,
+              borderTop: `1.5px solid ${palette.line}`,
+              display: "flex",
+              gap: 8,
+            }}>
+              <Btn variant="primary" onClick={finish} style={{ width: "100%" }}>Done — let's go!</Btn>
             </div>
           </>
         )}
