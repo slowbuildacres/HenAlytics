@@ -6006,59 +6006,74 @@ function OnboardingWizard({ update, onClose }) {
         )}
 
         {step === 4 && (
-          <>
-            <div style={{ fontSize: 36, marginBottom: 8, textAlign: "center" }}>🌾</div>
-            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 8px", color: palette.ink, lineHeight: 1.2, textAlign: "center" }}>
-              One last thing
-            </h2>
-            <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginTop: 0, marginBottom: 14 }}>
-              Henalytics is and will stay <strong>free for every homestead</strong> — no ads, no paywalls, no upsells. My goal is for as many homesteaders as possible to benefit from it.
-            </p>
-
+          // Internal flex layout so on small screens the content scrolls but
+          // the "Got it" button stays visible at the bottom. Mirrors the
+          // What's New modal pattern: outer flex column, scrollable middle,
+          // flexShrink:0 footer. The negative margins pull this block out
+          // to the edges of the wizard's 28px padding.
+          <div style={{
+            display: "flex",
+            flexDirection: "column",
+            maxHeight: "calc(92vh - 80px)", // wizard maxHeight minus step indicator + padding
+            marginLeft: -28,
+            marginRight: -28,
+            marginTop: -8,
+            marginBottom: -28,
+          }}>
             <div style={{
-              padding: "12px 14px", background: palette.bgAlt, borderRadius: 10,
-              marginBottom: 14, fontSize: 13, color: palette.ink, lineHeight: 1.6,
+              overflowY: "auto",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
+              padding: "0 28px 16px",
+              flex: 1,
+              minHeight: 0,
             }}>
-              <strong>Real costs, transparently:</strong> the domain is about $10/year, plus my time building features. There's no company, no investors, just me — Riley — coding in the evenings.
+              <div style={{ fontSize: 36, marginBottom: 8, textAlign: "center" }}>🌾</div>
+              <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 8px", color: palette.ink, lineHeight: 1.2, textAlign: "center" }}>
+                One last thing
+              </h2>
+              <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginTop: 0, marginBottom: 14 }}>
+                Henalytics is and will stay <strong>free for every homestead</strong> — no ads, no paywalls, no upsells. My goal is for as many homesteaders as possible to benefit from it.
+              </p>
+
+              <div style={{
+                padding: "12px 14px", background: palette.bgAlt, borderRadius: 10,
+                marginBottom: 14, fontSize: 13, color: palette.ink, lineHeight: 1.6,
+              }}>
+                <strong>Real costs, transparently:</strong> the domain is about $10/year, plus my time building features. There's no company, no investors, just me — Riley — coding in the evenings.
+              </div>
+
+              <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginBottom: 14 }}>
+                If down the line you find Henalytics useful and want to chip in a few bucks to help keep it running, that genuinely makes a difference. Totally optional — but it's how I keep the lights on and keep building.
+              </p>
+
+              <p style={{ fontSize: 13, color: palette.inkSoft, fontStyle: "italic", marginBottom: 16, lineHeight: 1.5 }}>
+                You'll find a "Support Henalytics" option in the 🏚 Barn menu anytime. No pressure, no popups bugging you about it.
+              </p>
+
+              <div style={{
+                padding: "10px 12px", background: palette.card, borderRadius: 8,
+                border: `1.5px solid ${palette.line}`, fontSize: 12, color: palette.inkSoft,
+                marginBottom: 16, lineHeight: 1.5,
+              }}>
+                <strong style={{ color: palette.ink }}>How it works:</strong> tips go through Stripe (the same secure checkout used by major retailers). Apple Pay & Google Pay supported. Stripe sends you an email receipt. If you ever want a refund, email me and I'll take care of it.
+              </div>
+
+              <p style={{ fontSize: 13, color: palette.ink, marginBottom: 8, fontStyle: "italic" }}>
+                — Riley, the Henalytics maker 🌾
+              </p>
             </div>
 
-            <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginBottom: 14 }}>
-              If down the line you find Henalytics useful and want to chip in a few bucks to help keep it running, that genuinely makes a difference. Totally optional — but it's how I keep the lights on and keep building.
-            </p>
-
-            <p style={{ fontSize: 13, color: palette.inkSoft, fontStyle: "italic", marginBottom: 16, lineHeight: 1.5 }}>
-              You'll find a "Support Henalytics" option in the 🏚 Barn menu anytime. No pressure, no popups bugging you about it.
-            </p>
-
+            {/* Fixed footer with action button */}
             <div style={{
-              padding: "10px 12px", background: palette.card, borderRadius: 8,
-              border: `1.5px solid ${palette.line}`, fontSize: 12, color: palette.inkSoft,
-              marginBottom: 16, lineHeight: 1.5,
-            }}>
-              <strong style={{ color: palette.ink }}>How it works:</strong> tips go through Stripe (the same secure checkout used by major retailers). Apple Pay & Google Pay supported. Stripe sends you an email receipt. If you ever want a refund, email me and I'll take care of it.
-            </div>
-
-            <p style={{ fontSize: 13, color: palette.ink, marginBottom: 18, fontStyle: "italic" }}>
-              — Riley, the Henalytics maker 🌾
-            </p>
-
-            <div style={{
-              position: "sticky",
-              bottom: 0,
-              marginTop: 14,
-              marginLeft: -28,
-              marginRight: -28,
-              marginBottom: -28,
               padding: "14px 28px max(14px, env(safe-area-inset-bottom)) 28px",
               background: palette.bg,
               borderTop: `1.5px solid ${palette.line}`,
-              display: "flex",
-              flexDirection: "column",
-              gap: 8,
+              flexShrink: 0,
             }}>
               <Btn variant="primary" onClick={finish} style={{ width: "100%" }}>Got it — let's go!</Btn>
             </div>
-          </>
+          </div>
         )}
       </div>
     </div>
