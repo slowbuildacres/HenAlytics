@@ -270,7 +270,6 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   // This is a one-time backfill — once entries have flockId, this runs without
   // effect. Only touches entries with actions that are flock-scoped.
   const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue"];
-  const eggLayersHobby = (data.hobbies || []).find(h => h.type === "egg_layers");
   if (eggLayersHobby && Array.isArray(eggLayersHobby.flocks) && eggLayersHobby.flocks.length > 0) {
     const defaultFlockId = eggLayersHobby.flocks[0].id;
     const eggLayerEntries = data.entries[eggLayersHobby.id] || [];
