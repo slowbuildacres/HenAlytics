@@ -5,6 +5,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
+import { fmtMoney } from "./units.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -159,7 +160,7 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   if (cowsEnabled && stats.cowMilkGal > 0) items.push({ icon: "🐄", number: Math.round(stats.cowMilkGal), label: `gal cow milk`, accent: palette.leaf });
   if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
   if (sheepEnabled && stats.sheepLambsBorn > 0) items.push({ icon: "🐑", number: stats.sheepLambsBorn, label: `lamb${stats.sheepLambsBorn === 1 ? "" : "s"} born`, accent: palette.leafSoft });
-  if (farmstandEnabled && stats.farmstandRevenue > 0) items.push({ icon: "🧾", number: `$${Math.round(stats.farmstandRevenue)}`, label: `farmstand revenue`, accent: palette.leaf });
+  if (farmstandEnabled && stats.farmstandRevenue > 0) items.push({ icon: "🧾", number: fmtMoney(stats.farmstandRevenue).replace(/\.\d\d$/, ""), label: `farmstand revenue`, accent: palette.leaf });
 
   if (items.length === 0) return null;
 
@@ -221,7 +222,6 @@ function EggsCard({ stats }) {
     eggRevenueByMonth, peakEggMonth,
   } = stats;
   const maxBar = Math.max(...Object.values(eggRevenueByMonth || {}).map((m) => m.collected || 0), 1);
-  const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
   return (
     <Card accent={palette.card}>
@@ -244,7 +244,7 @@ function EggsCard({ stats }) {
             <Stat big={fmtMoney(eggLayerCostPerDozen)} label="cost per dozen produced" accent={palette.feather} />
             <Stat
               big={fmtMoney(moneySavedVsBuying)}
-              label={`saved vs. buying pasture-raised at $${benchmarkPricePerDozen.toFixed(2)}/doz`}
+              label={`saved vs. buying pasture-raised at ${fmtMoney(benchmarkPricePerDozen)}/doz`}
               accent={moneySavedVsBuying >= 0 ? palette.leaf : palette.accent}
             />
           </div>
@@ -332,7 +332,6 @@ function MeatChickensCard({ stats }) {
     meatChickenFeedCost, meatChickenInfraCost, meatChickenChickCost,
     meatChickenTotalCost, meatCostPerLb,
   } = stats;
-  const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
   return (
     <Card accent={palette.card}>
@@ -389,7 +388,6 @@ function MeatChickensCard({ stats }) {
 function RabbitsCard({ stats }) {
   const { totalLitters, totalKitsAlive, totalKitsStillborn, totalRabbitsButchered, rabbitTotalCost, rabbitCostPerRabbit, rabbitTotalMeatLbs } = stats;
   if (!totalLitters && !totalRabbitsButchered && !rabbitTotalCost) return null;
-  const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
 
   return (
     <Card accent={palette.card}>
@@ -458,7 +456,6 @@ function IncubatorCard({ stats }) {
 function GoatsCard({ stats }) {
   const { goatMilkOz, goatKids, goatFeedCost, goatButchered, goatMeatLbs, goatCount } = stats;
   if (!goatMilkOz && !goatKids && !goatFeedCost) return null;
-  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐐 Goats</div>
@@ -477,7 +474,6 @@ function GoatsCard({ stats }) {
 function CowsCard({ stats }) {
   const { cowMilkGal, cowCalves, cowFeedCost, cowButchered, cowMeatLbs, cowCount } = stats;
   if (!cowMilkGal && !cowCalves && !cowFeedCost) return null;
-  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐄 Cows</div>
@@ -496,7 +492,6 @@ function CowsCard({ stats }) {
 function PigsCard({ stats }) {
   const { pigLitters, pigsButchered, pigMeatLbs, pigFeedCost, pigFCR, pigCount } = stats;
   if (!pigsButchered && !pigLitters && !pigFeedCost) return null;
-  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐷 Pigs</div>
@@ -535,7 +530,6 @@ function SheepCard({ stats }) {
 function FarmstandCard({ stats }) {
   const { farmstandRevenue, farmstandCost, farmstandProfit, farmstandSaleCount, farmstandTopItem, farmstandItemCount } = stats;
   if (!farmstandSaleCount && !farmstandItemCount) return null;
-  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
   const margin = farmstandRevenue > 0 ? ((farmstandProfit / farmstandRevenue) * 100).toFixed(0) : null;
   return (
     <Card accent={palette.card}>
@@ -655,7 +649,7 @@ function FunFactsCard({ stats }) {
   if (stats.heaviestDayCount > 1) facts.push({ emoji: "🔥", label: "Most active day", value: `${shortDate(stats.heaviestDay)} · ${stats.heaviestDayCount} entries` });
   if (stats.gardenWaterCount > 0) facts.push({ emoji: "💧", label: "Garden waterings", value: stats.gardenWaterCount });
   if (stats.totalFeedLbs > 0) facts.push({ emoji: "🌾", label: "Feed bought", value: `${Math.round(stats.totalFeedLbs)} lbs` });
-  if (stats.totalFeedCost > 0) facts.push({ emoji: "💸", label: "Spent on feed", value: `$${stats.totalFeedCost.toFixed(2)}` });
+  if (stats.totalFeedCost > 0) facts.push({ emoji: "💸", label: "Spent on feed", value: fmtMoney(stats.totalFeedCost) });
   if (stats.freeRangeCount > 0) facts.push({ emoji: "🌳", label: "Free-range days", value: stats.freeRangeCount });
   if (stats.photosCount > 0) facts.push({ emoji: "📷", label: "Photos taken", value: stats.photosCount });
   if (stats.issueCount > 0) facts.push({ emoji: "⚠️", label: "Issues logged", value: stats.issueCount });

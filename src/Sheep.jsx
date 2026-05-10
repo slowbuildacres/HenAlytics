@@ -20,6 +20,7 @@
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { fmtMoney } from "./units.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -46,7 +47,6 @@ const localDateStr = (date) => {
 const todayStr = () => localDateStr(new Date());
 const parseLocalDate = (s) => { if (!s) return new Date(); const [y,m,d] = s.split("-").map(Number); return new Date(y,(m||1)-1,d||1); };
 const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
-const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
 
 const addDays = (dateStr, days) => {
   const d = parseLocalDate(dateStr);

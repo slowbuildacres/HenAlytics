@@ -85,6 +85,11 @@ const defaultData = () => ({
   customers: [],        // repeat buyer directory
   freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
+  units: {
+    temperature: "F",      // "F" or "C"
+    currency: "USD",       // ISO currency code: USD, AUD, CAD, GBP, EUR, NZD
+    hemisphere: "auto",    // "auto" | "north" | "south" — controls garden seasons
+  },
 });
 
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
@@ -279,6 +284,16 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       }
     });
   }
+
+  // International support — units backfill. Defaults to USD/Fahrenheit/auto
+  // for existing accounts. Hemisphere auto-detects from saved location lat.
+  if (!data.units || typeof data.units !== "object") {
+    data.units = { temperature: "F", currency: "USD", hemisphere: "auto" };
+  } else {
+    if (!data.units.temperature) data.units.temperature = "F";
+    if (!data.units.currency) data.units.currency = "USD";
+    if (!data.units.hemisphere) data.units.hemisphere = "auto";
+  }
   return data;
 }
 
@@ -410,10 +425,16 @@ const fmtDate = (s) => {
   const d = parseLocalDate(s);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
-const fmtMoney = (n) => {
-  const num = Number(n) || 0;
-  return `$${num.toFixed(2)}`;
-};
+// ============================================================================
+// INTERNATIONAL FORMATTING — currency, temperature, hemisphere
+// ----------------------------------------------------------------------------
+// Helpers live in ./units.js so per-hobby files (Sheep, Farmstand, YearInReview,
+// Sales, Bees) can import them too. The main App component (below) calls
+// setUserUnits() in a useEffect to keep the module-level state in sync with
+// data.units.
+// ============================================================================
+import { fmtMoney, fmtTemp, setUserUnits, getCurrentHemisphere, currencySymbol } from "./units.js";
+
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // What's New version — bump this with each notable release.
@@ -421,9 +442,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 // WHATS_NEW and trim the array to keep ~6-8 items (oldest roll off).
 // Bumping CURRENT_VERSION causes the popup to re-show once for every user
 // who hasn't seen this version yet.
-const CURRENT_VERSION = 10;
+const CURRENT_VERSION = 11;
 
 const WHATS_NEW = [
+  "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Find it in Settings.",
   "🐑 Sheep hobby — dairy, meat, wool, or mixed flocks with lambing tracking, shearing logs, and calendar reminders",
   "🐔 Per-flock tracking — feed, bedding, deaths, and sold eggs now attach to a specific flock so you get real per-flock cost-per-egg numbers",
   "🙏 Monthly thank-you got an upgrade — clearer mission note + a 'Buy Henalytics a bag of feed' button to support the app",
@@ -431,7 +453,6 @@ const WHATS_NEW = [
   "❄️ Butcher any bird — chickens, ducks, quail, geese, turkeys all go to the freezer log with date + weight",
   "💵 Hatchery tracking — log where you got each flock and how much you paid",
   "🐐 Goats, 🐄 Cows & 🐷 Pigs — three new hobbies with per-animal tracking, milk logging, FCR, and butcher stats",
-  "✏️ Edit & delete everywhere — perennials, harvest logs, and livestock entries can now all be edited or removed",
 ];
 
 // Spouse Mode helpers — fudge numbers for "presentation" purposes
@@ -443,11 +464,39 @@ const getSeason = (dateStr) => {
   const d = parseLocalDate(dateStr);
   const m = d.getMonth();
   const y = d.getFullYear();
+  if (getCurrentHemisphere() === "south") {
+    // Southern hemisphere: months are 6 apart from northern.
+    // Sep-Nov = Spring, Dec-Feb = Summer, Mar-May = Fall, Jun-Aug = Winter.
+    if (m >= 8 && m <= 10) return `Spring ${y}`;
+    if (m === 11) return `Summer ${y + 1}`; // Dec → next year's summer
+    if (m >= 0 && m <= 1) return `Summer ${y}`; // Jan-Feb
+    if (m >= 2 && m <= 4) return `Fall ${y}`;
+    return `Winter ${y}`;
+  }
+  // Northern hemisphere (default)
   if (m >= 2 && m <= 4) return `Spring ${y}`;
   if (m >= 5 && m <= 7) return `Summer ${y}`;
   if (m >= 8 && m <= 10) return `Fall ${y}`;
   return `Winter ${y}`;
 };
+
+// formatWeatherI18n — localized version of formatWeather. Renders the daily
+// weather summary using the user's preferred temperature unit. Falls back to
+// the original formatWeather for the precipitation/summary text.
+function formatWeatherI18n(weather) {
+  if (!weather) return "";
+  const high = weather.highF != null ? fmtTemp(weather.highF) : null;
+  const low = weather.lowF != null ? fmtTemp(weather.lowF) : null;
+  const summary = weather.summary || "";
+  const precip = weather.precipIn != null && weather.precipIn > 0 ? `${weather.precipIn.toFixed(2)}"` : "";
+  const parts = [];
+  if (high && low) parts.push(`${high}/${low}`);
+  else if (high) parts.push(high);
+  else if (low) parts.push(low);
+  if (summary) parts.push(summary);
+  if (precip) parts.push(precip);
+  return parts.join(" · ");
+}
 
 // Dark palette used in Spouse Mode
 const paletteDark = {
@@ -830,6 +879,13 @@ export default function HomesteadApp() {
     const timer = setTimeout(() => setShowSupporterThanks(true), 2200);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.supportersDismissedMonth]);
+
+  // ---- Sync user units (currency, temperature, hemisphere) to the module-level
+  // formatters whenever data.units or homestead location changes. fmtMoney() and
+  // fmtTemp() are called from many components and read these globals.
+  useEffect(() => {
+    setUserUnits(data?.units, data?.homesteadLocation);
+  }, [data?.units?.currency, data?.units?.temperature, data?.units?.hemisphere, data?.homesteadLocation?.lat]);
 
   // ---- Auto-redirect when the active hobby becomes hidden ----
   // If the user hides their currently-active hobby in Settings, we need to
@@ -2097,7 +2153,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
             padding: "2px 6px", background: palette.bgAlt, borderRadius: 4,
           }}>
             {entry.weather.precipIn > 0 ? <CloudRain size={11} /> : <Sun size={11} />}
-            {formatWeather(entry.weather)}
+            {formatWeatherI18n(entry.weather)}
           </div>
         )}
       </div>
@@ -3378,6 +3434,139 @@ function ManageHobbiesSection({ data, update }) {
 }
 
 // ============================================================================
+// INTERNATIONAL SECTION — collapsible panel inside Settings for non-US users
+// ----------------------------------------------------------------------------
+// Hemisphere selector (auto from location, or manually override), temperature
+// unit (F/C), currency picker (USD/AUD/CAD/GBP/EUR/NZD). Closed by default
+// because most users are in the US and don't need to think about it.
+// ============================================================================
+function InternationalSection({ data, update }) {
+  const [open, setOpen] = useState(false);
+  const units = data.units || {};
+  const currency = units.currency || "USD";
+  const tempUnit = units.temperature || "F";
+  const hemisphere = units.hemisphere || "auto";
+  const lat = data.homesteadLocation?.lat;
+  const detectedHem = typeof lat === "number" ? (lat < 0 ? "south" : "north") : null;
+
+  const setUnit = (key, value) => {
+    update(d => {
+      if (!d.units) d.units = {};
+      d.units[key] = value;
+      return d;
+    });
+  };
+
+  const CURRENCIES = [
+    { code: "USD", label: "USD ($) — US Dollar" },
+    { code: "AUD", label: "AUD (A$) — Australian Dollar" },
+    { code: "CAD", label: "CAD (C$) — Canadian Dollar" },
+    { code: "GBP", label: "GBP (£) — British Pound" },
+    { code: "EUR", label: "EUR (€) — Euro" },
+    { code: "NZD", label: "NZD (NZ$) — New Zealand Dollar" },
+  ];
+
+  return (
+    <div style={{ marginTop: 16, marginBottom: 8 }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+        International friends?
+      </div>
+      <button
+        onClick={() => setOpen(!open)}
+        style={{
+          width: "100%", display: "flex", alignItems: "center", justifyContent: "space-between",
+          padding: "12px 14px", background: palette.card, border: `1.5px solid ${palette.line}`,
+          borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, color: palette.ink, textAlign: "left",
+        }}
+      >
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14 }}>
+            {open ? "Hide international settings" : "🌍 Currency, temperature, hemisphere"}
+          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+            Currently: {currency} · {tempUnit === "C" ? "°C" : "°F"} · {hemisphere === "auto" ? `${detectedHem || "north"} (auto)` : hemisphere}
+          </div>
+        </div>
+        <ChevronDown
+          size={18}
+          style={{ transform: open ? "rotate(180deg)" : "", transition: "transform 0.2s", flexShrink: 0 }}
+        />
+      </button>
+
+      {open && (
+        <div style={{ marginTop: 8, padding: 12, background: palette.card, borderRadius: 8, border: `1.5px solid ${palette.line}` }}>
+          <p style={{ fontSize: 12, color: palette.inkSoft, margin: "0 0 14px", lineHeight: 1.5 }}>
+            Henalytics started in the US so the defaults are dollars, Fahrenheit, and northern-hemisphere seasons. Switch any of these if they don't fit you.
+          </p>
+
+          {/* Currency */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>💵 Currency</div>
+            <select
+              style={{ ...inputStyle }}
+              value={currency}
+              onChange={e => setUnit("currency", e.target.value)}
+            >
+              {CURRENCIES.map(c => <option key={c.code} value={c.code}>{c.label}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>
+              Note: Ko-fi/Stripe tips are still charged in USD — your card or Apple Pay will handle the conversion automatically.
+            </div>
+          </div>
+
+          {/* Temperature */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>🌡 Temperature</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[{ k: "F", l: "Fahrenheit (°F)" }, { k: "C", l: "Celsius (°C)" }].map(o => (
+                <button
+                  key={o.k}
+                  onClick={() => setUnit("temperature", o.k)}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 8,
+                    border: `1.5px solid ${tempUnit === o.k ? palette.ink : palette.line}`,
+                    background: tempUnit === o.k ? palette.ink : palette.bg,
+                    color: tempUnit === o.k ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{o.l}</button>
+              ))}
+            </div>
+          </div>
+
+          {/* Hemisphere */}
+          <div>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>🌎 Hemisphere</div>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                { k: "auto", l: detectedHem ? `Auto (${detectedHem})` : "Auto" },
+                { k: "north", l: "Northern" },
+                { k: "south", l: "Southern" },
+              ].map(o => (
+                <button
+                  key={o.k}
+                  onClick={() => setUnit("hemisphere", o.k)}
+                  style={{
+                    flex: "1 1 90px", padding: "8px 12px", borderRadius: 8,
+                    border: `1.5px solid ${hemisphere === o.k ? palette.ink : palette.line}`,
+                    background: hemisphere === o.k ? palette.ink : palette.bg,
+                    color: hemisphere === o.k ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{o.l}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, fontStyle: "italic", lineHeight: 1.5 }}>
+              Affects garden seasons (spring/summer/fall/winter labels). Auto-detects from your location if you've set one.
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // SETTINGS MODAL — account, preferences, data, support
 // ----------------------------------------------------------------------------
 // Slimmed down: no longer holds homestead-identity stuff (now in BarnModal).
@@ -3591,6 +3780,9 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           </div>
         </div>
       )}
+
+      {/* International friends? — collapsible panel for users outside the US */}
+      <InternationalSection data={data} update={update} />
 
       {/* Owner-only debug tools — only visible to 416lulays@gmail.com */}
       {user?.email === "416lulays@gmail.com" && (
@@ -5922,7 +6114,6 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
   const [shareStatus, setShareStatus] = useState(""); // "", "sharing", "saving", "done", "error"
   const cardRef = React.useRef(null);
 
-  const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
   const now = new Date();
   const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,"0")}-${String(now.getDate()).padStart(2,"0")}`;
   const oneWeekAgo = new Date(now - 7*24*60*60*1000);

@@ -16,6 +16,7 @@
 import React, { useState, useMemo } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { fmtMoney } from "./units.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -38,7 +39,6 @@ const parseLocalDate = (s) => { if (!s) return new Date(); const [y,m,d] = s.spl
 const localDateStr = (date) => { const d = date instanceof Date ? date : new Date(date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const todayStr = () => localDateStr(new Date());
 const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
-const fmtMoney = (n) => `$${(Number(n)||0).toFixed(2)}`;
 const thisMonthStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 
 // Hobby type colors and labels
