@@ -36,6 +36,7 @@ import GoatsPage, { GoatsAnalytics } from "./Goats.jsx";
 import CowsPage, { CowsAnalytics } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
 import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
+import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 
 // ============ DESIGN TOKENS ============
@@ -71,6 +72,7 @@ const defaultData = () => ({
     { id: "cows", name: "Cows 🐄", type: "cows", icon: "sprout", animals: [], hidden: true },
     { id: "pigs", name: "Pigs 🐷", type: "pigs", icon: "sprout", animals: [], hidden: true },
     { id: "sheep", name: "Sheep 🐑", type: "sheep", icon: "sprout", animals: [], breedings: [], shearings: [], subType: "mixed", hidden: true },
+    { id: "sourdough", name: "Sourdough 🍞", type: "sourdough", icon: "sprout", starters: [], bakes: [], hidden: true },
     { id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
@@ -250,6 +252,19 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       if (!Array.isArray(h.breedings)) h.breedings = [];
       if (!Array.isArray(h.shearings)) h.shearings = [];
       if (!h.subType) h.subType = "mixed";
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
+
+  // ---- Sourdough hobby ----
+  const hasSourdough = data.hobbies.some(h => h.id === "sourdough");
+  if (!hasSourdough) {
+    data.hobbies.push({ id: "sourdough", name: "Sourdough 🍞", type: "sourdough", icon: "sprout", starters: [], bakes: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "sourdough") {
+      if (!Array.isArray(h.starters)) h.starters = [];
+      if (!Array.isArray(h.bakes)) h.bakes = [];
       if (typeof h.hidden === "undefined") h.hidden = true;
     }
   });
@@ -460,9 +475,11 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 11;
+const CURRENT_VERSION = 12;
 
 const WHATS_NEW = [
+  "🍞 Sourdough hobby — track starters with feeding logs, bakes with cost & profit, recipes, and crumb ratings",
+  "🐝 Beekeeping upgrades — log hive cost when you add a hive, plus a varroa mite testing log with high-mite alerts",
   "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Find it in Settings.",
   "🐑 Sheep hobby — dairy, meat, wool, or mixed flocks with lambing tracking, shearing logs, and calendar reminders",
   "🐔 Per-flock tracking — feed, bedding, deaths, and sold eggs now attach to a specific flock so you get real per-flock cost-per-egg numbers",
@@ -945,7 +962,7 @@ export default function HomesteadApp() {
       setActiveHobby(newActive);
       // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
       // bounce to "home" so we don't stay on a page tied to the hidden hobby.
-      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "farmstand"];
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "sourdough", "farmstand"];
       if (hobbyPages.includes(page)) {
         const newHobbyType = (firstVisible || {}).type;
         if (hobbyPages.includes(newHobbyType)) {
@@ -1360,6 +1377,7 @@ export default function HomesteadApp() {
                         cows: "cows",
                         pigs: "pigs",
                         sheep: "sheep",
+                        sourdough: "sourdough",
                         farmstand: "farmstand",
                       };
                       // Garden, egg_layers, meat_chickens all share the
@@ -1435,12 +1453,17 @@ export default function HomesteadApp() {
             <SheepAnalytics hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} />
           </AnalyticsShareWrapper>
         )}
+        {page === "analytics" && activeHobby === "sourdough" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data}>
+            <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} />
+          </AnalyticsShareWrapper>
+        )}
         {page === "analytics" && activeHobby === "farmstand" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data}>
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "farmstand" && (
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -1473,6 +1496,9 @@ export default function HomesteadApp() {
         {page === "sheep" && (
           <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
         )}
+        {page === "sourdough" && (
+          <SourdoughPage hobby={data.hobbies.find(h=>h.id==="sourdough")} data={data} update={update} setModal={setModal} />
+        )}
         {page === "calendar" && (
           <CalendarPage data={data} update={update} setModal={setModal} />
         )}
@@ -1502,7 +1528,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "farmstand"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "farmstand") setPage("farmstand"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "sourdough" || page === "farmstand"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
@@ -3406,6 +3432,7 @@ function ManageHobbiesSection({ data, update }) {
     cows: "Cows",
     pigs: "Pigs",
     sheep: "Sheep",
+    sourdough: "Sourdough",
     farmstand: "Farmstand",
   };
 
@@ -4603,6 +4630,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
                   else if (h.type === "cows") { setActiveHobby("cows"); setPage("cows"); }
                   else if (h.type === "pigs") { setActiveHobby("pigs"); setPage("pigs"); }
                   else if (h.type === "sheep") { setActiveHobby("sheep"); setPage("sheep"); }
+                  else if (h.type === "sourdough") { setActiveHobby("sourdough"); setPage("sourdough"); }
                   else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
@@ -5688,7 +5716,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, farmstand: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, sourdough: false, farmstand: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -5726,7 +5754,7 @@ function OnboardingWizard({ update, onClose }) {
       // Filter hobbies down to just the ones they wanted
       const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
       d.hobbies = (d.hobbies || []).map((h) => {
-        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs","sheep","farmstand"].includes(h.type)) {
+        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs","sheep","sourdough","farmstand"].includes(h.type)) {
           h.hidden = !wantedTypes.includes(h.type);
         }
         return h;
@@ -5935,6 +5963,13 @@ function OnboardingWizard({ update, onClose }) {
               icon="🐑"
               label="Sheep"
               sub="Dairy, meat, wool, lambing schedules"
+            />
+            <HobbyCheckbox
+              checked={hobbies.sourdough || false}
+              onToggle={() => setHobbies((h) => ({ ...h, sourdough: !h.sourdough }))}
+              icon="🍞"
+              label="Sourdough"
+              sub="Starter feeds, bake log, recipes, profit per loaf"
             />
             <HobbyCheckbox
               checked={hobbies.farmstand || false}
@@ -6442,6 +6477,45 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           { label: "Lambs born", value: lambsBorn },
           { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
           { label: "Wool", value: woolLbs > 0 ? `${woolLbs.toFixed(1)} lbs` : (meatLbs > 0 ? `${Math.round(meatLbs)} lbs meat` : "—") },
+        ],
+      };
+    }
+    if (hobby.type === "sourdough") {
+      const allBakes = hobby.bakes || [];
+      const bakesInRange = allBakes.filter(b => {
+        if (!b.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(b.date + "T12:00");
+        if (filter === "today") return b.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const totalLoaves = bakesInRange.reduce((s,b) => s + (Number(b.loafCount)||0), 0);
+      const recipeCount = {};
+      bakesInRange.forEach(b => {
+        const r = b.recipe || "Other";
+        recipeCount[r] = (recipeCount[r]||0) + (Number(b.loafCount)||0);
+      });
+      const top = Object.entries(recipeCount).sort((a,b)=>b[1]-a[1])[0];
+      const allSales = (data.sales || []).filter(s => s.hobbyType === "sourdough");
+      const salesInRange = allSales.filter(s => {
+        if (!s.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(s.date + "T12:00");
+        if (filter === "today") return s.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const revenue = salesInRange.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+      return {
+        emoji: "🍞", label: "Sourdough",
+        stats: [
+          { label: "Bakes", value: bakesInRange.length },
+          { label: "Loaves", value: totalLoaves },
+          { label: "Top recipe", value: top ? top[0] : "—" },
+          { label: "Sales revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" },
         ],
       };
     }

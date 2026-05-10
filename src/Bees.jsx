@@ -80,11 +80,19 @@ function HiveModal({ hive, onSave, onClose }) {
   const [source, setSource] = useState(hive?.source || "Package");
   const [installDate, setInstallDate] = useState(hive?.installDate || todayStr());
   const [location, setLocation] = useState(hive?.location || "");
+  const [purchaseCost, setPurchaseCost] = useState(hive?.purchaseCost ? String(hive.purchaseCost) : "");
+  const [purchasedFrom, setPurchasedFrom] = useState(hive?.purchasedFrom || "");
   const [notes, setNotes] = useState(hive?.notes || "");
 
   const handleSave = () => {
     if (!name.trim()) return;
-    onSave({ id: hive?.id || newId(), name: name.trim(), type, source, installDate, location, notes, active: hive?.active !== false });
+    onSave({
+      id: hive?.id || newId(),
+      name: name.trim(), type, source, installDate, location, notes,
+      purchaseCost: parseFloat(purchaseCost) || 0,
+      purchasedFrom: purchasedFrom.trim(),
+      active: hive?.active !== false,
+    });
     onClose();
   };
 
@@ -122,6 +130,16 @@ function HiveModal({ hive, onSave, onClose }) {
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Location / spot (optional)</div>
             <input style={inputStyle} value={location} onChange={e=>setLocation(e.target.value)} placeholder="e.g. Back of orchard, facing east" />
           </label>
+          <div style={{ display:"flex",gap:12 }}>
+            <label style={{ flex:1 }}>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive cost (optional)</div>
+              <input type="number" step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+            </label>
+            <label style={{ flex:1 }}>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Where from (optional)</div>
+              <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Mann Lake, local apiary" />
+            </label>
+          </div>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
             <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything notable about this hive..." />
@@ -167,6 +185,10 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
   const [splitDetails, setSplitDetails] = useState("");
   // Death/loss
   const [deathCause, setDeathCause] = useState("Unknown");
+  // Varroa testing
+  const [varroaMethod, setVarroaMethod] = useState("Sugar roll");
+  const [varroaCount, setVarroaCount] = useState("");
+  const [varroaTreatedAfter, setVarroaTreatedAfter] = useState(false);
 
   const handleSave = () => {
     let entry = { id: newId(), date, action, hiveId: hive.id, created: Date.now() };
@@ -178,6 +200,9 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
       entry = { ...entry, feedType, qty: Number(feedQty)||0, cost: Number(feedCost)||0 };
     } else if (action === "treatment") {
       entry = { ...entry, treatmentType, miteCount: Number(miteCount)||0, cost: Number(treatmentCost)||0, note };
+    } else if (action === "varroa") {
+      // Varroa test entry — count is mites per 100 bees (the standard metric)
+      entry = { ...entry, varroaMethod, varroaCount: Number(varroaCount)||0, varroaTreatedAfter, note };
     } else if (action === "infrastructure") {
       entry = { ...entry, item, cost: Number(infraCost)||0 };
     } else if (action === "split" || action === "swarm") {
@@ -194,6 +219,7 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
   const titles = {
     inspect: "🔍 Hive Inspection", harvest: "🍯 Harvest Honey",
     feed: "🌾 Log Feed", treatment: "💊 Log Treatment",
+    varroa: "🦠 Varroa Mite Test",
     infrastructure: "🔨 Infrastructure", split: "✂️ Log Split",
     swarm: "🐝 Log Swarm", death: "💀 Colony Loss", note: "📓 Note",
     winter_prep: "❄️ Winter Prep", spring_buildup: "🌸 Spring Buildup",
@@ -335,6 +361,37 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
             </label>
           </>}
 
+          {action === "varroa" && <>
+            <div style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:12,color:palette.inkSoft,lineHeight:1.5 }}>
+              💡 <strong>Mite count</strong> is mites per 100 bees. Most beekeepers treat at 3+ mites/100 bees in late summer or fall.
+            </div>
+            <label style={{ display:"block" }}>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Method</div>
+              <select style={inputStyle} value={varroaMethod} onChange={e=>setVarroaMethod(e.target.value)}>
+                <option value="Sugar roll">Sugar roll</option>
+                <option value="Alcohol wash">Alcohol wash</option>
+                <option value="Sticky board">Sticky board (24hr drop)</option>
+              </select>
+            </label>
+            <label style={{ display:"block" }}>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Mite count (optional — per 100 bees)</div>
+              <input style={inputStyle} type="number" min={0} step="0.1" value={varroaCount} onChange={e=>setVarroaCount(e.target.value)} placeholder="e.g. 2 = 2 mites per 100 bees" />
+            </label>
+            {Number(varroaCount) >= 3 && (
+              <div style={{ padding:"10px 12px",background:palette.accent,color:palette.bg,borderRadius:8,fontSize:13,fontWeight:600,lineHeight:1.5 }}>
+                ⚠️ {Number(varroaCount).toFixed(1)} mites/100 bees is at or above the 3% treatment threshold. Most beekeepers recommend treating soon to protect the hive heading into winter.
+              </div>
+            )}
+            <label style={{ display:"flex",alignItems:"center",gap:8,cursor:"pointer" }}>
+              <input type="checkbox" checked={varroaTreatedAfter} onChange={e=>setVarroaTreatedAfter(e.target.checked)} />
+              <span style={{ fontSize:13,color:palette.ink }}>Treated after this test</span>
+            </label>
+            <label style={{ display:"block" }}>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
+              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Sample size, conditions, treatment plan..." />
+            </label>
+          </>}
+
           {action === "infrastructure" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Item</div>
@@ -397,8 +454,14 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
   const feedCost = hiveEntries.filter(e=>e.action==="feed").reduce((s,e)=>s+(Number(e.cost)||0),0);
   const treatCost = hiveEntries.filter(e=>e.action==="treatment").reduce((s,e)=>s+(Number(e.cost)||0),0);
   const infraCost = hiveEntries.filter(e=>e.action==="infrastructure").reduce((s,e)=>s+(Number(e.cost)||0),0);
-  const totalCost = feedCost + treatCost + infraCost;
+  const hiveCost = Number(hive.purchaseCost) || 0;
+  const totalCost = feedCost + treatCost + infraCost + hiveCost;
   const isDead = hiveEntries.some(e=>e.action==="death");
+
+  // Varroa testing — find most recent test, alert if untreated and high
+  const varroaTests = hiveEntries.filter(e => e.action === "varroa");
+  const lastVarroa = varroaTests[0]; // already sorted desc
+  const showHighMiteAlert = lastVarroa && Number(lastVarroa.varroaCount) >= 3 && !lastVarroa.varroaTreatedAfter && !isDead;
 
   return (
     <div>
@@ -425,6 +488,21 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
         </div>
       </div>
 
+      {showHighMiteAlert && (
+        <div style={{
+          background:palette.accent, color:palette.bg,
+          border:`1.5px solid ${palette.ink}`, borderRadius:10,
+          padding:"12px 14px", marginBottom:12, fontSize:13, lineHeight:1.5,
+        }}>
+          <div style={{ fontWeight:700, marginBottom:4 }}>
+            ⚠️ High mite count detected — treatment recommended
+          </div>
+          <div style={{ fontSize:12, opacity:0.92 }}>
+            Last test: <strong>{Number(lastVarroa.varroaCount).toFixed(1)} mites/100 bees</strong> on {fmtDate(lastVarroa.date)} ({lastVarroa.varroaMethod}). The 3% threshold is the standard treatment trigger. Tap 💊 Treatment to log a treatment.
+          </div>
+        </div>
+      )}
+
       {lastInspect && (
         <div style={{ background:palette.yolkSoft,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
           🔍 Last inspected: <strong>{fmtDate(lastInspect.date)}</strong>
@@ -447,6 +525,14 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
           {totalCost > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
             <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Total Cost</div>
             <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.accent }}>{fmtMoney(totalCost)}</div>
+            {hiveCost > 0 && <div style={{ fontSize:10,color:palette.inkSoft,marginTop:2 }}>incl. {fmtMoney(hiveCost)} hive</div>}
+          </div>}
+          {lastVarroa && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
+            <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Last mite test</div>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:Number(lastVarroa.varroaCount) >= 3 ? palette.accent : palette.leaf }}>
+              {Number(lastVarroa.varroaCount).toFixed(1)}<span style={{ fontSize:12,color:palette.inkSoft,marginLeft:2 }}>/100</span>
+            </div>
+            <div style={{ fontSize:10,color:palette.inkSoft,marginTop:2 }}>{fmtDate(lastVarroa.date)} · {varroaTests.length} test{varroaTests.length===1?"":"s"}</div>
           </div>}
         </div>
       )}
@@ -458,6 +544,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
           { action:"harvest", label:"Harvest", emoji:"🍯" },
           { action:"feed", label:"Feed", emoji:"🌾" },
           { action:"treatment", label:"Treatment", emoji:"💊" },
+          { action:"varroa", label:"Mite Test", emoji:"🦠" },
           { action:"split", label:"Split", emoji:"✂️" },
           { action:"swarm", label:"Swarm", emoji:"🐝" },
           { action:"winter_prep", label:"Winter Prep", emoji:"❄️" },
