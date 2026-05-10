@@ -128,7 +128,13 @@ function ModalShell({ title, onClose, children, maxWidth = 460 }) {
 // ============ ANIMAL MODAL ============
 function AnimalModal({ animal, onSave, onDelete, onClose }) {
   const [name, setName] = useState(animal?.name || "");
-  const [breed, setBreed] = useState(animal?.breed || "");
+  // Breed: dropdown with common sheep breeds + "Other" → free-text input.
+  // We init based on whether the saved breed matches a known option.
+  const SHEEP_BREEDS = ["Suffolk", "Dorset", "Katahdin", "Merino", "Hampshire", "Polypay", "Romney", "East Friesian", "Icelandic", "Other"];
+  const initBreed = (animal?.breed || "").trim();
+  const initIsKnown = SHEEP_BREEDS.includes(initBreed);
+  const [breedSelect, setBreedSelect] = useState(initBreed && initIsKnown ? initBreed : (initBreed ? "Other" : ""));
+  const [breedCustom, setBreedCustom] = useState(initBreed && !initIsKnown ? initBreed : "");
   const [birthdate, setBirthdate] = useState(animal?.birthdate || "");
   const [sex, setSex] = useState(animal?.sex || "female");
   const [role, setRole] = useState(animal?.role || "ewe");
@@ -136,12 +142,16 @@ function AnimalModal({ animal, onSave, onDelete, onClose }) {
   const [purchasedFrom, setPurchasedFrom] = useState(animal?.purchasedFrom || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Compute the final breed value to save: custom value if "Other" selected,
+  // otherwise the dropdown selection itself (or empty string for "no breed").
+  const finalBreed = breedSelect === "Other" ? breedCustom.trim() : breedSelect;
+
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
       id: animal?.id || newId(),
       name: name.trim(),
-      breed: breed.trim(),
+      breed: finalBreed,
       birthdate,
       sex,
       role,
@@ -160,7 +170,19 @@ function AnimalModal({ animal, onSave, onDelete, onClose }) {
         <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Daisy, Tag #042" autoFocus />
       </Field>
       <Field label="Breed (optional)">
-        <input style={inputStyle} value={breed} onChange={e=>setBreed(e.target.value)} placeholder="e.g. Suffolk, Merino, Katahdin" />
+        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>
+          <option value="">— Select breed —</option>
+          {SHEEP_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+        {breedSelect === "Other" && (
+          <input
+            style={{ ...inputStyle, marginTop: 8 }}
+            value={breedCustom}
+            onChange={e => setBreedCustom(e.target.value)}
+            placeholder="Type your breed (e.g. Targhee, Jacob, Shetland)"
+            autoFocus
+          />
+        )}
       </Field>
       <Field label="Birthdate (optional)">
         <input type="date" style={inputStyle} value={birthdate} onChange={e=>setBirthdate(e.target.value)} />
