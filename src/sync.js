@@ -368,9 +368,24 @@ export function getActiveHomesteadId() {
 }
 
 async function sendEmail(payload) {
+  // Pull the current Supabase session JWT and pass it to the server. The
+  // hardened /api/send-email endpoint requires this — it verifies the JWT
+  // server-side before sending anything. If there's no active session,
+  // we surface a clear error.
+  const headers = { 'Content-Type': 'application/json' };
+  if (isSupabaseConfigured) {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (session?.access_token) {
+        headers['Authorization'] = `Bearer ${session.access_token}`;
+      }
+    } catch (e) {
+      // Fall through — server will reject with 401, client handles it
+    }
+  }
   const res = await fetch('/api/send-email', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
@@ -388,14 +403,13 @@ export function notifySignup({ newUserEmail }) {
   return sendEmail({ kind: 'signup_notify', newUserEmail });
 }
 
-export function sendFarmhandInvite({ inviteEmail, inviterEmail, homesteadName, inviteCode, baseUrl }) {
-  const inviteLink = `${baseUrl}/?invite=${encodeURIComponent(inviteCode)}`;
+export function sendFarmhandInvite({ inviteCode }) {
+  // The server-side handler looks up the invite by code, pulls the inviter's
+  // email and homestead name from the database, and constructs the link.
+  // Client is no longer trusted with any of those fields.
   return sendEmail({
     kind: 'farmhand_invite',
-    inviteEmail,
-    inviterEmail,
-    homesteadName,
-    inviteLink,
+    inviteCode,
   });
 }
 
