@@ -74,21 +74,41 @@ export default async function handler(req, res) {
 
       const payload = buildDigestEmail(email, data, stats);
 
-      try {
-        const send = await fetch(RESEND_API, {
-          method: 'POST',
-          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        });
-        if (!send.ok) {
-          const t = await send.text();
-          failed.push({ id: h.id, email, error: t });
-        } else {
-          sent.push({ id: h.id, email });
+      // Resend caps at 5 requests/sec. 250ms between sends keeps us at 4/sec
+      // with comfortable headroom. For larger user bases this could be
+      // parallelized in batches of 5 with a 1-second wait between batches,
+      // but at <50 opted-in users the simple sequential approach is fine.
+      let attempts = 0;
+      let delivered = false;
+      let lastError = null;
+      while (attempts < 3 && !delivered) {
+        attempts++;
+        try {
+          const send = await fetch(RESEND_API, {
+            method: 'POST',
+            headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
+          if (send.ok) {
+            delivered = true;
+            sent.push({ id: h.id, email });
+          } else if (send.status === 429) {
+            // Hit Resend rate limit — back off and retry
+            lastError = await send.text();
+            await new Promise(r => setTimeout(r, 1500));
+          } else {
+            lastError = await send.text();
+            break; // non-retryable error, give up immediately
+          }
+        } catch (e) {
+          lastError = String(e);
+          break;
         }
-      } catch (e) {
-        failed.push({ id: h.id, email, error: String(e) });
       }
+      if (!delivered) failed.push({ id: h.id, email, error: lastError });
+
+      // Pace ourselves between recipients — keeps us safely under 5/sec
+      await new Promise(r => setTimeout(r, 250));
     }
 
     return res.status(200).json({ ok: true, sent: sent.length, skipped: skipped.length, failed: failed.length, details: { sent, skipped, failed } });

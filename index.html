@@ -46,80 +46,10 @@
   html, body, #root { margin: 0; padding: 0; }
   body { background: #F4EDE0; }
   body { padding: env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left); }
-
-  /* Initial loading animation, shown before React boots up */
-  .boot-load {
-    min-height: 100vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 18px;
-    background: #F4EDE0;
-    background-image: radial-gradient(rgba(44,24,16,0.19) 0.5px, transparent 0.5px);
-    background-size: 20px 20px;
-    padding: 20px;
-  }
-  .boot-load svg { width: 100%; max-width: 360px; height: auto; }
-  .boot-load .title { font-family: 'DM Serif Display', Georgia, serif; font-size: 22px; color: #2C1810; text-align: center; }
-
-  @keyframes boot-hen-sit-stand {
-    0%, 40% { transform: translateY(8px) scaleY(0.85); }
-    55%, 80% { transform: translateY(0) scaleY(1); }
-    100% { transform: translateY(8px) scaleY(0.85); }
-  }
-  @keyframes boot-legs-show {
-    0%, 45% { opacity: 0; }
-    55%, 80% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-  @keyframes boot-egg-reveal {
-    0%, 50% { opacity: 0; }
-    55%, 80% { opacity: 1; }
-    100% { opacity: 0; }
-  }
-  .boot-hen { animation: boot-hen-sit-stand 3s ease-in-out infinite; transform-box: fill-box; transform-origin: center; }
-  .boot-legs { animation: boot-legs-show 3s ease-in-out infinite; opacity: 0; }
-  .boot-egg { animation: boot-egg-reveal 3s ease-in-out infinite; opacity: 0; }
 </style>
 </head>
 <body>
-<div id="root">
-  <!-- Bootstrap loading scene — shown until React mounts and replaces this -->
-  <div class="boot-load">
-    <svg viewBox="0 0 320 180" aria-hidden="true">
-      <line x1="0" y1="160" x2="320" y2="160" stroke="#8B6F47" stroke-width="1.5" opacity="0.4"/>
-      <g>
-        <ellipse cx="160" cy="158" rx="42" ry="8" fill="#8B6F47" opacity="0.6"/>
-        <line x1="125" y1="158" x2="140" y2="148" stroke="#8B6F47" stroke-width="1.5"/>
-        <line x1="140" y1="158" x2="155" y2="146" stroke="#8B6F47" stroke-width="1.5"/>
-        <line x1="165" y1="146" x2="180" y2="158" stroke="#8B6F47" stroke-width="1.5"/>
-        <line x1="180" y1="148" x2="195" y2="158" stroke="#8B6F47" stroke-width="1.5"/>
-      </g>
-      <g class="boot-egg">
-        <ellipse cx="160" cy="148" rx="11" ry="14" fill="#FAF5EA" stroke="#2C1810" stroke-width="1.2"/>
-        <ellipse cx="156" cy="143" rx="2" ry="3" fill="#fff" opacity="0.7"/>
-      </g>
-      <g class="boot-hen">
-        <ellipse cx="160" cy="135" rx="22" ry="18" fill="#8B6F47" stroke="#2C1810" stroke-width="1.5"/>
-        <ellipse cx="155" cy="135" rx="12" ry="10" fill="#C9A77B" stroke="#2C1810" stroke-width="1.2" transform="rotate(-15 155 135)"/>
-        <path d="M 178 130 L 192 122 L 190 132 L 194 138 L 184 138 Z" fill="#8B6F47" stroke="#2C1810" stroke-width="1.2"/>
-        <circle cx="145" cy="118" r="10" fill="#8B6F47" stroke="#2C1810" stroke-width="1.5"/>
-        <path d="M 141 109 Q 139 104 142 105 Q 140 100 145 102 Q 144 98 148 101 L 148 110 Z" fill="#C84B31" stroke="#2C1810" stroke-width="1"/>
-        <path d="M 136 119 L 131 121 L 136 122 Z" fill="#E8B547" stroke="#2C1810" stroke-width="1"/>
-        <circle cx="143" cy="116" r="1.5" fill="#2C1810"/>
-        <path d="M 139 124 Q 137 128 140 128 Q 143 127 142 124 Z" fill="#C84B31" stroke="#2C1810" stroke-width="0.8"/>
-        <g class="boot-legs">
-          <line x1="155" y1="153" x2="155" y2="160" stroke="#2C1810" stroke-width="1.5"/>
-          <line x1="165" y1="153" x2="165" y2="160" stroke="#2C1810" stroke-width="1.5"/>
-          <line x1="152" y1="160" x2="158" y2="160" stroke="#2C1810" stroke-width="1.5" stroke-linecap="round"/>
-          <line x1="162" y1="160" x2="168" y2="160" stroke="#2C1810" stroke-width="1.5" stroke-linecap="round"/>
-        </g>
-      </g>
-    </svg>
-    <div class="title">Henalytics</div>
-  </div>
-</div>
+<div id="root"></div>
 <script type="module" src="/src/main.jsx"></script>
 <script>
   if ('serviceWorker' in navigator) {
