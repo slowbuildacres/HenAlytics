@@ -228,6 +228,18 @@ function computeWeeklyStats(data) {
     sheepWoolLbs = weekShearings.reduce((s,sh) => s+(Number(sh.woolLbs)||0), 0);
   }
 
+  // Sourdough stats
+  const sourdoughHobby = hobbies.find(h => h.type === 'sourdough' && !h.hidden);
+  let sourdoughBakes = 0, sourdoughLoaves = 0, sourdoughLoavesSold = 0, sourdoughRevenue = 0;
+  if (sourdoughHobby) {
+    const weekBakes = (sourdoughHobby.bakes || []).filter(b => b.date && b.date >= sevenDaysAgoIso);
+    sourdoughBakes = weekBakes.length;
+    sourdoughLoaves = weekBakes.reduce((s,b) => s+(Number(b.loafCount)||0), 0);
+    const weekSourdoughSales = (data.sales || []).filter(s => s.hobbyType === 'sourdough' && s.date >= sevenDaysAgoIso);
+    sourdoughLoavesSold = weekSourdoughSales.reduce((s,x) => s+(Number(x.qty)||0), 0);
+    sourdoughRevenue = weekSourdoughSales.reduce((s,x) => s+(Number(x.totalRevenue)||0), 0);
+  }
+
   // Farm stand sales stats
   const farmstandSales = (data.sales || []).filter(s => s.hobbyType === 'farmstand' && s.date >= sevenDaysAgoIso);
   const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
@@ -251,6 +263,7 @@ function computeWeeklyStats(data) {
     cowMilkGal, cowCalves, hasCows: !!cowsHobby,
     pigLitters, pigButchered, pigMeatLbs, hasPigs: !!pigsHobby,
     sheepMilkGal, sheepLambsBorn, sheepWoolLbs, sheepButchered, hasSheep: !!sheepHobby,
+    sourdoughBakes, sourdoughLoaves, sourdoughLoavesSold, sourdoughRevenue, hasSourdough: !!sourdoughHobby,
     freezerBirds, freezerLbs,
   };
 }
@@ -327,6 +340,12 @@ function buildDigestEmail(email, data, stats) {
     if (stats.sheepMilkGal > 0) lines.push(`🥛 <strong>${stats.sheepMilkGal.toFixed(1)} gal</strong> sheep milk`);
     if (stats.sheepWoolLbs > 0) lines.push(`✂️ <strong>${stats.sheepWoolLbs.toFixed(1)} lbs</strong> wool sheared`);
     if (stats.sheepButchered > 0) lines.push(`🥩 <strong>${stats.sheepButchered}</strong> sheep butchered`);
+  }
+
+  // Sourdough lines
+  if (stats.hasSourdough) {
+    if (stats.sourdoughLoaves > 0) lines.push(`🍞 <strong>${stats.sourdoughLoaves}</strong> loa${stats.sourdoughLoaves===1?'f':'ves'} baked across <strong>${stats.sourdoughBakes}</strong> session${stats.sourdoughBakes===1?'':'s'}`);
+    if (stats.sourdoughLoavesSold > 0) lines.push(`💰 <strong>${stats.sourdoughLoavesSold}</strong> loa${stats.sourdoughLoavesSold===1?'f':'ves'} sold · <strong>${fmtMoney(stats.sourdoughRevenue)}</strong> revenue`);
   }
 
   // Farm stand lines

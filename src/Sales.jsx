@@ -48,7 +48,8 @@ const HOBBY_META = {
   meat_chickens: { label: "Meat Chickens", emoji: "🍗", color: palette.feather },
   rabbits:       { label: "Rabbits",       emoji: "🐇", color: palette.leaf },
   garden:        { label: "Garden",        emoji: "🌱", color: palette.leaf },
-  farmstand:     { label: "Farm Stand",     emoji: "🏪", color: palette.leaf },
+  farmstand:     { label: "Farm Stand",    emoji: "🧾", color: palette.leaf },
+  sourdough:     { label: "Sourdough",     emoji: "🍞", color: palette.yolk },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 };
 
@@ -168,6 +169,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       return Number(flatPrice) || 0;
     }
     if (hobbyType === "farmstand") return q * (Number(pricePerUnit) || 0);
+    if (hobbyType === "sourdough") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     return Number(flatPrice) || 0;
   }, [hobbyType, qty, unit, pricePerUnit, pricingMethod, avgWeightLbs, pricePerLb, flatPrice]);
@@ -180,6 +182,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       else if (h.type === "meat_chickens") types.add("meat_chickens");
       else if (h.type === "rabbits") types.add("rabbits");
       else if (h.type === "garden") types.add("garden");
+      else if (h.type === "sourdough") types.add("sourdough");
     });
     // Always include eggs and farmstand
     types.add("eggs");
@@ -210,6 +213,12 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
       const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
+    } else if (hobbyType === "sourdough") {
+      // Sourdough sales: loaf count × price per loaf, with optional cost per loaf
+      // for profit math. Recipe goes in the `crop` field for consistency with farmstand.
+      const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
+      const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
+      sale = { ...sale, crop, pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
     } else if (hobbyType === "garden") {
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit) || 0 };
     } else {
@@ -505,6 +514,33 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 </div>
               </>}
 
+              {/* Sourdough */}
+              {hobbyType === "sourdough" && <>
+                <Field label="Recipe / loaf type">
+                  <input style={inputStyle} list="sourdough-recipes" value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Country Loaf, Boule, Cinnamon Raisin..." />
+                  <datalist id="sourdough-recipes">
+                    {["Country Loaf","Boule","Batard","Whole Wheat","Rye","Multigrain","Sandwich Loaf","Focaccia","Baguette","Cinnamon Raisin","Jalapeño Cheddar","Pizza Dough","Discard Crackers"].map(r => <option key={r} value={r} />)}
+                  </datalist>
+                </Field>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  <div style={{ flex:1,minWidth:80 }}>
+                    <Field label="Loaves sold">
+                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Cost per loaf (optional)">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Sale price per loaf">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                </div>
+              </>}
+
               {/* Other */}
               {hobbyType === "other" && <>
                 <Field label="What was sold?">
@@ -612,7 +648,9 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.qty} ${sale.saleForm || ""}`;
     if (sale.pricingMethod === "per_lb" && sale.avgWeightLbs) detail += ` · ${sale.avgWeightLbs} lbs avg`;
   } else if (sale.hobbyType === "farmstand") {
-    detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit||""} @ $${(sale.pricePerUnit||0).toFixed(2)}/unit`;
+    detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit||""} @ ${fmtMoney(sale.pricePerUnit||0)}/unit`;
+  } else if (sale.hobbyType === "sourdough") {
+    detail = `${sale.crop || "Bread"} · ${sale.qty} loa${sale.qty === 1 ? "f" : "ves"} @ ${fmtMoney(sale.pricePerUnit||0)}/loaf`;
   } else if (sale.hobbyType === "garden") {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit || ""}`;
   } else {
@@ -878,15 +916,15 @@ export default function SalesPage({ data, update }) {
         const topItem = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1])[0];
         return (
           <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
-            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🏪 Farm Stand</div>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🧾 Farm Stand</div>
             <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:10 }}>
               <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
                 <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Revenue</div>
-                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.leaf }}>${fsRevenue.toFixed(2)}</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.leaf }}>{fmtMoney(fsRevenue)}</div>
               </div>
               <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
                 <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Profit</div>
-                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:fsProfit>=0?palette.leaf:palette.accent }}>${fsProfit.toFixed(2)}</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:fsProfit>=0?palette.leaf:palette.accent }}>{fmtMoney(fsProfit)}</div>
               </div>
               <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
                 <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Margin</div>
@@ -897,6 +935,50 @@ export default function SalesPage({ data, update }) {
                   <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Top item</div>
                   <div style={{ fontSize:14,fontWeight:700,color:palette.ink }}>{topItem[0]}</div>
                   <div style={{ fontSize:11,color:palette.inkSoft }}>{topItem[1]} units sold</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Sourdough profit section */}
+      {allSales.filter(s=>s.hobbyType==="sourdough").length > 0 && (() => {
+        const sdSales = allSales.filter(s=>s.hobbyType==="sourdough");
+        const sdRevenue = sdSales.reduce((s,x)=>s+computeRevenue(x),0);
+        const sdCost = sdSales.reduce((s,x)=>s+(Number(x.totalCost)||0),0);
+        const sdProfit = sdRevenue - sdCost;
+        const sdMargin = sdRevenue > 0 ? ((sdProfit/sdRevenue)*100).toFixed(1) : "—";
+        const sdLoaves = sdSales.reduce((s,x)=>s+(Number(x.qty)||0),0);
+        // Most popular recipe
+        const recipeCounts = {};
+        sdSales.forEach(s=>{ if(s.crop) recipeCounts[s.crop]=(recipeCounts[s.crop]||0)+(Number(s.qty)||1); });
+        const topRecipe = Object.entries(recipeCounts).sort((a,b)=>b[1]-a[1])[0];
+        return (
+          <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🍞 Sourdough</div>
+            <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:10 }}>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Loaves sold</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.yolk }}>{sdLoaves}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Revenue</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.leaf }}>{fmtMoney(sdRevenue)}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Profit</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:sdProfit>=0?palette.leaf:palette.accent }}>{fmtMoney(sdProfit)}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Margin</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.feather }}>{sdMargin}{sdMargin!=="—"?"%":""}</div>
+              </div>
+              {topRecipe && (
+                <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                  <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Top recipe</div>
+                  <div style={{ fontSize:14,fontWeight:700,color:palette.ink }}>{topRecipe[0]}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>{topRecipe[1]} loa{topRecipe[1] === 1 ? "f" : "ves"} sold</div>
                 </div>
               )}
             </div>

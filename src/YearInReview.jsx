@@ -40,6 +40,7 @@ export default function YearInReviewPage({ data }) {
   const cowsEnabled = hobbies.some(h => h.type === "cows" && !h.hidden);
   const pigsEnabled = hobbies.some(h => h.type === "pigs" && !h.hidden);
   const sheepEnabled = hobbies.some(h => h.type === "sheep" && !h.hidden);
+  const sourdoughEnabled = hobbies.some(h => h.type === "sourdough" && !h.hidden);
   const farmstandEnabled = hobbies.some(h => h.type === "farmstand" && !h.hidden);
 
   return (
@@ -74,7 +75,7 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
-          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} farmstandEnabled={farmstandEnabled} />
+          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} farmstandEnabled={farmstandEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
           {meatChickensEnabled && <MeatChickensCard stats={stats} />}
@@ -85,6 +86,7 @@ export default function YearInReviewPage({ data }) {
           {cowsEnabled && <CowsCard stats={stats} />}
           {pigsEnabled && <PigsCard stats={stats} />}
           {sheepEnabled && <SheepCard stats={stats} />}
+          {sourdoughEnabled && <SourdoughCard stats={stats} />}
           {farmstandEnabled && <FarmstandCard stats={stats} />}
           {stats.freezerBirds > 0 && <FreezerCard stats={stats} />}
           <ActivityCard stats={stats} />
@@ -149,7 +151,7 @@ function CoverCard({ year, stats }) {
   );
 }
 
-function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, sheepEnabled, farmstandEnabled }) {
+function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, sheepEnabled, sourdoughEnabled, farmstandEnabled }) {
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
@@ -160,6 +162,7 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   if (cowsEnabled && stats.cowMilkGal > 0) items.push({ icon: "🐄", number: Math.round(stats.cowMilkGal), label: `gal cow milk`, accent: palette.leaf });
   if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
   if (sheepEnabled && stats.sheepLambsBorn > 0) items.push({ icon: "🐑", number: stats.sheepLambsBorn, label: `lamb${stats.sheepLambsBorn === 1 ? "" : "s"} born`, accent: palette.leafSoft });
+  if (sourdoughEnabled && stats.sourdoughLoaves > 0) items.push({ icon: "🍞", number: stats.sourdoughLoaves, label: `loa${stats.sourdoughLoaves === 1 ? "f" : "ves"} baked`, accent: palette.yolk });
   if (farmstandEnabled && stats.farmstandRevenue > 0) items.push({ icon: "🧾", number: fmtMoney(stats.farmstandRevenue).replace(/\.\d\d$/, ""), label: `farmstand revenue`, accent: palette.leaf });
 
   if (items.length === 0) return null;
@@ -523,6 +526,29 @@ function SheepCard({ stats }) {
         {sheepMeatLbs > 0 && <Stat big={Math.round(sheepMeatLbs)} label="lbs meat" accent={palette.feather}/>}
         {sheepButchered > 0 && <Stat big={sheepButchered} label="butchered" accent={palette.accent}/>}
       </div>
+    </Card>
+  );
+}
+
+function SourdoughCard({ stats }) {
+  const { sourdoughBakes, sourdoughLoaves, sourdoughTotalCost, sourdoughTopRecipe, sourdoughLoavesSold, sourdoughRevenue, sourdoughProfit } = stats;
+  if (!sourdoughBakes && !sourdoughLoaves) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🍞 Sourdough</div>
+      {sourdoughLoaves > 0 && <CountUp number={sourdoughLoaves} suffix={`loa${sourdoughLoaves === 1 ? "f" : "ves"} baked`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {sourdoughBakes > 0 && <Stat big={sourdoughBakes} label={`bake session${sourdoughBakes === 1 ? "" : "s"}`} accent={palette.leaf}/>}
+        {sourdoughTotalCost > 0 && <Stat big={fmtMoney(sourdoughTotalCost)} label="ingredient cost" accent={palette.feather}/>}
+        {sourdoughLoavesSold > 0 && <Stat big={sourdoughLoavesSold} label={`loa${sourdoughLoavesSold === 1 ? "f" : "ves"} sold`} accent={palette.yolk}/>}
+        {sourdoughRevenue > 0 && <Stat big={fmtMoney(sourdoughRevenue)} label="revenue" accent={palette.leaf}/>}
+        {sourdoughProfit !== 0 && <Stat big={fmtMoney(sourdoughProfit)} label="profit" accent={sourdoughProfit >= 0 ? palette.leaf : palette.accent}/>}
+      </div>
+      {sourdoughTopRecipe && (
+        <div style={{ marginTop:12,fontSize:13,color:palette.inkSoft }}>
+          Top recipe: <strong style={{ color:palette.ink }}>{sourdoughTopRecipe.name}</strong> — {sourdoughTopRecipe.loaves} loa{sourdoughTopRecipe.loaves === 1 ? "f" : "ves"}
+        </div>
+      )}
     </Card>
   );
 }
@@ -960,6 +986,29 @@ function computeStats(data, year) {
   const yearShearings = (sheepHobby?.shearings || []).filter(sh => sh.date >= yearStart && sh.date <= yearEnd);
   const sheepWoolLbs = yearShearings.reduce((s,sh) => s + (Number(sh.woolLbs)||0), 0);
 
+  // Sourdough stats
+  const sourdoughHobby = (data.hobbies||[]).find(h => h.type === "sourdough");
+  const yearBakes = (sourdoughHobby?.bakes || []).filter(b => b.date && b.date >= yearStart && b.date <= yearEnd);
+  const sourdoughBakes = yearBakes.length;
+  const sourdoughLoaves = yearBakes.reduce((s,b) => s + (Number(b.loafCount)||0), 0);
+  const sourdoughTotalCost = yearBakes.reduce((s,b) => s + (Number(b.loafCount)||0) * (Number(b.costPerLoaf)||0), 0);
+  // Top recipe
+  const sourdoughByRecipe = {};
+  yearBakes.forEach(b => {
+    const r = b.recipe || "Other";
+    sourdoughByRecipe[r] = (sourdoughByRecipe[r]||0) + (Number(b.loafCount)||0);
+  });
+  const sourdoughTopEntry = Object.entries(sourdoughByRecipe).sort((a,b)=>b[1]-a[1])[0];
+  const sourdoughTopRecipe = sourdoughTopEntry ? { name: sourdoughTopEntry[0], loaves: sourdoughTopEntry[1] } : null;
+  // Sales tagged sourdough this year
+  const sourdoughSales = (data.sales || []).filter(s =>
+    s.hobbyType === "sourdough" && s.date >= yearStart && s.date <= yearEnd
+  );
+  const sourdoughLoavesSold = sourdoughSales.reduce((s,x) => s + (Number(x.qty)||0), 0);
+  const sourdoughRevenue = sourdoughSales.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+  const sourdoughSaleCost = sourdoughSales.reduce((s,x) => s + (Number(x.totalCost)||0), 0);
+  const sourdoughProfit = sourdoughRevenue - sourdoughSaleCost;
+
   // Freezer log — universal butcher records this year
   const freezerLogYear = (data.freezerLog || []).filter(r =>
     r.date >= yearStart && r.date <= yearEnd
@@ -1039,6 +1088,9 @@ function computeStats(data, year) {
     pigLitters, pigsButchered, pigMeatLbs, pigFeedCost, pigFCR, pigCount,
     // Sheep
     sheepCount, sheepLambsBorn, sheepLambsAlive, sheepMilkGal, sheepWoolLbs, sheepMeatLbs, sheepButchered,
+    // Sourdough
+    sourdoughBakes, sourdoughLoaves, sourdoughTotalCost, sourdoughTopRecipe,
+    sourdoughLoavesSold, sourdoughRevenue, sourdoughProfit,
     // Farmstand
     farmstandRevenue, farmstandCost, farmstandProfit, farmstandSaleCount, farmstandTopItem, farmstandItemCount,
     // Freezer log (universal butcher records — any flock, any bird type)
