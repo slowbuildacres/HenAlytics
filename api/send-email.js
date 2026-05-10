@@ -82,20 +82,90 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Email service not configured' });
   }
 
-  // ---- Step 1: Verify the JWT ----
-  // Only authenticated Henalytics users can hit this endpoint. The browser
-  // sends `Authorization: Bearer <jwt>` from the active Supabase session.
-  let user;
-  try {
-    user = await verifyAuth(req);
-  } catch (e) {
-    return res.status(401).json({ error: e.message || 'Authentication required' });
+  // ---- Step 1: Parse body first so we can branch on `kind` ----
+  let body = req.body;
+  if (typeof body === 'string') {
+    try { body = JSON.parse(body); } catch (e) { body = {}; }
+  }
+  body = body || {};
+  const { kind } = body;
+
+  // ---- Step 2: Auth strategy depends on kind ----
+  //
+  // signup_notify is special: brand-new users may be running cached client
+  // code that doesn't send the Authorization header. Forcing JWT here means
+  // we silently miss signup notifications, which defeats the whole point.
+  //
+  // Instead, for signup_notify we:
+  //   - Skip the JWT requirement
+  //   - Take the email from the body
+  //   - Verify the email actually exists as a real Supabase user before sending
+  //     (this prevents spam — fake emails get rejected)
+  //   - Rate-limit by the email itself, not user id (since we don't have a JWT)
+  //
+  // All other kinds (feedback, farmhand_invite) still require a valid JWT.
+  let user = null;
+  let rateLimitKey = null;
+  if (kind === 'signup_notify') {
+    const newUserEmail = (body.newUserEmail || '').trim().toLowerCase();
+    if (!newUserEmail || !newUserEmail.includes('@')) {
+      return res.status(400).json({ error: 'Valid email required for signup_notify' });
+    }
+    // Verify this is a real Supabase user — prevents the endpoint from being
+    // abused to send fake signup spam to the owner.
+    //
+    // Note: we use the GoTrue REST endpoint directly (filtered by email) because
+    // supabase.auth.admin.listUsers() paginates by 50/page default and would
+    // require walking the entire user table to find a match. The /users?email=
+    // endpoint matches in O(1) on the server side.
+    try {
+      const lookupRes = await fetch(
+        `${process.env.SUPABASE_URL}/auth/v1/admin/users?email=${encodeURIComponent(newUserEmail)}`,
+        {
+          headers: {
+            apikey: process.env.SUPABASE_SERVICE_ROLE_KEY,
+            Authorization: `Bearer ${process.env.SUPABASE_SERVICE_ROLE_KEY}`,
+          },
+        }
+      );
+      if (!lookupRes.ok) {
+        console.error('Supabase user lookup failed:', lookupRes.status);
+        return res.status(500).json({ error: 'Could not verify signup' });
+      }
+      const lookupJson = await lookupRes.json();
+      // The admin users endpoint returns { users: [...] } when filtered
+      const users = Array.isArray(lookupJson) ? lookupJson : (lookupJson.users || []);
+      const match = users.find(u => (u.email || '').toLowerCase() === newUserEmail);
+      if (!match) {
+        // Not a real user — don't send. Return 200 so client doesn't retry forever.
+        return res.status(200).json({ ok: true, skipped: 'not a real user' });
+      }
+      // Only notify if the user is genuinely new (created in last 10 minutes).
+      // Prevents replay attacks where someone calls the endpoint repeatedly
+      // for an existing user's email.
+      const createdMs = new Date(match.created_at).getTime();
+      if (Date.now() - createdMs > 10 * 60 * 1000) {
+        return res.status(200).json({ ok: true, skipped: 'user not newly created' });
+      }
+      user = match;
+      rateLimitKey = `signup:${newUserEmail}`;
+    } catch (e) {
+      console.error('Signup verification failed:', e);
+      return res.status(500).json({ error: 'Could not verify signup' });
+    }
+  } else {
+    // Standard JWT-required path for everything else
+    try {
+      user = await verifyAuth(req);
+      rateLimitKey = `user:${user.id}`;
+    } catch (e) {
+      return res.status(401).json({ error: e.message || 'Authentication required' });
+    }
   }
 
-  // ---- Step 2: Rate limit ----
-  // Per-user limit so one abusive account can't burn everyone else's quota.
+  // ---- Step 3: Rate limit ----
   try {
-    const allowed = await checkRateLimit(user.id);
+    const allowed = await checkRateLimit(rateLimitKey);
     if (!allowed) {
       return res.status(429).json({
         error: 'Rate limit exceeded — too many emails recently. Try again in a few minutes.',
@@ -106,14 +176,6 @@ export default async function handler(req, res) {
     // If Upstash is down, we accept some abuse risk over breaking the app.
     console.error('Rate limit check failed (non-blocking):', e);
   }
-
-  // ---- Step 3: Parse and validate body ----
-  let body = req.body;
-  if (typeof body === 'string') {
-    try { body = JSON.parse(body); } catch (e) { body = {}; }
-  }
-  body = body || {};
-  const { kind } = body;
 
   // ---- Step 4: Build payload — server-trusted, never trusts client values
   //              for sender identity ----
@@ -127,7 +189,7 @@ export default async function handler(req, res) {
         fromEmail: user.email,
       });
     } else if (kind === 'signup_notify') {
-      // Force newUserEmail to the authenticated user's email.
+      // newUserEmail is the verified Supabase user's email
       payload = buildSignupEmail({ newUserEmail: user.email });
     } else if (kind === 'farmhand_invite') {
       // Look up the invite from the DB using the inviteCode. We trust nothing
@@ -213,7 +275,7 @@ async function verifyAuth(req) {
 // keeps the bundle small). All commands are idempotent — if Upstash is
 // unreachable we log and let the request through (we'd rather have abuse
 // than break the app for legit users).
-async function checkRateLimit(userId) {
+async function checkRateLimit(rateLimitKey) {
   const url = process.env.UPSTASH_REDIS_REST_URL;
   const token = process.env.UPSTASH_REDIS_REST_TOKEN;
   if (!url || !token) {
@@ -221,7 +283,7 @@ async function checkRateLimit(userId) {
     return true;
   }
 
-  const key = `rl:email:${userId}`;
+  const key = `rl:email:${rateLimitKey}`;
   const now = Date.now();
   const windowStart = now - RATE_LIMIT_WINDOW_SECONDS * 1000;
 
