@@ -14,7 +14,7 @@ export default async function handler(req, res) {
     return res.status(401).json({ error: 'Unauthorized' });
   }
 
-  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE) {
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY) {
     return res.status(500).json({ error: 'Supabase not configured' });
   }
   if (!process.env.RESEND_API_KEY) {
@@ -22,7 +22,7 @@ export default async function handler(req, res) {
   }
 
   const SUPABASE = process.env.SUPABASE_URL;
-  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE;
+  const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   try {
     const homesteadsRes = await fetch(`${SUPABASE}/rest/v1/homesteads?select=id,data,updated_at`, {
