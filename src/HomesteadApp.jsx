@@ -2057,7 +2057,7 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
   const diff = eggsThisWeek - eggsLastWeek;
 
   // Bird type emoji map
-  const birdEmoji = { Chicken: "🐔", Duck: "🦆", Turkey: "🦃", Quail: "🐦", Goose: "🪿", Guinea: "🐦", Other: "🐣" };
+  const birdEmoji = { Chicken: "🐔", Duck: "🦆", Turkey: "🦃", Quail: "🐦", Goose: "🪿", Guinea: "🐦", Peafowl: "🦚", Other: "🐣" };
 
   if (flocks.length === 0) {
     return (
@@ -2741,7 +2741,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
               const flockDeaths = deaths.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.count)||1),0);
               const flockTotalCost = flockFeedCost + flockBeddingCost;
               const flockCostPerEgg = flockEggs > 0 ? flockTotalCost / flockEggs : 0;
-              const birdEmoji = { Chicken:"🐔", Duck:"🦆", Turkey:"🦃", Quail:"🐦", Goose:"🪿", Guinea:"🐦", Other:"🐣" };
+              const birdEmoji = { Chicken:"🐔", Duck:"🦆", Turkey:"🦃", Quail:"🐦", Goose:"🪿", Guinea:"🐦", Peafowl:"🦚", Other:"🐣" };
               return (
                 <div key={fl.id} style={{ padding:"12px 14px",background:palette.bgAlt,borderRadius:8 }}>
                   <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6 }}>
@@ -4997,7 +4997,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
 }
 
 function AddFlockModal({ hobbyId, update, onClose }) {
-  const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Other"];
+  const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const [name, setName] = useState("");
   const [birdType, setBirdType] = useState("Chicken");
   const [count, setCount] = useState("");
@@ -5045,7 +5045,7 @@ function AddFlockModal({ hobbyId, update, onClose }) {
 }
 
 function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) {
-  const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Other"];
+  const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
   const [name, setName] = useState(flock?.name || "");
   const [birdType, setBirdType] = useState(flock?.birdType || "Chicken");
@@ -5285,98 +5285,183 @@ function HatchBatchModal({ hobby, update, onClose }) {
 }
 
 function ButcherModal({ hobby, entries, update, onClose }) {
+  // Same cull-reason design as the flock-side modal (egg layers), adapted for
+  // meat-bird batches. Default reason is butchered since that's the most
+  // common reason birds leave a meat-chicken batch, but users can also log
+  // sold/rehomed/died/culled etc. Useful for runts given away, breeders kept
+  // out for laying, weather losses, or anything that isn't a clean butcher.
+  const [reason, setReason] = useState("butchered");
   const [count, setCount] = useState("");
   const [avgWeight, setAvgWeight] = useState("");
   const [date, setDate] = useState(todayStr());
   const [note, setNote] = useState("");
   const [validationError, setValidationError] = useState("");
-  // Two-step flow: form → confirm. The confirmation explicitly states how
-  // many birds will remain after, so users with partial-slaughter workflows
-  // can verify they're not accidentally archiving the whole batch.
+  // Two-step flow: form → confirm.
   const [confirming, setConfirming] = useState(false);
-  // Only ask about finalizing if the butcher would empty the batch. Defaults
-  // OFF so the user has to opt in — preserves the batch on the dashboard
-  // even when zeroed out, in case they want to log something else (notes,
-  // last bits of feed used, etc.) before archiving.
+  // Only ask about finalizing if the action would empty the batch. Defaults
+  // OFF so the user has to opt in.
   const [alsoFinalize, setAlsoFinalize] = useState(false);
   const batch = hobby.currentBatch;
 
   if (!batch) {
     return (
-      <Modal open onClose={onClose} title="Butcher">
+      <Modal open onClose={onClose} title="Remove from batch">
         <div>No active batch. Hatch one first.</div>
       </Modal>
     );
   }
 
+  const isButcher = reason === "butchered";
+  const isSoftCull = ["sold", "rehomed", "given_away"].includes(reason);
+  const isDeath = reason === "died" || reason === "culled";
+
+  const reasonOptions = [
+    { value: "butchered",   label: "🔪 Butchered",     desc: "Send to freezer log with weight." },
+    { value: "sold",        label: "💰 Sold",           desc: "Bird sold live to someone else." },
+    { value: "rehomed",     label: "🏡 Rehomed",        desc: "Given to a new home (kept as a layer/pet)." },
+    { value: "given_away",  label: "🎁 Given away",     desc: "Gave to a friend or neighbor." },
+    { value: "died",        label: "💔 Died",           desc: "Natural causes, illness, predator." },
+    { value: "culled",      label: "🩺 Culled",         desc: "Euthanized for health or other reason." },
+    { value: "other",       label: "❓ Other",          desc: "Anything else — explain in notes." },
+  ];
+
   const deaths = entries
     .filter((e) => e.action === "death" && e.batchId === batch.id)
     .reduce((s, e) => s + (Number(e.count) || 1), 0);
   const previouslyButchered = (hobby.currentBatch.butchered || []).reduce((s, x) => s + (x.count || 0), 0);
-  const remaining = batch.startCount - deaths - previouslyButchered;
+  // Count "removed via note" entries (soft culls) as also gone from the batch.
+  const previouslySoftRemoved = (entries || [])
+    .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
+    .reduce((s, e) => s + Number(e.cullCount), 0);
+  const remaining = batch.startCount - deaths - previouslyButchered - previouslySoftRemoved;
 
   const plannedCount = parseInt(count) || 0;
   const remainingAfter = Math.max(0, remaining - plannedCount);
   const willEmptyBatch = plannedCount > 0 && remainingAfter === 0;
 
-  // Validate the form. Used both before showing the confirm step and as a
-  // belt-and-suspenders check when the user clicks confirm.
   const validate = () => {
     const n = parseInt(count);
     const w = parseFloat(avgWeight);
     if (!count || isNaN(n) || n <= 0) {
-      setValidationError("Enter the number of birds butchered (must be greater than 0).");
+      setValidationError(`Enter the number of birds (must be greater than 0).`);
       return false;
     }
     if (n > remaining) {
-      setValidationError(`Can't butcher more than ${remaining} birds — that's all that's left in this batch.`);
+      setValidationError(`Can't remove more than ${remaining} birds — that's all that's left in this batch.`);
       return false;
     }
-    if (!avgWeight || isNaN(w) || w <= 0) {
-      setValidationError("Enter the average weight in pounds (must be greater than 0). If you haven't weighed yet, estimate or use 0.01 as a placeholder.");
+    // Weight only required for butchered (freezer log needs it)
+    if (isButcher && (!avgWeight || isNaN(w) || w <= 0)) {
+      setValidationError("Butchered birds need an average weight for the freezer log. If you haven't weighed yet, estimate or use 0.01 as a placeholder.");
       return false;
     }
     setValidationError("");
     return true;
   };
 
+  // Modal title and primary button label vary by reason so the flow doesn't
+  // feel weird ("Send to freezer camp" doesn't apply for a sold bird).
+  const titleByReason = () => {
+    if (confirming) return "Confirm";
+    if (isButcher) return `❄️ Send to freezer camp · ${batch.name}`;
+    if (isSoftCull) return `Remove from ${batch.name}`;
+    if (isDeath) return `Log loss in ${batch.name}`;
+    return `Remove from ${batch.name}`;
+  };
+  const primaryByReason = () => {
+    if (isButcher) return "❄️ Send to freezer camp";
+    return "Save";
+  };
+  const confirmByReason = () => {
+    if (alsoFinalize && willEmptyBatch) {
+      return isButcher ? "Send & finalize batch" : "Save & finalize batch";
+    }
+    return isButcher ? "Confirm butcher" : "Confirm";
+  };
+
   return (
-    <Modal open onClose={onClose} title={confirming ? "Confirm butcher" : `❄️ Send to freezer camp · ${batch.name}`}>
+    <Modal open onClose={onClose} title={titleByReason()}>
       {!confirming ? (
         <>
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
             {remaining} bird{remaining === 1 ? "" : "s"} remaining in this batch.
           </div>
+
+          <Field label="What happened?">
+            <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
+              {reasonOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+            </select>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+              {reasonOptions.find(o => o.value === reason)?.desc}
+            </div>
+          </Field>
+
           <Field label="Date">
             <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="How many butchered today?">
+          <Field label="How many?">
             <input
               type="number"
               style={inputStyle}
               value={count}
               onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
-              placeholder={`e.g. 25 (of ${remaining})`}
+              placeholder={`e.g. 5 (of ${remaining})`}
             />
           </Field>
-          <Field label="Average weight (lbs)">
-            <input
-              type="number"
-              step="0.01"
-              style={inputStyle}
-              value={avgWeight}
-              onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }}
-              placeholder="e.g. 5.5"
-            />
-          </Field>
-          <Field label="Notes (optional)">
+
+          {/* Weight is required only for butcher; optional but useful for sold/rehomed
+              if user wants to track average growth. */}
+          {isButcher ? (
+            <Field label="Average weight (lbs)">
+              <input
+                type="number"
+                step="0.01"
+                style={inputStyle}
+                value={avgWeight}
+                onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }}
+                placeholder="e.g. 5.5"
+              />
+            </Field>
+          ) : (
+            <Field label="Average weight (lbs, optional)">
+              <input
+                type="number"
+                step="0.01"
+                style={inputStyle}
+                value={avgWeight}
+                onChange={(e) => setAvgWeight(e.target.value)}
+                placeholder="optional"
+              />
+            </Field>
+          )}
+
+          <Field label={isSoftCull ? "Notes (who took them, etc)" : "Notes (cause, details, etc)"}>
             <textarea
               style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
               value={note}
               onChange={(e) => setNote(e.target.value)}
-              placeholder="Anything notable..."
+              placeholder={
+                reason === "sold" ? "e.g. sold to neighbor for $15 each" :
+                reason === "rehomed" ? "e.g. kept this one as a layer, gave to Sarah" :
+                reason === "given_away" ? "e.g. runt — friend wanted a pet hen" :
+                reason === "died" ? "e.g. predator, found this morning" :
+                reason === "culled" ? "e.g. respiratory infection, not recovering" :
+                reason === "other" ? "What happened?" :
+                "Anything notable about this butcher day..."
+              }
             />
           </Field>
+
+          {reason === "sold" && (
+            <div style={{
+              padding: 10, marginBottom: 12, borderRadius: 6,
+              background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
+              fontSize: 12, color: palette.ink, lineHeight: 1.5,
+            }}>
+              💡 This logs the count reduction. To record sale revenue, also add a sale on the Sales tab.
+            </div>
+          )}
+
           {validationError && (
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 6,
@@ -5386,26 +5471,33 @@ function ButcherModal({ hobby, entries, update, onClose }) {
               {validationError}
             </div>
           )}
+
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="primary" onClick={() => { if (validate()) setConfirming(true); }}>
-              ❄️ Send to freezer camp
+              {primaryByReason()}
             </Btn>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           </div>
         </>
       ) : (
         // ----- Confirmation step -----
-        // Always shows exactly what's about to happen, with clear numbers.
-        // If this butcher would empty the batch, also offer (opt-in) to
-        // finalize/archive the batch right away — saves a trip back later.
         <>
           <div style={{
             padding: 14, marginBottom: 16, borderRadius: 8,
             background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
             fontSize: 14, color: palette.ink, lineHeight: 1.6,
           }}>
-            Sending <strong>{plannedCount} bird{plannedCount === 1 ? "" : "s"}</strong> from <strong>{batch.name}</strong> to the freezer log
-            {" "}at <strong>{avgWeight} lbs</strong> avg.
+            {isButcher ? (
+              <>
+                Sending <strong>{plannedCount} bird{plannedCount === 1 ? "" : "s"}</strong> from <strong>{batch.name}</strong> to the freezer log
+                {" "}at <strong>{avgWeight} lbs</strong> avg.
+              </>
+            ) : (
+              <>
+                Removing <strong>{plannedCount} bird{plannedCount === 1 ? "" : "s"}</strong> from <strong>{batch.name}</strong>{" "}
+                ({reasonOptions.find(o => o.value === reason)?.label.replace(/^.\s/, "").toLowerCase()}).
+              </>
+            )}
             <div style={{ marginTop: 8, fontSize: 13, color: palette.inkSoft }}>
               {remainingAfter > 0
                 ? <>After this, <strong style={{ color: palette.ink }}>{remainingAfter}</strong> bird{remainingAfter === 1 ? "" : "s"} will still be in the batch.</>
@@ -5429,7 +5521,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
               <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.5 }}>
                 <strong>Also finalize this batch</strong>
                 <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>
-                  Archives {batch.name} to your analytics history and clears the dashboard so you can hatch a new batch. You can leave this unchecked if you want to log more notes or feed first.
+                  Archives {batch.name} to your analytics history and clears the dashboard so you can hatch a new batch.
                 </div>
               </div>
             </label>
@@ -5437,58 +5529,64 @@ function ButcherModal({ hobby, entries, update, onClose }) {
 
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="primary" onClick={() => {
-              // Re-validate at submit time as defense-in-depth
               if (!validate()) {
                 setConfirming(false);
                 return;
               }
               const n = parseInt(count);
               const w = parseFloat(avgWeight);
+              const entryId = newId();
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === hobby.id);
                 if (!h || !h.currentBatch) return d;
-                h.currentBatch.butchered = h.currentBatch.butchered || [];
-                // Tag the butchered record with an id so deletes from the
-                // activity log can find and remove it later. Without this,
-                // deleting the entry leaves a stale butchered count behind.
-                const butcherEntryId = newId();
-                h.currentBatch.butchered.push({
-                  id: butcherEntryId,
-                  date,
-                  count: n,
-                  avgWeight: w,
-                });
                 d.entries[hobby.id] = d.entries[hobby.id] || [];
-                d.entries[hobby.id].push({
-                  id: butcherEntryId,
-                  date,
-                  action: "butcher",
-                  count: n,
-                  avgWeight: w,
-                  batchId: batch.id,
-                  note: note.trim(),
-                  created: Date.now(),
-                });
 
-                // Also append to the universal freezer log so butchered meat
-                // shows up alongside flock-butchered birds, consistent with
-                // the new ButcherFlockModal behavior.
-                if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
-                d.freezerLog.push({
-                  id: newId(),
-                  date,
-                  hobbyId: hobby.id,
-                  batchId: batch.id,
-                  batchName: batch.name,
-                  birdType: batch.birdType || "Chicken",
-                  count: n,
-                  avgWeight: w,
-                  note: note.trim(),
-                  created: Date.now(),
-                });
+                if (isButcher) {
+                  // Existing butcher behavior: append to currentBatch.butchered
+                  // (drives remaining-birds math), entries log, and freezerLog
+                  h.currentBatch.butchered = h.currentBatch.butchered || [];
+                  h.currentBatch.butchered.push({ id: entryId, date, count: n, avgWeight: w });
+                  d.entries[hobby.id].push({
+                    id: entryId, date, action: "butcher", count: n, avgWeight: w,
+                    batchId: batch.id, note: note.trim(), created: Date.now(),
+                  });
+                  if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
+                  d.freezerLog.push({
+                    id: newId(), date, hobbyId: hobby.id, batchId: batch.id,
+                    batchName: batch.name, birdType: batch.birdType || "Chicken",
+                    count: n, avgWeight: w, note: note.trim(), created: Date.now(),
+                  });
+                } else if (isDeath) {
+                  // Died/culled → death entry. Affects mortality analytics.
+                  d.entries[hobby.id].push({
+                    id: entryId, date, action: "death", count: n,
+                    cause: reason === "culled" ? `culled: ${note.trim() || "no detail"}` : (note.trim() || "unknown"),
+                    batchId: batch.id, created: Date.now(),
+                  });
+                } else {
+                  // Soft cull (sold/rehomed/given_away) or "other" — note-style
+                  // entry with cullReason + cullCount metadata. Birds went
+                  // somewhere alive, so we don't affect mortality stats.
+                  // The remaining-birds calc above sums cullCount on note
+                  // entries, so the batch dashboard reflects the change.
+                  const reasonLabel = {
+                    sold: "Sold",
+                    rehomed: "Rehomed",
+                    given_away: "Given away",
+                    other: "Removed",
+                  }[reason] || "Removed";
+                  d.entries[hobby.id].push({
+                    id: entryId, date, action: "note",
+                    note: `${reasonLabel} · ${n} bird${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
+                    batchId: batch.id,
+                    cullReason: reason,
+                    cullCount: n,
+                    cullAvgWeight: w || undefined,
+                    created: Date.now(),
+                  });
+                }
 
-                // Optional: finalize the batch if user checked the box and
-                // this butcher emptied it.
+                // Optional finalize if batch is now empty and user opted in
                 if (alsoFinalize && willEmptyBatch) {
                   const finalBatch = JSON.parse(JSON.stringify(h.currentBatch));
                   finalBatch.endDate = todayStr();
@@ -5502,7 +5600,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
               });
               onClose();
             }}>
-              {alsoFinalize && willEmptyBatch ? "Send & finalize batch" : "Confirm butcher"}
+              {confirmByReason()}
             </Btn>
             <Btn variant="ghost" onClick={() => setConfirming(false)}>Back</Btn>
           </div>
