@@ -117,12 +117,23 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
 // ============================================================================
 
 export function PlanCropModal({ data, update, onClose }) {
-  const [step, setStep] = useState(1); // 1 = pick crop, 2 = pick method, 3 = editable preview
+  const [step, setStep] = useState(1); // 1 = pick crop, 2 = pick method, 3 = editable preview, 4 = "other" custom flow
   const [cropId, setCropId] = useState(null);
   const [method, setMethod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
   // editableDates: { [eventId]: dateString } — user-overridden dates
   const [editableDates, setEditableDates] = useState({});
+  // "Other crop" path: user types a name + picks a single planting date, and
+  // we just create one calendar event. No frost-math, no harvest prediction —
+  // it's a reminder. Power users can add more events manually after.
+  const [otherName, setOtherName] = useState("");
+  const [otherDate, setOtherDate] = useState(() => {
+    // Default to one week out so users have a sensible starting point
+    const d = new Date();
+    d.setDate(d.getDate() + 7);
+    return d.toISOString().slice(0, 10);
+  });
+  const [otherError, setOtherError] = useState("");
 
   const userSystem = data.userZoneSystem || "USDA";
   const userZone = data.userZone || estimateZoneForSystem(
@@ -191,6 +202,7 @@ export function PlanCropModal({ data, update, onClose }) {
     <Modal open onClose={onClose} title={
       step === 1 ? "Plan a crop" :
       step === 2 ? `Plan ${crop?.name}` :
+      step === 4 ? "Plan a custom crop" :
       `Preview: ${crop?.name}`
     }>
       {step === 1 && (
@@ -230,6 +242,91 @@ export function PlanCropModal({ data, update, onClose }) {
                 <span>{c.name}</span>
               </button>
             ))}
+            {/* "Other" tile — opens a simpler custom-crop flow for anything
+                not in the built-in list (rare/regional crops, ornamentals, etc) */}
+            <button
+              onClick={() => setStep(4)}
+              style={{
+                padding: "10px 8px",
+                background: palette.bgAlt,
+                border: `1.5px dashed ${palette.line}`,
+                borderRadius: 8,
+                cursor: "pointer",
+                fontFamily: FONT_BODY,
+                fontSize: 12,
+                color: palette.ink,
+                textAlign: "center",
+                display: "flex",
+                flexDirection: "column",
+                alignItems: "center",
+                gap: 4,
+              }}
+            >
+              <span style={{ fontSize: 22 }}>✏️</span>
+              <span>Other / custom</span>
+            </button>
+          </div>
+        </>
+      )}
+
+      {step === 4 && (
+        <>
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+            Add a custom crop to your calendar. We'll create a single planting reminder for the date you pick — you can add more events manually from the calendar later.
+          </div>
+          <Field label="Crop name">
+            <input
+              style={inputStyle}
+              value={otherName}
+              onChange={(e) => { setOtherName(e.target.value); setOtherError(""); }}
+              placeholder="e.g. Black currants, dahlia tubers, asparagus crowns"
+              autoFocus
+            />
+          </Field>
+          <Field label="Planting date">
+            <input
+              type="date"
+              style={inputStyle}
+              value={otherDate}
+              onChange={(e) => setOtherDate(e.target.value)}
+            />
+          </Field>
+          {otherError && (
+            <div style={{
+              padding: 10, marginBottom: 12, borderRadius: 6,
+              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              fontSize: 13, color: palette.accent,
+            }}>
+              {otherError}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn variant="primary" onClick={() => {
+              const name = otherName.trim();
+              if (!name) {
+                setOtherError("Give your crop a name.");
+                return;
+              }
+              if (!otherDate) {
+                setOtherError("Pick a planting date.");
+                return;
+              }
+              update((d) => {
+                d.calendarEvents = d.calendarEvents || [];
+                d.calendarEvents.push({
+                  id: `custom-${Date.now()}-${Math.random().toString(36).slice(2,8)}`,
+                  date: otherDate,
+                  title: `🌱 Plant ${name}`,
+                  notes: "Custom crop reminder. Tap to edit or add more events for this crop.",
+                  cropId: "custom",
+                  cropName: name,
+                  type: "user",
+                });
+                return d;
+              });
+              onClose();
+            }}>Add to calendar</Btn>
+            <Btn variant="ghost" onClick={() => setStep(1)}>Back</Btn>
           </div>
         </>
       )}

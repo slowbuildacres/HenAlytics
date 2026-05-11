@@ -495,14 +495,14 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 14;
+const CURRENT_VERSION = 13;
 
 const WHATS_NEW = [
-  "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Plus your hardiness zone system (USDA, UK RHS, Australia, etc) now auto-picks from your homestead location. Find it in Settings.",
   "🐴 Horses hobby — per-horse tracking with rides, farrier visits, vet, deworming, breeding & foaling reminders",
   "🐑 Custom breeds — added \"Other\" option to breed dropdowns on Sheep, Goats, Cows, and Horses so you can type in any breed",
   "🍞 Sourdough hobby — track starters with feeding logs, bakes with cost & profit, recipes, and crumb ratings",
   "🐝 Beekeeping upgrades — log hive cost when you add a hive, plus a varroa mite testing log with high-mite alerts",
+  "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Find it in Settings.",
   "🐑 Sheep hobby — dairy, meat, wool, or mixed flocks with lambing tracking, shearing logs, and calendar reminders",
   "🐔 Per-flock tracking — feed, bedding, deaths, and sold eggs now attach to a specific flock so you get real per-flock cost-per-egg numbers",
   "🙏 Monthly thank-you got an upgrade — clearer mission note + a 'Buy Henalytics a bag of feed' button to support the app",
@@ -842,7 +842,7 @@ const HobbyIcon = ({ name, ...props }) => {
 };
 
 // ============ SYNC INDICATOR ============
-function SyncIndicator({ status, signedIn, error }) {
+function SyncIndicator({ status, signedIn }) {
   // Show nothing in the very common idle state for signed-out users —
   // they don't need to think about syncing.
   if (!signedIn && status === "idle") return null;
@@ -863,45 +863,20 @@ function SyncIndicator({ status, signedIn, error }) {
   } else if (status === "error") {
     icon = <AlertTriangle size={14} />;
     color = palette.accent;
-    // INSTRUMENTATION: surface error code inline when available
-    label = error && error.code ? `Error ${error.code}` : "Error";
+    label = "Error";
   } else {
     icon = <Cloud size={14} />;
     color = palette.inkSoft;
     label = "Synced";
   }
-
-  // INSTRUMENTATION: in error state, full error text on hover + tap-to-copy.
-  const hasError = status === "error" && error;
-  const titleText = hasError
-    ? `${error.message || "Save failed"}${error.details ? `\nDetails: ${error.details}` : ""}${error.hint ? `\nHint: ${error.hint}` : ""}\n\nTap to copy full error.`
-    : (signedIn ? "Synced to your cloud account" : "Saving locally to this browser");
-  const onClick = hasError
-    ? async () => {
-        const payload = `Save error\nCode: ${error.code}\nMessage: ${error.message}\nDetails: ${error.details || "(none)"}\nHint: ${error.hint || "(none)"}\nTime: ${error.at}`;
-        try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(payload);
-            alert("Error copied to clipboard. Please send this to support so we can fix it.");
-          } else {
-            alert(payload);
-          }
-        } catch (e) {
-          alert(payload);
-        }
-      }
-    : undefined;
-
   return (
     <div
-      title={titleText}
-      onClick={onClick}
+      title={signedIn ? "Synced to your cloud account" : "Saving locally to this browser"}
       style={{
         display: "flex", alignItems: "center", gap: 4,
         padding: "4px 8px", borderRadius: 6,
         background: palette.bgAlt, color,
         fontSize: 11, fontWeight: 600,
-        cursor: hasError ? "pointer" : "default",
       }}
     >
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -1022,9 +997,6 @@ export default function HomesteadApp() {
   }, [data?.hobbies, activeHobby, page]);
 
   const [syncStatus, setSyncStatus] = useState("idle");
-  // INSTRUMENTATION: holds the most recent save error so it can be shown in
-  // the SyncIndicator + copied to clipboard. Remove once root cause is found.
-  const [syncError, setSyncError] = useState(null);
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
@@ -1167,22 +1139,7 @@ export default function HomesteadApp() {
     setSyncStatus("saving");
     saveTimerRef.current = setTimeout(async () => {
       const result = await saveHomestead(user, data);
-      const ok = result.ok || result.skipped;
-      setSyncStatus(ok ? "saved" : "error");
-      // INSTRUMENTATION: capture error details on failure so they're visible
-      // to the user in the SyncIndicator. Cleared on success.
-      if (!ok && result.error) {
-        const e = result.error;
-        setSyncError({
-          code: e.code || e.status || "?",
-          message: e.message || String(e),
-          details: e.details || null,
-          hint: e.hint || null,
-          at: new Date().toISOString(),
-        });
-      } else if (ok) {
-        setSyncError(null);
-      }
+      setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       // After "saved" briefly shows, fade back to "idle"
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
@@ -1377,7 +1334,7 @@ export default function HomesteadApp() {
             </h1>
           </button>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <SyncIndicator status={syncStatus} signedIn={!!user} error={syncError} />
+            <SyncIndicator status={syncStatus} signedIn={!!user} />
             <button
               onClick={() => setModal({ type: "barn" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
@@ -2309,7 +2266,16 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       break;
     }
     case "infrastructure": detail = `${entry.item || "item"} · ${fmtMoney(entry.cost)}`; break;
-    case "bedding": detail = `${entry.changeType || ""} · ${entry.cuft || 0} cu ft · ${fmtMoney(entry.cost)}`; break;
+    case "bedding": {
+      const t = entry.changeType || "";
+      const parts = [t];
+      // Only show cu ft if it was actually entered (skipped for power wash etc)
+      if (entry.cuft && Number(entry.cuft) > 0) parts.push(`${entry.cuft} cu ft`);
+      if (entry.cost && Number(entry.cost) > 0) parts.push(fmtMoney(entry.cost));
+      if (entry.note) parts.push(entry.note.length > 30 ? entry.note.slice(0,30)+"…" : entry.note);
+      detail = parts.filter(Boolean).join(" · ");
+      break;
+    }
     case "death": {
       const n = Number(entry.count) || 1;
       detail = `${n > 1 ? n + " birds · " : ""}${entry.cause || "cause unknown"}`;
@@ -5283,6 +5249,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
   const [avgWeight, setAvgWeight] = useState("");
   const [date, setDate] = useState(todayStr());
   const [showFinalize, setShowFinalize] = useState(false);
+  const [validationError, setValidationError] = useState("");
   const batch = hobby.currentBatch;
 
   if (!batch) {
@@ -5310,16 +5277,38 @@ function ButcherModal({ hobby, entries, update, onClose }) {
             <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label="How many butchered?">
-            <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+            <input type="number" style={inputStyle} value={count} onChange={(e) => { setCount(e.target.value); setValidationError(""); }} placeholder="e.g. 25" />
           </Field>
           <Field label="Average weight (lbs)">
-            <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} />
+            <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="e.g. 5.5" />
           </Field>
+          {validationError && (
+            <div style={{
+              padding: 10, marginBottom: 12, borderRadius: 6,
+              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              fontSize: 13, color: palette.accent,
+            }}>
+              {validationError}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <Btn variant="primary" onClick={() => {
               const n = parseInt(count);
               const w = parseFloat(avgWeight);
-              if (!n || !w) return;
+              // Be explicit about what's missing so the user knows why the
+              // button "doesn't work" — previously this was a silent fail.
+              if (!count || isNaN(n) || n <= 0) {
+                setValidationError("Enter the number of birds butchered (must be greater than 0).");
+                return;
+              }
+              if (n > remaining) {
+                setValidationError(`Can't butcher more than ${remaining} birds — that's all that's left in this batch.`);
+                return;
+              }
+              if (!avgWeight || isNaN(w) || w <= 0) {
+                setValidationError("Enter the average weight in pounds (must be greater than 0). If you haven't weighed yet, estimate or use 0.01 as a placeholder.");
+                return;
+              }
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === hobby.id);
                 h.currentBatch.butchered = h.currentBatch.butchered || [];
@@ -5858,15 +5847,25 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         <>
           <Field label="Type of change">
             <select style={inputStyle} value={fields.changeType || "Partial"} onChange={(e) => set("changeType", e.target.value)}>
-              <option value="Full">Full clean-out</option>
+              <option value="Full">Full clean-out (replace bedding)</option>
               <option value="Partial">Partial / topped up</option>
+              <option value="Power wash">Power wash (no bedding — wire floor)</option>
+              <option value="Water rinse">Water rinse / scrub (no bedding — wire floor)</option>
+              <option value="Poop tray">Poop tray dump (under roosts)</option>
+              <option value="Other">Other</option>
             </select>
           </Field>
-          <Field label="Cubic feet of bedding">
-            <input type="number" step="0.1" style={inputStyle} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} />
+          {/* Bedding amount only matters for changes that actually use bedding —
+              power wash / rinse / poop tray dump don't, so keep those fields
+              optional rather than removing them, in case users mix patterns. */}
+          <Field label="Cubic feet of bedding (optional)">
+            <input type="number" step="0.1" style={inputStyle} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
           </Field>
-          <Field label="Cost">
-            <input type="number" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+          <Field label="Cost (optional)">
+            <input type="number" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
+          </Field>
+          <Field label="Notes (optional)">
+            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. left hutch, quail run, ammonia getting strong" />
           </Field>
         </>
       )}
@@ -6052,35 +6051,14 @@ function OnboardingWizard({ update, onClose }) {
   const [zipError, setZipError] = useState("");
   const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false });
 
-  // Zippopotam.us only stores partial postal codes for these countries
-  // (copyright restrictions). For Canada, only the first 3 chars (Forward
-  // Sortation Area, e.g. "H1A") are indexed. For Ireland and Malta, similar.
-  // We accept the user's full code and truncate before sending.
-  const FSA_ONLY_COUNTRIES = { ca: 3, ie: 3, mt: 3 };
-
-  const normalizeZipForCountry = (rawZip, countryCode) => {
-    const cleaned = rawZip.trim().toUpperCase();
-    const fsaLen = FSA_ONLY_COUNTRIES[countryCode];
-    if (fsaLen) {
-      // Strip spaces/dashes, take leading chars
-      return cleaned.replace(/[\s-]/g, "").slice(0, fsaLen);
-    }
-    return cleaned;
-  };
-
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
     if (!zip.trim()) return;
     setZipLookupStatus("loading");
     setZipError("");
     try {
-      const normalized = normalizeZipForCountry(zip, country);
-      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(normalized)}`);
+      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(zip.trim())}`);
       if (!res.ok) {
-        // Friendlier message for countries with partial postal code coverage
-        if (FSA_ONLY_COUNTRIES[country]) {
-          throw new Error(`Couldn't find that ${country === "ca" ? "postal code" : "code"}. We only need the first ${FSA_ONLY_COUNTRIES[country]} characters (e.g. ${country === "ca" ? "K1A" : "D02"}).`);
-        }
         throw new Error("Zip code not found");
       }
       const json = await res.json();
@@ -6232,16 +6210,7 @@ function OnboardingWizard({ update, onClose }) {
                   style={{ ...inputStyle, flex: 1 }}
                   value={zip}
                   onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
-                  placeholder={
-                    country === "us" ? "e.g. 66002" :
-                    country === "ca" ? "e.g. K1A (first 3 letters)" :
-                    country === "gb" ? "e.g. SW1A" :
-                    country === "ie" ? "e.g. D02 (first 3 chars)" :
-                    country === "au" ? "e.g. 2000" :
-                    country === "nz" ? "e.g. 6011" :
-                    country === "mx" ? "e.g. 06000" :
-                    "e.g. postal code"
-                  }
+                  placeholder="e.g. 66002"
                   inputMode="text"
                   autoComplete="postal-code"
                 />
@@ -6249,11 +6218,6 @@ function OnboardingWizard({ update, onClose }) {
                   {zipLookupStatus === "loading" ? "..." : "Look up"}
                 </Btn>
               </div>
-              {(country === "ca" || country === "ie" || country === "mt") && (
-                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, lineHeight: 1.4 }}>
-                  Only the first 3 characters are needed — that's enough to locate you for weather and hardiness zones.
-                </div>
-              )}
             </Field>
             {zipResult && (
               <div style={{

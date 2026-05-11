@@ -54,7 +54,7 @@ const HOBBY_META = {
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 };
 
-const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail"];
+const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Peafowl", "Other"];
 const EGG_PURPOSES = ["Eating", "Hatching"];
 const HONEY_FORMS = ["Raw comb", "Extracted", "Creamed", "Infused"];
 const HONEY_CONTAINERS = ["Half-pint jar (1 cup)", "Pint jar (2 cups)", "Quart jar", "Half-gallon", "Gallon", "Bulk lb"];
@@ -134,6 +134,9 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
 
   // Eggs
   const [eggType, setEggType] = useState(existingSale?.eggType || "Chicken");
+  // When eggType is "Other", we capture a free-text name so users with less
+  // common species (emu, ostrich, partridge, etc.) can still log sales.
+  const [eggTypeCustom, setEggTypeCustom] = useState(existingSale?.eggTypeCustom || "");
   const [eggPurpose, setEggPurpose] = useState(existingSale?.eggPurpose || "Eating");
   const [unit, setUnit] = useState(existingSale?.unit || "dozen");
   const [pricePerUnit, setPricePerUnit] = useState(existingSale?.pricePerUnit != null ? String(existingSale.pricePerUnit) : "");
@@ -203,6 +206,10 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
 
     if (hobbyType === "eggs") {
       sale = { ...sale, eggType, eggPurpose, unit, pricePerUnit: Number(pricePerUnit) || 0 };
+      // Only persist the custom name when actually using "Other" — keeps
+      // existing sales clean and prevents stale ghosts when users flip back
+      // to a standard type.
+      if (eggType === "Other") sale.eggTypeCustom = eggTypeCustom.trim();
     } else if (hobbyType === "honey") {
       sale = { ...sale, honeyForm, honeyContainer, pricePerUnit: Number(pricePerUnit) || 0 };
     } else if (hobbyType === "meat_chickens" || hobbyType === "rabbits") {
@@ -324,6 +331,11 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                     </Field>
                   </div>
                 </div>
+                {eggType === "Other" && (
+                  <Field label="What kind?">
+                    <input style={inputStyle} value={eggTypeCustom} onChange={e=>setEggTypeCustom(e.target.value)} placeholder="e.g. emu, ostrich, partridge" />
+                  </Field>
+                )}
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Qty">
@@ -666,7 +678,12 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
   let detail = "";
   if (sale.hobbyType === "eggs") {
     const qtyLabel = sale.unit === "dozen" ? `${sale.qty} dz` : `${sale.qty} eggs`;
-    detail = `${sale.eggType} · ${sale.eggPurpose} · ${qtyLabel}`;
+    // For "Other" eggs, show the custom name the user typed (emu, ostrich, etc.)
+    // rather than the generic "Other" label.
+    const typeLabel = sale.eggType === "Other" && sale.eggTypeCustom
+      ? sale.eggTypeCustom
+      : sale.eggType;
+    detail = `${typeLabel} · ${sale.eggPurpose} · ${qtyLabel}`;
   } else if (sale.hobbyType === "honey") {
     detail = `${sale.qty} × ${sale.honeyContainer} · ${sale.honeyForm}`;
   } else if (sale.hobbyType === "meat_chickens" || sale.hobbyType === "rabbits") {

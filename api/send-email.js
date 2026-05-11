@@ -149,6 +149,18 @@ export default async function handler(req, res) {
       }
       user = match;
       rateLimitKey = `signup:${newUserEmail}`;
+      // ---- IMPORTANT: short-circuit here ----
+      // We deliberately do NOT send signup notifications via Resend anymore.
+      // Resend's free tier is limited (~100/day) and a viral signup spike
+      // would burn the quota and break feedback emails for the rest of the
+      // day. The owner can see signups in Supabase's auth dashboard or in
+      // these Vercel function logs (`vercel logs` or the dashboard).
+      //
+      // Security: this branch only runs after we verified the user actually
+      // exists in Supabase and was created in the last 10 minutes, so the
+      // log can't be polluted with fake signups.
+      console.log(`[signup_notify] new user: ${newUserEmail} (id: ${match.id}, created: ${match.created_at})`);
+      return res.status(200).json({ ok: true, mode: 'log_only' });
     } catch (e) {
       console.error('Signup verification failed:', e);
       return res.status(500).json({ error: 'Could not verify signup' });
