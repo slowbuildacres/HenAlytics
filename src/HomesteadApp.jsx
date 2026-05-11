@@ -1929,7 +1929,7 @@ function GardenSummary({ hobby, data, update, setModal }) {
                             per.harvests = per.harvests.filter(x => x.id !== h.id);
                             if (removed && h.unit === "lbs") per.totalHarvest = Math.max(0,(per.totalHarvest||0)-(removed.qty||0));
                             return d;
-                          })} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,fontSize:11,padding:"0 2px",lineHeight:1 }}>✕</button>
+                          })} aria-label="Remove harvest" style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,fontSize:11,padding:"0 2px",lineHeight:1 }}>✕</button>
                         </div>
                       ))}
                     </div>
@@ -7741,7 +7741,7 @@ function PhotosModal({ data, user, onClose }) {
       >
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Photo library</div>
-          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
           <PhotoLibraryPage data={data} user={user} />

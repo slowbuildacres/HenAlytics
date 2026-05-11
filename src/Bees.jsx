@@ -101,7 +101,7 @@ function HiveModal({ hive, onSave, onClose }) {
       <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{hive ? "Edit Hive" : "Add Hive"}</div>
-          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
           <label style={{ display:"block" }}>
@@ -230,7 +230,7 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
       <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{titles[action]||action}</div>
-          <button onClick={onClose} style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
 
@@ -486,7 +486,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             </div>
           </div>
           <div style={{ display:"flex",gap:8,alignItems:"center" }}>
-            <button onClick={onEdit} style={{ background:"none",border:"none",cursor:"pointer",color:palette.bg,opacity:0.7,padding:4 }}><Edit3 size={16}/></button>
+            <button onClick={onEdit} aria-label="Edit hive" style={{ background:"none",border:"none",cursor:"pointer",color:palette.bg,opacity:0.7,padding:4 }}><Edit3 size={16}/></button>
             {!confirmingDelete ? (
               <button onClick={() => setConfirmingDelete(true)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4 }} title="Delete hive"><Trash2 size={16}/></button>
             ) : (
