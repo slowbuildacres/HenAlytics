@@ -4,6 +4,7 @@
 import React, { useState } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -35,7 +36,7 @@ function Modal({open,onClose,title,children}){
 function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1}}>{value}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
 function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{title}</div>{children}</div>;}
 
-function AnimalModal({animal,hobbyId,update,onClose}){
+function AnimalModal({animal,hobbyId,animals,update,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
   // Breed: dropdown + "Other" custom text field
@@ -49,10 +50,18 @@ function AnimalModal({animal,hobbyId,update,onClose}){
   const[startWeight,setStartWeight]=useState(animal?.startWeight!=null?String(animal.startWeight):"");
   const[notes,setNotes]=useState(animal?.notes||"");
   const[confirmDelete,setConfirmDelete]=useState(false);
+  // Push 7a — pedigree fields. Sow/Gilt for dam (Gilt = young female who can
+  // still be a mother); Boar for sire (Barrow is castrated, not viable).
+  const [sireId, setSireId] = useState(animal?.sireId || "");
+  const [sire, setSire] = useState(animal?.sire || "");
+  const [damId, setDamId] = useState(animal?.damId || "");
+  const [dam, setDam] = useState(animal?.dam || "");
+  const [registryNumber, setRegistryNumber] = useState(animal?.registryNumber || "");
+  const [registryName, setRegistryName] = useState(animal?.registryName || "");
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -91,6 +100,42 @@ function AnimalModal({animal,hobbyId,update,onClose}){
       </div>
       <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
+
+      {/* Push 7a — Pedigree. Sow/Gilt for dam, Boar for sire. */}
+      <details style={{marginBottom:14}}>
+        <summary style={{cursor:"pointer",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,fontWeight:600,color:palette.ink,userSelect:"none"}}>
+          🧬 Pedigree & registry (optional)
+        </summary>
+        <div style={{padding:"12px 4px 4px"}}>
+          <SireDamPicker
+            label="Dam"
+            animals={animals||[]}
+            eligibleSexes={["Sow","Gilt"]}
+            excludeId={animal?.id}
+            selectedId={damId}
+            selectedName={dam}
+            onChange={({id,name})=>{setDamId(id);setDam(name);}}
+            placeholder="Type the dam's name"
+          />
+          <SireDamPicker
+            label="Sire"
+            animals={animals||[]}
+            eligibleSexes={["Boar"]}
+            excludeId={animal?.id}
+            selectedId={sireId}
+            selectedName={sire}
+            onChange={({id,name})=>{setSireId(id);setSire(name);}}
+            placeholder="Type the sire's name"
+          />
+          <Field label="Registry name (optional)">
+            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Hampshire Star"/>
+          </Field>
+          <Field label="Registry number (optional)">
+            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. NSR #123456"/>
+          </Field>
+        </div>
+      </details>
+
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <Btn onClick={save}>{isEdit?"Save changes":"Add pig"}</Btn>
         {isEdit && animal?.archived && (
@@ -165,8 +210,9 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   );
 }
 
-function AnimalCard({animal,hobbyId,entries,update,setModal}){
+function AnimalCard({animal,hobbyId,animals,entries,update,setModal}){
   const[logAction,setLogAction]=useState(null);
+  const[showPedigree,setShowPedigree]=useState(false);
   const animalEntries=entries.filter(e=>e.animalId===animal.id);
   const weightEntries=animalEntries.filter(e=>e.action==="weight").sort((a,b)=>b.date.localeCompare(a.date));
   const latestWeight=weightEntries[0]?.weight||null;
@@ -178,6 +224,14 @@ function AnimalCard({animal,hobbyId,entries,update,setModal}){
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
       {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} update={update} onClose={()=>setLogAction(null)}/>}
+      {showPedigree && (
+        <PedigreeView
+          animal={animal}
+          animals={animals||[]}
+          onClose={()=>setShowPedigree(false)}
+          onJumpTo={(id)=>{setShowPedigree(false);setTimeout(()=>setModal({type:"editAnimal",hobbyId,animalId:id}),0);}}
+        />
+      )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -199,6 +253,7 @@ function AnimalCard({animal,hobbyId,entries,update,setModal}){
       )}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
         {LOG_ACTIONS.map(a=><button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>)}
+        <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
       </div>
       {recentEntries.length>0&&(
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -269,8 +324,8 @@ export function PigsAnalytics({hobby,entries}){
 
 function PigModalRouter({modal,hobby,update,onClose}){
   if(!modal)return null;
-  if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} update={update} onClose={onClose}/>;
-  if(modal.type==="editAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <AnimalModal animal={animal} hobbyId={hobby.id} update={update} onClose={onClose}/>;}
+  if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;
+  if(modal.type==="editAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;}
   return null;
 }
 
@@ -294,7 +349,7 @@ export default function PigsPage({hobby,data,update}){
           <div style={{fontSize:13,marginBottom:14}}>Add your first pig to track growth, feed, and butcher stats.</div>
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first pig</button>
         </div>
-      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} entries={entries} update={update} setModal={setLocalModal}/>)}
+      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} update={update} setModal={setLocalModal}/>)}
 
       {archived.length>0 && (
         <details style={{marginTop:18}}>

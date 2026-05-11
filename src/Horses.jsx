@@ -21,6 +21,7 @@
 import React, { useState } from "react";
 import { X, Edit3 } from "lucide-react";
 import { fmtMoney } from "./units.js";
+import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -121,7 +122,7 @@ function ModalShell({ title, onClose, children, maxWidth = 460 }) {
 }
 
 // ============ HORSE MODAL ============
-function HorseModal({ horse, onSave, onDelete, onClose }) {
+function HorseModal({ horse, horses, onSave, onDelete, onClose }) {
   const [name, setName] = useState(horse?.name || "");
   // Breed: dropdown + "Other" custom option. Init from saved value.
   const initBreed = (horse?.breed || "").trim();
@@ -137,6 +138,16 @@ function HorseModal({ horse, onSave, onDelete, onClose }) {
   const [notes, setNotes] = useState(horse?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
+  // Push 7a — pedigree fields. ids link to other horses in this hobby for
+  // the family tree; names always exist as a display label (even for
+  // free-text "outside" parents the user never added to the app).
+  const [sireId, setSireId] = useState(horse?.sireId || "");
+  const [sire, setSire] = useState(horse?.sire || "");
+  const [damId, setDamId] = useState(horse?.damId || "");
+  const [dam, setDam] = useState(horse?.dam || "");
+  const [registryNumber, setRegistryNumber] = useState(horse?.registryNumber || "");
+  const [registryName, setRegistryName] = useState(horse?.registryName || "");
+
   const finalBreed = breedSelect === "Other" ? breedCustom.trim() : breedSelect;
 
   const handleSave = () => {
@@ -150,6 +161,18 @@ function HorseModal({ horse, onSave, onDelete, onClose }) {
       purchaseCost: parseFloat(purchaseCost) || 0,
       purchasedFrom: purchasedFrom.trim(),
       notes: notes.trim(),
+      // Push 7a — pedigree fields. sireId/damId null (not empty string) when
+      // unset; sire/dam display names always saved (trimmed) so the family
+      // tree can render names even for "outside" parents that aren't in the
+      // app. These are SEPARATE from the breeding records (mareId/stallionId
+      // on hobby.breedings[]) — those track when a horse was bred, this
+      // tracks parentage.
+      sireId: sireId || null,
+      sire: sire.trim(),
+      damId: damId || null,
+      dam: dam.trim(),
+      registryNumber: registryNumber.trim(),
+      registryName: registryName.trim(),
       archived: horse?.archived || false,
       archivedReason: horse?.archivedReason,
       archivedDate: horse?.archivedDate,
@@ -227,6 +250,48 @@ function HorseModal({ horse, onSave, onDelete, onClose }) {
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Markings, temperament, special needs..." />
       </Field>
+
+      {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers
+          show only opposite-sex eligible horses: mares for dam, stallions
+          for sire. Geldings (castrated males) and foals (under 1yr) are NOT
+          valid parents and won't appear in either picker — eligibleSexes
+          enforces this. The breeding records on this hobby are SEPARATE
+          from pedigree — breeding tracks who was bred when, pedigree
+          tracks who-came-from-who. */}
+      <details style={{ marginBottom: 14 }}>
+        <summary style={{ cursor:"pointer", padding:"8px 12px", background:palette.bgAlt, borderRadius:8, fontSize:13, fontWeight:600, color:palette.ink, userSelect:"none" }}>
+          🧬 Pedigree & registry (optional)
+        </summary>
+        <div style={{ padding:"12px 4px 4px" }}>
+          <SireDamPicker
+            label="Dam"
+            animals={horses || []}
+            eligibleSexes={["mare"]}
+            excludeId={horse?.id}
+            selectedId={damId}
+            selectedName={dam}
+            onChange={({ id, name }) => { setDamId(id); setDam(name); }}
+            placeholder="Type the dam's name"
+          />
+          <SireDamPicker
+            label="Sire"
+            animals={horses || []}
+            eligibleSexes={["stallion"]}
+            excludeId={horse?.id}
+            selectedId={sireId}
+            selectedName={sire}
+            onChange={({ id, name }) => { setSireId(id); setSire(name); }}
+            placeholder="Type the sire's name"
+          />
+          <Field label="Registry name (optional)">
+            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Silver Lining's Thunder" />
+          </Field>
+          <Field label="Registry number (optional)">
+            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. AQHA #5123456" />
+          </Field>
+        </div>
+      </details>
+
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
         {horse && onDelete && (
           !confirmDelete
@@ -493,6 +558,10 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [careModal, setCareModal] = useState({ open: false, kind: null, log: null });
   const [rideModal, setRideModal] = useState({ open: false, ride: null });
+  // Push 7a — pedigree view state. The 🧬 chip on each horse row opens this;
+  // jumping to an ancestor/descendant from the tree swaps the horse in here
+  // without ever opening the edit modal.
+  const [pedigreeHorse, setPedigreeHorse] = useState(null);
 
   const horses = (hobby?.animals || []);
   const liveHorses = horses.filter(h => !h.archived);
@@ -597,6 +666,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
       {horseModal.open && (
         <HorseModal
           horse={horseModal.horse}
+          horses={horses}
           onClose={() => setHorseModal({ open: false, horse: null })}
           onSave={saveHorse}
           onDelete={deleteHorse}
@@ -630,6 +700,20 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
           onClose={() => setRideModal({ open: false, ride: null })}
           onSave={saveRide}
           onDelete={deleteRide}
+        />
+      )}
+      {/* Push 7a — Pedigree modal. onJumpTo swaps the focused horse rather
+          than stacking — tapping an ancestor closes nothing, just re-targets
+          the same view to the relative the user tapped. */}
+      {pedigreeHorse && (
+        <PedigreeView
+          animal={pedigreeHorse}
+          animals={horses}
+          onClose={() => setPedigreeHorse(null)}
+          onJumpTo={(id) => {
+            const next = horses.find(h => h.id === id);
+            if (next) setPedigreeHorse(next);
+          }}
         />
       )}
 
@@ -706,7 +790,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
                 <div
                   key={h.id}
                   onClick={() => setHorseModal({ open: true, horse: h })}
-                  style={{ padding:"12px 14px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center" }}
+                  style={{ padding:"12px 14px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center",gap:8 }}
                 >
                   <div style={{ flex:1,minWidth:0 }}>
                     <div style={{ fontWeight:700,fontSize:15,color:palette.ink }}>🐴 {h.name}</div>
@@ -720,6 +804,17 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
                       ].filter(Boolean).join(" · ")}
                     </div>
                   </div>
+                  {/* Push 7a — pedigree pill. stopPropagation keeps the row's
+                      edit-on-click behavior intact for the rest of the row. */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setPedigreeHorse(h); }}
+                    aria-label={`View pedigree for ${h.name}`}
+                    style={{
+                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                      flexShrink:0,
+                    }}
+                  >🧬 Pedigree</button>
                   <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
                 </div>
               );

@@ -931,6 +931,7 @@ export default function HomesteadApp() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
+  const [passwordRecoveryPending, setPasswordRecoveryPending] = useState(false);
 
   // Show what's new popup once after Supabase data loads.
   // Triggers when (a) onboarding is complete and (b) the user's saved
@@ -944,10 +945,11 @@ export default function HomesteadApp() {
     if (whatsNewDismissedRef.current) return;
     if (!data?.onboardedAt) return;
     if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) return;
+    if (passwordRecoveryPending) return;
     whatsNewShownRef.current = true;
     const timer = setTimeout(() => setShowWhatsNew(true), 1500);
     return () => clearTimeout(timer);
-  }, [data?.onboardedAt, data?.lastSeenVersion]);
+  }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
 
   // ---- Monthly supporter thank-you ----
   // Shows once on the 9th-11th of each month if the user hasn't dismissed it yet
@@ -1070,12 +1072,32 @@ export default function HomesteadApp() {
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") setSignedOutRemotely(true);
-      if (event === "PASSWORD_RECOVERY") setModal({ type: "setNewPassword" });
+      if (event === "PASSWORD_RECOVERY") {
+        setPasswordRecoveryPending(true);
+        setModal({ type: "setNewPassword" });
+      }
+      if (event === "USER_UPDATED") {
+        setPasswordRecoveryPending(false);
+      }
       setUser(session?.user || null);
       setAuthReady(true);
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // ---- Keep the setNewPassword modal sticky while recovery is pending ----
+  // If anything else clears `modal` (an invite flow, a stray close), re-open it.
+  // Cleared only when the user successfully updates their password and AuthModal
+  // closes itself — at which point setNewPassword modal closes, and the effect
+  // below detects modal=null + still-pending and re-opens. So we ALSO clear the
+  // flag here on the close path: AuthModal closes via onClose -> setModal(null),
+  // and updateUser fires another auth state change (USER_UPDATED) which we
+  // handle below.
+  useEffect(() => {
+    if (passwordRecoveryPending && modal && modal.type !== "setNewPassword") {
+      setModal({ type: "setNewPassword" });
+    }
+  }, [passwordRecoveryPending, modal]);
 
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {

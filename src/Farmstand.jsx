@@ -34,6 +34,33 @@ const inputStyle = {
 
 const ITEM_UNITS = ["each", "lbs", "dozen", "quart", "pint", "bunch", "bag", "jar", "loaf"];
 
+// Quantity preset buttons for the sell modal — tuned per unit so a fractional
+// nudge ("+½ doz") doesn't show up on "loaf" where halves make no sense.
+const sellPresetsForUnit = (unit) => {
+  if (unit === "dozen") return [{ label: "+½ doz", delta: 0.5 }, { label: "+1 doz", delta: 1 }, { label: "+2 doz", delta: 2 }];
+  if (unit === "lbs")   return [{ label: "+½ lb", delta: 0.5 }, { label: "+1 lb", delta: 1 }, { label: "+2 lb", delta: 2 }, { label: "+5 lb", delta: 5 }];
+  return [{ label: "+1", delta: 1 }, { label: "+2", delta: 2 }, { label: "+5", delta: 5 }, { label: "+10", delta: 10 }];
+};
+
+// Restock preset buttons — larger increments since you typically restock in
+// batches (a dozen eggs gathered, ten pounds of tomatoes harvested).
+const restockPresetsForUnit = (unit) => {
+  if (unit === "dozen") return [{ label: "+1 doz", delta: 1 }, { label: "+2 doz", delta: 2 }, { label: "+5 doz", delta: 5 }];
+  if (unit === "lbs")   return [{ label: "+1 lb", delta: 1 }, { label: "+5 lb", delta: 5 }, { label: "+10 lb", delta: 10 }];
+  return [{ label: "+6", delta: 6 }, { label: "+12", delta: 12 }, { label: "+24", delta: 24 }];
+};
+
+// Stock state buckets so the pill colors + button arrangements stay consistent
+// between ItemCard and the page-level warning banner.
+const computeStockState = (item) => {
+  if (!item?.trackStock) return "untracked";
+  const stock = Number(item.stock) || 0;
+  const low = Number(item.lowStockAt) || 0;
+  if (stock <= 0) return "out";
+  if (low > 0 && stock <= low) return "low";
+  return "healthy";
+};
+
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
   const d = date instanceof Date ? date : new Date(date);
@@ -86,10 +113,16 @@ function Field({ label, children }) {
 
 // ============ ADD / EDIT ITEM MODAL ============
 function ItemModal({ item, onSave, onDelete, onClose }) {
+  const isNew = !item;
   const [name, setName] = useState(item?.name || "");
   const [unit, setUnit] = useState(item?.unit || "each");
   const [costPerUnit, setCostPerUnit] = useState(item?.costPerUnit ? String(item.costPerUnit) : "");
   const [pricePerUnit, setPricePerUnit] = useState(item?.pricePerUnit ? String(item.pricePerUnit) : "");
+  // Legacy items without a trackStock flag are treated as untracked. New items
+  // default to tracked so inventory is on by default going forward.
+  const [trackStock, setTrackStock] = useState(isNew ? true : !!item?.trackStock);
+  const [stock, setStock] = useState(item?.stock != null ? String(item.stock) : "0");
+  const [lowStockAt, setLowStockAt] = useState(item?.lowStockAt != null ? String(item.lowStockAt) : "3");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   const handleSave = () => {
@@ -100,6 +133,9 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
       unit,
       costPerUnit: parseFloat(costPerUnit) || 0,
       pricePerUnit: parseFloat(pricePerUnit) || 0,
+      trackStock,
+      stock: trackStock ? (parseFloat(stock) || 0) : (item?.stock ?? 0),
+      lowStockAt: trackStock ? (parseFloat(lowStockAt) || 0) : (item?.lowStockAt ?? 3),
       archived: item?.archived || false,
     });
     onClose();
@@ -142,6 +178,36 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
               {" · "}Margin: <strong>{margin.toFixed(0)}%</strong>
             </div>
           )}
+
+          {/* Inventory section */}
+          <div style={{ background:palette.bgAlt,borderRadius:8,padding:12,marginBottom:12,border:`1.5px solid ${palette.line}` }}>
+            <label style={{ display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:14,fontWeight:600,color:palette.ink,marginBottom: trackStock ? 10 : 0 }}>
+              <input
+                type="checkbox"
+                checked={trackStock}
+                onChange={e => setTrackStock(e.target.checked)}
+                style={{ width:16,height:16,cursor:"pointer" }}
+              />
+              Track inventory
+            </label>
+            {trackStock && (
+              <div style={{ display:"flex",gap:12 }}>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
+                    Current stock ({unit})
+                  </div>
+                  <input type="number" step="0.5" min={0} style={inputStyle} value={stock} onChange={e=>setStock(e.target.value)} placeholder="0" />
+                </div>
+                <div style={{ flex:1 }}>
+                  <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
+                    Low-stock alert at
+                  </div>
+                  <input type="number" step="1" min={0} style={inputStyle} value={lowStockAt} onChange={e=>setLowStockAt(e.target.value)} placeholder="3" />
+                </div>
+              </div>
+            )}
+          </div>
+
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
             {item && onDelete && (
               !confirmDelete ? (
@@ -176,6 +242,18 @@ function QuickSellModal({ item, onSell, onClose }) {
   const cost = q * c;
   const profit = revenue - cost;
 
+  const tracked = !!item.trackStock;
+  const currentStock = Number(item.stock) || 0;
+  const afterSale = currentStock - q;
+  const overstock = tracked && q > currentStock;
+
+  const presets = sellPresetsForUnit(item.unit);
+  const bumpQty = (delta) => {
+    const next = Math.max(0, (parseFloat(qty) || 0) + delta);
+    // Trim trailing zeros so "1.5" stays "1.5" but "1.0" becomes "1".
+    setQty(Number.isInteger(next) ? String(next) : String(parseFloat(next.toFixed(2))));
+  };
+
   const handleSell = () => {
     if (q <= 0) return;
     onSell({
@@ -199,9 +277,47 @@ function QuickSellModal({ item, onSell, onClose }) {
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
+          {/* Stock context banner — only shown when item is tracked */}
+          {tracked && (
+            <div style={{
+              padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:13,
+              background: overstock ? "#FBE5DE" : palette.bgAlt,
+              border: `1.5px solid ${overstock ? palette.accent : palette.line}`,
+              color: overstock ? palette.accent : palette.ink,
+            }}>
+              {overstock ? (
+                <>⚠️ Selling more than stock — this sale would put you {Math.abs(afterSale)} below zero.</>
+              ) : (
+                <>In stock: <strong>{currentStock}</strong> — After this sale: <strong>{afterSale}</strong></>
+              )}
+            </div>
+          )}
+
           <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
             <input type="number" step="0.1" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
+
+          {/* Unit-aware preset buttons + clear */}
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:-6,marginBottom:12 }}>
+            {presets.map(p => (
+              <button key={p.label} type="button" onClick={() => bumpQty(p.delta)} style={{
+                padding:"6px 10px",borderRadius:8,border:`1.5px solid ${palette.line}`,
+                background:palette.card,cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,
+              }}>{p.label}</button>
+            ))}
+            <button type="button" onClick={() => setQty("0")} style={{
+              padding:"6px 10px",borderRadius:8,border:`1.5px solid ${palette.line}`,
+              background:"transparent",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.inkSoft,
+            }}>Clear</button>
+          </div>
+
+          {/* Dozen → individual items hint */}
+          {item.unit === "dozen" && q > 0 && (
+            <div style={{ fontSize:12,color:palette.inkSoft,marginTop:-6,marginBottom:12,fontStyle:"italic" }}>
+              = {Math.round(q * 12)} individual items
+            </div>
+          )}
+
           <Field label="Date">
             <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
           </Field>
@@ -244,9 +360,128 @@ function QuickSellModal({ item, onSell, onClose }) {
   );
 }
 
+// ============ RESTOCK MODAL ============
+// Opened from a tracked item's "Restock" button. Adds to current stock and
+// pushes an entry into data.entries[hobby.id] so RecentRestocks can show it.
+function RestockModal({ item, onRestock, onClose }) {
+  const [qty, setQty] = useState("0");
+  const [date, setDate] = useState(todayStr());
+  const [batchCost, setBatchCost] = useState("");
+  const [note, setNote] = useState("");
+
+  const q = parseFloat(qty) || 0;
+  const bc = parseFloat(batchCost);
+  const hasBatchCost = batchCost.trim() !== "" && !Number.isNaN(bc) && bc > 0 && q > 0;
+  const perUnitCost = hasBatchCost ? bc / q : null;
+  const currentStock = Number(item.stock) || 0;
+  const afterRestock = currentStock + q;
+
+  // Flag the implied per-unit cost when it drifts significantly (>30%) from
+  // the item's stored costPerUnit — helps catch typos like "2.50" vs "25.00".
+  const storedCost = Number(item.costPerUnit) || 0;
+  const significantDrift = perUnitCost != null && storedCost > 0 &&
+    Math.abs(perUnitCost - storedCost) / storedCost > 0.3;
+
+  const presets = restockPresetsForUnit(item.unit);
+  const bumpQty = (delta) => {
+    const next = Math.max(0, (parseFloat(qty) || 0) + delta);
+    setQty(Number.isInteger(next) ? String(next) : String(parseFloat(next.toFixed(2))));
+  };
+
+  const handleSubmit = () => {
+    if (q <= 0) return;
+    onRestock({
+      qty: q,
+      batchCost: hasBatchCost ? bc : 0,
+      perUnitCost: perUnitCost ?? 0,
+      date,
+      note: note.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>📦 Restock {item.name}</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20 }}>
+          <div style={{
+            padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:13,
+            background:palette.bgAlt,border:`1.5px solid ${palette.line}`,color:palette.ink,
+          }}>
+            Current stock: <strong>{currentStock}</strong> → After restock: <strong>{afterRestock}</strong>
+          </div>
+
+          <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
+            <input type="number" step="0.1" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+          </Field>
+          <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:-6,marginBottom:12 }}>
+            {presets.map(p => (
+              <button key={p.label} type="button" onClick={() => bumpQty(p.delta)} style={{
+                padding:"6px 10px",borderRadius:8,border:`1.5px solid ${palette.line}`,
+                background:palette.card,cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,
+              }}>{p.label}</button>
+            ))}
+            <button type="button" onClick={() => setQty("0")} style={{
+              padding:"6px 10px",borderRadius:8,border:`1.5px solid ${palette.line}`,
+              background:"transparent",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.inkSoft,
+            }}>Clear</button>
+          </div>
+
+          <Field label="Date">
+            <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+          </Field>
+          <Field label="Batch cost (optional)">
+            <input type="number" step="0.01" min={0} style={inputStyle} value={batchCost} onChange={e=>setBatchCost(e.target.value)} placeholder="Total cost of supplies for this batch" />
+          </Field>
+
+          {hasBatchCost && (
+            <div style={{
+              padding:"10px 12px",borderRadius:8,marginBottom:12,fontSize:13,
+              background: significantDrift ? "#FBE5DE" : palette.bgAlt,
+              border: `1.5px solid ${significantDrift ? palette.accent : palette.line}`,
+              color: significantDrift ? palette.accent : palette.ink,
+            }}>
+              Implied per-unit cost: <strong>{fmtMoney(perUnitCost)}</strong>
+              {significantDrift && (
+                <span> — different from saved cost of {fmtMoney(storedCost)}. Double-check the batch cost.</span>
+              )}
+            </div>
+          )}
+
+          <Field label="Note (optional)">
+            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Where it came from, harvest details, etc." />
+          </Field>
+
+          <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn variant="leaf" onClick={handleSubmit} disabled={q<=0}>Log restock</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ ITEM CARD ============
-function ItemCard({ item, onSell, onEdit }) {
+function ItemCard({ item, onSell, onEdit, onRestock }) {
   const profit = (item.pricePerUnit || 0) - (item.costPerUnit || 0);
+  const stockState = computeStockState(item);
+  const tracked = stockState !== "untracked";
+  const stock = Number(item.stock) || 0;
+
+  // Pill colors per state — kept soft so the card doesn't scream when one item
+  // is low. "Out" is the only one that uses the alarming accent red.
+  const pillStyles = {
+    out:     { bg: "#FBE5DE", border: palette.accent, fg: palette.accent, label: `Out of stock` },
+    low:     { bg: palette.yolkSoft, border: palette.yolk, fg: palette.ink, label: `Low — ${stock} left` },
+    healthy: { bg: "#E3EDD3", border: palette.leaf, fg: palette.leaf, label: `In stock — ${stock}` },
+  };
+  const pill = tracked ? pillStyles[stockState] : null;
+
   return (
     <div style={{
       background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
@@ -261,6 +496,18 @@ function ItemCard({ item, onSell, onEdit }) {
           <Edit3 size={16}/>
         </button>
       </div>
+
+      {/* Stock pill — between title and the price/profit row */}
+      {pill && (
+        <div style={{
+          alignSelf:"flex-start",padding:"3px 8px",borderRadius:999,
+          background:pill.bg,border:`1.5px solid ${pill.border}`,
+          fontSize:11,fontWeight:700,color:pill.fg,letterSpacing:0.3,
+        }}>
+          {pill.label}
+        </div>
+      )}
+
       <div style={{ display:"flex",gap:8,fontSize:12 }}>
         <div style={{ flex:1,background:palette.bgAlt,borderRadius:6,padding:"6px 8px" }}>
           <div style={{ fontSize:9,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:0.8 }}>Price</div>
@@ -271,7 +518,27 @@ function ItemCard({ item, onSell, onEdit }) {
           <div style={{ fontWeight:700,color: profit >= 0 ? palette.leaf : palette.accent }}>{fmtMoney(profit)}</div>
         </div>
       </div>
-      <Btn variant="leaf" small onClick={onSell} style={{ width:"100%" }}>+ Quick sell</Btn>
+
+      {/* Action buttons: Sell + Restock side-by-side when tracked.
+          When out of stock, Restock is the primary (leaf) action and Sell becomes the ghost
+          — most users hitting an out-of-stock card want to refill, not log another sale. */}
+      {tracked ? (
+        <div style={{ display:"flex",gap:6 }}>
+          {stockState === "out" ? (
+            <>
+              <Btn variant="ghost" small onClick={onSell} style={{ flex:1 }}>+ Sell</Btn>
+              <Btn variant="leaf" small onClick={onRestock} style={{ flex:1 }}>📦 Restock</Btn>
+            </>
+          ) : (
+            <>
+              <Btn variant="leaf" small onClick={onSell} style={{ flex:1 }}>+ Sell</Btn>
+              <Btn variant="ghost" small onClick={onRestock} style={{ flex:1 }}>📦 Restock</Btn>
+            </>
+          )}
+        </div>
+      ) : (
+        <Btn variant="leaf" small onClick={onSell} style={{ width:"100%" }}>+ Quick sell</Btn>
+      )}
     </div>
   );
 }
@@ -281,11 +548,25 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
   const [editingItem, setEditingItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [sellingItem, setSellingItem] = useState(null);
+  const [restockingItem, setRestockingItem] = useState(null);
 
   const items = (hobby?.items || []).filter(i => !i.archived);
   const farmstandSales = useMemo(
     () => (data.sales || []).filter(s => s.hobbyType === "farmstand"),
     [data.sales]
+  );
+
+  // Stock warnings — anything tracked that's out or at-or-below its low-stock
+  // threshold. Surfaced as a banner above the revenue stats so it's the first
+  // thing a user sees walking into the page.
+  const stockWarnings = useMemo(
+    () => items.filter(i => {
+      if (!i.trackStock) return false;
+      const stock = Number(i.stock) || 0;
+      const low = Number(i.lowStockAt) || 0;
+      return stock <= 0 || (low > 0 && stock <= low);
+    }),
+    [items]
   );
 
   // Month / year revenue
@@ -341,6 +622,52 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
         created: Date.now(),
         fromFarmstandItem: item.id,
       });
+      // Decrement stock for tracked items. Intentionally NOT floored — going
+      // negative is informative ("I sold 5 but only had 3 listed").
+      if (item.trackStock) {
+        const h = d.hobbies.find(x => x.id === hobby.id);
+        const target = h?.items?.find(x => x.id === item.id);
+        if (target) {
+          target.stock = (Number(target.stock) || 0) - (Number(saleData.qty) || 0);
+        }
+      }
+      return d;
+    });
+  };
+
+  const recordRestock = (item, restockData) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      const target = h?.items?.find(x => x.id === item.id);
+      if (target) {
+        target.stock = (Number(target.stock) || 0) + (Number(restockData.qty) || 0);
+      }
+      // Push a restock entry into data.entries[hobby.id] for the RecentRestocks
+      // history list. We use the generic entries bucket so other hobbies could
+      // theoretically reuse the same shape.
+      if (!d.entries || typeof d.entries !== "object") d.entries = {};
+      if (!Array.isArray(d.entries[hobby.id])) d.entries[hobby.id] = [];
+      d.entries[hobby.id].push({
+        id: newId(),
+        action: "restock",
+        itemId: item.id,
+        itemName: item.name,
+        qty: restockData.qty,
+        unit: item.unit,
+        batchCost: restockData.batchCost || 0,
+        perUnitCost: restockData.perUnitCost || 0,
+        date: restockData.date,
+        note: restockData.note || "",
+        created: Date.now(),
+      });
+      return d;
+    });
+  };
+
+  const deleteRestockEntry = (entryId) => {
+    update(d => {
+      if (!d.entries || !Array.isArray(d.entries[hobby.id])) return d;
+      d.entries[hobby.id] = d.entries[hobby.id].filter(e => e.id !== entryId);
       return d;
     });
   };
@@ -361,6 +688,36 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
           onClose={() => setSellingItem(null)}
           onSell={(saleData) => recordSale(sellingItem, saleData)}
         />
+      )}
+      {restockingItem && (
+        <RestockModal
+          item={restockingItem}
+          onClose={() => setRestockingItem(null)}
+          onRestock={(restockData) => recordRestock(restockingItem, restockData)}
+        />
+      )}
+
+      {/* Stock warnings banner — only when at least one tracked item is low/out */}
+      {stockWarnings.length > 0 && (
+        <div style={{
+          background: palette.yolkSoft, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+          padding: "12px 14px", marginBottom: 12, fontSize: 13, color: palette.ink, lineHeight: 1.5,
+        }}>
+          {stockWarnings.length === 1 ? (
+            (() => {
+              const w = stockWarnings[0];
+              const stock = Number(w.stock) || 0;
+              return stock <= 0
+                ? <><strong>⚠️ Out of stock:</strong> {w.name} — tap 📦 Restock to refill.</>
+                : <><strong>⚠️ Low stock:</strong> {w.name} — only {stock} {w.unit} left.</>;
+            })()
+          ) : (
+            <>
+              <strong>⚠️ {stockWarnings.length} items need restocking:</strong>{" "}
+              {stockWarnings.map(w => `${w.name} (${Number(w.stock) || 0})`).join(", ")}
+            </>
+          )}
+        </div>
       )}
 
       {/* Revenue stats */}
@@ -390,7 +747,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
           </div>
         ) : (
           <div style={{
-            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(160px, 1fr))", gap: 10,
+            display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10,
           }}>
             {items.map(item => (
               <ItemCard
@@ -398,6 +755,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
                 item={item}
                 onSell={() => setSellingItem(item)}
                 onEdit={() => { setEditingItem(item); setShowItemModal(true); }}
+                onRestock={() => setRestockingItem(item)}
               />
             ))}
           </div>
@@ -437,10 +795,73 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
         </div>
       )}
 
+      {/* Recent restocks */}
+      <RecentRestocks
+        entries={data.entries?.[hobby?.id] || []}
+        onDelete={deleteRestockEntry}
+      />
+
       {/* Archived items */}
       {(hobby?.items || []).some(i => i.archived) && (
         <ArchivedItemsList hobby={hobby} update={update} />
       )}
+    </div>
+  );
+}
+
+function RecentRestocks({ entries, onDelete }) {
+  const restocks = useMemo(
+    () => (Array.isArray(entries) ? entries : [])
+      .filter(e => e?.action === "restock")
+      .slice()
+      .sort((a, b) => (b.date || "").localeCompare(a.date || ""))
+      .slice(0, 6),
+    [entries]
+  );
+
+  if (restocks.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 24 }}>
+      <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 10px",color:palette.ink }}>Recent restocks</h3>
+      <div style={{
+        background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, overflow: "hidden",
+      }}>
+        {restocks.map((r, i) => (
+          <div key={r.id || i} style={{
+            padding: "10px 14px",
+            borderBottom: i < restocks.length - 1 ? `1px solid ${palette.line}` : "none",
+            display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+          }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink, wordBreak: "break-word" }}>
+                📦 {r.itemName || "Item"} · +{r.qty} {r.unit || ""}
+              </div>
+              <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                {fmtDate(r.date)}{r.note ? ` · ${r.note}` : ""}
+              </div>
+            </div>
+            <div style={{ display:"flex",alignItems:"center",gap:8 }}>
+              {r.batchCost > 0 && (
+                <div style={{ fontWeight: 700, color: palette.feather, fontFamily: FONT_DISPLAY, fontSize: 16 }}>
+                  {fmtMoney(r.batchCost)}
+                </div>
+              )}
+              <button
+                onClick={() => onDelete && onDelete(r.id)}
+                aria-label="Delete restock entry"
+                title="Delete restock entry"
+                style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}
+              >
+                <X size={16}/>
+              </button>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 8, textAlign: "center", fontStyle: "italic" }}>
+        Deleting a restock entry removes it from history but does not adjust current stock.
+      </div>
     </div>
   );
 }
@@ -487,13 +908,19 @@ function ArchivedItemsList({ hobby, update }) {
 // ============================================================================
 // FARMSTAND ANALYTICS — rendered under the Stats tab when farmstand is active
 // ============================================================================
-export function FarmstandAnalytics({ hobby, sales = [], spouseMode = false }) {
+export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode = false }) {
   // Defensive: hobby may be undefined if data is mid-load or migration hasn't
   // applied yet. Treat that as an empty state rather than crashing.
   const farmstandSales = useMemo(
     () => (Array.isArray(sales) ? sales : []).filter(s => s && s.hobbyType === "farmstand"),
     [sales]
   );
+  const restocks = useMemo(
+    () => (Array.isArray(entries) ? entries : []).filter(e => e?.action === "restock"),
+    [entries]
+  );
+  const totalRestockCost = restocks.reduce((s, r) => s + (Number(r.batchCost) || 0), 0);
+  const totalRestockQty = restocks.reduce((s, r) => s + (Number(r.qty) || 0), 0);
 
   if (!hobby || farmstandSales.length === 0) {
     return (
@@ -557,6 +984,18 @@ export function FarmstandAnalytics({ hobby, sales = [], spouseMode = false }) {
           <StatCard label="Customers" value={customers.size} sub="repeat buyers" accent={palette.yolk} />
         )}
       </div>
+
+      {/* Supplies & restocks — separate section so it doesn't crowd the headline
+          revenue stats. Only shown when there's something to show. */}
+      {restocks.length > 0 && (
+        <>
+          <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>Supplies & restocks</h3>
+          <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:18 }}>
+            <StatCard label="Supplies cost" value={fmtMoney(totalRestockCost)} sub={`${restocks.length} restock${restocks.length===1?"":"s"}`} accent={palette.accent} />
+            <StatCard label="Units restocked" value={totalRestockQty.toFixed(0)} sub="across all items" accent={palette.feather} />
+          </div>
+        </>
+      )}
 
       <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>Top sellers — by revenue</h3>
       <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,overflow:"hidden",marginBottom:18 }}>

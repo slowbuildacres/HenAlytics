@@ -25,15 +25,16 @@ const inputStyle = {
 };
 
 export default function AuthModal({ onClose, initialMode = "signin" }) {
-  const [mode, setMode] = useState(initialMode); // "signin" | "signup" | "reset"
+  const [mode, setMode] = useState(initialMode); // "signin" | "signup" | "reset" | "setNewPassword"
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [info, setInfo] = useState("");
   const [resetSent, setResetSent] = useState(false);
+  const [passwordUpdated, setPasswordUpdated] = useState(false);
 
-  const switchMode = (m) => { setMode(m); setError(""); setInfo(""); setResetSent(false); };
+  const switchMode = (m) => { setMode(m); setError(""); setInfo(""); setResetSent(false); setPasswordUpdated(false); };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -42,6 +43,24 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
 
     if (!isSupabaseConfigured) {
       setError("Sign-in isn't configured on this site yet. Check back soon!");
+      return;
+    }
+
+    // Set-new-password mode: only password needed, calls updateUser
+    if (mode === "setNewPassword") {
+      if (!password) { setError("Please enter a new password."); return; }
+      if (password.length < 6) { setError("Password must be at least 6 characters."); return; }
+      setLoading(true);
+      try {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        setPasswordUpdated(true);
+        setTimeout(() => { onClose(); }, 1200);
+      } catch (err) {
+        setError(err.message || "Something went wrong. Please try again.");
+      } finally {
+        setLoading(false);
+      }
       return;
     }
 
@@ -126,7 +145,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
-            {mode === "signup" ? "Create account" : mode === "reset" ? "Reset password" : "Sign in"}
+            {mode === "signup" ? "Create account" : mode === "reset" ? "Reset password" : mode === "setNewPassword" ? "Set new password" : "Sign in"}
           </div>
           <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
@@ -134,8 +153,8 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
         </div>
 
         <div style={{ padding: 20 }}>
-          {/* Sign in / Create account tabs — hidden on reset mode */}
-          {mode !== "reset" && (
+          {/* Sign in / Create account tabs — hidden on reset / setNewPassword modes */}
+          {mode !== "reset" && mode !== "setNewPassword" && (
             <div style={{
               display: "flex", gap: 4, padding: 4, marginBottom: 18,
               background: palette.bgAlt, borderRadius: 10,
@@ -172,10 +191,21 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
             fontSize: 12, color: palette.ink, marginBottom: 16, lineHeight: 1.5,
             border: `1.5px solid ${palette.line}`,
           }}>
-            <strong>Privacy:</strong> Your email is used only for support and account recovery — never sold or shared.
+            {mode === "setNewPassword" ? (
+              <span>You clicked a password reset link. Enter a new password below.</span>
+            ) : (
+              <span><strong>Privacy:</strong> Your email is used only for support and account recovery — never sold or shared.</span>
+            )}
           </div>
 
-          {resetSent ? (
+          {passwordUpdated ? (
+            <div style={{
+              padding: 16, background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
+              borderRadius: 8, fontSize: 14, color: palette.ink, textAlign: "center", lineHeight: 1.6,
+            }}>
+              ✅ Password updated! Signing you in…
+            </div>
+          ) : resetSent ? (
             <div style={{
               padding: 16, background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
               borderRadius: 8, fontSize: 14, color: palette.ink, textAlign: "center", lineHeight: 1.6,
@@ -191,25 +221,27 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
             </div>
           ) : (
             <form onSubmit={handleSubmit}>
-              <label style={{ display: "block", marginBottom: 14 }}>
-                <div style={{
-                  fontSize: 11, color: palette.inkSoft, marginBottom: 6,
-                  textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
-                  fontFamily: FONT_BODY,
-                }}>
-                  Email
-                </div>
-                <input
-                  type="email"
-                  style={inputStyle}
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  disabled={loading}
-                  autoFocus
-                />
-              </label>
+              {mode !== "setNewPassword" && (
+                <label style={{ display: "block", marginBottom: 14 }}>
+                  <div style={{
+                    fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+                    textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+                    fontFamily: FONT_BODY,
+                  }}>
+                    Email
+                  </div>
+                  <input
+                    type="email"
+                    style={inputStyle}
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                    autoComplete="email"
+                    disabled={loading}
+                    autoFocus
+                  />
+                </label>
+              )}
 
               {mode !== "reset" && (
                 <label style={{ display: "block", marginBottom: 6 }}>
@@ -218,7 +250,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                     textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
                     fontFamily: FONT_BODY,
                   }}>
-                    Password {mode === "signup" && <span style={{ textTransform: "none", letterSpacing: 0, color: palette.inkSoft, fontWeight: 400 }}>(min 6 characters)</span>}
+                    {mode === "setNewPassword" ? "New password" : "Password"} {(mode === "signup" || mode === "setNewPassword") && <span style={{ textTransform: "none", letterSpacing: 0, color: palette.inkSoft, fontWeight: 400 }}>(min 6 characters)</span>}
                   </div>
                   <input
                     type="password"
@@ -226,8 +258,9 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
-                    autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                    autoComplete={(mode === "signup" || mode === "setNewPassword") ? "new-password" : "current-password"}
                     disabled={loading}
+                    autoFocus={mode === "setNewPassword"}
                   />
                 </label>
               )}
@@ -281,7 +314,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                   opacity: loading ? 0.7 : 1,
                 }}
               >
-                {loading ? "Working..." : mode === "reset" ? "Send reset email" : mode === "signup" ? "Create account" : "Sign in"}
+                {loading ? "Working..." : mode === "reset" ? "Send reset email" : mode === "signup" ? "Create account" : mode === "setNewPassword" ? "Update password" : "Sign in"}
               </button>
 
               {mode === "reset" && (
@@ -301,7 +334,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
             </form>
           )}
 
-          {mode !== "reset" && (
+          {mode !== "reset" && mode !== "setNewPassword" && (
             <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 14, textAlign: "center", lineHeight: 1.5 }}>
               By {mode === "signup" ? "creating an account" : "signing in"}, you agree that your email is stored privately for support purposes only. You can delete your account anytime by emailing slowbuildacres@gmail.com.
             </div>

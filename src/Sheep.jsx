@@ -21,6 +21,7 @@ import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fmtMoney } from "./units.js";
+import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -126,7 +127,7 @@ function ModalShell({ title, onClose, children, maxWidth = 460 }) {
 }
 
 // ============ ANIMAL MODAL ============
-function AnimalModal({ animal, onSave, onDelete, onClose }) {
+function AnimalModal({ animal, animals, onSave, onDelete, onClose }) {
   const [name, setName] = useState(animal?.name || "");
   // Breed: dropdown with common sheep breeds + "Other" → free-text input.
   // We init based on whether the saved breed matches a known option.
@@ -141,6 +142,28 @@ function AnimalModal({ animal, onSave, onDelete, onClose }) {
   const [purchaseCost, setPurchaseCost] = useState(animal?.purchaseCost ? String(animal.purchaseCost) : "");
   const [purchasedFrom, setPurchasedFrom] = useState(animal?.purchasedFrom || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // Push 7a — pedigree fields. Both ids and names are tracked; ids link to
+  // animals in the same hobby for the family tree, names always exist as a
+  // display label (even for free-text "outside" parents). Registry # and
+  // registry name are both optional free-text fields.
+  const [sireId, setSireId] = useState(animal?.sireId || "");
+  const [sire, setSire] = useState(animal?.sire || "");
+  const [damId, setDamId] = useState(animal?.damId || "");
+  const [dam, setDam] = useState(animal?.dam || "");
+  const [registryNumber, setRegistryNumber] = useState(animal?.registryNumber || "");
+  const [registryName, setRegistryName] = useState(animal?.registryName || "");
+
+  // Push 7a — pre-filter animals for pedigree pickers. Sheep uses `role`
+  // ("ewe","ram","lamb","wether") as the canonical parent-eligibility marker
+  // (vs the simpler `sex` field which is just "female"/"male"). Lambs and
+  // wethers are NOT valid parents — lambs are too young, wethers are
+  // castrated. The SireDamPicker also checks `eligibleSexes` against
+  // `a.sex` as a safety net, so we pass female/male to match. Pre-filtering
+  // by role here is what actually keeps lambs/wethers out of the dropdown.
+  const damCandidates = (animals || []).filter(a => a.role === "ewe");
+  const sireCandidates = (animals || []).filter(a => a.role === "ram");
+
 
   // Compute the final breed value to save: custom value if "Other" selected,
   // otherwise the dropdown selection itself (or empty string for "no breed").
@@ -157,6 +180,16 @@ function AnimalModal({ animal, onSave, onDelete, onClose }) {
       role,
       purchaseCost: parseFloat(purchaseCost) || 0,
       purchasedFrom: purchasedFrom.trim(),
+      // Push 7a — pedigree fields. sireId/damId are null (not empty string)
+      // when unset, so the SireDamPicker's "no parent" state round-trips
+      // cleanly. sire/dam display names are always saved (trimmed) so the
+      // tree can render even for free-text "outside" parents.
+      sireId: sireId || null,
+      sire: sire.trim(),
+      damId: damId || null,
+      dam: dam.trim(),
+      registryNumber: registryNumber.trim(),
+      registryName: registryName.trim(),
       archived: animal?.archived || false,
       archivedReason: animal?.archivedReason,
       archivedDate: animal?.archivedDate,
@@ -213,6 +246,48 @@ function AnimalModal({ animal, onSave, onDelete, onClose }) {
       <Field label="Where purchased (optional)">
         <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, auction, neighbor" />
       </Field>
+
+      {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers
+          show only ewes (for dam) and rams (for sire) — lambs and wethers
+          aren't valid parents. Pre-filtering by role above means the picker's
+          eligibleSexes is mostly a safety net here. Free-text fallback covers
+          parents that aren't tracked in this app. The breeding records on
+          this hobby are SEPARATE from pedigree — breeding tracks who was
+          bred when, pedigree tracks who-came-from-who. */}
+      <details style={{ marginBottom: 14 }}>
+        <summary style={{ cursor:"pointer", padding:"8px 12px", background:palette.bgAlt, borderRadius:8, fontSize:13, fontWeight:600, color:palette.ink, userSelect:"none" }}>
+          🧬 Pedigree & registry (optional)
+        </summary>
+        <div style={{ padding:"12px 4px 4px" }}>
+          <SireDamPicker
+            label="Dam"
+            animals={damCandidates}
+            eligibleSexes={["female"]}
+            excludeId={animal?.id}
+            selectedId={damId}
+            selectedName={dam}
+            onChange={({ id, name }) => { setDamId(id); setDam(name); }}
+            placeholder="Type the dam's name"
+          />
+          <SireDamPicker
+            label="Sire"
+            animals={sireCandidates}
+            eligibleSexes={["male"]}
+            excludeId={animal?.id}
+            selectedId={sireId}
+            selectedName={sire}
+            onChange={({ id, name }) => { setSireId(id); setSire(name); }}
+            placeholder="Type the sire's name"
+          />
+          <Field label="Registry name (optional)">
+            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Rocky Top Daisy" />
+          </Field>
+          <Field label="Registry number (optional)">
+            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. NSIP #ABC1234" />
+          </Field>
+        </div>
+      </details>
+
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
         {animal && onDelete && (
           !confirmDelete
@@ -506,6 +581,10 @@ function FedLogModal({ onSave, onClose }) {
 // ============ MAIN HOME PAGE ============
 export default function SheepPage({ hobby, data, update, setModal }) {
   const [animalModal, setAnimalModal] = useState({ open: false, animal: null });
+  // Push 7a — pedigree view state. The 🧬 chip on each animal row opens
+  // this; jumping to an ancestor/descendant from the tree swaps the
+  // animal in here without ever opening the edit modal.
+  const [pedigreeAnimal, setPedigreeAnimal] = useState(null);
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [shearingModal, setShearingModal] = useState({ open: false, shearing: null });
   const [milkOpen, setMilkOpen] = useState(false);
@@ -610,9 +689,27 @@ export default function SheepPage({ hobby, data, update, setModal }) {
       {animalModal.open && (
         <AnimalModal
           animal={animalModal.animal}
+          animals={hobby?.animals || []}
           onClose={() => setAnimalModal({ open: false, animal: null })}
           onSave={saveAnimal}
           onDelete={deleteAnimal}
+        />
+      )}
+      {/* Push 7a — Pedigree modal. Renders above everything else (its own
+          z-index 110 in PedigreeView is below SheepPage's modal z-index 200,
+          but we never open pedigree at the same time as the edit modal, so
+          ordering doesn't matter here). onJumpTo swaps the focused animal
+          rather than stacking — tapping an ancestor closes nothing, just
+          re-targets the same view. */}
+      {pedigreeAnimal && (
+        <PedigreeView
+          animal={pedigreeAnimal}
+          animals={hobby?.animals || []}
+          onClose={() => setPedigreeAnimal(null)}
+          onJumpTo={(id) => {
+            const next = (hobby?.animals || []).find(a => a.id === id);
+            if (next) setPedigreeAnimal(next);
+          }}
         />
       )}
       {breedingModal.open && (
@@ -723,16 +820,27 @@ export default function SheepPage({ hobby, data, update, setModal }) {
                   onClick={() => setAnimalModal({ open: true, animal: a })}
                   style={{
                     padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,
-                    borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",
+                    borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:8,
                   }}
                 >
-                  <div>
+                  <div style={{ minWidth:0,flex:1 }}>
                     <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>🐑 {a.name}</div>
                     <div style={{ fontSize:11,color:palette.inkSoft }}>
                       {roleLabel}{a.breed ? ` · ${a.breed}` : ""}{a.birthdate ? ` · ${fmtAge(a.birthdate)}` : ""}
                     </div>
                   </div>
-                  <Edit3 size={14} style={{ color:palette.inkSoft }} />
+                  {/* Push 7a — pedigree pill. stopPropagation keeps the row's
+                      edit-on-click behavior intact for the rest of the row. */}
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setPedigreeAnimal(a); }}
+                    aria-label={`View pedigree for ${a.name}`}
+                    style={{
+                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                      flexShrink:0,
+                    }}
+                  >🧬 Pedigree</button>
+                  <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
                 </div>
               );
             })}
