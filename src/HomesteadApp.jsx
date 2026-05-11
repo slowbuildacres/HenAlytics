@@ -842,7 +842,7 @@ const HobbyIcon = ({ name, ...props }) => {
 };
 
 // ============ SYNC INDICATOR ============
-function SyncIndicator({ status, signedIn }) {
+function SyncIndicator({ status, signedIn, error }) {
   // Show nothing in the very common idle state for signed-out users —
   // they don't need to think about syncing.
   if (!signedIn && status === "idle") return null;
@@ -863,20 +863,45 @@ function SyncIndicator({ status, signedIn }) {
   } else if (status === "error") {
     icon = <AlertTriangle size={14} />;
     color = palette.accent;
-    label = "Error";
+    // INSTRUMENTATION: surface error code inline when available
+    label = error && error.code ? `Error ${error.code}` : "Error";
   } else {
     icon = <Cloud size={14} />;
     color = palette.inkSoft;
     label = "Synced";
   }
+
+  // INSTRUMENTATION: in error state, full error text on hover + tap-to-copy.
+  const hasError = status === "error" && error;
+  const titleText = hasError
+    ? `${error.message || "Save failed"}${error.details ? `\nDetails: ${error.details}` : ""}${error.hint ? `\nHint: ${error.hint}` : ""}\n\nTap to copy full error.`
+    : (signedIn ? "Synced to your cloud account" : "Saving locally to this browser");
+  const onClick = hasError
+    ? async () => {
+        const payload = `Save error\nCode: ${error.code}\nMessage: ${error.message}\nDetails: ${error.details || "(none)"}\nHint: ${error.hint || "(none)"}\nTime: ${error.at}`;
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(payload);
+            alert("Error copied to clipboard. Please send this to support so we can fix it.");
+          } else {
+            alert(payload);
+          }
+        } catch (e) {
+          alert(payload);
+        }
+      }
+    : undefined;
+
   return (
     <div
-      title={signedIn ? "Synced to your cloud account" : "Saving locally to this browser"}
+      title={titleText}
+      onClick={onClick}
       style={{
         display: "flex", alignItems: "center", gap: 4,
         padding: "4px 8px", borderRadius: 6,
         background: palette.bgAlt, color,
         fontSize: 11, fontWeight: 600,
+        cursor: hasError ? "pointer" : "default",
       }}
     >
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
@@ -997,6 +1022,9 @@ export default function HomesteadApp() {
   }, [data?.hobbies, activeHobby, page]);
 
   const [syncStatus, setSyncStatus] = useState("idle");
+  // INSTRUMENTATION: holds the most recent save error so it can be shown in
+  // the SyncIndicator + copied to clipboard. Remove once root cause is found.
+  const [syncError, setSyncError] = useState(null);
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
@@ -1139,7 +1167,22 @@ export default function HomesteadApp() {
     setSyncStatus("saving");
     saveTimerRef.current = setTimeout(async () => {
       const result = await saveHomestead(user, data);
-      setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
+      const ok = result.ok || result.skipped;
+      setSyncStatus(ok ? "saved" : "error");
+      // INSTRUMENTATION: capture error details on failure so they're visible
+      // to the user in the SyncIndicator. Cleared on success.
+      if (!ok && result.error) {
+        const e = result.error;
+        setSyncError({
+          code: e.code || e.status || "?",
+          message: e.message || String(e),
+          details: e.details || null,
+          hint: e.hint || null,
+          at: new Date().toISOString(),
+        });
+      } else if (ok) {
+        setSyncError(null);
+      }
       // After "saved" briefly shows, fade back to "idle"
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
@@ -1334,7 +1377,7 @@ export default function HomesteadApp() {
             </h1>
           </button>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <SyncIndicator status={syncStatus} signedIn={!!user} />
+            <SyncIndicator status={syncStatus} signedIn={!!user} error={syncError} />
             <button
               onClick={() => setModal({ type: "barn" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
