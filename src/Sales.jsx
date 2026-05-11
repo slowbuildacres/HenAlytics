@@ -50,6 +50,8 @@ const HOBBY_META = {
   garden:        { label: "Garden",        emoji: "🌱", color: palette.leaf },
   farmstand:     { label: "Farm Stand",    emoji: "🧾", color: palette.leaf },
   sourdough:     { label: "Sourdough",     emoji: "🍞", color: palette.yolk },
+  baking:        { label: "Baking",        emoji: "🥧", color: palette.yolk },
+  canning:       { label: "Canning",       emoji: "🫙", color: palette.leafSoft },
   horse:         { label: "Horses",        emoji: "🐴", color: palette.feather },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 };
@@ -71,6 +73,12 @@ function computeRevenue(sale) {
   if (sale.hobbyType === "farmstand") {
     const qty = Number(sale.qty) || 0;
     const price = Number(sale.pricePerUnit) || 0;
+    return qty * price;
+  }
+  if (sale.hobbyType === "baking" || sale.hobbyType === "canning") {
+    // Both flow through Baking/Canning pages with totalRevenue prefilled (caught
+    // by the early return above), but fall back to qty × pricePerUnit if a
+    // user creates the sale directly from the Sales tab.
     return qty * price;
   }
   if (sale.hobbyType === "eggs") {
@@ -174,6 +182,8 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
     }
     if (hobbyType === "farmstand") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "sourdough") return q * (Number(pricePerUnit) || 0);
+    if (hobbyType === "baking") return q * (Number(pricePerUnit) || 0);
+    if (hobbyType === "canning") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "horse") return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     return Number(flatPrice) || 0;
@@ -188,6 +198,8 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       else if (h.type === "rabbits") types.add("rabbits");
       else if (h.type === "garden") types.add("garden");
       else if (h.type === "sourdough") types.add("sourdough");
+      else if (h.type === "baking") types.add("baking");
+      else if (h.type === "canning") types.add("canning");
       else if (h.type === "horses") types.add("horse");
     });
     // Always include eggs and farmstand
@@ -229,6 +241,18 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
       const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
       sale = { ...sale, crop, pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
+    } else if (hobbyType === "baking") {
+      // Baking sales: item count × price per item, optional cost per item.
+      // Recipe goes in `crop`, mirrors how Baking.jsx writes from its own page.
+      const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
+      const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
+      sale = { ...sale, crop, gardenUnit: gardenUnit || "items", pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
+    } else if (hobbyType === "canning") {
+      // Canning sales: jar count × price per jar, optional cost per jar.
+      // Item name goes in `crop`, jar type in `gardenUnit` — mirrors Canning.jsx.
+      const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
+      const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
+      sale = { ...sale, crop, gardenUnit: gardenUnit || "jars", pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
     } else if (hobbyType === "horse") {
       // Horse sales: one transaction = one horse (or a lease). pricePerUnit is
       // the sale/lease price, qty is always 1, crop holds the horse's name.
@@ -571,6 +595,60 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 </div>
               </>}
 
+              {/* Baking */}
+              {hobbyType === "baking" && <>
+                <Field label="Recipe / item">
+                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Apple Pie, Banana Bread, Croissants..." />
+                </Field>
+                <Field label="Unit (optional)">
+                  <input style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="loaves, pies, dozen cookies..." />
+                </Field>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  <div style={{ flex:1,minWidth:80 }}>
+                    <Field label="Quantity sold">
+                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Cost per item (optional)">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Sale price per item">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                </div>
+              </>}
+
+              {/* Canning */}
+              {hobbyType === "canning" && <>
+                <Field label="Item">
+                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Strawberry Jam, Dill Pickles, Tomato Sauce..." />
+                </Field>
+                <Field label="Jar type">
+                  <input style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="pint jars, quart jars, half-pints..." />
+                </Field>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  <div style={{ flex:1,minWidth:80 }}>
+                    <Field label="Jars sold">
+                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Cost per jar (optional)">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Sale price per jar">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                </div>
+              </>}
+
               {/* Horse */}
               {hobbyType === "horse" && <>
                 <Field label="Horse name">
@@ -702,6 +780,12 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit||""} @ ${fmtMoney(sale.pricePerUnit||0)}/unit`;
   } else if (sale.hobbyType === "sourdough") {
     detail = `${sale.crop || "Bread"} · ${sale.qty} loa${sale.qty === 1 ? "f" : "ves"} @ ${fmtMoney(sale.pricePerUnit||0)}/loaf`;
+  } else if (sale.hobbyType === "baking") {
+    const unitLabel = sale.gardenUnit || sale.unit || "items";
+    detail = `${sale.crop || "Baked goods"} · ${sale.qty} ${unitLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/${unitLabel.replace(/s$/, "") || "item"}`;
+  } else if (sale.hobbyType === "canning") {
+    const unitLabel = sale.gardenUnit || sale.unit || "jars";
+    detail = `${sale.crop || "Canning"} · ${sale.qty} ${unitLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/jar`;
   } else if (sale.hobbyType === "horse") {
     detail = `${sale.crop || "Horse"} · ${sale.saleType || "sold"}`;
   } else if (sale.hobbyType === "garden") {
@@ -1049,6 +1133,92 @@ export default function SalesPage({ data, update }) {
                   <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Top recipe</div>
                   <div style={{ fontSize:14,fontWeight:700,color:palette.ink }}>{topRecipe[0]}</div>
                   <div style={{ fontSize:11,color:palette.inkSoft }}>{topRecipe[1]} loa{topRecipe[1] === 1 ? "f" : "ves"} sold</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Baking profit section */}
+      {allSales.filter(s=>s.hobbyType==="baking").length > 0 && (() => {
+        const bSales = allSales.filter(s=>s.hobbyType==="baking");
+        const bRevenue = bSales.reduce((s,x)=>s+computeRevenue(x),0);
+        const bCost = bSales.reduce((s,x)=>s+(Number(x.totalCost)||0),0);
+        const bProfit = bRevenue - bCost;
+        const bMargin = bRevenue > 0 ? ((bProfit/bRevenue)*100).toFixed(1) : "—";
+        const bItems = bSales.reduce((s,x)=>s+(Number(x.qty)||0),0);
+        const recipeCounts = {};
+        bSales.forEach(s=>{ if(s.crop) recipeCounts[s.crop]=(recipeCounts[s.crop]||0)+(Number(s.qty)||1); });
+        const topRecipe = Object.entries(recipeCounts).sort((a,b)=>b[1]-a[1])[0];
+        return (
+          <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🥧 Baking</div>
+            <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:10 }}>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Items sold</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.yolk }}>{bItems}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Revenue</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.leaf }}>{fmtMoney(bRevenue)}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Profit</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:bProfit>=0?palette.leaf:palette.accent }}>{fmtMoney(bProfit)}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Margin</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.feather }}>{bMargin}{bMargin!=="—"?"%":""}</div>
+              </div>
+              {topRecipe && (
+                <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                  <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Top recipe</div>
+                  <div style={{ fontSize:14,fontWeight:700,color:palette.ink }}>{topRecipe[0]}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>{topRecipe[1]} sold</div>
+                </div>
+              )}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Canning profit section */}
+      {allSales.filter(s=>s.hobbyType==="canning").length > 0 && (() => {
+        const cSales = allSales.filter(s=>s.hobbyType==="canning");
+        const cRevenue = cSales.reduce((s,x)=>s+computeRevenue(x),0);
+        const cCost = cSales.reduce((s,x)=>s+(Number(x.totalCost)||0),0);
+        const cProfit = cRevenue - cCost;
+        const cMargin = cRevenue > 0 ? ((cProfit/cRevenue)*100).toFixed(1) : "—";
+        const cJars = cSales.reduce((s,x)=>s+(Number(x.qty)||0),0);
+        const itemCounts = {};
+        cSales.forEach(s=>{ if(s.crop) itemCounts[s.crop]=(itemCounts[s.crop]||0)+(Number(s.qty)||1); });
+        const topItem = Object.entries(itemCounts).sort((a,b)=>b[1]-a[1])[0];
+        return (
+          <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🫙 Canning</div>
+            <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:10 }}>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Jars sold</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.leafSoft }}>{cJars}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Revenue</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.leaf }}>{fmtMoney(cRevenue)}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Profit</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:cProfit>=0?palette.leaf:palette.accent }}>{fmtMoney(cProfit)}</div>
+              </div>
+              <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Margin</div>
+                <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.feather }}>{cMargin}{cMargin!=="—"?"%":""}</div>
+              </div>
+              {topItem && (
+                <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+                  <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Top item</div>
+                  <div style={{ fontSize:14,fontWeight:700,color:palette.ink }}>{topItem[0]}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>{topItem[1]} jar{topItem[1] === 1 ? "" : "s"} sold</div>
                 </div>
               )}
             </div>

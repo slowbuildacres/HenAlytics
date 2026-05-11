@@ -43,6 +43,8 @@ export default function YearInReviewPage({ data }) {
   const sourdoughEnabled = hobbies.some(h => h.type === "sourdough" && !h.hidden);
   const horsesEnabled = hobbies.some(h => h.type === "horses" && !h.hidden);
   const farmstandEnabled = hobbies.some(h => h.type === "farmstand" && !h.hidden);
+  const bakingEnabled = hobbies.some(h => h.type === "baking" && !h.hidden);
+  const canningEnabled = hobbies.some(h => h.type === "canning" && !h.hidden);
 
   return (
     <div>
@@ -76,7 +78,7 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
-          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} horsesEnabled={horsesEnabled} farmstandEnabled={farmstandEnabled} />
+          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} horsesEnabled={horsesEnabled} farmstandEnabled={farmstandEnabled} bakingEnabled={bakingEnabled} canningEnabled={canningEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
           {meatChickensEnabled && <MeatChickensCard stats={stats} />}
@@ -90,6 +92,8 @@ export default function YearInReviewPage({ data }) {
           {sourdoughEnabled && <SourdoughCard stats={stats} />}
           {horsesEnabled && <HorsesCard stats={stats} />}
           {farmstandEnabled && <FarmstandCard stats={stats} />}
+          {bakingEnabled && <BakingCard stats={stats} />}
+          {canningEnabled && <CanningCard stats={stats} />}
           {stats.freezerBirds > 0 && <FreezerCard stats={stats} />}
           <ActivityCard stats={stats} />
           {stats.weatherStats && <WeatherCard stats={stats} />}
@@ -153,7 +157,7 @@ function CoverCard({ year, stats }) {
   );
 }
 
-function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, sheepEnabled, sourdoughEnabled, horsesEnabled, farmstandEnabled }) {
+function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, sheepEnabled, sourdoughEnabled, horsesEnabled, farmstandEnabled, bakingEnabled, canningEnabled }) {
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
@@ -167,6 +171,8 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   if (sourdoughEnabled && stats.sourdoughLoaves > 0) items.push({ icon: "🍞", number: stats.sourdoughLoaves, label: `loa${stats.sourdoughLoaves === 1 ? "f" : "ves"} baked`, accent: palette.yolk });
   if (horsesEnabled && stats.horseRides > 0) items.push({ icon: "🐴", number: stats.horseRides, label: `ride${stats.horseRides === 1 ? "" : "s"}`, accent: palette.feather });
   if (farmstandEnabled && stats.farmstandRevenue > 0) items.push({ icon: "🧾", number: fmtMoney(stats.farmstandRevenue).replace(/\.\d\d$/, ""), label: `farmstand revenue`, accent: palette.leaf });
+  if (bakingEnabled && stats.bakingItems > 0) items.push({ icon: "🥧", number: stats.bakingItems, label: `item${stats.bakingItems === 1 ? "" : "s"} baked`, accent: palette.yolk });
+  if (canningEnabled && stats.canningJarsMade > 0) items.push({ icon: "🫙", number: stats.canningJarsMade, label: `jar${stats.canningJarsMade === 1 ? "" : "s"} canned`, accent: palette.leafSoft });
 
   if (items.length === 0) return null;
 
@@ -608,6 +614,53 @@ function FarmstandCard({ stats }) {
   );
 }
 
+function BakingCard({ stats }) {
+  const { bakingBakes, bakingItems, bakingTotalCost, bakingTopRecipe, bakingItemsSold, bakingRevenue, bakingProfit } = stats;
+  if (!bakingBakes && !bakingItems) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🥧 Baking</div>
+      {bakingItems > 0 && <CountUp number={bakingItems} suffix={`item${bakingItems === 1 ? "" : "s"} baked`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {bakingBakes > 0 && <Stat big={bakingBakes} label={`bake${bakingBakes === 1 ? "" : "s"} logged`} accent={palette.leaf}/>}
+        {bakingTotalCost > 0 && <Stat big={fmtMoney(bakingTotalCost)} label="ingredient cost" accent={palette.feather}/>}
+        {bakingItemsSold > 0 && <Stat big={bakingItemsSold} label={`item${bakingItemsSold === 1 ? "" : "s"} sold`} accent={palette.yolk}/>}
+        {bakingRevenue > 0 && <Stat big={fmtMoney(bakingRevenue)} label="revenue" accent={palette.leaf}/>}
+        {bakingProfit !== 0 && <Stat big={fmtMoney(bakingProfit)} label="profit" accent={bakingProfit >= 0 ? palette.leaf : palette.accent}/>}
+      </div>
+      {bakingTopRecipe && (
+        <div style={{ marginTop:12,fontSize:13,color:palette.inkSoft }}>
+          Top recipe: <strong style={{ color:palette.ink }}>{bakingTopRecipe.name}</strong> — {bakingTopRecipe.qty} item{bakingTopRecipe.qty === 1 ? "" : "s"}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function CanningCard({ stats }) {
+  const { canningBatches, canningJarsMade, canningJarsInPantry, canningIngredientsCost, canningTopItem, canningJarsSold, canningRevenue, canningProfit } = stats;
+  if (!canningBatches && !canningJarsMade) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🫙 Canning</div>
+      {canningJarsMade > 0 && <CountUp number={canningJarsMade} suffix={`jar${canningJarsMade === 1 ? "" : "s"} canned`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {canningBatches > 0 && <Stat big={canningBatches} label={`batch${canningBatches === 1 ? "" : "es"}`} accent={palette.leaf}/>}
+        {canningJarsInPantry > 0 && <Stat big={canningJarsInPantry} label="in pantry" accent={palette.leafSoft}/>}
+        {canningIngredientsCost > 0 && <Stat big={fmtMoney(canningIngredientsCost)} label="ingredient cost" accent={palette.feather}/>}
+        {canningJarsSold > 0 && <Stat big={canningJarsSold} label={`jar${canningJarsSold === 1 ? "" : "s"} sold`} accent={palette.yolk}/>}
+        {canningRevenue > 0 && <Stat big={fmtMoney(canningRevenue)} label="revenue" accent={palette.leaf}/>}
+        {canningProfit !== 0 && <Stat big={fmtMoney(canningProfit)} label="profit" accent={canningProfit >= 0 ? palette.leaf : palette.accent}/>}
+      </div>
+      {canningTopItem && (
+        <div style={{ marginTop:12,fontSize:13,color:palette.inkSoft }}>
+          Top batch: <strong style={{ color:palette.ink }}>{canningTopItem.name}</strong> — {canningTopItem.jars} jar{canningTopItem.jars === 1 ? "" : "s"}
+        </div>
+      )}
+    </Card>
+  );
+}
+
 function FreezerCard({ stats }) {
   const { freezerBirds, freezerLbs } = stats;
   if (!freezerBirds) return null;
@@ -712,7 +765,7 @@ function FunFactsCard({ stats }) {
   if (stats.entryCountByHobby) {
     const top = Object.entries(stats.entryCountByHobby).sort((a, b) => b[1] - a[1])[0];
     if (top && top[1] > 0) {
-      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" };
+      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", baking: "Baking", canning: "Canning" };
       facts.push({ emoji: "⭐", label: "Most-tracked hobby", value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})` });
     }
   }
@@ -1055,6 +1108,52 @@ function computeStats(data, year) {
   const sourdoughSaleCost = sourdoughSales.reduce((s,x) => s + (Number(x.totalCost)||0), 0);
   const sourdoughProfit = sourdoughRevenue - sourdoughSaleCost;
 
+  // Baking stats — bakes live in data.entries["baking"]; sales tagged hobbyType="baking"
+  const yearBakingEntries = ((data.entries || {})["baking"] || []).filter(b => b.date && b.date >= yearStart && b.date <= yearEnd);
+  const bakingBakes = yearBakingEntries.length;
+  const bakingItems = yearBakingEntries.reduce((s,b) => s + (Number(b.qty)||0), 0);
+  const bakingTotalCost = yearBakingEntries.reduce((s,b) => s + (Number(b.cost)||0), 0);
+  const bakingByRecipe = {};
+  yearBakingEntries.forEach(b => {
+    const r = b.recipeName || "Other";
+    bakingByRecipe[r] = (bakingByRecipe[r]||0) + (Number(b.qty)||0);
+  });
+  const bakingTopEntry = Object.entries(bakingByRecipe).sort((a,b)=>b[1]-a[1])[0];
+  const bakingTopRecipe = bakingTopEntry ? { name: bakingTopEntry[0], qty: bakingTopEntry[1] } : null;
+  const bakingSales = (data.sales || []).filter(s =>
+    s.hobbyType === "baking" && s.date >= yearStart && s.date <= yearEnd
+  );
+  const bakingItemsSold = bakingSales.reduce((s,x) => s + (Number(x.qty)||0), 0);
+  const bakingRevenue = bakingSales.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+  const bakingSaleCost = bakingSales.reduce((s,x) => s + (Number(x.totalCost)||0), 0);
+  const bakingProfit = bakingRevenue - bakingSaleCost;
+
+  // Canning stats — batches live on hobby.batches; pantry total uses all active
+  // batches (not just this year's) since jars made earlier may still be eaten now
+  const canningHobby = (data.hobbies||[]).find(h => h.type === "canning");
+  const canningBatchesAll = Array.isArray(canningHobby?.batches) ? canningHobby.batches : [];
+  const yearCanningBatches = canningBatchesAll.filter(b => b.date && b.date >= yearStart && b.date <= yearEnd);
+  const canningBatches = yearCanningBatches.length;
+  const canningJarsMade = yearCanningBatches.reduce((s,b) => s + (Number(b.jarsMade)||0), 0);
+  const canningIngredientsCost = yearCanningBatches.reduce((s,b) => s + (Number(b.ingredientsCost)||0), 0);
+  const canningJarsInPantry = canningBatchesAll
+    .filter(b => !b.archived)
+    .reduce((s,b) => s + (Number(b.jarsRemaining)||0), 0);
+  const canningByItem = {};
+  yearCanningBatches.forEach(b => {
+    const k = b.item || "Other";
+    canningByItem[k] = (canningByItem[k]||0) + (Number(b.jarsMade)||0);
+  });
+  const canningTopEntry = Object.entries(canningByItem).sort((a,b)=>b[1]-a[1])[0];
+  const canningTopItem = canningTopEntry ? { name: canningTopEntry[0], jars: canningTopEntry[1] } : null;
+  const canningSales = (data.sales || []).filter(s =>
+    s.hobbyType === "canning" && s.date >= yearStart && s.date <= yearEnd
+  );
+  const canningJarsSold = canningSales.reduce((s,x) => s + (Number(x.qty)||0), 0);
+  const canningRevenue = canningSales.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+  const canningSaleCost = canningSales.reduce((s,x) => s + (Number(x.totalCost)||0), 0);
+  const canningProfit = canningRevenue - canningSaleCost;
+
   // Horse stats
   const horsesHobby = (data.hobbies||[]).find(h => h.type === "horses");
   const horseCount = (horsesHobby?.animals || []).filter(h => !h.archived).length;
@@ -1176,6 +1275,12 @@ function computeStats(data, year) {
     horseFarrierCount, horseVetCount, horseDewormCount, horseTotalCareCost, horseTopRider,
     // Farmstand
     farmstandRevenue, farmstandCost, farmstandProfit, farmstandSaleCount, farmstandTopItem, farmstandItemCount,
+    // Baking
+    bakingBakes, bakingItems, bakingTotalCost, bakingTopRecipe,
+    bakingItemsSold, bakingRevenue, bakingProfit,
+    // Canning
+    canningBatches, canningJarsMade, canningJarsInPantry, canningIngredientsCost, canningTopItem,
+    canningJarsSold, canningRevenue, canningProfit,
     // Freezer log (universal butcher records — any flock, any bird type)
     freezerBirds, freezerLbs,
     // Activity

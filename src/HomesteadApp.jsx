@@ -40,6 +40,8 @@ import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
 import HorsesPage, { HorsesAnalytics } from "./Horses.jsx";
 import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
+import BakingPage, { BakingAnalytics } from "./Baking.jsx";
+import CanningPage, { CanningAnalytics } from "./Canning.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -77,6 +79,8 @@ const defaultData = () => ({
     { id: "horses", name: "Horses 🐴", type: "horses", icon: "sprout", animals: [], breedings: [], farrier: [], vet: [], deworming: [], rides: [], hidden: true },
     { id: "sourdough", name: "Sourdough 🍞", type: "sourdough", icon: "sprout", starters: [], bakes: [], hidden: true },
     { id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true },
+    { id: "baking", name: "Baking 🥧", type: "baking", icon: "sprout", recipes: [], hidden: true },
+    { id: "canning", name: "Canning 🫙", type: "canning", icon: "sprout", batches: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -285,6 +289,28 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
     }
     data.farmstandInventoryMigratedV7c = true;
   }
+  // ---- Baking hobby (Push 7d) ----
+  const hasBaking = data.hobbies.some(h => h.id === "baking");
+  if (!hasBaking) {
+    data.hobbies.push({ id: "baking", name: "Baking 🥧", type: "baking", icon: "sprout", recipes: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "baking") {
+      if (!Array.isArray(h.recipes)) h.recipes = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
+  // ---- Canning hobby (Push 7d) ----
+  const hasCanning = data.hobbies.some(h => h.id === "canning");
+  if (!hasCanning) {
+    data.hobbies.push({ id: "canning", name: "Canning 🫙", type: "canning", icon: "sprout", batches: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "canning") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
   // ---- Sheep hobby ----
   const hasSheep = data.hobbies.some(h => h.id === "sheep");
   if (!hasSheep) {
@@ -536,9 +562,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 20;
+const CURRENT_VERSION = 21;
 
 const WHATS_NEW = [
+  "🥧 Baking + 🫙 Canning hobbies — save your favorite recipes (with links and notes), log bakes with ratings, and track canning batches in a pantry view with eat-by date warnings. Both can sell into the Sales tab so you can track loaves sold and jars sold alongside everything else. Find them in Settings → Manage Hobbies.",
   "📦 Farmstand inventory + restock — items now track stock, with low-stock warnings on the page and inside the sell modal. New 📦 Restock button on each item lets you add batches with optional batch cost. Quantity presets (+½ doz, +1 lb, etc) make logging sales by the dozen or pound one tap. Reset password emails now properly drop you into a 'set new password' form. The ❤️ Support Henalytics button moved out of the barn into its own icon at the top of the screen so it's easier to find.",
   "🐇 Rabbits redesigned — per-rabbit tracking instead of hutch counts. Each rabbit gets a name, breed, sex, role, pedigree, breeding history, and weight log. Does have a 🐇 Bred button that auto-creates a kindle reminder 31 days out. Each rabbit can have a hutch label, and the page auto-groups by hutch once you have two or more (a flat list when you only have one). Your old hutches were automatically converted to individual rabbits (you can rename them anytime). Old log entries are kept under a 'Legacy log entries' section so nothing's lost.",
   "🧬 Livestock pedigree — visual family tree showing sire, dam, and registry info on your goats, cows, pigs, sheep, horses, and rabbits. Each animal has a 🧬 Pedigree button that shows ancestors fanning up and descendants fanning down, up to 3 generations. Tap any relative to view their pedigree.",
@@ -1045,7 +1072,7 @@ export default function HomesteadApp() {
       setActiveHobby(newActive);
       // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
       // bounce to "home" so we don't stay on a page tied to the hidden hobby.
-      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand"];
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning"];
       if (hobbyPages.includes(page)) {
         const newHobbyType = (firstVisible || {}).type;
         if (hobbyPages.includes(newHobbyType)) {
@@ -1521,6 +1548,8 @@ export default function HomesteadApp() {
                         horses: "horses",
                         sourdough: "sourdough",
                         farmstand: "farmstand",
+                        baking: "baking",
+                        canning: "canning",
                       };
                       // Garden, egg_layers, meat_chickens all share the
                       // generic "home" page (which keys off activeHobby).
@@ -1610,7 +1639,17 @@ export default function HomesteadApp() {
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && (
+        {page === "analytics" && activeHobby === "baking" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data}>
+            <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby === "canning" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="canning")} entries={data.entries?.["canning"] || []} data={data}>
+            <CanningAnalytics hobby={data.hobbies.find(h=>h.id==="canning")} entries={data.entries?.["canning"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -1639,6 +1678,12 @@ export default function HomesteadApp() {
         )}
         {page === "farmstand" && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "baking" && (
+          <BakingPage hobby={data.hobbies.find(h=>h.id==="baking")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "canning" && (
+          <CanningPage hobby={data.hobbies.find(h=>h.id==="canning")} data={data} update={update} setModal={setModal} />
         )}
         {page === "sheep" && (
           <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
@@ -1678,7 +1723,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
@@ -5187,6 +5232,8 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
                   else if (h.type === "horses") { setActiveHobby("horses"); setPage("horses"); }
                   else if (h.type === "sourdough") { setActiveHobby("sourdough"); setPage("sourdough"); }
                   else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
+                  else if (h.type === "baking") { setActiveHobby("baking"); setPage("baking"); }
+                  else if (h.type === "canning") { setActiveHobby("canning"); setPage("canning"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
                 }
@@ -7335,7 +7382,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -7381,11 +7428,15 @@ function OnboardingWizard({ update, onClose }) {
           d.userZone = detected.zone;
         }
       }
-      // Filter hobbies down to just the ones they wanted
-      const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
+      // Filter hobbies down to just the ones they wanted. Use the hobbies
+      // state object as the source of truth for which types the wizard knows
+      // about — that way adding a new hobby checkbox above is the only edit
+      // needed; this apply logic stays generic. Any hobby type not present
+      // as a key in the wizard's state is left untouched (preserves whatever
+      // hidden flag it already had).
       d.hobbies = (d.hobbies || []).map((h) => {
-        if (["garden","egg_layers","meat_chickens","rabbits","bees","incubator","goats","cows","pigs","sheep","horses","sourdough","farmstand"].includes(h.type)) {
-          h.hidden = !wantedTypes.includes(h.type);
+        if (Object.prototype.hasOwnProperty.call(hobbies, h.type)) {
+          h.hidden = !hobbies[h.type];
         }
         return h;
       });
@@ -7629,6 +7680,20 @@ function OnboardingWizard({ update, onClose }) {
               icon="🧾"
               label="Farmstand"
               sub="Saved items with cost & price for one-tap sales"
+            />
+            <HobbyCheckbox
+              checked={hobbies.baking || false}
+              onToggle={() => setHobbies((h) => ({ ...h, baking: !h.baking }))}
+              icon="🥧"
+              label="Baking"
+              sub="Recipes (with links), bake log, sales"
+            />
+            <HobbyCheckbox
+              checked={hobbies.canning || false}
+              onToggle={() => setHobbies((h) => ({ ...h, canning: !h.canning }))}
+              icon="🫙"
+              label="Canning"
+              sub="Pantry inventory, eat-by dates, batch tracking"
             />
 
             <div style={{
@@ -8246,6 +8311,80 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           { label: "Profit", value: fmtMoney(profit) },
           { label: "Sales", value: salesInRange.length },
           { label: "Top seller", value: top ? top[0] : "—" },
+        ],
+      };
+    }
+    if (hobby.type === "baking") {
+      const allBakes = data.entries?.["baking"] || [];
+      const bakesInRange = allBakes.filter(b => {
+        if (!b.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(b.date + "T12:00");
+        if (filter === "today") return b.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const totalItems = bakesInRange.reduce((s,b) => s + (Number(b.qty)||0), 0);
+      const recipeCount = {};
+      bakesInRange.forEach(b => {
+        const r = b.recipeName || "Other";
+        recipeCount[r] = (recipeCount[r]||0) + (Number(b.qty)||0);
+      });
+      const top = Object.entries(recipeCount).sort((a,b)=>b[1]-a[1])[0];
+      const bakingSalesAll = (data.sales || []).filter(s => s.hobbyType === "baking");
+      const bakingSalesInRange = bakingSalesAll.filter(s => {
+        if (!s.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(s.date + "T12:00");
+        if (filter === "today") return s.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const revenue = bakingSalesInRange.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+      return {
+        emoji: "🥧", label: "Baking",
+        stats: [
+          { label: "Bakes", value: bakesInRange.length },
+          { label: "Items made", value: totalItems },
+          { label: "Top recipe", value: top ? top[0] : "—" },
+          { label: "Sales revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" },
+        ],
+      };
+    }
+    if (hobby.type === "canning") {
+      const batches = Array.isArray(hobby.batches) ? hobby.batches : [];
+      const batchesInRange = batches.filter(b => {
+        if (!b.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(b.date + "T12:00");
+        if (filter === "today") return b.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const jarsMadeInRange = batchesInRange.reduce((s,b) => s + (Number(b.jarsMade)||0), 0);
+      const activeBatches = batches.filter(b => !b.archived);
+      const jarsInPantry = activeBatches.reduce((s,b) => s + (Number(b.jarsRemaining)||0), 0);
+      const canningSalesAll = (data.sales || []).filter(s => s.hobbyType === "canning");
+      const canningSalesInRange = canningSalesAll.filter(s => {
+        if (!s.date) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(s.date + "T12:00");
+        if (filter === "today") return s.date === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      });
+      const revenue = canningSalesInRange.reduce((s,x) => s + (Number(x.totalRevenue)||0), 0);
+      return {
+        emoji: "🫙", label: "Canning",
+        stats: [
+          { label: "Batches", value: batchesInRange.length },
+          { label: "Jars made", value: jarsMadeInRange },
+          { label: "In pantry", value: jarsInPantry },
+          { label: "Sales revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" },
         ],
       };
     }
