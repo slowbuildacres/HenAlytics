@@ -513,9 +513,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 16;
+const CURRENT_VERSION = 18;
 
 const WHATS_NEW = [
+  "🧬 Livestock pedigree — visual family tree showing sire, dam, and registry info on your goats, cows, pigs, sheep, and horses. Each animal has a 🧬 Pedigree button that shows ancestors fanning up and descendants fanning down, up to 3 generations. Tap any relative to view their pedigree. Rabbits get this in a future update.",
   "🔪 Butcher tile for egg layers — log butchering, sales, rehoming, deaths, and other reasons birds leave the flock, with the same full set of options the meat-bird hobby has. Find the new Butcher tile on your egg-layer dashboard.",
   "🌱 Per-variety harvest timeframes — got 6 kinds of tomatoes? Add each variety with its own days-to-harvest. Sungold ripens in 65 days, San Marzano in 80, and your calendar shows each one ready at the right time. Find it in the new 'Which variety?' step when planning a crop.",
   "🐣 Multiple meat-bird batches — run more than one batch of meat chickens at the same time. Each batch has its own age, feed log, and butcher records. Pick which batch you're logging to when you have more than one going.",
