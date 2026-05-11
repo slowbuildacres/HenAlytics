@@ -138,7 +138,9 @@ export function requestBrowserLocation() {
 
 // Public: reverse-geocode a lat/lon into a friendly city name using
 // Open-Meteo's free reverse geocoding API.
-// Returns a string label like "Atchison, Kansas" or null on failure.
+// Returns { label, countryCode } or null on failure.
+// (Previously returned just the label string; now wrapped in an object so
+// callers can auto-pick the user's hardiness system from their country.)
 export async function reverseGeocode(lat, lon) {
   try {
     const url = `https://geocoding-api.open-meteo.com/v1/reverse?latitude=${lat}&longitude=${lon}&count=1&language=en&format=json`;
@@ -148,7 +150,11 @@ export async function reverseGeocode(lat, lon) {
     const result = json.results && json.results[0];
     if (!result) return null;
     const parts = [result.name, result.admin1].filter(Boolean);
-    return parts.join(', ') || null;
+    const label = parts.join(', ') || null;
+    return {
+      label,
+      countryCode: result.country_code || null,
+    };
   } catch (e) {
     return null;
   }
@@ -156,7 +162,7 @@ export async function reverseGeocode(lat, lon) {
 
 // Public: forward-geocode a city name to lat/lon. For users who'd rather type
 // their location than share device GPS.
-// Returns { lat, lon, label } or null.
+// Returns { lat, lon, label, countryCode } or null.
 export async function geocodePlace(query) {
   if (!query || !query.trim()) return null;
   try {
@@ -171,6 +177,7 @@ export async function geocodePlace(query) {
       lat: result.latitude,
       lon: result.longitude,
       label: parts.join(', '),
+      countryCode: result.country_code || null,
     };
   } catch (e) {
     return null;

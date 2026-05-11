@@ -19,6 +19,7 @@ import {
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
 } from "./weather.js";
+import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
 import CalendarPage from "./Calendar.jsx";
@@ -4538,9 +4539,20 @@ function LocationModal({ data, update, onClose }) {
     setBusy(true); setError(""); setSearchResults(null);
     try {
       const { lat, lon } = await requestBrowserLocation();
-      const label = await reverseGeocode(lat, lon);
+      const geocode = await reverseGeocode(lat, lon);
+      const label = geocode?.label;
+      const countryCode = geocode?.countryCode;
       update((d) => {
         d.homesteadLocation = { lat, lon, label: label || `${lat.toFixed(3)}, ${lon.toFixed(3)}` };
+        // Auto-detect hardiness system from the resolved country, but only if
+        // the user hasn't manually set one yet. Respecting their choice is
+        // important — someone who picked USDA Zone 6a deliberately shouldn't
+        // get switched to RHS just because their phone is in France.
+        if (!d.userZoneSystem && countryCode) {
+          const detected = autoDetectHardiness(countryCode, lat, lon);
+          d.userZoneSystem = detected.system;
+          d.userZone = detected.zone;
+        }
         return d;
       });
       onClose();
@@ -4572,6 +4584,16 @@ function LocationModal({ data, update, onClose }) {
     if (!searchResults) return;
     update((d) => {
       d.homesteadLocation = searchResults;
+      // Auto-set hardiness system from the geocoded country, if not already set.
+      if (!d.userZoneSystem && searchResults.countryCode) {
+        const detected = autoDetectHardiness(
+          searchResults.countryCode,
+          searchResults.lat,
+          searchResults.lon
+        );
+        d.userZoneSystem = detected.system;
+        d.userZone = detected.zone;
+      }
       return d;
     });
     onClose();
@@ -6005,7 +6027,10 @@ function OnboardingWizard({ update, onClose }) {
       const lat = parseFloat(place.latitude);
       const lon = parseFloat(place.longitude);
       const label = `${place["place name"]}, ${place["state abbreviation"] || place.state || ""}`.trim();
-      setZipResult({ lat, lon, label });
+      // Zippopotam returns country abbreviation like "US"/"AU"/"GB" — keep
+      // it so we can auto-pick the user's hardiness system in finish().
+      const countryAbbr = (json["country abbreviation"] || country || "").toUpperCase();
+      setZipResult({ lat, lon, label, countryCode: countryAbbr });
       setZipLookupStatus("ok");
     } catch (e) {
       setZipError(e.message || "Couldn't find that zip code. Double-check it.");
@@ -6019,6 +6044,14 @@ function OnboardingWizard({ update, onClose }) {
       if (name.trim()) d.homesteadName = name.trim();
       if (zipResult) {
         d.homesteadLocation = { lat: zipResult.lat, lon: zipResult.lon, label: zipResult.label };
+        // Auto-set hardiness system from the resolved country if user hasn't
+        // manually picked one yet. This is the first time most users hit the
+        // app, so almost everyone gets a sensibly-matched zone system here.
+        if (!d.userZoneSystem && zipResult.countryCode) {
+          const detected = autoDetectHardiness(zipResult.countryCode, zipResult.lat, zipResult.lon);
+          d.userZoneSystem = detected.system;
+          d.userZone = detected.zone;
+        }
       }
       // Filter hobbies down to just the ones they wanted
       const wantedTypes = Object.keys(hobbies).filter((k) => hobbies[k]);
@@ -6109,9 +6142,24 @@ function OnboardingWizard({ update, onClose }) {
                 <option value="us">United States</option>
                 <option value="ca">Canada</option>
                 <option value="gb">United Kingdom</option>
+                <option value="ie">Ireland</option>
                 <option value="au">Australia</option>
+                <option value="nz">New Zealand</option>
                 <option value="de">Germany</option>
                 <option value="fr">France</option>
+                <option value="nl">Netherlands</option>
+                <option value="be">Belgium</option>
+                <option value="es">Spain</option>
+                <option value="it">Italy</option>
+                <option value="pt">Portugal</option>
+                <option value="se">Sweden</option>
+                <option value="no">Norway</option>
+                <option value="dk">Denmark</option>
+                <option value="fi">Finland</option>
+                <option value="ch">Switzerland</option>
+                <option value="at">Austria</option>
+                <option value="pl">Poland</option>
+                <option value="mx">Mexico</option>
               </select>
             </Field>
             <Field label="Zip / postal code">

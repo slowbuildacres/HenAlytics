@@ -313,3 +313,19 @@ export function estimateZoneForSystem(system, lat, lon) {
   // Unknown system — return its default zone
   return HARDINESS_SYSTEMS[system]?.defaultZone || "6a";
 }
+
+// ============================================================================
+// AUTO-DETECT: pick the right hardiness system + zone for a user based on
+// their country code and lat/lng. This is what we call after the user sets
+// their homestead location, so they don't have to manually configure the
+// zone system if their country has a sensible default.
+//
+// Returns { system, zone, source } where source is "country" (we knew the
+// country and matched it) or "fallback" (no match, defaulted to USDA).
+// ============================================================================
+export function autoDetectHardiness(countryCode, lat, lon) {
+  const system = getDefaultSystemForCountry(countryCode);
+  const zone = estimateZoneForSystem(system, lat, lon);
+  const source = (countryCode && COUNTRY_TO_SYSTEM[countryCode.toUpperCase()]) ? "country" : "fallback";
+  return { system, zone, source };
+}
