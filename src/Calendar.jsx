@@ -20,6 +20,9 @@ import {
   ZONE_INFO, estimateZone, getFrostDates, frostDateEvents,
   CROPS, methodsForCrop, generateCropEvents,
 } from "./gardenAlmanac.js";
+import {
+  HARDINESS_SYSTEMS, estimateZoneForSystem, getZoneInfo,
+} from "./hardiness.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -41,12 +44,14 @@ const dayShort = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"];
 export default function CalendarPage({ data, update, setModal }) {
   const [view, setView] = useState("timeline"); // "timeline" | "month"
 
-  const userZone = data.userZone || estimateZone(
+  const userSystem = data.userZoneSystem || "USDA";
+  const userZone = data.userZone || estimateZoneForSystem(
+    userSystem,
     data.homesteadLocation?.lat,
     data.homesteadLocation?.lon
   );
   const year = new Date().getFullYear();
-  const frostDates = useMemo(() => getFrostDates(userZone, year), [userZone, year]);
+  const frostDates = useMemo(() => getFrostDates(userZone, year, userSystem), [userZone, year, userSystem]);
 
   // Combine user events with almanac frost events
   const userEvents = data.calendarEvents || [];
@@ -72,7 +77,7 @@ export default function CalendarPage({ data, update, setModal }) {
       </div>
 
       {/* Zone & frost reference card */}
-      <ZoneCard frostDates={frostDates} userZone={userZone} setModal={setModal} hasLocation={!!data.homesteadLocation} />
+      <ZoneCard frostDates={frostDates} userZone={userZone} userSystem={userSystem} setModal={setModal} hasLocation={!!data.homesteadLocation} />
 
       {/* Quick actions */}
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
@@ -115,8 +120,13 @@ function ToggleBtn({ active, onClick, children }) {
   );
 }
 
-function ZoneCard({ frostDates, userZone, setModal, hasLocation }) {
+function ZoneCard({ frostDates, userZone, userSystem, setModal, hasLocation }) {
   const fmtMonth = (d) => `${monthShort[d.getMonth()]} ${d.getDate()}`;
+  // Look up the zone label using the user's chosen hardiness system rather
+  // than the USDA-only ZONE_INFO map. Falls back to the raw zone string if
+  // we somehow can't find a match.
+  const zoneInfo = getZoneInfo(userSystem || "USDA", userZone);
+  const zoneLabel = zoneInfo?.label || `Zone ${userZone}`;
   return (
     <div
       onClick={() => setModal({ type: "editZone" })}
@@ -139,7 +149,7 @@ function ZoneCard({ frostDates, userZone, setModal, hasLocation }) {
         <Edit3 size={14} color={palette.inkSoft} />
       </div>
       <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 6 }}>
-        {ZONE_INFO[userZone]?.label || `Zone ${userZone}`}
+        {zoneLabel}
       </div>
       <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.5 }}>
         Last frost: <strong style={{ color: palette.ink }}>{fmtMonth(frostDates.lastFrost)}</strong> · First frost: <strong style={{ color: palette.ink }}>{fmtMonth(frostDates.firstFrost)}</strong>

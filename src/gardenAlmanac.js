@@ -1,76 +1,42 @@
 // ============================================================================
 // GARDEN ALMANAC DATA
 // ----------------------------------------------------------------------------
-// USDA hardiness zone lookup + crop planting windows.
+// Hardiness zone lookup + crop planting windows. Supports multiple zone
+// systems (USDA, Canada, RHS, ANHGA, NZ, EU) — see hardiness.js for the
+// per-system zone definitions and country mappings.
+//
 // All frost dates are approximate averages — local microclimates vary.
 // Sources: USDA Plant Hardiness Zone Map 2023; NOAA climate normals;
-// almanac/extension service planting guides.
+// almanac/extension service planting guides; RHS hardiness ratings; ANHGA.
 // ============================================================================
 
-// USDA hardiness zones with their typical last/first frost dates (approx).
-// Frost dates are stored as "MM-DD" — month and day, no year.
-//
-// Zone 1 = coldest, Zone 13 = warmest. Most US homesteads are zones 3-9.
-export const ZONE_INFO = {
-  "1a":  { lastFrost: "06-15", firstFrost: "08-01", label: "Zone 1a" },
-  "1b":  { lastFrost: "06-10", firstFrost: "08-15", label: "Zone 1b" },
-  "2a":  { lastFrost: "06-01", firstFrost: "08-25", label: "Zone 2a" },
-  "2b":  { lastFrost: "05-25", firstFrost: "09-01", label: "Zone 2b" },
-  "3a":  { lastFrost: "05-15", firstFrost: "09-10", label: "Zone 3a" },
-  "3b":  { lastFrost: "05-10", firstFrost: "09-15", label: "Zone 3b" },
-  "4a":  { lastFrost: "05-05", firstFrost: "09-25", label: "Zone 4a" },
-  "4b":  { lastFrost: "05-01", firstFrost: "10-01", label: "Zone 4b" },
-  "5a":  { lastFrost: "04-25", firstFrost: "10-10", label: "Zone 5a" },
-  "5b":  { lastFrost: "04-20", firstFrost: "10-15", label: "Zone 5b" },
-  "6a":  { lastFrost: "04-15", firstFrost: "10-20", label: "Zone 6a" },
-  "6b":  { lastFrost: "04-10", firstFrost: "10-25", label: "Zone 6b" },
-  "7a":  { lastFrost: "04-05", firstFrost: "11-01", label: "Zone 7a" },
-  "7b":  { lastFrost: "04-01", firstFrost: "11-10", label: "Zone 7b" },
-  "8a":  { lastFrost: "03-15", firstFrost: "11-20", label: "Zone 8a" },
-  "8b":  { lastFrost: "03-01", firstFrost: "11-30", label: "Zone 8b" },
-  "9a":  { lastFrost: "02-15", firstFrost: "12-15", label: "Zone 9a" },
-  "9b":  { lastFrost: "02-01", firstFrost: "12-20", label: "Zone 9b" },
-  "10a": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 10a — generally frost-free" },
-  "10b": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 10b — frost-free" },
-  "11a": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 11a — frost-free" },
-  "11b": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 11b — frost-free" },
-  "12a": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 12a — tropical" },
-  "12b": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 12b — tropical" },
-  "13a": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 13a — tropical" },
-  "13b": { lastFrost: "01-15", firstFrost: "12-31", label: "Zone 13b — tropical" },
-};
+import {
+  HARDINESS_SYSTEMS,
+  getZoneInfo,
+  estimateZoneForSystem,
+} from "./hardiness.js";
 
-// Estimate USDA zone from latitude. This is a rough approximation —
-// real zones depend on local microclimates, elevation, and ocean influence.
-// For best accuracy users can override their zone in settings.
+// Re-export the USDA zone map as ZONE_INFO for backward compatibility.
+// Existing code that imports `ZONE_INFO` from this file still works — it
+// just only sees USDA zones. For multi-system support, use getZoneInfo()
+// from hardiness.js, or pass a `system` parameter to getFrostDates() below.
+export const ZONE_INFO = HARDINESS_SYSTEMS.USDA.zones;
+
+// Estimate USDA zone from latitude. Preserved for backward compatibility —
+// new code should use estimateZoneForSystem() from hardiness.js to get a
+// zone in the user's preferred system.
 export function estimateZone(lat, lon) {
-  if (lat == null || lon == null) return "6a"; // National average fallback
-  const absLat = Math.abs(lat);
-
-  // Very rough latitude-to-zone mapping for the US.
-  // Tuned to put Atchison Kansas (~39.5°N) at 6a/6b, NYC (~40.7°N) at 7a/7b,
-  // Houston (~29.7°N) at 9a, Miami (~25.7°N) at 10b.
-  if (absLat >= 48) return "3b";
-  if (absLat >= 46) return "4a";
-  if (absLat >= 44) return "4b";
-  if (absLat >= 42) return "5a";
-  if (absLat >= 40.5) return "5b";
-  if (absLat >= 39) return "6a";
-  if (absLat >= 37.5) return "6b";
-  if (absLat >= 36) return "7a";
-  if (absLat >= 34) return "7b";
-  if (absLat >= 32) return "8a";
-  if (absLat >= 30) return "8b";
-  if (absLat >= 28) return "9a";
-  if (absLat >= 26) return "9b";
-  if (absLat >= 24) return "10a";
-  return "10b";
+  return estimateZoneForSystem("USDA", lat, lon);
 }
 
 // Get the actual last/first frost date for a year, given a zone.
-// Returns Date objects for THIS year (or next year if first frost has passed).
-export function getFrostDates(zone, year = new Date().getFullYear()) {
-  const info = ZONE_INFO[zone] || ZONE_INFO["6a"];
+// Returns Date objects for THIS year.
+//
+// The `system` parameter (default "USDA") tells us which zone system to look
+// up the zone in. Existing callers that don't pass a system continue working
+// as before since "USDA" is the default.
+export function getFrostDates(zone, year = new Date().getFullYear(), system = "USDA") {
+  const info = getZoneInfo(system, zone);
   const [lfMonth, lfDay] = info.lastFrost.split("-").map(Number);
   const [ffMonth, ffDay] = info.firstFrost.split("-").map(Number);
   return {
@@ -78,6 +44,7 @@ export function getFrostDates(zone, year = new Date().getFullYear()) {
     firstFrost: new Date(year, ffMonth - 1, ffDay),
     label: info.label,
     zone,
+    system,
   };
 }
 

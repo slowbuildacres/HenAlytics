@@ -14,6 +14,9 @@ import React, { useState } from "react";
 import {
   ZONE_INFO, CROPS, methodsForCrop, generateCropEvents, getFrostDates, estimateZone,
 } from "./gardenAlmanac.js";
+import {
+  HARDINESS_SYSTEMS, estimateZoneForSystem, getZoneInfo,
+} from "./hardiness.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -121,11 +124,14 @@ export function PlanCropModal({ data, update, onClose }) {
   // editableDates: { [eventId]: dateString } — user-overridden dates
   const [editableDates, setEditableDates] = useState({});
 
-  const userZone = data.userZone || estimateZone(
+  const userSystem = data.userZoneSystem || "USDA";
+  const userZone = data.userZone || estimateZoneForSystem(
+    userSystem,
     data.homesteadLocation?.lat,
     data.homesteadLocation?.lon
   );
-  const frostDates = getFrostDates(userZone, year);
+  const frostDates = getFrostDates(userZone, year, userSystem);
+  const zoneLabel = getZoneInfo(userSystem, userZone).label;
   const crop = CROPS.find((c) => c.id === cropId);
   const methods = cropId ? methodsForCrop(cropId) : [];
   const generatedEvents = (cropId && method) ? generateCropEvents(cropId, method, frostDates) : [];
@@ -190,7 +196,7 @@ export function PlanCropModal({ data, update, onClose }) {
       {step === 1 && (
         <>
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
-            Pick a crop and we'll generate planting dates based on your zone ({ZONE_INFO[userZone]?.label || userZone}).
+            Pick a crop and we'll generate planting dates based on your zone ({zoneLabel}).
           </div>
           <div style={{
             display: "grid",
@@ -532,15 +538,32 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
 // ============================================================================
 
 export function EditZoneModal({ data, update, onClose }) {
-  const detected = estimateZone(
-    data.homesteadLocation?.lat,
-    data.homesteadLocation?.lon
-  );
-  const [zone, setZone] = useState(data.userZone || detected);
+  // System-aware zone picker. User picks the hardiness system first, then the
+  // zone within that system. Defaults match the user's existing settings, or
+  // are auto-detected from their location's latitude.
+  const lat = data.homesteadLocation?.lat;
+  const lon = data.homesteadLocation?.lon;
+
+  // Existing user values (may be undefined for first-time setup)
+  const existingSystem = data.userZoneSystem || "USDA";
+  const existingZone = data.userZone || estimateZoneForSystem(existingSystem, lat, lon);
+
+  const [system, setSystem] = useState(existingSystem);
+  const [zone, setZone] = useState(existingZone);
+
+  // When the user changes the system, default the zone to a sensible detected
+  // value for that system. This prevents leaving an invalid zone (e.g. USDA
+  // "6a" selected when the user just switched to ANHGA which has no "6a").
+  const handleSystemChange = (newSystem) => {
+    setSystem(newSystem);
+    const detected = estimateZoneForSystem(newSystem, lat, lon);
+    setZone(detected);
+  };
 
   const save = () => {
     update((d) => {
       d.userZone = zone;
+      d.userZoneSystem = system;
       return d;
     });
     onClose();
@@ -549,29 +572,44 @@ export function EditZoneModal({ data, update, onClose }) {
   const reset = () => {
     update((d) => {
       delete d.userZone;
+      delete d.userZoneSystem;
       return d;
     });
     onClose();
   };
 
-  const zoneIds = Object.keys(ZONE_INFO);
+  const sys = HARDINESS_SYSTEMS[system] || HARDINESS_SYSTEMS.USDA;
+  const zoneIds = Object.keys(sys.zones);
 
   return (
     <Modal open onClose={onClose} title="Set growing zone">
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
-        We estimated your zone from your saved location. If you know yours is different, override it here.
+        Pick the hardiness system used in your country, then your zone within it. We've guessed based on your saved location — adjust if you know better.
       </div>
-      <Field label="USDA hardiness zone">
+
+      <Field label="Hardiness system">
+        <select style={inputStyle} value={system} onChange={(e) => handleSystemChange(e.target.value)}>
+          {Object.keys(HARDINESS_SYSTEMS).map((sysKey) => (
+            <option key={sysKey} value={sysKey}>{HARDINESS_SYSTEMS[sysKey].label}</option>
+          ))}
+        </select>
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+          {sys.description}
+        </div>
+      </Field>
+
+      <Field label="Your zone">
         <select style={inputStyle} value={zone} onChange={(e) => setZone(e.target.value)}>
           {zoneIds.map((z) => (
-            <option key={z} value={z}>{ZONE_INFO[z].label}</option>
+            <option key={z} value={z}>{sys.zones[z].label}</option>
           ))}
         </select>
       </Field>
-      <div style={{ display: "flex", gap: 8 }}>
+
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         <Btn variant="primary" onClick={save}>Save</Btn>
-        {data.userZone && data.userZone !== detected && (
-          <Btn variant="ghost" onClick={reset}>Reset to detected ({detected})</Btn>
+        {(data.userZone || data.userZoneSystem) && (
+          <Btn variant="ghost" onClick={reset}>Reset to auto-detected</Btn>
         )}
       </div>
     </Modal>
@@ -585,12 +623,14 @@ export function EditZoneModal({ data, update, onClose }) {
 export function ViewDayEventsModal({ data, update, date, setModal, onClose }) {
   // Filter all events to this date (user events + frost dates)
   const userEvents = (data.calendarEvents || []).filter((e) => e.date === date);
-  const userZone = data.userZone || estimateZone(
+  const userSystem = data.userZoneSystem || "USDA";
+  const userZone = data.userZone || estimateZoneForSystem(
+    userSystem,
     data.homesteadLocation?.lat,
     data.homesteadLocation?.lon
   );
   const year = parseInt(date.slice(0, 4));
-  const frostDates = getFrostDates(userZone, year);
+  const frostDates = getFrostDates(userZone, year, userSystem);
   const lastFrostStr = isoDateOf(frostDates.lastFrost);
   const firstFrostStr = isoDateOf(frostDates.firstFrost);
   const frostEvents = [];

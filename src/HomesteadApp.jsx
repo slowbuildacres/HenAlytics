@@ -687,7 +687,7 @@ function Modal({ open, onClose, title, children }) {
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 100, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
+        zIndex: 100, padding: 16,
       }}
     >
       <div
@@ -1181,8 +1181,7 @@ export default function HomesteadApp() {
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
       color: sp.ink,
-      paddingTop: "env(safe-area-inset-top)",
-      paddingBottom: "calc(100px + env(safe-area-inset-bottom))",
+      paddingBottom: 100,
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
@@ -3634,7 +3633,7 @@ function ManageHobbiesSection({ data, update }) {
 // unit (F/C), currency picker (USD/AUD/CAD/GBP/EUR/NZD). Closed by default
 // because most users are in the US and don't need to think about it.
 // ============================================================================
-function InternationalSection({ data, update }) {
+function InternationalSection({ data, update, setModal, onClose }) {
   const [open, setOpen] = useState(false);
   const units = data.units || {};
   const currency = units.currency || "USD";
@@ -3752,6 +3751,44 @@ function InternationalSection({ data, update }) {
             </div>
             <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, fontStyle: "italic", lineHeight: 1.5 }}>
               Affects garden seasons (spring/summer/fall/winter labels). Auto-detects from your location if you've set one.
+            </div>
+          </div>
+
+          {/* Hardiness zone — opens the existing EditZoneModal which now supports
+              all 6 systems (USDA, Canada, RHS, EU, ANHGA, NZ). We close the
+              Settings modal first so EditZoneModal isn't drawn on top of it. */}
+          <div style={{ marginTop: 14 }}>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>🌱 Hardiness zone</div>
+            <button
+              onClick={() => {
+                if (onClose) onClose();
+                if (setModal) setTimeout(() => setModal({ type: "editZone" }), 0);
+              }}
+              style={{
+                width: "100%", padding: "10px 12px", borderRadius: 8,
+                border: `1.5px solid ${palette.line}`, background: palette.bg,
+                color: palette.ink, fontFamily: FONT_BODY, fontSize: 13,
+                cursor: "pointer", textAlign: "left",
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+              }}
+            >
+              <span>
+                {(() => {
+                  const sys = data.userZoneSystem || "USDA";
+                  const zone = data.userZone || "—";
+                  const sysLabel = sys === "USDA" ? "USDA" :
+                                   sys === "Canada" ? "Canada" :
+                                   sys === "RHS" ? "UK (RHS)" :
+                                   sys === "EU" ? "Europe (RHS)" :
+                                   sys === "ANHGA" ? "Australia" :
+                                   sys === "NZ" ? "New Zealand" : sys;
+                  return data.userZone ? `${sysLabel} · Zone ${zone}` : `${sysLabel} (auto-detect)`;
+                })()}
+              </span>
+              <ChevronDown size={14} style={{ transform: "rotate(-90deg)", opacity: 0.5 }} />
+            </button>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, fontStyle: "italic", lineHeight: 1.5 }}>
+              Pick your country's hardiness system (USDA, Australia, UK, etc). Drives the planting suggestions on the Calendar.
             </div>
           </div>
         </div>
@@ -4108,7 +4145,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       )}
 
       {/* International friends? — collapsible panel for users outside the US */}
-      <InternationalSection data={data} update={update} />
+      <InternationalSection data={data} update={update} setModal={setModal} onClose={onClose} />
 
       {/* Owner-only debug tools — only visible to 416lulays@gmail.com */}
       {user?.email === "416lulays@gmail.com" && (
@@ -6002,7 +6039,7 @@ function OnboardingWizard({ update, onClose }) {
     <div style={{
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
+      zIndex: 200, padding: 16,
     }}>
       <div style={{
         background: palette.bg, borderRadius: 14,
@@ -6061,7 +6098,7 @@ function OnboardingWizard({ update, onClose }) {
               Where's your homestead? 📍
             </h2>
             <p style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.6, marginTop: 0, marginBottom: 18 }}>
-              We use this to auto-attach weather to entries and suggest planting dates for your USDA hardiness zone. Zip code is enough.
+              We use this to auto-attach weather to entries and suggest planting dates for your local hardiness zone. Zip code is enough.
             </p>
             <Field label="Country">
               <select
@@ -7029,7 +7066,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "📅",
     title: "Calendar & planting dates",
-    body: "Tap the Calendar tab and plan a crop. HenAlytics calculates suggested planting dates based on your USDA zone and last frost date.",
+    body: "Tap the Calendar tab and plan a crop. HenAlytics calculates suggested planting dates based on your hardiness zone and last frost date.",
     tip: "All dates are editable — adjust any of them before adding to your calendar.",
   },
   {
@@ -7070,7 +7107,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
+        zIndex: 200, padding: 16,
       }}
     >
       <div
@@ -7172,7 +7209,7 @@ export function TutorialPrompt({ onStart, onSkip }) {
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
+        zIndex: 200, padding: 16,
       }}
     >
       <div
@@ -7457,7 +7494,7 @@ function AppStoreFundModal({ onClose, onLeaveTip }) {
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
+      zIndex: 200, padding: 16,
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 20, maxWidth: 440, width: "100%",
