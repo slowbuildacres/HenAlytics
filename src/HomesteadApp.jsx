@@ -87,7 +87,8 @@ const defaultData = () => ({
   butchered: [], // butcher events for current batch
   calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId?, varietyId?, varietyName? }
   varieties: {},      // Push 5 — per-crop variety registry { cropId: [{ id, name, daysToHarvest }] }
-  tutorialDismissed: false, // true after user completes or skips tutorial
+  tutorialDismissed: false, // true after user completes or skips tutorial (web)
+  nativeTutorialDismissed: false, // true after user completes or skips the native iOS/Android tutorial — tracked separately so web-completed users still see the native walkthrough on first app launch
   lastSeenVersion: 0,        // tracks what's new popup
   salesHidden: false,        // true if user hides the Sales tab
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
@@ -592,6 +593,124 @@ const spouseCost = (n, spouseMode) => spouseMode ? (Number(n) || 0) * 0.1 : (Num
 const spouseProd = (n, spouseMode) => spouseMode ? Math.round((Number(n) || 0) * 2) : (Number(n) || 0);
 
 // ============================================================================
+// NATIVE BRIDGE (Capacitor) — graceful web fallback
+// ----------------------------------------------------------------------------
+// Henalytics wraps for iOS/Android via Capacitor. Inside the native shell,
+// window.location.href = "https://..." can hijack the WebView and strand the
+// user outside our app (no nav bar, no back button). The @capacitor/browser
+// plugin opens external URLs in an in-app browser tab the user can dismiss
+// back to Henalytics. window.open and target="_blank" have the same issue.
+//
+// All helpers here degrade to plain web behavior when Capacitor is absent,
+// so the same code works in the browser, the PWA, and the native apps.
+// ============================================================================
+const isNativeApp = () => {
+  try {
+    return !!(typeof window !== "undefined" && window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
+  } catch (_) { return false; }
+};
+
+const getNativePlatform = () => {
+  try {
+    if (typeof window !== "undefined" && window.Capacitor && window.Capacitor.getPlatform) {
+      return window.Capacitor.getPlatform(); // "ios" | "android" | "web"
+    }
+  } catch (_) {}
+  return "web";
+};
+
+// Open an external URL. In native: uses @capacitor/browser (in-app safari/
+// chrome custom tab — user swipes/taps to dismiss back to Henalytics).
+// On the web: opens a new tab. The dynamic imports below go through
+// `loadCapacitor()` which hides the package specifier from Vite's static
+// analyzer — otherwise the web build fails to resolve @capacitor/* before
+// Capacitor is installed (Phase 3 of the native build). Once installed, the
+// runtime import resolves normally inside the native shell.
+const loadCapacitor = (pkg) => {
+  // Indirection: Vite/Rollup can't statically analyze a string built at
+  // runtime, so it leaves this alone at build time. The try/catch around the
+  // call site handles "package not installed" by falling back to web behavior.
+  const spec = /* @vite-ignore */ pkg;
+  return import(/* @vite-ignore */ spec);
+};
+
+const openExternalUrl = async (url) => {
+  if (!url) return;
+  if (isNativeApp()) {
+    try {
+      const { Browser } = await loadCapacitor("@capacitor/browser");
+      await Browser.open({ url });
+      return;
+    } catch (e) {
+      // Plugin missing or threw — fall back to system handler via App plugin
+      try {
+        const { App } = await loadCapacitor("@capacitor/app");
+        await App.openUrl({ url });
+        return;
+      } catch (_) {
+        // Final fallback: WebView nav (last resort — may strand user, but
+        // better than nothing if both plugins are missing).
+        try { window.location.href = url; } catch (__) {}
+      }
+      return;
+    }
+  }
+  // Web: open in a new tab.
+  try {
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (_) {
+    try { window.location.href = url; } catch (__) {}
+  }
+};
+
+// Hardware back-button handler for Android. iOS doesn't have one. On the web
+// this is a no-op. Pass a function that returns true if it handled the press
+// (e.g. closed a modal), false to let the default Capacitor behavior run
+// (which on the root screen exits the app — matches Android conventions).
+const useNativeBackButton = (handler) => {
+  React.useEffect(() => {
+    if (!isNativeApp()) return;
+    if (getNativePlatform() !== "android") return;
+    let removeListener = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { App } = await loadCapacitor("@capacitor/app");
+        const sub = await App.addListener("backButton", () => {
+          const handled = handler && handler();
+          if (!handled) App.exitApp().catch(() => {});
+        });
+        if (cancelled) { sub.remove(); return; }
+        removeListener = () => sub.remove();
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; if (removeListener) removeListener(); };
+  }, [handler]);
+};
+
+// Deep-link listener for henalytics:// URLs (password recovery, invite codes).
+// On web this is a no-op — the URL hash/query approach handles it. On native
+// the Capacitor App plugin fires appUrlOpen when the OS hands us a deep link.
+const useNativeDeepLinks = (onUrl) => {
+  React.useEffect(() => {
+    if (!isNativeApp()) return;
+    let removeListener = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { App } = await loadCapacitor("@capacitor/app");
+        const sub = await App.addListener("appUrlOpen", (event) => {
+          if (event && event.url && onUrl) onUrl(event.url);
+        });
+        if (cancelled) { sub.remove(); return; }
+        removeListener = () => sub.remove();
+      } catch (_) {}
+    })();
+    return () => { cancelled = true; if (removeListener) removeListener(); };
+  }, [onUrl]);
+};
+
+// ============================================================================
 // SEASON / FROST-DATE LOGIC
 // ----------------------------------------------------------------------------
 // Latitude is the strongest predictor of frost dates — way more so than
@@ -1084,6 +1203,26 @@ export default function HomesteadApp() {
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
 
+  // ---- Native tutorial prompt (once-per-account) ----
+  // Web-completed users coming over to the iOS/Android app deserve to see the
+  // native-specific walkthrough (gestures, camera, etc.). The `tutorialDismissed`
+  // flag tracks the web tutorial; `nativeTutorialDismissed` tracks the native
+  // one. On native, we trigger the prompt once for already-onboarded users
+  // whose native flag is still false. Fresh users go through the post-wizard
+  // trigger below as normal — their dismiss writes to the native flag because
+  // isNativeApp() is true at that moment too.
+  const nativeTutorialShownRef = React.useRef(false);
+  useEffect(() => {
+    if (nativeTutorialShownRef.current) return;
+    if (!isNativeApp()) return;
+    if (!data?.onboardedAt) return;            // fresh users hit the post-wizard trigger instead
+    if (data?.nativeTutorialDismissed) return; // already dismissed on this device/account
+    if (passwordRecoveryPending) return;       // don't stack on top of reset flow
+    nativeTutorialShownRef.current = true;
+    const timer = setTimeout(() => setShowTutorialPrompt(true), 800);
+    return () => clearTimeout(timer);
+  }, [data?.onboardedAt, data?.nativeTutorialDismissed, passwordRecoveryPending]);
+
   // ---- Monthly supporter thank-you ----
   // Shows once on the 9th-11th of each month if the user hasn't dismissed it yet
   // for this calendar month. Tracked in data.supportersDismissedMonth ("YYYY-MM").
@@ -1258,6 +1397,33 @@ export default function HomesteadApp() {
     }
   }, [passwordRecoveryPending, modal]);
 
+  // ---- Native deep-link handler ----
+  // Listens for henalytics:// URLs delivered to the app (e.g. password reset
+  // emails). On web this is a no-op — the recovery flow comes through the URL
+  // hash on first load instead. On native, Supabase's reset email targets a
+  // henalytics://reset?type=recovery&token=... URL which the OS hands to us.
+  useNativeDeepLinks(React.useCallback((url) => {
+    try {
+      const u = new URL(url);
+      // Supabase stuffs the recovery token in the URL hash (?type=recovery&...
+      // is also possible depending on email-template config). Check both.
+      if (/type=recovery/.test(u.hash) || /type=recovery/.test(u.search)) {
+        setPasswordRecoveryPending(true);
+        setModal({ type: "setNewPassword" });
+      }
+    } catch (_) { /* malformed URL — ignore */ }
+  }, []));
+
+  // ---- Android hardware back button ----
+  // Priority: close an open modal, then back-out to home, then let Capacitor's
+  // default behavior fire (which exits the app on the root screen).
+  // On web this hook is a no-op.
+  useNativeBackButton(React.useCallback(() => {
+    if (modal) { setModal(null); return true; }
+    if (page !== "home") { setPage("home"); return true; }
+    return false;
+  }, [modal, page]));
+
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
@@ -1398,6 +1564,7 @@ export default function HomesteadApp() {
       fontFamily: FONT_BODY,
       color: sp.ink,
       paddingBottom: 100,
+      paddingTop: "env(safe-area-inset-top)",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
@@ -1406,6 +1573,8 @@ export default function HomesteadApp() {
         input:focus, select:focus, textarea:focus { outline: 2px solid ${palette.accent}; outline-offset: -1px; }
         button { font-family: ${FONT_BODY}; }
         .tile:hover { background: ${palette.bgAlt} !important; }
+        /* Suppress iOS Safari/WKWebView blue tap-flash on interactive elements */
+        * { -webkit-tap-highlight-color: transparent; }
       `}</style>
 
       {signedOutRemotely && (
@@ -1415,6 +1584,7 @@ export default function HomesteadApp() {
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
             background: "#C84B31", color: "#FAF5EA",
             padding: "12px 20px",
+            paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
             gap: 10, cursor: "pointer",
             fontFamily: "'Be Vietnam Pro', sans-serif",
@@ -1513,7 +1683,11 @@ export default function HomesteadApp() {
           onStart={() => { setShowTutorialPrompt(false); setShowTutorial(true); }}
           onSkip={() => {
             setShowTutorialPrompt(false);
-            update((d) => { d.tutorialDismissed = true; return d; });
+            update((d) => {
+              if (isNativeApp()) d.nativeTutorialDismissed = true;
+              else d.tutorialDismissed = true;
+              return d;
+            });
           }}
         />
       )}
@@ -1522,7 +1696,11 @@ export default function HomesteadApp() {
       {showTutorial && (
         <TutorialModal onClose={() => {
           setShowTutorial(false);
-          update((d) => { d.tutorialDismissed = true; return d; });
+          update((d) => {
+            if (isNativeApp()) d.nativeTutorialDismissed = true;
+            else d.tutorialDismissed = true;
+            return d;
+          });
         }} />
       )}
       {/* HEADER */}
@@ -1808,7 +1986,7 @@ export default function HomesteadApp() {
       </nav>
 
       {/* MODALS */}
-      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} />
+      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} onFreshStart={() => setData(defaultData())} />
     </div>
   );
 }
@@ -3703,7 +3881,7 @@ function PhotoTile({ photo }) {
 }
 
 // ============ MODAL ROUTER & FORMS ============
-function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, setActiveHobby, setPage }) {
+function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, setActiveHobby, setPage, onFreshStart }) {
   const close = () => setModal(null);
   if (!modal) return null;
 
@@ -3722,7 +3900,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "setNewPassword") return <AuthModal onClose={close} initialMode="setNewPassword" />;
-  if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
+  if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} onFreshStart={onFreshStart} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} />
   if (modal.type === "addFlock") {
@@ -3938,12 +4116,22 @@ function BarnModal({ data, update, onClose, setModal, user, role }) {
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "about" }), 0); }}
       />
 
+      {/* Blog lives at /blog/ on the web. In native builds we open it as an
+          external URL in the in-app browser (the static blog HTML isn't shipped
+          inside the iOS/Android bundle). If you'd rather hide the blog button
+          on native entirely, swap the && for `!isNativeApp() && ...` below. */}
       <SectionBtn
         icon={NotebookPen}
         label="Blog"
         sub="Notes on homesteading, gardens & chickens"
         accent={palette.leaf}
-        onClick={() => { window.location.href = "/blog/"; }}
+        onClick={() => {
+          if (isNativeApp()) {
+            openExternalUrl("https://henalytics.com/blog/");
+          } else {
+            window.location.href = "/blog/";
+          }
+        }}
       />
     </Modal>
   );
@@ -4274,15 +4462,22 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
     setDeleteError("");
     try {
       await deleteAccount();
+      // Clear the local backup so the next render starts from a clean slate.
+      // (Without this, signOut would leave the device's last-known data
+      // sitting in localStorage and the load effect would pick it back up.)
+      try { clearLocalHomestead(); } catch (_) {}
       // The server has already deleted the auth row. Sign out locally to
-      // clear the session token so the next page load shows the auth UI.
+      // clear the session token. The onAuthStateChange listener fires
+      // SIGNED_OUT, user state goes null, and the load effect repopulates
+      // from the now-empty local store with defaultData(). Onboarding wizard
+      // reopens automatically. This works in web and native — no reload.
       try {
         if (supabase) await supabase.auth.signOut();
       } catch (e) {
         // Already deleted server-side, signOut will fail but that's fine
       }
-      // Force a full page reload to clear all React state and start fresh.
-      window.location.href = "/";
+      // Close the settings modal so the fresh-start UI is visible.
+      onClose();
     } catch (e) {
       console.error("Account deletion failed", e);
       setDeleteError(e.message || "Could not delete account. Please email slowbuildacres@gmail.com.");
@@ -4458,22 +4653,20 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
 
       {/* Privacy policy / terms of service links — App Store requires these be accessible in-app */}
       <div style={{ marginTop: 10, display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
-        <a
-          href="https://henalytics.com/privacy"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: 12, color: palette.inkSoft, textDecoration: "underline" }}
+        <button
+          type="button"
+          onClick={() => openExternalUrl("https://henalytics.com/privacy")}
+          style={{ fontSize: 12, color: palette.inkSoft, textDecoration: "underline", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}
         >
           Privacy policy
-        </a>
-        <a
-          href="https://henalytics.com/terms"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ fontSize: 12, color: palette.inkSoft, textDecoration: "underline" }}
+        </button>
+        <button
+          type="button"
+          onClick={() => openExternalUrl("https://henalytics.com/terms")}
+          style={{ fontSize: 12, color: palette.inkSoft, textDecoration: "underline", background: "none", border: "none", padding: 0, cursor: "pointer", fontFamily: "inherit" }}
         >
           Terms of service
-        </a>
+        </button>
       </div>
 
       {!showReset ? (
@@ -4762,10 +4955,9 @@ function SupportModal({ onClose }) {
           gap: 10,
           flexWrap: "wrap",
         }}>
-          <a
-            href={STRIPE_ONE_TIME_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          <button
+            type="button"
+            onClick={() => openExternalUrl(STRIPE_ONE_TIME_URL)}
             style={{
               flex: "1 1 140px",
               padding: "16px 14px",
@@ -4773,24 +4965,23 @@ function SupportModal({ onClose }) {
               border: `2px solid ${palette.ink}`,
               background: palette.yolk,
               color: palette.ink,
-              textDecoration: "none",
               textAlign: "center",
               fontFamily: FONT_BODY,
               fontWeight: 700,
               fontSize: 15,
               boxShadow: "2px 2px 0 " + palette.line,
               display: "block",
+              cursor: "pointer",
             }}
           >
             <div style={{ fontSize: 20, marginBottom: 4 }}>🌾</div>
             <div>One-time</div>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 2 }}>$5</div>
             <div style={{ fontSize: 11, fontWeight: 500, color: palette.inkSoft, marginTop: 2 }}>Bag of feed</div>
-          </a>
-          <a
-            href={STRIPE_MONTHLY_URL}
-            target="_blank"
-            rel="noopener noreferrer"
+          </button>
+          <button
+            type="button"
+            onClick={() => openExternalUrl(STRIPE_MONTHLY_URL)}
             style={{
               flex: "1 1 140px",
               padding: "16px 14px",
@@ -4798,20 +4989,20 @@ function SupportModal({ onClose }) {
               border: `2px solid ${palette.ink}`,
               background: palette.leaf,
               color: palette.bg,
-              textDecoration: "none",
               textAlign: "center",
               fontFamily: FONT_BODY,
               fontWeight: 700,
               fontSize: 15,
               boxShadow: "2px 2px 0 " + palette.line,
               display: "block",
+              cursor: "pointer",
             }}
           >
             <div style={{ fontSize: 20, marginBottom: 4 }}>💚</div>
             <div>Monthly</div>
             <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 2 }}>$5</div>
             <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Sustaining tip</div>
-          </a>
+          </button>
         </div>
 
         <div style={{
@@ -4832,7 +5023,7 @@ function SupportModal({ onClose }) {
   );
 }
 
-function FirstSignInModal({ user, localData, onClose }) {
+function FirstSignInModal({ user, localData, onClose, onFreshStart }) {
   // localData is what was in localStorage when they signed in.
   // We've already optimistically loaded it into state; this modal
   // confirms whether to keep it (uploads to cloud) or start fresh.
@@ -4860,9 +5051,11 @@ function FirstSignInModal({ user, localData, onClose }) {
     clearLocalHomestead();
     const fresh = defaultData();
     await saveHomestead(user, fresh);
-    // Tell the parent to refresh its state by signaling a reload via location refresh —
-    // simplest, most reliable. (In practice this is rare and a reload is fine UX.)
-    window.location.reload();
+    // Reset parent state to the fresh default in-place; the onboarding wizard
+    // will re-open naturally because there are no entries and no onboardedAt.
+    // Works on web and native (no reload needed — reload is unavailable in Capacitor).
+    if (onFreshStart) onFreshStart();
+    onClose();
   };
 
   return (
@@ -5159,6 +5352,39 @@ function FeedbackModal({ onClose, presetCategory, user }) {
   // it's a service-level issue users should understand and the email
   // fallbacks still work.
   const [isRateLimit, setIsRateLimit] = useState(false);
+  // True for ~2 seconds after the user taps "Copy message" — gives clear
+  // confirmation that the action worked. The mailto/Gmail links can silently
+  // fail on some native WebViews; copy is the always-works fallback.
+  const [justCopied, setJustCopied] = useState(false);
+
+  const copyFallback = async () => {
+    const text = `To: slowbuildacres@gmail.com\nSubject: ${subject}\n\n${body}`;
+    let ok = false;
+    try {
+      await navigator.clipboard.writeText(text);
+      ok = true;
+    } catch (_) {
+      // Older WebView / iOS Safari fallback: select+execCommand
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = text;
+        ta.style.position = "fixed";
+        ta.style.opacity = "0";
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand("copy");
+        document.body.removeChild(ta);
+        ok = true;
+      } catch (_) {
+        // Truly unsupported environment — leave silently; mailto link is still
+        // present and the user can long-press to copy the email manually.
+      }
+    }
+    if (ok) {
+      setJustCopied(true);
+      setTimeout(() => setJustCopied(false), 2500);
+    }
+  };
 
   const send = async () => {
     setError("");
@@ -5293,20 +5519,20 @@ function FeedbackModal({ onClose, presetCategory, user }) {
         <details style={{ marginTop: 14, fontSize: 12, color: palette.inkSoft }}>
           <summary style={{ cursor: "pointer" }}>Or send via your email app instead</summary>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
-            <a
-              href={gmailHref}
-              target="_blank"
-              rel="noopener noreferrer"
+            <button
+              type="button"
+              onClick={() => openExternalUrl(gmailHref)}
               style={{
                 display: "inline-flex", alignItems: "center", gap: 6,
-                padding: "8px 12px", borderRadius: 8, textDecoration: "none",
+                padding: "8px 12px", borderRadius: 8,
                 fontSize: 12, fontWeight: 600,
                 background: palette.ink, color: palette.bg,
                 border: `1.5px solid ${palette.ink}`,
+                cursor: "pointer", fontFamily: "inherit",
               }}
             >
               <Mail size={12} /> Open in Gmail
-            </a>
+            </button>
             <a
               href={mailtoHref}
               style={{
@@ -5319,6 +5545,20 @@ function FeedbackModal({ onClose, presetCategory, user }) {
             >
               <Mail size={12} /> Open mail app
             </a>
+            <button
+              type="button"
+              onClick={copyFallback}
+              style={{
+                display: "inline-flex", alignItems: "center", gap: 6,
+                padding: "8px 12px", borderRadius: 8,
+                fontSize: 12, fontWeight: 600,
+                background: "transparent", color: palette.ink,
+                border: `1.5px solid ${palette.line}`,
+                cursor: "pointer", fontFamily: FONT_BODY,
+              }}
+            >
+              {justCopied ? "✓ Copied" : "Copy message"}
+            </button>
           </div>
         </details>
       )}
@@ -5439,13 +5679,13 @@ function AddFlockModal({ hobbyId, update, onClose }) {
         </div>
       </Field>
       <Field label="How many birds?">
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
+        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
       </Field>
       <Field label="Date acquired">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <Field label="Where purchased (optional)">
         <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
@@ -5528,13 +5768,13 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
         </div>
       </Field>
       <Field label="Number of birds">
-        <input type="number" style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Total cost (optional)">
-        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
       </Field>
       <Field label="Where purchased (optional)">
         <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
@@ -5592,13 +5832,13 @@ function EditFlockEntryModal({ hobby, index, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit flock entry">
       <Field label="How many birds?">
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Date acquired">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -5731,13 +5971,13 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
         </div>
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"} (started with)`}>
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <Btn variant="primary" onClick={save}>Save changes</Btn>
       {/* Finalize / Delete row — separated visually from the primary save
@@ -5807,13 +6047,13 @@ function HatchBatchModal({ hobby, update, onClose }) {
         </div>
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"} (optional)`}>
-        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} />
       </Field>
       <Btn variant="primary" onClick={() => {
         const n = parseInt(count);
@@ -5998,7 +6238,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           </Field>
           <Field label="How many?">
             <input
-              type="number"
+              type="number" inputMode="numeric"
               style={inputStyle}
               value={count}
               onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
@@ -6011,7 +6251,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           {isButcher ? (
             <Field label="Average weight (lbs)">
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 step="0.01"
                 style={inputStyle}
                 value={avgWeight}
@@ -6022,7 +6262,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           ) : (
             <Field label="Average weight (lbs, optional)">
               <input
-                type="number"
+                type="number" inputMode="decimal"
                 step="0.01"
                 style={inputStyle}
                 value={avgWeight}
@@ -6339,7 +6579,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
 
       <Field label="How many?">
         <input
-          type="number"
+          type="number" inputMode="numeric"
           style={inputStyle}
           value={count}
           onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
@@ -6351,12 +6591,12 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
           for everything else. Keep it accessible for sold-for-meat scenarios. */}
       {isButcher && (
         <Field label="Average weight (lbs)">
-          <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
+          <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
         </Field>
       )}
       {!isButcher && (
         <Field label="Average weight (lbs, optional)">
-          <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
+          <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
         </Field>
       )}
 
@@ -6719,7 +6959,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
           {mode === "total" ? (
             <Field label="Total eggs across the range">
               <input
-                type="number"
+                type="number" inputMode="numeric"
                 style={inputStyle}
                 value={totalCount}
                 onChange={(e) => { setTotalCount(e.target.value); setValidationError(""); }}
@@ -6729,7 +6969,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
           ) : (
             <Field label="Average eggs per day">
               <input
-                type="number"
+                type="number" inputMode="numeric"
                 style={inputStyle}
                 value={perDayCount}
                 onChange={(e) => { setPerDayCount(e.target.value); setValidationError(""); }}
@@ -7195,7 +7435,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
       {action === "watered" && hobby.type !== "garden" && (
         <Field label="Gallons">
-          <input type="number" step="0.1" style={inputStyle} value={fields.gallons || ""} onChange={(e) => set("gallons", e.target.value)} />
+          <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.gallons || ""} onChange={(e) => set("gallons", e.target.value)} />
         </Field>
       )}
 
@@ -7206,13 +7446,13 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
           <Field label="How many">
-            <input type="number" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
+            <input type="number" inputMode="numeric" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Bed / location (optional)">
             <input style={inputStyle} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} />
           </Field>
           <Field label="Cost (seeds, soil — optional)">
-            <input type="number" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
         </>
       )}
@@ -7224,7 +7464,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
           <Field label="Quantity">
-            <input type="number" step="0.01" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Unit">
             <select style={inputStyle} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
@@ -7261,10 +7501,10 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       {action === "fed" && (
         <>
           <Field label="Pounds of feed">
-            <input type="number" step="0.1" style={inputStyle} value={fields.lbs || ""} onChange={(e) => set("lbs", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.lbs || ""} onChange={(e) => set("lbs", e.target.value)} />
           </Field>
           <Field label="Cost of bag (or this feeding)">
-            <input type="number" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
         </>
       )}
@@ -7277,7 +7517,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
       {(action === "eggs" || action === "eggs_laid") && (
         <Field label="Eggs collected">
-          <input type="number" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
+          <input type="number" inputMode="numeric" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
         </Field>
       )}
 
@@ -7291,7 +7531,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
               should be done by deleting + re-creating via the butcher modal. */}
           <Field label="How many butchered">
             <input
-              type="number"
+              type="number" inputMode="numeric"
               style={inputStyle}
               value={fields.count || ""}
               onChange={(e) => set("count", e.target.value)}
@@ -7300,7 +7540,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           </Field>
           <Field label="Average weight (lbs)">
             <input
-              type="number"
+              type="number" inputMode="decimal"
               step="0.01"
               style={inputStyle}
               value={fields.avgWeight || ""}
@@ -7342,10 +7582,10 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
               power wash / rinse / poop tray dump don't, so keep those fields
               optional rather than removing them, in case users mix patterns. */}
           <Field label="Cubic feet of bedding (optional)">
-            <input type="number" step="0.1" style={inputStyle} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
+            <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
           </Field>
           <Field label="Cost (optional)">
-            <input type="number" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
           </Field>
           <Field label="Notes (optional)">
             <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. left hutch, quail run, ammonia getting strong" />
@@ -7356,7 +7596,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       {action === "death" && (
         <>
           <Field label="How many died?">
-            <input type="number" min="1" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="1" />
+            <input type="number" inputMode="numeric" min="1" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="1" />
           </Field>
           <Field label="Cause / reason (optional)">
             <input style={inputStyle} value={fields.cause || ""} onChange={(e) => set("cause", e.target.value)} placeholder="predator, illness, unknown..." />
@@ -7367,10 +7607,10 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
       {action === "sold_eggs" && (
         <>
           <Field label="Number of eggs sold">
-            <input type="number" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 24 (= 2 dozen)" />
+            <input type="number" inputMode="numeric" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 24 (= 2 dozen)" />
           </Field>
           <Field label="Price per dozen ($)">
-            <input type="number" step="0.01" style={inputStyle} value={fields.pricePerDozen || ""} onChange={(e) => set("pricePerDozen", e.target.value)} placeholder="e.g. 6.00" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.pricePerDozen || ""} onChange={(e) => set("pricePerDozen", e.target.value)} placeholder="e.g. 6.00" />
           </Field>
           <Field label="Sold to / notes (optional)">
             <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
@@ -7392,7 +7632,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             <input style={inputStyle} value={fields.item || ""} onChange={(e) => set("item", e.target.value)} placeholder="new coop, run extension, fencing..." />
           </Field>
           <Field label="Cost ($)">
-            <input type="number" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
           <Field label="Notes (optional)">
             <textarea style={{ ...inputStyle, minHeight: 60 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="materials, who built it, etc." />
@@ -7464,33 +7704,64 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             </div>
           )}
 
-          {/* Add-photo button — disabled when at max */}
+          {/* Add-photo controls — disabled when at max.
+              Two paths: a multi-select library picker, and a separate camera-only
+              shortcut. We can't combine them: `capture="environment"` forces the
+              camera path and silently disables multi-select on iOS, so we keep
+              them as siblings. */}
           {totalPhotoCount < MAX_PHOTOS && (
-            <label style={{
-              display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
-              padding: "14px", borderRadius: 8,
-              border: `1.5px dashed ${palette.line}`, background: palette.bgAlt,
-              cursor: "pointer", color: palette.inkSoft, fontSize: 13,
-            }}>
-              <Camera size={18} strokeWidth={1.8} />
-              {totalPhotoCount === 0 ? "Tap to add photos" : "Add another photo"}
-              <input
-                type="file"
-                accept="image/*"
-                multiple
-                style={{ display: "none" }}
-                onChange={(e) => {
-                  const files = Array.from(e.target.files || []);
-                  if (files.length === 0) return;
-                  // Cap to remaining slots
-                  const remaining = MAX_PHOTOS - totalPhotoCount;
-                  setPhotoFiles((current) => [...current, ...files.slice(0, remaining)]);
-                  setPhotoError("");
-                  // Reset input so picking the same file twice still triggers change
-                  e.target.value = "";
-                }}
-              />
-            </label>
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <label style={{
+                flex: "2 1 180px",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                padding: "14px", borderRadius: 8,
+                border: `1.5px dashed ${palette.line}`, background: palette.bgAlt,
+                cursor: "pointer", color: palette.inkSoft, fontSize: 13,
+              }}>
+                <ImageIcon size={18} strokeWidth={1.8} />
+                {totalPhotoCount === 0 ? "Add from library" : "Add more from library"}
+                <input
+                  type="file"
+                  accept="image/*"
+                  multiple
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length === 0) return;
+                    // Cap to remaining slots
+                    const remaining = MAX_PHOTOS - totalPhotoCount;
+                    setPhotoFiles((current) => [...current, ...files.slice(0, remaining)]);
+                    setPhotoError("");
+                    // Reset input so picking the same file twice still triggers change
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+              <label style={{
+                flex: "1 1 120px",
+                display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+                padding: "14px", borderRadius: 8,
+                border: `1.5px dashed ${palette.line}`, background: palette.bgAlt,
+                cursor: "pointer", color: palette.inkSoft, fontSize: 13,
+              }}>
+                <Camera size={18} strokeWidth={1.8} />
+                Take photo
+                <input
+                  type="file"
+                  accept="image/*"
+                  capture="environment"
+                  style={{ display: "none" }}
+                  onChange={(e) => {
+                    const files = Array.from(e.target.files || []);
+                    if (files.length === 0) return;
+                    const remaining = MAX_PHOTOS - totalPhotoCount;
+                    setPhotoFiles((current) => [...current, ...files.slice(0, remaining)]);
+                    setPhotoError("");
+                    e.target.value = "";
+                  }}
+                />
+              </label>
+            </div>
           )}
 
           {photoError && (
@@ -8555,15 +8826,15 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
   const homesteadName = data.homesteadName || "My Homestead";
   const dateLabel = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
 
-  // Load html2canvas dynamically
-  const loadHtml2Canvas = () => new Promise((resolve, reject) => {
-    if (window.html2canvas) { resolve(window.html2canvas); return; }
-    const s = document.createElement("script");
-    s.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-    s.onload = () => resolve(window.html2canvas);
-    s.onerror = reject;
-    document.head.appendChild(s);
-  });
+  // Load html2canvas. We dynamic-import the npm package rather than injecting
+  // a <script src="cdn..."> tag because Capacitor (and strict CSP) blocks
+  // runtime CDN script loads — the native iOS/Android build can't fetch from
+  // cdnjs at runtime. Make sure html2canvas is in your package.json deps.
+  const loadHtml2Canvas = async () => {
+    if (window.html2canvas) return window.html2canvas;
+    const mod = await import("html2canvas");
+    return mod.default || mod;
+  };
 
   const captureCard = async () => {
     const h2c = await loadHtml2Canvas();
@@ -9038,7 +9309,7 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:2 }}>
           <Field label="Quantity">
-            <input type="number" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
+            <input type="number" inputMode="decimal" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
           </Field>
         </div>
         <div style={{ flex:1 }}>
@@ -9166,7 +9437,7 @@ function AppStoreFundModal({ onClose, onLeaveTip }) {
 
   const handleTip = () => {
     if (onLeaveTip) onLeaveTip();
-    window.open(STRIPE_ONE_TIME_URL, "_blank", "noopener,noreferrer");
+    openExternalUrl(STRIPE_ONE_TIME_URL);
   };
 
   return (
@@ -9367,13 +9638,11 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
 
           {/* Two big buttons side-by-side — One-time / Monthly. Tapping either
               dismisses this popup for the month (via onLeaveTip) and opens
-              the Stripe payment page in a new tab. */}
+              the Stripe payment page externally (native browser / new tab). */}
           <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
-            <a
-              href={STRIPE_ONE_TIME_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onLeaveTip}
+            <button
+              type="button"
+              onClick={() => { if (onLeaveTip) onLeaveTip(); openExternalUrl(STRIPE_ONE_TIME_URL); }}
               style={{
                 flex: "1 1 140px",
                 padding: "14px 12px",
@@ -9381,25 +9650,23 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
                 border: `2px solid ${palette.ink}`,
                 background: palette.yolk,
                 color: palette.ink,
-                textDecoration: "none",
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
                 boxShadow: "2px 2px 0 " + palette.line,
                 display: "block",
+                cursor: "pointer",
               }}
             >
               <div style={{ fontSize: 18, marginBottom: 2 }}>🌾</div>
               <div>One-time</div>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, marginTop: 2 }}>$5</div>
               <div style={{ fontSize: 10, fontWeight: 500, color: palette.inkSoft, marginTop: 2 }}>Bag of feed</div>
-            </a>
-            <a
-              href={STRIPE_MONTHLY_URL}
-              target="_blank"
-              rel="noopener noreferrer"
-              onClick={onLeaveTip}
+            </button>
+            <button
+              type="button"
+              onClick={() => { if (onLeaveTip) onLeaveTip(); openExternalUrl(STRIPE_MONTHLY_URL); }}
               style={{
                 flex: "1 1 140px",
                 padding: "14px 12px",
@@ -9407,20 +9674,20 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
                 border: `2px solid ${palette.ink}`,
                 background: palette.leaf,
                 color: palette.bg,
-                textDecoration: "none",
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
                 boxShadow: "2px 2px 0 " + palette.line,
                 display: "block",
+                cursor: "pointer",
               }}
             >
               <div style={{ fontSize: 18, marginBottom: 2 }}>💚</div>
               <div>Monthly</div>
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, marginTop: 2 }}>$5</div>
               <div style={{ fontSize: 10, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Sustaining tip</div>
-            </a>
+            </button>
           </div>
 
           <div style={{

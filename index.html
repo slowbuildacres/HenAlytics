@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
 <meta name="theme-color" content="#F4EDE0">
 
 <!-- SEO basics -->
@@ -35,7 +35,7 @@
 <!-- iOS home-screen icon + standalone behavior -->
 <link rel="apple-touch-icon" href="/apple-touch-icon.png">
 <meta name="apple-mobile-web-app-capable" content="yes">
-<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Henalytics">
 
 <!-- App-mode / theme metadata -->
@@ -52,13 +52,17 @@
 <div id="root"></div>
 <script type="module" src="/src/main.jsx"></script>
 <script>
-  if ('serviceWorker' in navigator) {
-    window.addEventListener('load', () => {
-      navigator.serviceWorker.register('/sw.js').catch((err) => {
-        console.warn('Service worker registration failed:', err);
-      });
-    });
-  }
+  // Service worker registration — disabled until vite-plugin-pwa is set up
+  // (Phase 1 of native-build checklist). The plugin will auto-generate /sw.js
+  // and inject the registration script. Uncomment manually only if you wire
+  // up sw.js yourself.
+  // if ('serviceWorker' in navigator) {
+  //   window.addEventListener('load', () => {
+  //     navigator.serviceWorker.register('/sw.js').catch((err) => {
+  //       console.warn('Service worker registration failed:', err);
+  //     });
+  //   });
+  // }
 </script>
 </body>
 </html>
