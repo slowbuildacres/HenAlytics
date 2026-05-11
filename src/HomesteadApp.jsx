@@ -4491,7 +4491,7 @@ function AboutModal({ onClose }) {
         </figure>
 
         <p>
-          Henalytics is just me. No company, no investors, no ads. The site costs me about $10/year in domain fees and that's it. It will stay free.
+          Henalytics is just me. No company, no investors, no ads. Between App Store fees and upgrading the tools and services that keep the app running for a growing community, it costs about $500/year to operate. Not terrible — but any community contribution is sincerely appreciated. Anything beyond the minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
         </p>
 
         <p style={{
@@ -4539,7 +4539,7 @@ function SupportModal({ onClose }) {
         </div>
 
         <p style={{ marginTop: 0 }}>
-          The site costs me about $10/year in domain fees, plus my time. There's no company behind it, no investors, no ads. Just me — a homesteader in Kansas — building it in the evenings.
+          Between App Store fees and upgrading the tools and services that keep the app running for a growing community, it costs about $500/year to operate, plus my time. Not terrible — but any community contribution is sincerely appreciated. There's no company behind it, no investors, no ads. Just me — a homesteader in Kansas — building it in the evenings. Anything beyond the minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
         </p>
 
         <p>
@@ -7692,7 +7692,7 @@ function OnboardingWizard({ update, onClose }) {
                 padding: "12px 14px", background: palette.bgAlt, borderRadius: 10,
                 marginBottom: 14, fontSize: 13, color: palette.ink, lineHeight: 1.6,
               }}>
-                <strong>Real costs, transparently:</strong> the domain is about $10/year, plus my time building features. There's no company, no investors, just me — Riley — coding in the evenings.
+                <strong>Real costs, transparently:</strong> between App Store fees and upgrading the tools and services that run the app for a growing community, it costs about $500/year, plus my time. Not terrible — any community contribution is sincerely appreciated. Anything beyond minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
               </div>
 
               <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginBottom: 14 }}>
