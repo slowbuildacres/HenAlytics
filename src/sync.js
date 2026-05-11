@@ -97,11 +97,15 @@ async function ensureHomestead(userId) {
     return { id: chosen.homestead_id, role: chosen.role };
   }
 
-  const { data: created, error: cErr } = await supabase
+  // Generate the new homestead id client-side so we don't need to .select()
+  // it back. A SELECT after INSERT would trigger the SELECT RLS policy on
+  // homesteads (is_homestead_member), which fails because the user isn't
+  // a member yet — the membership row is inserted in the next step below.
+  const newHomesteadId = crypto.randomUUID();
+
+  const { error: cErr } = await supabase
     .from('homesteads')
-    .insert({ data: {} })
-    .select()
-    .single();
+    .insert({ id: newHomesteadId, data: {} });
 
   if (cErr) {
     console.error('Homestead create failed', cErr);
@@ -110,14 +114,14 @@ async function ensureHomestead(userId) {
 
   const { error: jErr } = await supabase
     .from('homestead_members')
-    .insert({ homestead_id: created.id, user_id: userId, role: 'owner' });
+    .insert({ homestead_id: newHomesteadId, user_id: userId, role: 'owner' });
 
   if (jErr) {
     console.error('Initial owner insert failed', jErr);
     throw jErr;
   }
 
-  return { id: created.id, role: 'owner' };
+  return { id: newHomesteadId, role: 'owner' };
 }
 
 async function readCloudHomestead(homesteadId) {
