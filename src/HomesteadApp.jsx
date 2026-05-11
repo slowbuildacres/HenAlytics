@@ -81,7 +81,8 @@ const defaultData = () => ({
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
   butchered: [], // butcher events for current batch
-  calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId? }
+  calendarEvents: [], // user-created calendar events { id, date, title, type, notes, cropId?, varietyId?, varietyName? }
+  varieties: {},      // Push 5 — per-crop variety registry { cropId: [{ id, name, daysToHarvest }] }
   tutorialDismissed: false, // true after user completes or skips tutorial
   lastSeenVersion: 0,        // tracks what's new popup
   salesHidden: false,        // true if user hides the Sales tab
@@ -512,9 +513,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 14;
+const CURRENT_VERSION = 15;
 
 const WHATS_NEW = [
+  "🌱 Per-variety harvest timeframes — got 6 kinds of tomatoes? Add each variety with its own days-to-harvest. Sungold ripens in 65 days, San Marzano in 80, and your calendar shows each one ready at the right time. Find it in the new 'Which variety?' step when planning a crop.",
   "🐣 Multiple meat-bird batches — run more than one batch of meat chickens at the same time. Each batch has its own age, feed log, and butcher records. Pick which batch you're logging to when you have more than one going.",
   "🐴 Horses hobby — per-horse tracking with rides, farrier visits, vet, deworming, breeding & foaling reminders",
   "🐑 Custom breeds — added \"Other\" option to breed dropdowns on Sheep, Goats, Cows, and Horses so you can type in any breed",

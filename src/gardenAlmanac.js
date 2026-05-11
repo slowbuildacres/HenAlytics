@@ -428,15 +428,39 @@ export const CROPS = [
 // Given a crop ID, a frost-date pair, and which method the user wants to use
 // (indoor / direct / transplant), generate a list of calendar events.
 // Each event has: date (Date object), title, type ("garden"), and a notes field.
+//
+// Push 5: optional `variety` parameter for per-variety harvest timeframes.
+// Shape: { id, name, daysToHarvest } — when provided, the variety's name
+// appears in event titles instead of the generic crop name (so users with
+// six tomato cultivars see "🧺 Sungold should be ready" not "🧺 Tomatoes
+// should be ready"), and daysToHarvest drives the harvest-date math.
+// When `variety` is null/undefined we use the crop-wide defaults — this is
+// the legacy code path and behaves exactly as before.
 // ============================================================================
 
 const dayMs = 1000 * 60 * 60 * 24;
 
-export function generateCropEvents(cropId, method, frostDates) {
+export function generateCropEvents(cropId, method, frostDates, variety = null) {
   const crop = CROPS.find((c) => c.id === cropId);
   if (!crop) return [];
   const events = [];
   const lf = frostDates.lastFrost;
+
+  // Resolve the display name + days-to-harvest from variety if present.
+  // displayName drives event titles; harvestDays drives the harvest-date math
+  // and the "~X days from ..." note. Both fall back to crop-wide defaults.
+  const displayName = variety && variety.name ? variety.name : crop.name;
+  const harvestDays = (variety && Number.isFinite(variety.daysToHarvest))
+    ? variety.daysToHarvest
+    : crop.daysToHarvest;
+  // Suffix the variety id into event ids so re-planning the same crop with a
+  // different variety in the same year doesn't collide with the previous plan.
+  const varietySuffix = variety && variety.id ? `-${variety.id}` : "";
+  // Variety metadata copied onto every event so the calendar and any future
+  // "edit this plan" flow can show which variety the event belongs to.
+  const varietyMeta = variety
+    ? { varietyId: variety.id || null, varietyName: variety.name || null }
+    : {};
 
   // Helper: add weeks to a Date
   const addWeeks = (d, w) => new Date(d.getTime() + w * 7 * dayMs);
@@ -444,11 +468,12 @@ export function generateCropEvents(cropId, method, frostDates) {
   if (method === "indoor" && crop.methods.indoor) {
     const seedDate = addWeeks(lf, -crop.methods.indoor.weeksBeforeLastFrost);
     events.push({
-      id: `crop-${cropId}-indoor-${seedDate.getTime()}`,
+      id: `crop-${cropId}${varietySuffix}-indoor-${seedDate.getTime()}`,
       date: dateToISO(seedDate),
-      title: `🌱 Start ${crop.name} seeds indoors`,
+      title: `🌱 Start ${displayName} seeds indoors`,
       type: "garden",
       cropId,
+      ...varietyMeta,
       notes: crop.notes,
     });
 
@@ -456,69 +481,75 @@ export function generateCropEvents(cropId, method, frostDates) {
     if (crop.methods.transplant) {
       const transplantDate = addWeeks(lf, crop.methods.transplant.weeksAfterLastFrost);
       events.push({
-        id: `crop-${cropId}-transplant-${transplantDate.getTime()}`,
+        id: `crop-${cropId}${varietySuffix}-transplant-${transplantDate.getTime()}`,
         date: dateToISO(transplantDate),
-        title: `🌿 Transplant ${crop.name} outdoors`,
+        title: `🌿 Transplant ${displayName} outdoors`,
         type: "garden",
         cropId,
+        ...varietyMeta,
         notes: "Harden off for 7-10 days first.",
       });
 
       // Estimated harvest start
-      if (crop.daysToHarvest) {
-        const harvestDate = new Date(transplantDate.getTime() + crop.daysToHarvest * dayMs);
+      if (harvestDays) {
+        const harvestDate = new Date(transplantDate.getTime() + harvestDays * dayMs);
         events.push({
-          id: `crop-${cropId}-harvest-${harvestDate.getTime()}`,
+          id: `crop-${cropId}${varietySuffix}-harvest-${harvestDate.getTime()}`,
           date: dateToISO(harvestDate),
-          title: `🧺 ${crop.name} should be ready to harvest`,
+          title: `🧺 ${displayName} should be ready to harvest`,
           type: "garden",
           cropId,
-          notes: `~${crop.daysToHarvest} days from transplant.`,
+          ...varietyMeta,
+          notes: `~${harvestDays} days from transplant.`,
         });
       }
     }
   } else if (method === "direct" && crop.methods.direct) {
     const sowDate = addWeeks(lf, crop.methods.direct.weeksRelativeToLastFrost);
     events.push({
-      id: `crop-${cropId}-direct-${sowDate.getTime()}`,
+      id: `crop-${cropId}${varietySuffix}-direct-${sowDate.getTime()}`,
       date: dateToISO(sowDate),
-      title: `🌱 Direct sow ${crop.name}`,
+      title: `🌱 Direct sow ${displayName}`,
       type: "garden",
       cropId,
+      ...varietyMeta,
       notes: crop.notes,
     });
 
-    if (crop.daysToHarvest) {
-      const harvestDate = new Date(sowDate.getTime() + crop.daysToHarvest * dayMs);
+    if (harvestDays) {
+      const harvestDate = new Date(sowDate.getTime() + harvestDays * dayMs);
       events.push({
-        id: `crop-${cropId}-harvest-${harvestDate.getTime()}`,
+        id: `crop-${cropId}${varietySuffix}-harvest-${harvestDate.getTime()}`,
         date: dateToISO(harvestDate),
-        title: `🧺 ${crop.name} should be ready to harvest`,
+        title: `🧺 ${displayName} should be ready to harvest`,
         type: "garden",
         cropId,
-        notes: `~${crop.daysToHarvest} days from direct sow.`,
+        ...varietyMeta,
+        notes: `~${harvestDays} days from direct sow.`,
       });
     }
   } else if (method === "transplant" && crop.methods.transplant) {
     const transplantDate = addWeeks(lf, crop.methods.transplant.weeksAfterLastFrost);
     events.push({
-      id: `crop-${cropId}-transplant-${transplantDate.getTime()}`,
+      id: `crop-${cropId}${varietySuffix}-transplant-${transplantDate.getTime()}`,
       date: dateToISO(transplantDate),
-      title: `🌿 Transplant ${crop.name} (from store-bought starts)`,
+      title: `🌿 Transplant ${displayName} (from store-bought starts)`,
       type: "garden",
       cropId,
+      ...varietyMeta,
       notes: crop.notes,
     });
 
-    if (crop.daysToHarvest) {
-      const harvestDate = new Date(transplantDate.getTime() + crop.daysToHarvest * dayMs);
+    if (harvestDays) {
+      const harvestDate = new Date(transplantDate.getTime() + harvestDays * dayMs);
       events.push({
-        id: `crop-${cropId}-harvest-${harvestDate.getTime()}`,
+        id: `crop-${cropId}${varietySuffix}-harvest-${harvestDate.getTime()}`,
         date: dateToISO(harvestDate),
-        title: `🧺 ${crop.name} should be ready to harvest`,
+        title: `🧺 ${displayName} should be ready to harvest`,
         type: "garden",
         cropId,
-        notes: `~${crop.daysToHarvest} days from transplant.`,
+        ...varietyMeta,
+        notes: `~${harvestDays} days from transplant.`,
       });
     }
   }

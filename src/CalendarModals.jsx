@@ -117,12 +117,32 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
 // ============================================================================
 
 export function PlanCropModal({ data, update, onClose }) {
-  const [step, setStep] = useState(1); // 1 = pick crop, 2 = pick method, 3 = editable preview, 4 = "other" custom flow
+  // Step flow:
+  //   1   = pick crop
+  //   2   = pick method (start-indoors / direct-sow / transplant)
+  //   2.5 = pick variety (Push 5; skippable via "generic" button)
+  //   3   = editable date preview
+  //   4   = "Other / custom" free-text crop flow (bypasses variety entirely)
+  const [step, setStep] = useState(1);
   const [cropId, setCropId] = useState(null);
   const [method, setMethod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
   // editableDates: { [eventId]: dateString } — user-overridden dates
   const [editableDates, setEditableDates] = useState({});
+  // Push 5 — per-variety harvest timeframes.
+  //
+  // selectedVariety is either:
+  //   - null  → user chose "Use generic {crop}", skipping varieties
+  //   - { id, name, daysToHarvest } → a saved variety from data.varieties[cropId]
+  //
+  // The two `newVariety*` fields back the inline "+ Add variety" sub-form
+  // on step 2.5. They're separate state so opening/closing the form doesn't
+  // clobber the selected variety, and so the form prefills cleanly.
+  const [selectedVariety, setSelectedVariety] = useState(null);
+  const [showAddVariety, setShowAddVariety] = useState(false);
+  const [newVarietyName, setNewVarietyName] = useState("");
+  const [newVarietyDays, setNewVarietyDays] = useState("");
+  const [varietyError, setVarietyError] = useState("");
   // "Other crop" path: user types a name + picks a single planting date, and
   // we just create one calendar event. No frost-math, no harvest prediction —
   // it's a reminder. Power users can add more events manually after.
@@ -145,11 +165,69 @@ export function PlanCropModal({ data, update, onClose }) {
   const zoneLabel = getZoneInfo(userSystem, userZone).label;
   const crop = CROPS.find((c) => c.id === cropId);
   const methods = cropId ? methodsForCrop(cropId) : [];
-  const generatedEvents = (cropId && method) ? generateCropEvents(cropId, method, frostDates) : [];
+  // Saved varieties for the chosen crop. data.varieties may be undefined
+  // (legacy users); default to empty array, never crash.
+  const savedVarieties = (cropId && data.varieties && Array.isArray(data.varieties[cropId]))
+    ? data.varieties[cropId]
+    : [];
+  // Pass selectedVariety into the event generator. null = use crop-wide defaults
+  // (legacy behavior preserved).
+  const generatedEvents = (cropId && method)
+    ? generateCropEvents(cropId, method, frostDates, selectedVariety)
+    : [];
 
-  // When year or method changes, reset editable dates so suggestions refresh
-  const handleSetMethod = (m) => { setMethod(m); setEditableDates({}); setStep(3); };
+  // When year, method, or variety changes, reset editable dates so suggestions
+  // refresh from the new harvest-day math.
+  const handleSetMethod = (m) => {
+    setMethod(m);
+    setEditableDates({});
+    // Reset variety selection when method changes — user is starting over.
+    setSelectedVariety(null);
+    setShowAddVariety(false);
+    setVarietyError("");
+    setStep(2.5);
+  };
   const handleSetYear = (y) => { setYear(y); setEditableDates({}); };
+
+  // Variety picker handlers (Push 5).
+  const pickVariety = (v) => {
+    setSelectedVariety(v);
+    setEditableDates({});
+    setStep(3);
+  };
+  const pickGeneric = () => {
+    setSelectedVariety(null);
+    setEditableDates({});
+    setStep(3);
+  };
+  const saveNewVariety = () => {
+    const name = newVarietyName.trim();
+    if (!name) { setVarietyError("Give the variety a name."); return; }
+    // Default days-to-harvest to the crop-wide value when user leaves it
+    // blank — keeps the form forgiving. Reject obvious garbage (negatives,
+    // wild large numbers).
+    let days = parseInt(newVarietyDays, 10);
+    if (newVarietyDays === "" || isNaN(days)) days = crop?.daysToHarvest || 60;
+    if (days < 1 || days > 500) {
+      setVarietyError("Days to harvest should be between 1 and 500.");
+      return;
+    }
+    const variety = { id: `var-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`, name, daysToHarvest: days };
+    update((d) => {
+      d.varieties = d.varieties || {};
+      d.varieties[cropId] = Array.isArray(d.varieties[cropId]) ? d.varieties[cropId] : [];
+      d.varieties[cropId].push(variety);
+      return d;
+    });
+    // Pre-select the just-added variety and advance to preview.
+    setSelectedVariety(variety);
+    setShowAddVariety(false);
+    setNewVarietyName("");
+    setNewVarietyDays("");
+    setVarietyError("");
+    setEditableDates({});
+    setStep(3);
+  };
 
   // Get the final date for an event (user override or generated)
   const getDate = (evt) => editableDates[evt.id] || evt.date;
@@ -184,10 +262,28 @@ export function PlanCropModal({ data, update, onClose }) {
 
   const confirm = () => {
     if (generatedEvents.length === 0) return;
+    // Variety-aware "replace previous plan" filter (Push 5).
+    //
+    // Pre-Push-5 we wiped every event with this cropId in this year so
+    // re-planning didn't double up. With multi-variety support, planning
+    // Sungold must NOT clobber Cherokee Purple — both are tomatoes in the
+    // same year. So we narrow the filter to (cropId + same varietyId +
+    // same year). For the "generic" path (selectedVariety === null), we
+    // match events that ALSO have no varietyId, leaving variety-tagged
+    // plans untouched.
+    const planVarietyId = selectedVariety ? selectedVariety.id : null;
     update((d) => {
       d.calendarEvents = d.calendarEvents || [];
-      // Replace any existing events for this crop/year combo so re-planning doesn't double up
-      d.calendarEvents = d.calendarEvents.filter((e) => !(e.cropId === cropId && e.date.startsWith(String(year))));
+      d.calendarEvents = d.calendarEvents.filter((e) => {
+        if (e.cropId !== cropId) return true;
+        if (!e.date.startsWith(String(year))) return true;
+        // Same crop, same year — now compare variety scope.
+        const eventVarietyId = e.varietyId || null;
+        if (eventVarietyId !== planVarietyId) return true;
+        // Same crop + same year + same variety scope → this is a stale
+        // copy of the plan we're about to re-create. Drop it.
+        return false;
+      });
       d.calendarEvents.push(...generatedEvents.map((e) => ({
         ...e,
         date: getDate(e),   // use user's edited date if set
@@ -202,8 +298,9 @@ export function PlanCropModal({ data, update, onClose }) {
     <Modal open onClose={onClose} title={
       step === 1 ? "Plan a crop" :
       step === 2 ? `Plan ${crop?.name}` :
+      step === 2.5 ? `Which variety?` :
       step === 4 ? "Plan a custom crop" :
-      `Preview: ${crop?.name}`
+      `Preview: ${selectedVariety?.name || crop?.name}`
     }>
       {step === 1 && (
         <>
@@ -372,6 +469,126 @@ export function PlanCropModal({ data, update, onClose }) {
         </>
       )}
 
+      {/* Step 2.5 — variety picker (Push 5). Lets users name and save per-variety
+          days-to-harvest so re-planting the same Sungold next year recalls 65d
+          automatically. The "Use generic" escape hatch keeps the flow fast for
+          users who don't care about varieties. */}
+      {step === 2.5 && crop && (
+        <>
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+            Got specific varieties of {crop.name.toLowerCase()}? Each one can have its own days-to-harvest so your calendar matches reality. We'll remember them for next time.
+          </div>
+
+          {/* Saved varieties — tap to pick */}
+          {savedVarieties.length > 0 && (
+            <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 12 }}>
+              {savedVarieties.map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => pickVariety(v)}
+                  style={{
+                    padding: "10px 12px", textAlign: "left",
+                    background: palette.card,
+                    color: palette.ink,
+                    border: `1.5px solid ${palette.line}`,
+                    borderRadius: 8, cursor: "pointer",
+                    fontFamily: FONT_BODY, fontSize: 13,
+                    display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8,
+                  }}
+                >
+                  <span style={{ fontWeight: 600 }}>{v.name}</span>
+                  <span style={{ fontSize: 12, color: palette.inkSoft }}>{v.daysToHarvest} days</span>
+                </button>
+              ))}
+            </div>
+          )}
+
+          {/* Add-variety sub-form (inline, toggled by the + button) */}
+          {showAddVariety ? (
+            <div style={{
+              padding: 12, marginBottom: 12,
+              background: palette.bgAlt, borderRadius: 8,
+              border: `1.5px solid ${palette.line}`,
+            }}>
+              <Field label="Variety name">
+                <input
+                  style={inputStyle}
+                  value={newVarietyName}
+                  onChange={(e) => { setNewVarietyName(e.target.value); setVarietyError(""); }}
+                  placeholder="e.g. Sungold, Cherokee Purple, San Marzano"
+                  autoFocus
+                />
+              </Field>
+              <Field label={`Days to harvest (default ${crop.daysToHarvest || "—"})`}>
+                <input
+                  type="number"
+                  style={inputStyle}
+                  value={newVarietyDays}
+                  onChange={(e) => { setNewVarietyDays(e.target.value); setVarietyError(""); }}
+                  placeholder={String(crop.daysToHarvest || 60)}
+                  min={1}
+                  max={500}
+                />
+              </Field>
+              {varietyError && (
+                <div style={{
+                  padding: 8, marginBottom: 10, borderRadius: 6,
+                  background: "#FBE5DE", border: `1px solid ${palette.accent}`,
+                  fontSize: 12, color: palette.accent,
+                }}>
+                  {varietyError}
+                </div>
+              )}
+              <div style={{ display: "flex", gap: 6 }}>
+                <Btn variant="primary" onClick={saveNewVariety}>Save variety</Btn>
+                <Btn variant="ghost" onClick={() => {
+                  setShowAddVariety(false);
+                  setNewVarietyName("");
+                  setNewVarietyDays("");
+                  setVarietyError("");
+                }}>Cancel</Btn>
+              </div>
+            </div>
+          ) : (
+            <button
+              onClick={() => setShowAddVariety(true)}
+              style={{
+                width: "100%",
+                padding: "10px 12px", marginBottom: 12,
+                background: palette.bgAlt,
+                color: palette.ink,
+                border: `1.5px dashed ${palette.line}`,
+                borderRadius: 8, cursor: "pointer",
+                fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+              }}
+            >
+              + Add a variety
+            </button>
+          )}
+
+          {/* Generic escape hatch — skip varieties entirely */}
+          <button
+            onClick={pickGeneric}
+            style={{
+              width: "100%",
+              padding: "10px 12px",
+              background: palette.card,
+              color: palette.inkSoft,
+              border: `1.5px solid ${palette.line}`,
+              borderRadius: 8, cursor: "pointer",
+              fontFamily: FONT_BODY, fontSize: 13,
+              fontStyle: "italic",
+            }}
+          >
+            Use generic {crop.name.toLowerCase()} ({crop.daysToHarvest || "—"} days)
+          </button>
+
+          <div style={{ marginTop: 14 }}>
+            <Btn variant="ghost" onClick={() => setStep(2)}>← Back</Btn>
+          </div>
+        </>
+      )}
+
       {step === 3 && crop && (
         <>
           <Field label="Plan year">
@@ -419,7 +636,7 @@ export function PlanCropModal({ data, update, onClose }) {
             <Btn variant="primary" onClick={confirm}>
               Add {generatedEvents.length} event{generatedEvents.length === 1 ? "" : "s"} to Calendar
             </Btn>
-            <Btn variant="ghost" onClick={() => setStep(2)}>← Back</Btn>
+            <Btn variant="ghost" onClick={() => setStep(2.5)}>← Back</Btn>
           </div>
         </>
       )}
