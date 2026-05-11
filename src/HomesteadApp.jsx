@@ -6052,14 +6052,35 @@ function OnboardingWizard({ update, onClose }) {
   const [zipError, setZipError] = useState("");
   const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false });
 
+  // Zippopotam.us only stores partial postal codes for these countries
+  // (copyright restrictions). For Canada, only the first 3 chars (Forward
+  // Sortation Area, e.g. "H1A") are indexed. For Ireland and Malta, similar.
+  // We accept the user's full code and truncate before sending.
+  const FSA_ONLY_COUNTRIES = { ca: 3, ie: 3, mt: 3 };
+
+  const normalizeZipForCountry = (rawZip, countryCode) => {
+    const cleaned = rawZip.trim().toUpperCase();
+    const fsaLen = FSA_ONLY_COUNTRIES[countryCode];
+    if (fsaLen) {
+      // Strip spaces/dashes, take leading chars
+      return cleaned.replace(/[\s-]/g, "").slice(0, fsaLen);
+    }
+    return cleaned;
+  };
+
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
     if (!zip.trim()) return;
     setZipLookupStatus("loading");
     setZipError("");
     try {
-      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(zip.trim())}`);
+      const normalized = normalizeZipForCountry(zip, country);
+      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(normalized)}`);
       if (!res.ok) {
+        // Friendlier message for countries with partial postal code coverage
+        if (FSA_ONLY_COUNTRIES[country]) {
+          throw new Error(`Couldn't find that ${country === "ca" ? "postal code" : "code"}. We only need the first ${FSA_ONLY_COUNTRIES[country]} characters (e.g. ${country === "ca" ? "K1A" : "D02"}).`);
+        }
         throw new Error("Zip code not found");
       }
       const json = await res.json();
@@ -6211,7 +6232,16 @@ function OnboardingWizard({ update, onClose }) {
                   style={{ ...inputStyle, flex: 1 }}
                   value={zip}
                   onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
-                  placeholder="e.g. 66002"
+                  placeholder={
+                    country === "us" ? "e.g. 66002" :
+                    country === "ca" ? "e.g. K1A (first 3 letters)" :
+                    country === "gb" ? "e.g. SW1A" :
+                    country === "ie" ? "e.g. D02 (first 3 chars)" :
+                    country === "au" ? "e.g. 2000" :
+                    country === "nz" ? "e.g. 6011" :
+                    country === "mx" ? "e.g. 06000" :
+                    "e.g. postal code"
+                  }
                   inputMode="text"
                   autoComplete="postal-code"
                 />
@@ -6219,6 +6249,11 @@ function OnboardingWizard({ update, onClose }) {
                   {zipLookupStatus === "loading" ? "..." : "Look up"}
                 </Btn>
               </div>
+              {(country === "ca" || country === "ie" || country === "mt") && (
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, lineHeight: 1.4 }}>
+                  Only the first 3 characters are needed — that's enough to locate you for weather and hardiness zones.
+                </div>
+              )}
             </Field>
             {zipResult && (
               <div style={{
