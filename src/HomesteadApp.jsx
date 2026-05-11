@@ -687,7 +687,7 @@ function Modal({ open, onClose, title, children }) {
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 100, padding: 16,
+        zIndex: 100, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
       }}
     >
       <div
@@ -1181,7 +1181,8 @@ export default function HomesteadApp() {
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
       color: sp.ink,
-      paddingBottom: 100,
+      paddingTop: "env(safe-area-inset-top)",
+      paddingBottom: "calc(100px + env(safe-area-inset-bottom))",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
@@ -6001,7 +6002,7 @@ function OnboardingWizard({ update, onClose }) {
     <div style={{
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: 16,
+      zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
     }}>
       <div style={{
         background: palette.bg, borderRadius: 14,
@@ -7069,7 +7070,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 200, padding: 16,
+        zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
       }}
     >
       <div
@@ -7171,7 +7172,7 @@ export function TutorialPrompt({ onStart, onSkip }) {
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
         display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 200, padding: 16,
+        zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
       }}
     >
       <div
@@ -7456,7 +7457,7 @@ function AppStoreFundModal({ onClose, onLeaveTip }) {
     <div onClick={onClose} style={{
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
       display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: 16,
+      zIndex: 200, padding: "calc(16px + env(safe-area-inset-top)) 16px calc(16px + env(safe-area-inset-bottom)) 16px",
     }}>
       <div onClick={e => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 20, maxWidth: 440, width: "100%",
