@@ -54,10 +54,30 @@ function AnimalModal({animal,hobbyId,update,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,notes,created:animal?.created||Date.now()};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,notes,created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
+  const [showArchive,setShowArchive]=useState(false);
+  const [archiveReason,setArchiveReason]=useState("sold");
+  const archive=()=>{
+    update(d=>{
+      const h=d.hobbies.find(x=>x.id===hobbyId);
+      const a=(h?.animals||[]).find(x=>x.id===animal.id);
+      if(a){a.archived=true;a.archivedReason=archiveReason;a.archivedDate=localDateStr(new Date());}
+      return d;
+    });
+    onClose();
+  };
+  const restore=()=>{
+    update(d=>{
+      const h=d.hobbies.find(x=>x.id===hobbyId);
+      const a=(h?.animals||[]).find(x=>x.id===animal.id);
+      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;}
+      return d;
+    });
+    onClose();
+  };
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit cow":"Add a cow"}>
       <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Bessie" autoFocus/></Field>
@@ -76,11 +96,47 @@ function AnimalModal({animal,hobbyId,update,onClose}){
         <div style={{flex:1}}><Field label="Ear tag / ID (optional)"><input style={inputStyle} value={tagId} onChange={e=>setTagId(e.target.value)} placeholder="e.g. #42"/></Field></div>
       </div>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
-      <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <Btn onClick={save}>{isEdit?"Save changes":"Add cow"}</Btn>
-        {isEdit&&!confirmDelete&&<Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete</Btn>}
-        {isEdit&&confirmDelete&&<Btn variant="danger" onClick={remove}>Confirm delete</Btn>}
+        {isEdit && animal?.archived && (
+          <Btn variant="ghost" onClick={restore}>Restore from archive</Btn>
+        )}
+        {isEdit && !animal?.archived && !showArchive && !confirmDelete && (
+          <Btn variant="ghost" onClick={()=>setShowArchive(true)}>Archive</Btn>
+        )}
+        {isEdit && !animal?.archived && !showArchive && !confirmDelete && (
+          <Btn variant="ghost" onClick={()=>setConfirmDelete(true)} style={{color:palette.accent,borderColor:palette.accent}}>Delete</Btn>
+        )}
+        {isEdit && confirmDelete && (
+          <>
+            <span style={{fontSize:12,color:palette.inkSoft,marginRight:4}}>Permanently delete (loses all records)?</span>
+            <Btn variant="danger" onClick={remove}>Yes, delete</Btn>
+            <Btn variant="ghost" onClick={()=>setConfirmDelete(false)}>Cancel</Btn>
+          </>
+        )}
       </div>
+      {isEdit && showArchive && !animal?.archived && (
+        <div style={{marginTop:12,padding:12,background:palette.bgAlt,borderRadius:8,border:`1.5px solid ${palette.line}`}}>
+          <div style={{fontSize:13,color:palette.ink,fontWeight:600,marginBottom:6}}>Archive {animal?.name}</div>
+          <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,lineHeight:1.5}}>
+            Keeps the cow's history but removes them from your active list. You can restore them later.
+          </div>
+          <Field label="Reason">
+            <select style={inputStyle} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
+              <option value="sold">Sold</option>
+              <option value="butchered">Butchered</option>
+              <option value="died">Died (illness/age)</option>
+              <option value="lost">Lost</option>
+              <option value="given away">Given away / rehomed</option>
+              <option value="other">Other</option>
+            </select>
+          </Field>
+          <div style={{display:"flex",gap:8}}>
+            <Btn onClick={archive}>Archive</Btn>
+            <Btn variant="ghost" onClick={()=>setShowArchive(false)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
     </Modal>
   );
 }
@@ -179,7 +235,7 @@ function AnimalCard({animal,hobbyId,entries,update,setModal}){
 }
 
 export function CowsAnalytics({hobby,entries}){
-  const animals=hobby.animals||[];
+  const animals=(hobby.animals||[]).filter(a=>!a.archived);
   const milkEntries=entries.filter(e=>e.action==="milk");
   const feedEntries=entries.filter(e=>e.action==="fed");
   const calfEntries=entries.filter(e=>e.action==="calf");
@@ -223,7 +279,9 @@ function CowModalRouter({modal,hobby,update,onClose}){
 export default function CowsPage({hobby,data,update}){
   const[localModal,setLocalModal]=useState(null);
   const entries=data.entries[hobby.id]||[];
-  const animals=hobby.animals||[];
+  const allAnimals=hobby.animals||[];
+  const animals=allAnimals.filter(a=>!a.archived);
+  const archived=allAnimals.filter(a=>a.archived);
   return(
     <div>
       <CowModalRouter modal={localModal} hobby={hobby} update={update} onClose={()=>setLocalModal(null)}/>
@@ -239,6 +297,26 @@ export default function CowsPage({hobby,data,update}){
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first cow</button>
         </div>
       ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} entries={entries} update={update} setModal={setLocalModal}/>)}
+
+      {archived.length>0 && (
+        <details style={{marginTop:18}}>
+          <summary style={{cursor:"pointer",color:palette.inkSoft,fontSize:13,padding:8,background:palette.bgAlt,borderRadius:8,userSelect:"none"}}>
+            Archived cattle ({archived.length}) — tap to view
+          </summary>
+          <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
+            {archived.map(a=>(
+              <div
+                key={a.id}
+                onClick={()=>setLocalModal({type:"editAnimal",hobbyId:hobby.id,animalId:a.id})}
+                style={{padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,color:palette.inkSoft,cursor:"pointer",display:"flex",justifyContent:"space-between",alignItems:"center"}}
+              >
+                <span><strong style={{color:palette.ink}}>{a.name}</strong>{a.breed?` · ${a.breed}`:""} — {a.archivedReason||"archived"}{a.archivedDate?` · ${a.archivedDate}`:""}</span>
+                <span style={{fontSize:11,opacity:0.6}}>Tap to restore</span>
+              </div>
+            ))}
+          </div>
+        </details>
+      )}
     </div>
   );
 }
