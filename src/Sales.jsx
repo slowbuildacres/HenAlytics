@@ -264,6 +264,15 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       } else {
         d.sales.push(sale);
       }
+      // If we just edited a legacy `sold_eggs` entry, remove the underlying
+      // source so the editable copy in `d.sales` is the only version visible.
+      // Without this, the entry would keep appearing alongside the edited copy
+      // every time the user reopens the Sales tab.
+      if (isEdit && existingSale?.isLegacy && d.entries?.["egg_layers"]) {
+        d.entries["egg_layers"] = d.entries["egg_layers"].filter(
+          e => !(e.action === "sold_eggs" && e.id === sale.id)
+        );
+      }
       return d;
     });
     onClose();
@@ -753,10 +762,15 @@ export default function SalesPage({ data, update }) {
   }, [data.entries]);
 
   const allSales = useMemo(() => {
-    // Merge, deduplicate by id
-    const legacyIds = new Set(legacyEggSales.map(s=>s.id));
-    const newSales = sales.filter(s => !legacyIds.has(s.id));
-    return [...newSales, ...legacyEggSales].sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    // Merge `data.sales` (modern, editable) with legacy `sold_eggs` entries
+    // (from old per-flock egg-sale logger). When IDs collide, `data.sales`
+    // WINS — the migration in HomesteadApp.jsx copies legacy entries into
+    // `data.sales`, and the editable version should always take precedence.
+    // Previously the priority was reversed, which silently locked users out
+    // of editing/deleting sales that had already been migrated.
+    const saleIds = new Set(sales.map(s => s.id));
+    const legacyOnly = legacyEggSales.filter(s => !saleIds.has(s.id));
+    return [...sales, ...legacyOnly].sort((a,b) => (b.date||"").localeCompare(a.date||""));
   }, [sales, legacyEggSales]);
 
   const filtered = filterType === "all" ? allSales : allSales.filter(s => s.hobbyType === filterType);
@@ -808,7 +822,19 @@ export default function SalesPage({ data, update }) {
   }, [allSales, customers]);
 
   const deleteSale = (id) => {
-    update(d => { d.sales = (d.sales||[]).filter(s => s.id !== id); return d; });
+    update(d => {
+      d.sales = (d.sales||[]).filter(s => s.id !== id);
+      // Also remove any legacy `sold_eggs` entry with the same id. Otherwise
+      // a sale that was migrated from the old per-flock egg-sale logger would
+      // "resurrect" itself after deletion — the user would delete from data.sales,
+      // but the entry in data.entries["egg_layers"] would re-appear on next render.
+      if (d.entries?.["egg_layers"]) {
+        d.entries["egg_layers"] = d.entries["egg_layers"].filter(
+          e => !(e.action === "sold_eggs" && e.id === id)
+        );
+      }
+      return d;
+    });
   };
 
   const saveCustomer = (customer) => {
@@ -940,8 +966,8 @@ export default function SalesPage({ data, update }) {
               key={sale.id}
               sale={sale}
               customers={customers}
-              onEdit={() => !sale.isLegacy && setEditingSale(sale)}
-              onDelete={() => !sale.isLegacy && deleteSale(sale.id)}
+              onEdit={() => setEditingSale(sale)}
+              onDelete={() => deleteSale(sale.id)}
             />
           ))}
         </div>

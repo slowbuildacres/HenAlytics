@@ -5079,7 +5079,7 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
       </Field>
       <div style={{ display:"flex",gap:8,marginTop:8,flexWrap:"wrap" }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
-        <Btn variant="accent" onClick={openButcher}>❄️ Butcher</Btn>
+        <Btn variant="accent" onClick={openButcher}>Remove birds…</Btn>
         {!confirmDelete && <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete flock</Btn>}
         {confirmDelete && <Btn variant="danger" onClick={remove}>Confirm delete</Btn>}
       </div>
@@ -5360,76 +5360,208 @@ function ButcherModal({ hobby, entries, update, onClose }) {
 // Used for chickens/ducks/quail/etc. butchered out of a regular egg-layer flock,
 // not just dedicated meat-bird batches. Writes to the top-level data.freezerLog
 // so it survives flock deletes and is visible across hobbies.
+// ============ REMOVE FROM FLOCK MODAL — handle any reason birds leave a flock ============
+// "Butcher" was misleading — users also need to log sales, rehomings, deaths,
+// and other cull reasons without lying to the data model. This modal asks
+// "what happened?" and routes accordingly:
+//   - Butchered  → freezerLog + butcher entry on the hobby
+//   - Sold       → reduce flock + log entry (note: actual sale revenue is
+//                   logged separately via the Sales tab; this just records
+//                   that birds left)
+//   - Rehomed    → reduce flock + entry with reason
+//   - Given away → same as rehomed
+//   - Died       → reduce flock + death entry on the hobby (same as in the
+//                   existing death log)
+//   - Culled     → reduce flock + entry with reason (e.g. illness, euthanasia)
+//   - Other      → free-text reason
 function ButcherFlockModal({ hobby, flock, update, onClose }) {
+  const [reason, setReason] = useState("butchered");
   const [count, setCount] = useState("");
   const [avgWeight, setAvgWeight] = useState("");
   const [date, setDate] = useState(todayStr());
   const [note, setNote] = useState("");
+  const [validationError, setValidationError] = useState("");
 
   const remaining = Number(flock.birdCount) || 0;
 
+  // The "soft cull" reasons (sold, rehomed, given away) are when the birds
+  // are still alive somewhere. "Hard cull" reasons (butchered, died, culled)
+  // are terminal. We use this to choose the right verb and writeback path.
+  const isButcher = reason === "butchered";
+  const isSoftCull = ["sold", "rehomed", "given_away"].includes(reason);
+  const isDeath = reason === "died" || reason === "culled";
+
+  const reasonOptions = [
+    { value: "butchered",   label: "🔪 Butchered",    desc: "Send to freezer log with weight." },
+    { value: "sold",        label: "💰 Sold",          desc: "Bird sold to someone else." },
+    { value: "rehomed",     label: "🏡 Rehomed",       desc: "Given to a new home (retired breeder, etc.)" },
+    { value: "given_away",  label: "🎁 Given away",    desc: "Gave to a friend or neighbor." },
+    { value: "died",        label: "💔 Died",          desc: "Natural causes, illness, predator." },
+    { value: "culled",      label: "🩺 Culled",        desc: "Euthanized for health or other reason." },
+    { value: "other",       label: "❓ Other",         desc: "Anything else — explain in notes." },
+  ];
+
   return (
-    <Modal open onClose={onClose} title={`❄️ Butcher · ${flock.name}`}>
+    <Modal open onClose={onClose} title={`Remove from ${flock.name}`}>
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
         {remaining} {flock.birdType?.toLowerCase() || "bird"}{remaining === 1 ? "" : "s"} in this flock.
-        Butchered birds go to your freezer log and the flock count is reduced.
       </div>
+
+      <Field label="What happened?">
+        <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
+          {reasonOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+          {reasonOptions.find(o => o.value === reason)?.desc}
+        </div>
+      </Field>
+
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
-      <Field label="How many butchered?">
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
+
+      <Field label="How many?">
+        <input type="number" style={inputStyle} value={count} onChange={(e) => { setCount(e.target.value); setValidationError(""); }} placeholder="0" />
       </Field>
-      <Field label="Average weight (lbs)">
-        <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
+
+      {/* Average weight only matters for butcher (freezer log) and is optional
+          for everything else. Keep it accessible for sold-for-meat scenarios. */}
+      {isButcher && (
+        <Field label="Average weight (lbs)">
+          <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
+        </Field>
+      )}
+      {!isButcher && (
+        <Field label="Average weight (lbs, optional)">
+          <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
+        </Field>
+      )}
+
+      <Field label={isSoftCull ? "Notes (who took them, etc)" : "Notes (cause, details, etc)"}>
+        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder={
+          reason === "sold" ? "e.g. sold to neighbor for $15 each" :
+          reason === "rehomed" ? "e.g. retired breeders, given to Sarah's farm" :
+          reason === "given_away" ? "e.g. friend wanted laying hens" :
+          reason === "died" ? "e.g. predator (fox), found this morning" :
+          reason === "culled" ? "e.g. respiratory infection, not recovering" :
+          reason === "other" ? "What happened?" :
+          "Anything notable..."
+        } />
       </Field>
-      <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder="Anything notable..." />
-      </Field>
+
+      {validationError && (
+        <div style={{
+          padding: 10, marginBottom: 12, borderRadius: 6,
+          background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          fontSize: 13, color: palette.accent,
+        }}>
+          {validationError}
+        </div>
+      )}
+
+      {/* For sold-bird actions, hint that they should also log the actual
+          revenue via the Sales tab. This modal only records the count
+          reduction; financial tracking happens elsewhere. */}
+      {reason === "sold" && (
+        <div style={{
+          padding: 10, marginBottom: 12, borderRadius: 6,
+          background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
+          fontSize: 12, color: palette.ink, lineHeight: 1.5,
+        }}>
+          💡 This logs the count reduction. To record the sale revenue, also add a sale on the Sales tab.
+        </div>
+      )}
+
       <div style={{ display: "flex", gap: 8 }}>
         <Btn variant="primary" onClick={() => {
           const n = parseInt(count);
           const w = parseFloat(avgWeight);
-          if (!n || n < 1 || !w) return;
-          if (n > remaining) return;
+          if (!count || isNaN(n) || n < 1) {
+            setValidationError("Enter the number of birds (must be greater than 0).");
+            return;
+          }
+          if (n > remaining) {
+            setValidationError(`Can't remove more than ${remaining} — that's all that's in the flock.`);
+            return;
+          }
+          if (isButcher && (!avgWeight || isNaN(w) || w <= 0)) {
+            setValidationError("Butchered birds need an average weight for the freezer log. If you haven't weighed yet, estimate or use 0.01 as a placeholder.");
+            return;
+          }
           update((d) => {
-            // Decrement flock count
+            // Always: decrement flock count
             const h = d.hobbies.find((x) => x.id === hobby.id);
             if (!h) return d;
             const fl = (h.flocks || []).find((x) => x.id === flock.id);
             if (fl) fl.birdCount = Math.max(0, (fl.birdCount || 0) - n);
 
-            // Append to freezer log
-            if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
-            d.freezerLog.push({
-              id: newId(),
-              date,
-              hobbyId: hobby.id,
-              flockId: flock.id,
-              flockName: flock.name,
-              birdType: flock.birdType || "Bird",
-              count: n,
-              avgWeight: w,
-              note: note.trim(),
-              created: Date.now(),
-            });
-
-            // Also write a normal entry on the hobby for the activity log
-            d.entries[hobby.id] = d.entries[hobby.id] || [];
-            d.entries[hobby.id].push({
-              id: newId(),
-              date,
-              action: "butcher",
-              count: n,
-              avgWeight: w,
-              flockId: flock.id,
-              note: note.trim(),
-              created: Date.now(),
-            });
+            // Butchered → freezer log + butcher entry (preserves existing flow)
+            if (isButcher) {
+              if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
+              d.freezerLog.push({
+                id: newId(),
+                date,
+                hobbyId: hobby.id,
+                flockId: flock.id,
+                flockName: flock.name,
+                birdType: flock.birdType || "Bird",
+                count: n,
+                avgWeight: w,
+                note: note.trim(),
+                created: Date.now(),
+              });
+              d.entries[hobby.id] = d.entries[hobby.id] || [];
+              d.entries[hobby.id].push({
+                id: newId(),
+                date,
+                action: "butcher",
+                count: n,
+                avgWeight: w,
+                flockId: flock.id,
+                note: note.trim(),
+                created: Date.now(),
+              });
+            } else if (isDeath) {
+              // Died/culled both go through the existing death-log path so
+              // they show up in mortality stats consistently.
+              d.entries[hobby.id] = d.entries[hobby.id] || [];
+              d.entries[hobby.id].push({
+                id: newId(),
+                date,
+                action: "death",
+                count: n,
+                cause: reason === "culled" ? `culled: ${note.trim() || "no detail"}` : (note.trim() || "unknown"),
+                flockId: flock.id,
+                created: Date.now(),
+              });
+            } else {
+              // Soft-cull or "other" — log a generic note-style entry so the
+              // event is captured in the activity feed without affecting
+              // death/mortality stats. Birds went somewhere alive.
+              const reasonLabel = {
+                sold: "Sold",
+                rehomed: "Rehomed",
+                given_away: "Given away",
+                other: "Removed",
+              }[reason] || "Removed";
+              d.entries[hobby.id] = d.entries[hobby.id] || [];
+              d.entries[hobby.id].push({
+                id: newId(),
+                date,
+                action: "note",
+                note: `${reasonLabel} · ${n} ${flock.birdType?.toLowerCase() || "bird"}${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
+                flockId: flock.id,
+                cullReason: reason,
+                cullCount: n,
+                created: Date.now(),
+              });
+            }
             return d;
           });
           onClose();
-        }}>Save to freezer log</Btn>
+        }}>
+          {isButcher ? "Save to freezer log" : "Save"}
+        </Btn>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
       </div>
     </Modal>
