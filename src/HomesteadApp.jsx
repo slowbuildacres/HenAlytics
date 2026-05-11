@@ -1622,6 +1622,25 @@ function HomePage({ hobby, data, update, setModal }) {
                 getEntryPhotos(e).forEach((p) => deletePhoto(p).catch(() => {}));
                 update((d) => {
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
+                  // For butcher entries, also remove the matching record from
+                  // currentBatch.butchered (so remaining-birds math recovers)
+                  // and from the universal freezer log (which mirrors the
+                  // butcher entry). Without this, deleting a butcher row would
+                  // leave the batch count permanently low and the freezer log
+                  // would keep showing meat the user said was deleted.
+                  if (e.action === "butcher") {
+                    const h = d.hobbies.find((x) => x.id === hobby.id);
+                    if (h?.currentBatch?.butchered) {
+                      h.currentBatch.butchered = h.currentBatch.butchered.filter(
+                        (b) => b.id !== e.id
+                      );
+                    }
+                    if (Array.isArray(d.freezerLog)) {
+                      d.freezerLog = d.freezerLog.filter(
+                        (f) => !(f.batchId === e.batchId && f.date === e.date && f.count === e.count)
+                      );
+                    }
+                  }
                   return d;
                 });
               }}
@@ -5269,8 +5288,17 @@ function ButcherModal({ hobby, entries, update, onClose }) {
   const [count, setCount] = useState("");
   const [avgWeight, setAvgWeight] = useState("");
   const [date, setDate] = useState(todayStr());
-  const [showFinalize, setShowFinalize] = useState(false);
+  const [note, setNote] = useState("");
   const [validationError, setValidationError] = useState("");
+  // Two-step flow: form → confirm. The confirmation explicitly states how
+  // many birds will remain after, so users with partial-slaughter workflows
+  // can verify they're not accidentally archiving the whole batch.
+  const [confirming, setConfirming] = useState(false);
+  // Only ask about finalizing if the butcher would empty the batch. Defaults
+  // OFF so the user has to opt in — preserves the batch on the dashboard
+  // even when zeroed out, in case they want to log something else (notes,
+  // last bits of feed used, etc.) before archiving.
+  const [alsoFinalize, setAlsoFinalize] = useState(false);
   const batch = hobby.currentBatch;
 
   if (!batch) {
@@ -5287,21 +5315,67 @@ function ButcherModal({ hobby, entries, update, onClose }) {
   const previouslyButchered = (hobby.currentBatch.butchered || []).reduce((s, x) => s + (x.count || 0), 0);
   const remaining = batch.startCount - deaths - previouslyButchered;
 
+  const plannedCount = parseInt(count) || 0;
+  const remainingAfter = Math.max(0, remaining - plannedCount);
+  const willEmptyBatch = plannedCount > 0 && remainingAfter === 0;
+
+  // Validate the form. Used both before showing the confirm step and as a
+  // belt-and-suspenders check when the user clicks confirm.
+  const validate = () => {
+    const n = parseInt(count);
+    const w = parseFloat(avgWeight);
+    if (!count || isNaN(n) || n <= 0) {
+      setValidationError("Enter the number of birds butchered (must be greater than 0).");
+      return false;
+    }
+    if (n > remaining) {
+      setValidationError(`Can't butcher more than ${remaining} birds — that's all that's left in this batch.`);
+      return false;
+    }
+    if (!avgWeight || isNaN(w) || w <= 0) {
+      setValidationError("Enter the average weight in pounds (must be greater than 0). If you haven't weighed yet, estimate or use 0.01 as a placeholder.");
+      return false;
+    }
+    setValidationError("");
+    return true;
+  };
+
   return (
-    <Modal open onClose={onClose} title={showFinalize ? "Send to freezer camp?" : `Butcher · ${batch.name}`}>
-      {!showFinalize ? (
+    <Modal open onClose={onClose} title={confirming ? "Confirm butcher" : `❄️ Send to freezer camp · ${batch.name}`}>
+      {!confirming ? (
         <>
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
-            {remaining} birds remaining in this batch.
+            {remaining} bird{remaining === 1 ? "" : "s"} remaining in this batch.
           </div>
           <Field label="Date">
             <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
-          <Field label="How many butchered?">
-            <input type="number" style={inputStyle} value={count} onChange={(e) => { setCount(e.target.value); setValidationError(""); }} placeholder="e.g. 25" />
+          <Field label="How many butchered today?">
+            <input
+              type="number"
+              style={inputStyle}
+              value={count}
+              onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
+              placeholder={`e.g. 25 (of ${remaining})`}
+            />
           </Field>
           <Field label="Average weight (lbs)">
-            <input type="number" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="e.g. 5.5" />
+            <input
+              type="number"
+              step="0.01"
+              style={inputStyle}
+              value={avgWeight}
+              onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }}
+              placeholder="e.g. 5.5"
+            />
+          </Field>
+          <Field label="Notes (optional)">
+            <textarea
+              style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
+              value={note}
+              onChange={(e) => setNote(e.target.value)}
+              placeholder="Anything notable..."
+            />
           </Field>
           {validationError && (
             <div style={{
@@ -5312,64 +5386,125 @@ function ButcherModal({ hobby, entries, update, onClose }) {
               {validationError}
             </div>
           )}
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Btn variant="primary" onClick={() => {
-              const n = parseInt(count);
-              const w = parseFloat(avgWeight);
-              // Be explicit about what's missing so the user knows why the
-              // button "doesn't work" — previously this was a silent fail.
-              if (!count || isNaN(n) || n <= 0) {
-                setValidationError("Enter the number of birds butchered (must be greater than 0).");
-                return;
-              }
-              if (n > remaining) {
-                setValidationError(`Can't butcher more than ${remaining} birds — that's all that's left in this batch.`);
-                return;
-              }
-              if (!avgWeight || isNaN(w) || w <= 0) {
-                setValidationError("Enter the average weight in pounds (must be greater than 0). If you haven't weighed yet, estimate or use 0.01 as a placeholder.");
-                return;
-              }
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === hobby.id);
-                h.currentBatch.butchered = h.currentBatch.butchered || [];
-                h.currentBatch.butchered.push({ date, count: n, avgWeight: w });
-                d.entries[hobby.id] = d.entries[hobby.id] || [];
-                d.entries[hobby.id].push({
-                  id: newId(), date, action: "butcher", count: n, avgWeight: w,
-                  batchId: batch.id, created: Date.now(),
-                });
-                return d;
-              });
-              setCount(""); setAvgWeight("");
-              onClose();
-            }}>Save butcher entry</Btn>
-            <Btn variant="accent" onClick={() => setShowFinalize(true)}>❄️ Send to freezer camp</Btn>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" onClick={() => { if (validate()) setConfirming(true); }}>
+              ❄️ Send to freezer camp
+            </Btn>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           </div>
         </>
       ) : (
+        // ----- Confirmation step -----
+        // Always shows exactly what's about to happen, with clear numbers.
+        // If this butcher would empty the batch, also offer (opt-in) to
+        // finalize/archive the batch right away — saves a trip back later.
         <>
-          <div style={{ marginBottom: 16, padding: 12, background: palette.bgAlt, borderRadius: 8, fontSize: 14 }}>
-            This will <strong>finalize {batch.name}</strong>, archive its data to analytics, and clear the dashboard so you can hatch a new batch.
+          <div style={{
+            padding: 14, marginBottom: 16, borderRadius: 8,
+            background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
+            fontSize: 14, color: palette.ink, lineHeight: 1.6,
+          }}>
+            Sending <strong>{plannedCount} bird{plannedCount === 1 ? "" : "s"}</strong> from <strong>{batch.name}</strong> to the freezer log
+            {" "}at <strong>{avgWeight} lbs</strong> avg.
+            <div style={{ marginTop: 8, fontSize: 13, color: palette.inkSoft }}>
+              {remainingAfter > 0
+                ? <>After this, <strong style={{ color: palette.ink }}>{remainingAfter}</strong> bird{remainingAfter === 1 ? "" : "s"} will still be in the batch.</>
+                : <>This will empty the batch.</>
+              }
+            </div>
           </div>
+
+          {willEmptyBatch && (
+            <label style={{
+              display: "flex", alignItems: "flex-start", gap: 10, padding: 12,
+              marginBottom: 14, borderRadius: 8, cursor: "pointer",
+              background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+            }}>
+              <input
+                type="checkbox"
+                checked={alsoFinalize}
+                onChange={(e) => setAlsoFinalize(e.target.checked)}
+                style={{ marginTop: 3 }}
+              />
+              <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.5 }}>
+                <strong>Also finalize this batch</strong>
+                <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>
+                  Archives {batch.name} to your analytics history and clears the dashboard so you can hatch a new batch. You can leave this unchecked if you want to log more notes or feed first.
+                </div>
+              </div>
+            </label>
+          )}
+
           <div style={{ display: "flex", gap: 8 }}>
-            <Btn variant="danger" onClick={() => {
+            <Btn variant="primary" onClick={() => {
+              // Re-validate at submit time as defense-in-depth
+              if (!validate()) {
+                setConfirming(false);
+                return;
+              }
+              const n = parseInt(count);
+              const w = parseFloat(avgWeight);
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === hobby.id);
-                const finalBatch = JSON.parse(JSON.stringify(h.currentBatch));
-                finalBatch.endDate = todayStr();
-                // attach all entries that belong to this batch
-                finalBatch.finalEntries = (d.entries[hobby.id] || []).filter((e) => e.batchId === batch.id);
-                h.archivedBatches = h.archivedBatches || [];
-                h.archivedBatches.push(finalBatch);
-                // remove batch entries from active log
-                d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== batch.id);
-                h.currentBatch = null;
+                if (!h || !h.currentBatch) return d;
+                h.currentBatch.butchered = h.currentBatch.butchered || [];
+                // Tag the butchered record with an id so deletes from the
+                // activity log can find and remove it later. Without this,
+                // deleting the entry leaves a stale butchered count behind.
+                const butcherEntryId = newId();
+                h.currentBatch.butchered.push({
+                  id: butcherEntryId,
+                  date,
+                  count: n,
+                  avgWeight: w,
+                });
+                d.entries[hobby.id] = d.entries[hobby.id] || [];
+                d.entries[hobby.id].push({
+                  id: butcherEntryId,
+                  date,
+                  action: "butcher",
+                  count: n,
+                  avgWeight: w,
+                  batchId: batch.id,
+                  note: note.trim(),
+                  created: Date.now(),
+                });
+
+                // Also append to the universal freezer log so butchered meat
+                // shows up alongside flock-butchered birds, consistent with
+                // the new ButcherFlockModal behavior.
+                if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
+                d.freezerLog.push({
+                  id: newId(),
+                  date,
+                  hobbyId: hobby.id,
+                  batchId: batch.id,
+                  batchName: batch.name,
+                  birdType: batch.birdType || "Chicken",
+                  count: n,
+                  avgWeight: w,
+                  note: note.trim(),
+                  created: Date.now(),
+                });
+
+                // Optional: finalize the batch if user checked the box and
+                // this butcher emptied it.
+                if (alsoFinalize && willEmptyBatch) {
+                  const finalBatch = JSON.parse(JSON.stringify(h.currentBatch));
+                  finalBatch.endDate = todayStr();
+                  finalBatch.finalEntries = (d.entries[hobby.id] || []).filter((e) => e.batchId === batch.id);
+                  h.archivedBatches = h.archivedBatches || [];
+                  h.archivedBatches.push(finalBatch);
+                  d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== batch.id);
+                  h.currentBatch = null;
+                }
                 return d;
               });
               onClose();
-            }}>Yes, finalize batch</Btn>
-            <Btn variant="ghost" onClick={() => setShowFinalize(false)}>Back</Btn>
+            }}>
+              {alsoFinalize && willEmptyBatch ? "Send & finalize batch" : "Confirm butcher"}
+            </Btn>
+            <Btn variant="ghost" onClick={() => setConfirming(false)}>Back</Btn>
           </div>
         </>
       )}
@@ -6315,6 +6450,51 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         <Field label="Eggs collected">
           <input type="number" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
         </Field>
+      )}
+
+      {action === "butcher" && (
+        <>
+          {/* Editing a butcher entry from the activity log. NOTE: we don't
+              re-sync changes back to hobby.currentBatch.butchered[] here —
+              that array tracks the running total per batch. Edits to count
+              would desync the batch's remaining-bird count.
+              For now: editing date and notes is safe; count/weight edits
+              should be done by deleting + re-creating via the butcher modal. */}
+          <Field label="How many butchered">
+            <input
+              type="number"
+              style={inputStyle}
+              value={fields.count || ""}
+              onChange={(e) => set("count", e.target.value)}
+              placeholder="0"
+            />
+          </Field>
+          <Field label="Average weight (lbs)">
+            <input
+              type="number"
+              step="0.01"
+              style={inputStyle}
+              value={fields.avgWeight || ""}
+              onChange={(e) => set("avgWeight", e.target.value)}
+              placeholder="0.0"
+            />
+          </Field>
+          <Field label="Notes (optional)">
+            <textarea
+              style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
+              value={fields.note || ""}
+              onChange={(e) => set("note", e.target.value)}
+              placeholder="Anything notable about this butcher day..."
+            />
+          </Field>
+          <div style={{
+            padding: 10, marginBottom: 12, borderRadius: 6,
+            background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+            fontSize: 11, color: palette.inkSoft, lineHeight: 1.5,
+          }}>
+            ℹ️ Heads up: changing count/weight here updates this entry but doesn't recalculate the batch's remaining-bird count. For accurate batch math, delete this entry and create a new one via the Butcher tile.
+          </div>
+        </>
       )}
 
       {action === "bedding" && (
