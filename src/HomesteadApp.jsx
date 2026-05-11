@@ -67,7 +67,7 @@ const defaultData = () => ({
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flocks: [] },
     { id: "meat_chickens", name: "Meat Birds", type: "meat_chickens", icon: "drumstick", currentBatches: [], archivedBatches: [] },
-    { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
+    { id: "rabbits", name: "Rabbits 🐇", type: "rabbits", icon: "rabbit", animals: [], hutches: [], hidden: true },
     { id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true },
     { id: "incubator", name: "Incubator 🥚", type: "incubator", icon: "egg", runs: [], hidden: true },
     { id: "goats", name: "Goats 🐐", type: "goats", icon: "sprout", animals: [], hidden: true },
@@ -188,7 +188,13 @@ function migrateData(data) {
     }
     if (h.type === "rabbits") {
       if (!Array.isArray(h.hutches)) h.hutches = [];
+      // Push 7b — per-animal rabbits. Ensure animals[] exists for the new shape.
+      // Actual hutch→animals migration happens in Rabbits.jsx via runMigrationIfNeeded,
+      // gated by data.rabbitsMigratedV7b.
+      if (!Array.isArray(h.animals)) h.animals = [];
       if (typeof h.hidden === "undefined") h.hidden = true;
+      // Push 7b — graduating from Beta. Auto-rename if user hasn't customized.
+      if (h.name === "Rabbits 🐇 (Beta)" || h.name === "Rabbits (Beta)") h.name = "Rabbits 🐇";
     }
     if (h.type === "meat_chickens") {
       // Push 4b — multi-batch support. Old shape: hobby.currentBatch (single
@@ -224,7 +230,7 @@ function migrateData(data) {
   // Add rabbits hobby if missing (added in later version)
   const hasRabbits = data.hobbies.some(h => h.id === "rabbits");
   if (!hasRabbits) {
-    data.hobbies.push({ id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true });
+    data.hobbies.push({ id: "rabbits", name: "Rabbits 🐇", type: "rabbits", icon: "rabbit", animals: [], hutches: [], hidden: true });
   }
 const hasGoats = data.hobbies.some(h => h.id === "goats");
   if (!hasGoats) data.hobbies.push({ id: "goats", name: "Goats 🐐", type: "goats", icon: "sprout", animals: [], hidden: true });
@@ -513,10 +519,11 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 18;
+const CURRENT_VERSION = 19;
 
 const WHATS_NEW = [
-  "🧬 Livestock pedigree — visual family tree showing sire, dam, and registry info on your goats, cows, pigs, sheep, and horses. Each animal has a 🧬 Pedigree button that shows ancestors fanning up and descendants fanning down, up to 3 generations. Tap any relative to view their pedigree. Rabbits get this in a future update.",
+  "🐇 Rabbits redesigned — per-rabbit tracking instead of hutch counts. Each rabbit gets a name, breed, sex, role, pedigree, breeding history, and weight log. Does have a 🐇 Bred button that auto-creates a kindle reminder 31 days out. Each rabbit can have a hutch label, and the page auto-groups by hutch once you have two or more (a flat list when you only have one). Your old hutches were automatically converted to individual rabbits (you can rename them anytime). Old log entries are kept under a 'Legacy log entries' section so nothing's lost.",
+  "🧬 Livestock pedigree — visual family tree showing sire, dam, and registry info on your goats, cows, pigs, sheep, horses, and rabbits. Each animal has a 🧬 Pedigree button that shows ancestors fanning up and descendants fanning down, up to 3 generations. Tap any relative to view their pedigree.",
   "🔪 Butcher tile for egg layers — log butchering, sales, rehoming, deaths, and other reasons birds leave the flock, with the same full set of options the meat-bird hobby has. Find the new Butcher tile on your egg-layer dashboard.",
   "🌱 Per-variety harvest timeframes — got 6 kinds of tomatoes? Add each variety with its own days-to-harvest. Sungold ripens in 65 days, San Marzano in 80, and your calendar shows each one ready at the right time. Find it in the new 'Which variety?' step when planning a crop.",
   "🐣 Multiple meat-bird batches — run more than one batch of meat chickens at the same time. Each batch has its own age, feed log, and butcher records. Pick which batch you're logging to when you have more than one going.",
@@ -1190,7 +1197,10 @@ export default function HomesteadApp() {
   // Note: we render the wizard inline below — only ONE wizard shows at a time,
   // and it blocks until completed/skipped.
 
-  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" && page !== "analytics" ? "garden" : activeHobby));
+  // Push 7b — rabbits is now a first-class hobby; the prior rabbits→garden
+  // fallback (when navigating away from the rabbit page) is obsolete and
+  // also caused a crash in ModalRouter where `page` wasn't in scope.
+  const hobby = data.hobbies.find((h) => h.id === activeHobby);
   const entries = data.entries[activeHobby] || [];
 
   // Swap palette when spouse mode is on
@@ -3405,7 +3415,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   const close = () => setModal(null);
   if (!modal) return null;
 
-  const hobby = data.hobbies.find((h) => h.id === (activeHobby === "rabbits" && page !== "rabbits" && page !== "analytics" ? "garden" : activeHobby));
+  // Push 7b — rabbits is now a first-class hobby. Previous version referenced
+  // `page` here, but `page` isn't in scope inside ModalRouter — that caused
+  // a ReferenceError that crashed the whole tree whenever activeHobby was
+  // "rabbits" and any modal was opened.
+  const hobby = data.hobbies.find((h) => h.id === activeHobby);
 
   if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
@@ -7471,8 +7485,8 @@ function OnboardingWizard({ update, onClose }) {
               checked={hobbies.rabbits}
               onToggle={() => setHobbies((h) => ({ ...h, rabbits: !h.rabbits }))}
               icon="🐇"
-              label="Rabbits (Beta)"
-              sub="Hutch management, breeding reminders, kindle dates"
+              label="Rabbits"
+              sub="Per-rabbit tracking, pedigree, breeding reminders"
             />
             <HobbyCheckbox
               checked={hobbies.bees}
@@ -7933,15 +7947,17 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     if (hobby.type === "rabbits") {
       const litters = entries.filter(e => e.action === "litter");
       const totalKits = litters.reduce((s, e) => s + (Number(e.kitsAlive)||0), 0);
-      const butchered = entries.filter(e => e.action === "butcher").reduce((s, e) => s + (Number(e.count)||0), 0);
-      const hutches = (hobby.hutches||[]).length;
+      // Butcher: new per-rabbit entries don't have `count` (each entry = 1 rabbit).
+      // Legacy aggregate entries have `count`. Support both.
+      const butchered = entries.filter(e => e.action === "butcher").reduce((s, e) => s + (e.count != null ? (Number(e.count)||0) : 1), 0);
+      const rabbits = (hobby.animals||[]).filter(a => !a.archived).length;
       return {
         emoji: "🐇", label: "Rabbits",
         stats: [
+          { label: "Rabbits", value: rabbits },
           { label: "Litters", value: litters.length },
           { label: "Kits born", value: totalKits },
           { label: "Butchered", value: butchered },
-          { label: "Hutches", value: hutches },
         ],
       };
     }
