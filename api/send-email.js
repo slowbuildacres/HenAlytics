@@ -239,8 +239,54 @@ export default async function handler(req, res) {
     if (!response.ok) {
       const errText = await response.text();
       console.error('Resend error', response.status, errText);
-      // Don't leak Resend's error details to the client — could reveal API
-      // key issues, quota state, etc. Generic message instead.
+
+      // Try to detect a Resend rate-limit / quota error so the client can
+      // surface a friendly "we're using free Resend, hit our daily cap"
+      // message instead of a generic failure. Resend free tier currently
+      // caps at 100 emails/day; when that's hit Resend returns 429 (and/or
+      // a JSON body with name === "rate_limit_exceeded" or
+      // "daily_quota_exceeded"). Sustained-volume caps come back as 422
+      // with name === "validation_error" but message mentioning quota.
+      // We check status code first, then try to parse the body.
+      let isRateLimit = response.status === 429;
+      if (!isRateLimit) {
+        try {
+          const errJson = JSON.parse(errText);
+          const name = (errJson?.name || '').toLowerCase();
+          const message = (errJson?.message || '').toLowerCase();
+          if (
+            name.includes('rate_limit') ||
+            name.includes('quota') ||
+            message.includes('rate limit') ||
+            message.includes('daily quota') ||
+            message.includes('daily limit') ||
+            message.includes('monthly quota')
+          ) {
+            isRateLimit = true;
+          }
+        } catch (_) {
+          // body wasn't JSON; fall through with isRateLimit as-is
+        }
+      }
+
+      if (isRateLimit) {
+        // 503 Service Unavailable — temporary, retry later. We include
+        // `error: 'rate_limit'` so the client can switch on it without
+        // string-matching the message.
+        return res.status(503).json({
+          error: 'rate_limit',
+          message:
+            "We've hit our daily email send limit. Henalytics uses the free tier of Resend " +
+            "(our email service) to keep the app free for everyone, which caps daily sends. " +
+            "If you're seeing this, that's actually great news — it means we're growing! " +
+            "Sorry for the inconvenience. Until donations make a paid Resend plan sustainable, " +
+            "we'll stick with the free tier. Please try again tomorrow, or use the email " +
+            "fallback options below to reach me directly.",
+        });
+      }
+
+      // Other Resend errors — generic 502. We deliberately do NOT leak
+      // Resend's error details (could expose API-key or quota state).
       return res.status(502).json({ error: 'Email send failed' });
     }
 

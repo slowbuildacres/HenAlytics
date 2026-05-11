@@ -393,8 +393,34 @@ async function sendEmail(payload) {
     body: JSON.stringify(payload),
   });
   if (!res.ok) {
-    const err = await res.text().catch(() => '');
-    throw new Error(`Email send failed: ${res.status} ${err}`);
+    // Read body ONCE as text — fetch responses can only be consumed once,
+    // so trying res.text() after res.json() would throw. We then attempt
+    // to JSON.parse it ourselves.
+    const rawBody = await res.text().catch(() => '');
+    let parsed = null;
+    if (rawBody) {
+      try { parsed = JSON.parse(rawBody); } catch (_) { /* not JSON */ }
+    }
+    // The server returns `{ error: 'rate_limit', message: '...' }` with status
+    // 503 when it detects Resend's daily/monthly quota was hit. The UI uses
+    // .kind to switch between a friendly info card and a generic error.
+    if (parsed && parsed.error === 'rate_limit') {
+      const e = new Error(parsed.message || "We've hit our daily email send limit.");
+      e.kind = 'rate_limit';
+      e.status = res.status;
+      throw e;
+    }
+    // Server returned a structured error with a different kind — surface it.
+    if (parsed && parsed.error) {
+      const e = new Error(parsed.message || parsed.error);
+      e.kind = parsed.error;
+      e.status = res.status;
+      throw e;
+    }
+    // Last-resort: plain-text body or empty
+    const e = new Error(`Email send failed: ${res.status}${rawBody ? ' ' + rawBody : ''}`);
+    e.status = res.status;
+    throw e;
   }
   return res.json();
 }

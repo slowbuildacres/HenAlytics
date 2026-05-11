@@ -513,9 +513,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 15;
+const CURRENT_VERSION = 16;
 
 const WHATS_NEW = [
+  "🔪 Butcher tile for egg layers — log butchering, sales, rehoming, deaths, and other reasons birds leave the flock, with the same full set of options the meat-bird hobby has. Find the new Butcher tile on your egg-layer dashboard.",
   "🌱 Per-variety harvest timeframes — got 6 kinds of tomatoes? Add each variety with its own days-to-harvest. Sungold ripens in 65 days, San Marzano in 80, and your calendar shows each one ready at the right time. Find it in the new 'Which variety?' step when planning a crop.",
   "🐣 Multiple meat-bird batches — run more than one batch of meat chickens at the same time. Each batch has its own age, feed log, and butcher records. Pick which batch you're logging to when you have more than one going.",
   "🐴 Horses hobby — per-horse tracking with rides, farrier visits, vet, deworming, breeding & foaling reminders",
@@ -1704,6 +1705,10 @@ function QuickLogTiles({ hobby, setModal }) {
     );
   }
   if (hobby.type === "egg_layers") {
+    // Push 6 — Butcher tile shows up only when at least one flock has birds.
+    // Without this guard, the modal would render its empty state on tap which
+    // is fine but the tile would feel useless. Hiding it keeps the grid tight.
+    const hasAnyBirds = (hobby.flocks || []).some((f) => (Number(f.birdCount) || 0) > 0);
     return (
       <div style={grid}>
         <Tile icon={Sun} label="Fed" color={palette.feather} onClick={() => setModal({ type: "log", action: "fed" })} />
@@ -1715,6 +1720,13 @@ function QuickLogTiles({ hobby, setModal }) {
         <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
         <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
+        {/* Push 6 — Butcher / Remove birds. Mirrors the meat-bird butcher tile
+            but routes through ButcherFlockModal which handles all reasons
+            (butcher / sold / rehomed / given away / died / culled / other).
+            Modal shows its own flock picker when there's >1 flock with birds. */}
+        {hasAnyBirds && (
+          <Tile icon={Snowflake} label="Butcher" color={palette.ink} onClick={() => setModal({ type: "butcherFlock", hobbyId: hobby.id })} />
+        )}
         <Tile icon={Plus} label="Add Flock" color={palette.ink} onClick={() => setModal({ type: "addFlock", hobbyId: hobby.id })} />
       </div>
     );
@@ -3418,8 +3430,15 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    const targetFlock = (targetHobby.flocks || []).find(f => f.id === modal.flockId);
-    if (!targetFlock) { close(); return null; }
+    // Push 6 — flockId is optional now. If passed (e.g. from EditFlockModal's
+    // "Remove birds…" button), pre-select that flock. If omitted (e.g. from
+    // the top-level Butcher tile on the egg-layer action grid), the modal
+    // shows its own flock picker. We still validate the flockId if one was
+    // passed — a stale id from a deleted flock falls back to the picker.
+    let targetFlock = null;
+    if (modal.flockId) {
+      targetFlock = (targetHobby.flocks || []).find(f => f.id === modal.flockId) || null;
+    }
     return <ButcherFlockModal hobby={targetHobby} flock={targetFlock} update={update} onClose={close} />;
   }
   if (modal.type === "bulkEggs") {
@@ -4834,9 +4853,16 @@ function FeedbackModal({ onClose, presetCategory, user }) {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  // Push 6 — true when the last send failed specifically because our Resend
+  // daily quota was hit. The UI renders a friendly yellow info card in this
+  // case (instead of the red error box), because it's not really an error,
+  // it's a service-level issue users should understand and the email
+  // fallbacks still work.
+  const [isRateLimit, setIsRateLimit] = useState(false);
 
   const send = async () => {
     setError("");
+    setIsRateLimit(false);
     if (!message.trim()) {
       setError("Please write a message first.");
       return;
@@ -4850,7 +4876,14 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       });
       setSent(true);
     } catch (e) {
-      setError(e.message || "Could not send. Please try the fallback options below.");
+      // The sync.js sendEmail helper tags rate-limit errors with .kind === 'rate_limit'
+      // so we can show a friendly explanation instead of a generic red error box.
+      if (e && e.kind === 'rate_limit') {
+        setIsRateLimit(true);
+        setError(e.message || "We've hit our daily email send limit. Please try again tomorrow or use the email fallback below.");
+      } else {
+        setError(e.message || "Could not send. Please try the fallback options below.");
+      }
     } finally {
       setSending(false);
     }
@@ -4926,7 +4959,22 @@ function FeedbackModal({ onClose, presetCategory, user }) {
         />
       </Field>
 
-      {error && (
+      {error && isRateLimit && (
+        // Friendly yellow info card for the rate-limit case. Not really an
+        // error from the user's perspective — they did everything right,
+        // it's a service-tier issue. The fallback details/Gmail/mailto
+        // links below still appear so they have an alternate path.
+        <div style={{
+          padding: 12, background: palette.yolkSoft, border: `1.5px solid ${palette.yolk}`,
+          borderRadius: 8, fontSize: 13, color: palette.ink, marginBottom: 14,
+          display: "flex", alignItems: "flex-start", gap: 8, lineHeight: 1.5,
+        }}>
+          <Heart size={16} style={{ flexShrink: 0, marginTop: 2 }} />
+          <span>{error}</span>
+        </div>
+      )}
+
+      {error && !isRateLimit && (
         <div style={{
           padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
@@ -5884,6 +5932,25 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
 //   - Culled     → reduce flock + entry with reason (e.g. illness, euthanasia)
 //   - Other      → free-text reason
 function ButcherFlockModal({ hobby, flock, update, onClose }) {
+  // Push 6 — when called from the top-level Butcher tile on the egg-layer
+  // action grid, no flock is pre-selected. The user needs to pick which one.
+  // To stay consistent with the meat-bird ButcherModal pattern (Push 4b),
+  // we manage selection inside this modal rather than via an intermediate
+  // picker modal. Auto-pick when there's only one viable flock.
+  //
+  // "Viable" = has birds left. Empty flocks are filtered out so the picker
+  // doesn't dangle stale options. If every flock is empty, the modal renders
+  // a friendly empty-state.
+  const availableFlocks = (hobby.flocks || []).filter((f) => (Number(f.birdCount) || 0) > 0);
+  const [selectedFlockId, setSelectedFlockId] = useState(() => {
+    if (flock && flock.id) return flock.id;
+    if (availableFlocks.length === 1) return availableFlocks[0].id;
+    return "";
+  });
+  // Resolve the active flock from id. We re-read from hobby each render so a
+  // bird-count change from a parallel update doesn't go stale.
+  const activeFlock = flock || availableFlocks.find((f) => f.id === selectedFlockId) || null;
+
   const [reason, setReason] = useState("butchered");
   const [count, setCount] = useState("");
   const [avgWeight, setAvgWeight] = useState("");
@@ -5891,7 +5958,22 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
   const [note, setNote] = useState("");
   const [validationError, setValidationError] = useState("");
 
-  const remaining = Number(flock.birdCount) || 0;
+  const remaining = activeFlock ? (Number(activeFlock.birdCount) || 0) : 0;
+
+  // Empty-state: no flocks have birds in them — nothing to butcher.
+  if (availableFlocks.length === 0) {
+    return (
+      <Modal open onClose={onClose} title="Remove from flock">
+        <div style={{
+          padding: 16, background: palette.bgAlt, borderRadius: 8,
+          fontSize: 13, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 14,
+        }}>
+          No birds in any flock yet. Add a flock with birds before logging a butcher.
+        </div>
+        <Btn variant="ghost" onClick={onClose}>Close</Btn>
+      </Modal>
+    );
+  }
 
   // The "soft cull" reasons (sold, rehomed, given away) are when the birds
   // are still alive somewhere. "Hard cull" reasons (butchered, died, culled)
@@ -5911,10 +5993,34 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
   ];
 
   return (
-    <Modal open onClose={onClose} title={`Remove from ${flock.name}`}>
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
-        {remaining} {flock.birdType?.toLowerCase() || "bird"}{remaining === 1 ? "" : "s"} in this flock.
-      </div>
+    <Modal open onClose={onClose} title={activeFlock ? `Remove from ${activeFlock.name}` : "Remove from flock"}>
+      {/* Push 6 — flock picker. Only shown when caller didn't pre-select a
+          flock AND there's more than one viable flock. With exactly 1 flock,
+          selectedFlockId was set in initial state, so this is hidden and the
+          user goes straight to the form. Pre-selection (e.g. from Edit Flock)
+          also skips the picker. */}
+      {!flock && availableFlocks.length > 1 && (
+        <Field label="Which flock?">
+          <select
+            style={inputStyle}
+            value={selectedFlockId}
+            onChange={(e) => { setSelectedFlockId(e.target.value); setValidationError(""); }}
+          >
+            <option value="">— pick a flock —</option>
+            {availableFlocks.map((f) => (
+              <option key={f.id} value={f.id}>
+                {f.name} ({f.birdCount} {f.birdType?.toLowerCase() || "bird"}{f.birdCount === 1 ? "" : "s"})
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {activeFlock && (
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
+          {remaining} {activeFlock.birdType?.toLowerCase() || "bird"}{remaining === 1 ? "" : "s"} in this flock.
+        </div>
+      )}
 
       <Field label="What happened?">
         <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
@@ -5930,7 +6036,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       </Field>
 
       <Field label="How many?">
-        <input type="number" style={inputStyle} value={count} onChange={(e) => { setCount(e.target.value); setValidationError(""); }} placeholder="0" />
+        <input
+          type="number"
+          style={inputStyle}
+          value={count}
+          onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
+          placeholder={activeFlock ? `e.g. 1 (of ${remaining})` : "Pick a flock first"}
+        />
       </Field>
 
       {/* Average weight only matters for butcher (freezer log) and is optional
@@ -5983,6 +6095,12 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
 
       <div style={{ display: "flex", gap: 8 }}>
         <Btn variant="primary" onClick={() => {
+          // Push 6 — gate on flock selection too. activeFlock may be null if
+          // the user hasn't picked from the multi-flock picker yet.
+          if (!activeFlock) {
+            setValidationError("Pick a flock first.");
+            return;
+          }
           const n = parseInt(count);
           const w = parseFloat(avgWeight);
           if (!count || isNaN(n) || n < 1) {
@@ -6001,7 +6119,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
             // Always: decrement flock count
             const h = d.hobbies.find((x) => x.id === hobby.id);
             if (!h) return d;
-            const fl = (h.flocks || []).find((x) => x.id === flock.id);
+            const fl = (h.flocks || []).find((x) => x.id === activeFlock.id);
             if (fl) fl.birdCount = Math.max(0, (fl.birdCount || 0) - n);
 
             // Butchered → freezer log + butcher entry (preserves existing flow)
@@ -6011,9 +6129,9 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
                 id: newId(),
                 date,
                 hobbyId: hobby.id,
-                flockId: flock.id,
-                flockName: flock.name,
-                birdType: flock.birdType || "Bird",
+                flockId: activeFlock.id,
+                flockName: activeFlock.name,
+                birdType: activeFlock.birdType || "Bird",
                 count: n,
                 avgWeight: w,
                 note: note.trim(),
@@ -6026,7 +6144,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
                 action: "butcher",
                 count: n,
                 avgWeight: w,
-                flockId: flock.id,
+                flockId: activeFlock.id,
                 note: note.trim(),
                 created: Date.now(),
               });
@@ -6040,7 +6158,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
                 action: "death",
                 count: n,
                 cause: reason === "culled" ? `culled: ${note.trim() || "no detail"}` : (note.trim() || "unknown"),
-                flockId: flock.id,
+                flockId: activeFlock.id,
                 created: Date.now(),
               });
             } else {
@@ -6058,8 +6176,8 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
                 id: newId(),
                 date,
                 action: "note",
-                note: `${reasonLabel} · ${n} ${flock.birdType?.toLowerCase() || "bird"}${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
-                flockId: flock.id,
+                note: `${reasonLabel} · ${n} ${activeFlock.birdType?.toLowerCase() || "bird"}${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
+                flockId: activeFlock.id,
                 cullReason: reason,
                 cullCount: n,
                 created: Date.now(),
