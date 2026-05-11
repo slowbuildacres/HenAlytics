@@ -2087,6 +2087,22 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
           </div>
         </div>
       )}
+
+      {/* Bulk backfill link — quiet, sits below the weekly summary. Lets users
+          import historical egg counts without tapping + 500 times. Only useful
+          for people coming from another system or onboarding with old flocks,
+          which is why it's a low-prominence text link rather than a button. */}
+      <button
+        onClick={() => setModal({ type: "bulkEggs", hobbyId: hobby.id })}
+        style={{
+          background: "none", border: "none", padding: "4px 8px",
+          fontFamily: FONT_BODY, fontSize: 12, color: palette.inkSoft,
+          cursor: "pointer", textAlign: "center", textDecoration: "underline",
+          textDecorationStyle: "dotted", alignSelf: "center", marginTop: 2,
+        }}
+      >
+        📚 Backfill historical eggs in bulk
+      </button>
     </div>
   );
 }
@@ -3314,6 +3330,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const targetFlock = (targetHobby.flocks || []).find(f => f.id === modal.flockId);
     if (!targetFlock) { close(); return null; }
     return <ButcherFlockModal hobby={targetHobby} flock={targetFlock} update={update} onClose={close} />;
+  }
+  if (modal.type === "bulkEggs") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <BulkEggEntryModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} update={update} onClose={close} />;
   }
   if (modal.type === "hatchBatch") return <HatchBatchModal hobby={hobby} update={update} onClose={close} />;
   // editFlockEntry removed — replaced by editFlock
@@ -5564,6 +5585,327 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
         </Btn>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
       </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// BULK EGG ENTRY — backfill historical eggs without tapping + 500 times
+// ----------------------------------------------------------------------------
+// Two modes for distributing eggs across a date range:
+//   - "total" mode: user enters total egg count, we divide evenly across days
+//                   (any remainder goes on the last day so totals match exactly)
+//   - "perday" mode: user enters average eggs-per-day, we multiply across days
+//
+// We're careful about existing entries: by default we ADD to whatever's already
+// logged on each date (sum the counts). Users can also choose "skip dates that
+// already have eggs" if they're filling gaps in partial data.
+//
+// All bulk-created entries are tagged `bulkBackfill: true` so future updates
+// can identify or filter them if needed (e.g. a future "undo last bulk import"
+// feature). The same batchId is shared across all entries in one import.
+// ============================================================================
+function BulkEggEntryModal({ hobby, entries, update, onClose }) {
+  const flocks = hobby.flocks || [];
+  const today = todayStr();
+
+  // Defaults: 30 days back through yesterday, single flock auto-selected if only one
+  const [startDate, setStartDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 30);
+    return d.toISOString().slice(0, 10);
+  });
+  const [endDate, setEndDate] = useState(() => {
+    const d = new Date();
+    d.setDate(d.getDate() - 1);
+    return d.toISOString().slice(0, 10);
+  });
+  const [mode, setMode] = useState("total"); // "total" | "perday"
+  const [totalCount, setTotalCount] = useState("");
+  const [perDayCount, setPerDayCount] = useState("");
+  const [flockId, setFlockId] = useState(flocks.length === 1 ? flocks[0].id : "");
+  const [conflictMode, setConflictMode] = useState("add"); // "add" | "skip"
+  const [validationError, setValidationError] = useState("");
+  const [confirming, setConfirming] = useState(false);
+
+  // Compute the date list (inclusive) for the chosen range
+  const dateList = (() => {
+    if (!startDate || !endDate) return [];
+    const start = new Date(startDate + "T12:00");
+    const end = new Date(endDate + "T12:00");
+    if (start > end) return [];
+    const dates = [];
+    const cursor = new Date(start);
+    while (cursor <= end) {
+      const y = cursor.getFullYear();
+      const m = String(cursor.getMonth() + 1).padStart(2, "0");
+      const d = String(cursor.getDate()).padStart(2, "0");
+      dates.push(`${y}-${m}-${d}`);
+      cursor.setDate(cursor.getDate() + 1);
+    }
+    return dates;
+  })();
+
+  // Compute what the bulk import would create — gives the user a clear preview
+  // before they confirm. Returns array of { date, count } that will be added.
+  const preview = (() => {
+    if (dateList.length === 0) return [];
+    const dates = flockId
+      ? dateList
+      : dateList; // Per-flock targeting handled at submit time
+    const existingByDate = new Set();
+    if (conflictMode === "skip" && flockId) {
+      entries.forEach(e => {
+        if (e.flockId === flockId && (e.action === "eggs" || e.action === "eggs_laid")) {
+          existingByDate.add(e.date);
+        }
+      });
+    }
+    const eligible = dates.filter(d => !existingByDate.has(d));
+    if (eligible.length === 0) return [];
+
+    if (mode === "total") {
+      const total = parseInt(totalCount);
+      if (!total || total <= 0) return [];
+      const per = Math.floor(total / eligible.length);
+      const remainder = total - per * eligible.length;
+      // Distribute the remainder over the last `remainder` days so the sum
+      // matches exactly what the user typed. Example: 100 eggs / 30 days =
+      // 3 per day, with 10 days getting 4. The +1 days are the most recent.
+      return eligible.map((d, i) => ({
+        date: d,
+        count: per + (i >= eligible.length - remainder ? 1 : 0),
+      })).filter(e => e.count > 0);
+    } else {
+      const per = parseInt(perDayCount);
+      if (!per || per <= 0) return [];
+      return eligible.map(d => ({ date: d, count: per }));
+    }
+  })();
+
+  const previewTotal = preview.reduce((s, e) => s + e.count, 0);
+  const previewDays = preview.length;
+  const skippedDays = dateList.length - previewDays;
+
+  const validate = () => {
+    if (!startDate || !endDate) {
+      setValidationError("Pick a start and end date.");
+      return false;
+    }
+    if (dateList.length === 0) {
+      setValidationError("End date must be on or after start date.");
+      return false;
+    }
+    if (dateList.length > 730) {
+      setValidationError("Date range is over 2 years. Split into smaller chunks.");
+      return false;
+    }
+    if (flocks.length > 0 && !flockId) {
+      setValidationError("Pick which flock these eggs came from.");
+      return false;
+    }
+    if (mode === "total") {
+      const n = parseInt(totalCount);
+      if (!totalCount || isNaN(n) || n <= 0) {
+        setValidationError("Enter a total egg count greater than 0.");
+        return false;
+      }
+    } else {
+      const n = parseInt(perDayCount);
+      if (!perDayCount || isNaN(n) || n <= 0) {
+        setValidationError("Enter an average eggs-per-day greater than 0.");
+        return false;
+      }
+    }
+    if (preview.length === 0) {
+      setValidationError("Nothing to add — every date in the range already has eggs logged for this flock. Switch to 'add to existing' if you want to stack on top.");
+      return false;
+    }
+    setValidationError("");
+    return true;
+  };
+
+  const flockObj = flocks.find(f => f.id === flockId);
+
+  const commit = () => {
+    update((d) => {
+      d.entries[hobby.id] = d.entries[hobby.id] || [];
+      const batchId = `bulk-${Date.now()}-${Math.random().toString(36).slice(2,8)}`;
+      const created = Date.now();
+      // If "add to existing", we want to SUM with whatever's already there,
+      // not stack a separate entry. To keep the data model clean, we still
+      // create one entry per backfilled day — analytics already sums entries
+      // by date, so stacking is fine. The skip-mode handles the "don't touch
+      // already-logged days" case at preview time.
+      preview.forEach(({ date, count }) => {
+        d.entries[hobby.id].push({
+          id: newId(),
+          date,
+          action: "eggs_laid",
+          count,
+          flockId: flockId || null,
+          birdType: flockObj?.birdType || null,
+          bulkBackfill: true,
+          bulkBatchId: batchId,
+          created,
+        });
+      });
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={confirming ? "Confirm bulk add" : "Backfill historical eggs"}>
+      {!confirming ? (
+        <>
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+            Add historical egg counts in one go — useful when bringing an existing flock up to date. We'll distribute the count evenly across the date range.
+          </div>
+
+          {flocks.length > 1 && (
+            <Field label="Which flock?">
+              <select style={inputStyle} value={flockId} onChange={(e) => { setFlockId(e.target.value); setValidationError(""); }}>
+                <option value="">— pick a flock —</option>
+                {flocks.map(f => (
+                  <option key={f.id} value={f.id}>{f.name} ({f.birdType || "Bird"})</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <Field label="Start date">
+                <input type="date" style={inputStyle} value={startDate} max={endDate || today} onChange={(e) => { setStartDate(e.target.value); setValidationError(""); }} />
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label="End date">
+                <input type="date" style={inputStyle} value={endDate} max={today} onChange={(e) => { setEndDate(e.target.value); setValidationError(""); }} />
+              </Field>
+            </div>
+          </div>
+
+          <Field label="How do you want to enter the count?">
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                { k: "total", l: "Total across range" },
+                { k: "perday", l: "Average per day" },
+              ].map(o => (
+                <button
+                  key={o.k}
+                  onClick={() => { setMode(o.k); setValidationError(""); }}
+                  style={{
+                    flex: "1 1 130px", padding: "8px 12px", borderRadius: 8,
+                    border: `1.5px solid ${mode === o.k ? palette.ink : palette.line}`,
+                    background: mode === o.k ? palette.ink : palette.bg,
+                    color: mode === o.k ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{o.l}</button>
+              ))}
+            </div>
+          </Field>
+
+          {mode === "total" ? (
+            <Field label="Total eggs across the range">
+              <input
+                type="number"
+                style={inputStyle}
+                value={totalCount}
+                onChange={(e) => { setTotalCount(e.target.value); setValidationError(""); }}
+                placeholder="e.g. 500"
+              />
+            </Field>
+          ) : (
+            <Field label="Average eggs per day">
+              <input
+                type="number"
+                style={inputStyle}
+                value={perDayCount}
+                onChange={(e) => { setPerDayCount(e.target.value); setValidationError(""); }}
+                placeholder="e.g. 18"
+              />
+            </Field>
+          )}
+
+          <Field label="If a date already has eggs logged">
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {[
+                { k: "add", l: "Add on top" },
+                { k: "skip", l: "Skip those dates" },
+              ].map(o => (
+                <button
+                  key={o.k}
+                  onClick={() => setConflictMode(o.k)}
+                  style={{
+                    flex: "1 1 130px", padding: "8px 12px", borderRadius: 8,
+                    border: `1.5px solid ${conflictMode === o.k ? palette.ink : palette.line}`,
+                    background: conflictMode === o.k ? palette.ink : palette.bg,
+                    color: conflictMode === o.k ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{o.l}</button>
+              ))}
+            </div>
+          </Field>
+
+          {/* Live preview so the user knows exactly what's about to happen */}
+          {preview.length > 0 && (
+            <div style={{
+              padding: 12, marginBottom: 12, borderRadius: 8,
+              background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+              fontSize: 13, color: palette.ink, lineHeight: 1.5,
+            }}>
+              <strong>Preview:</strong> {previewTotal} eggs across {previewDays} day{previewDays === 1 ? "" : "s"}
+              {skippedDays > 0 && <> · {skippedDays} day{skippedDays === 1 ? "" : "s"} skipped (already had eggs)</>}
+              {mode === "total" && previewTotal > 0 && previewDays > 0 && (
+                <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
+                  Average: {(previewTotal / previewDays).toFixed(1)} eggs/day
+                </div>
+              )}
+            </div>
+          )}
+
+          {validationError && (
+            <div style={{
+              padding: 10, marginBottom: 12, borderRadius: 6,
+              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              fontSize: 13, color: palette.accent,
+            }}>
+              {validationError}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" onClick={() => { if (validate()) setConfirming(true); }}>Continue</Btn>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          </div>
+        </>
+      ) : (
+        // ----- Confirmation step -----
+        // Show the exact number of entries about to be created. This is a
+        // potentially heavy operation (could be 500+ entries) and we want the
+        // user to have a clear chance to back out.
+        <>
+          <div style={{
+            padding: 14, marginBottom: 16, borderRadius: 8,
+            background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
+            fontSize: 14, color: palette.ink, lineHeight: 1.5,
+          }}>
+            About to add <strong>{previewDays}</strong> egg{previewDays === 1 ? " entry" : " entries"} totaling <strong>{previewTotal}</strong> egg{previewTotal === 1 ? "" : "s"}, from <strong>{startDate}</strong> to <strong>{endDate}</strong>
+            {flockObj && <> for <strong>{flockObj.name}</strong></>}.
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 16, lineHeight: 1.5 }}>
+            This can't be undone in one click — but each entry can be edited or deleted individually from the activity log if needed.
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" onClick={commit}>Yes, add {previewDays} entries</Btn>
+            <Btn variant="ghost" onClick={() => setConfirming(false)}>Back</Btn>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
