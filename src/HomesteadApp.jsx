@@ -519,9 +519,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 19;
+const CURRENT_VERSION = 20;
 
 const WHATS_NEW = [
+  "📦 Farmstand inventory + restock — items now track stock, with low-stock warnings on the page and inside the sell modal. New 📦 Restock button on each item lets you add batches with optional batch cost. Quantity presets (+½ doz, +1 lb, etc) make logging sales by the dozen or pound one tap. Reset password emails now properly drop you into a 'set new password' form. The ❤️ Support Henalytics button moved out of the barn into its own icon at the top of the screen so it's easier to find.",
   "🐇 Rabbits redesigned — per-rabbit tracking instead of hutch counts. Each rabbit gets a name, breed, sex, role, pedigree, breeding history, and weight log. Does have a 🐇 Bred button that auto-creates a kindle reminder 31 days out. Each rabbit can have a hutch label, and the page auto-groups by hutch once you have two or more (a flat list when you only have one). Your old hutches were automatically converted to individual rabbits (you can rename them anytime). Old log entries are kept under a 'Legacy log entries' section so nothing's lost.",
   "🧬 Livestock pedigree — visual family tree showing sire, dam, and registry info on your goats, cows, pigs, sheep, horses, and rabbits. Each animal has a 🧬 Pedigree button that shows ancestors fanning up and descendants fanning down, up to 3 generations. Tap any relative to view their pedigree.",
   "🔪 Butcher tile for egg layers — log butchering, sales, rehoming, deaths, and other reasons birds leave the flock, with the same full set of options the meat-bird hobby has. Find the new Butcher tile on your egg-layer dashboard.",
@@ -1069,6 +1070,7 @@ export default function HomesteadApp() {
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") setSignedOutRemotely(true);
+      if (event === "PASSWORD_RECOVERY") setModal({ type: "setNewPassword" });
       setUser(session?.user || null);
       setAuthReady(true);
     });
@@ -1368,6 +1370,14 @@ export default function HomesteadApp() {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <SyncIndicator status={syncStatus} signedIn={!!user} />
             <button
+              onClick={() => setModal({ type: "support" })}
+              style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.accent }}
+              title="Support Henalytics"
+              aria-label="Support Henalytics"
+            >
+              <Heart size={20} fill="currentColor" />
+            </button>
+            <button
               onClick={() => setModal({ type: "barn" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
               title="Your homestead"
@@ -1520,7 +1530,7 @@ export default function HomesteadApp() {
         )}
         {page === "analytics" && activeHobby === "farmstand" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data}>
-            <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} spouseMode={data.spouseMode} />
+            <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && (
@@ -3429,6 +3439,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
+  if (modal.type === "setNewPassword") return <AuthModal onClose={close} initialMode="setNewPassword" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} />
@@ -3651,14 +3662,6 @@ function BarnModal({ data, update, onClose, setModal, user, role }) {
         sub="Notes on homesteading, gardens & chickens"
         accent={palette.leaf}
         onClick={() => { window.location.href = "/blog/"; }}
-      />
-
-      <SectionBtn
-        icon={Heart}
-        label="Support Henalytics"
-        sub="Tip jar to help cover hosting costs"
-        accent={palette.yolk}
-        onClick={() => { onClose(); setTimeout(() => setModal({ type: "support" }), 0); }}
       />
     </Modal>
   );
@@ -7620,7 +7623,7 @@ function OnboardingWizard({ update, onClose }) {
               </p>
 
               <p style={{ fontSize: 13, color: palette.inkSoft, fontStyle: "italic", marginBottom: 16, lineHeight: 1.5 }}>
-                You'll find a "Support Henalytics" option in the 🏚 Barn menu anytime. No pressure, no popups bugging you about it.
+                You'll find a ❤️ heart icon at the top of the screen anytime — tap it to support the app. No pressure, no popups bugging you about it.
               </p>
 
               <div style={{
@@ -8378,7 +8381,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "🏚",
     title: "The Barn icon",
-    body: "Tap the barn in the top-right corner to access: invite a farmhand (share with your partner or family), leave a tip to keep the app free, set your location for weather, and manage your photos.",
+    body: "Tap the barn in the top-right corner to access: invite a farmhand (share with your partner or family), set your location for weather, and manage your photos. Right next to it is a ❤️ heart icon — tap that to leave a tip and keep the app free.",
     tip: "Farmhands see the same data in real time — great for couples running the homestead together.",
   },
   {
