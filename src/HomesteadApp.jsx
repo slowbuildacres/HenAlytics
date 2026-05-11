@@ -268,6 +268,23 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   if (!hasFarmstand) {
     data.hobbies.push({ id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true });
   }
+  // Push 7c — Farmstand inventory migration. Existing items predate the
+  // trackStock flag; without this migration they'd stay invisible to the new
+  // inventory UI (no Restock button, no stock pill). Flip them all to tracked
+  // once, defaulting stock to 0 (user can edit each to set a real number).
+  // Gated by data.farmstandInventoryMigratedV7c so we don't reset stock counts
+  // on every load if the user later turns tracking off on a specific item.
+  if (!data.farmstandInventoryMigratedV7c) {
+    const farmstandHobby = data.hobbies.find(h => h.id === "farmstand");
+    if (farmstandHobby && Array.isArray(farmstandHobby.items)) {
+      farmstandHobby.items.forEach(it => {
+        if (typeof it.trackStock !== "boolean") it.trackStock = true;
+        if (typeof it.stock !== "number") it.stock = 0;
+        if (typeof it.lowStockAt !== "number") it.lowStockAt = 3;
+      });
+    }
+    data.farmstandInventoryMigratedV7c = true;
+  }
   // ---- Sheep hobby ----
   const hasSheep = data.hobbies.some(h => h.id === "sheep");
   if (!hasSheep) {
