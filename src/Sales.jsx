@@ -45,7 +45,7 @@ const thisMonthStr = () => { const d = new Date(); return `${d.getFullYear()}-${
 const HOBBY_META = {
   eggs:          { label: "Eggs",          emoji: "🥚", color: palette.yolk },
   honey:         { label: "Honey",         emoji: "🍯", color: palette.honey },
-  meat_chickens: { label: "Meat Chickens", emoji: "🍗", color: palette.feather },
+  meat_chickens: { label: "Meat Birds", emoji: "🍗", color: palette.feather },
   rabbits:       { label: "Rabbits",       emoji: "🐇", color: palette.leaf },
   garden:        { label: "Garden",        emoji: "🌱", color: palette.leaf },
   farmstand:     { label: "Farm Stand",    emoji: "🧾", color: palette.leaf },

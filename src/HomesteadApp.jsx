@@ -66,7 +66,7 @@ const defaultData = () => ({
   hobbies: [
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flocks: [] },
-    { id: "meat_chickens", name: "Meat Chickens", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
+    { id: "meat_chickens", name: "Meat Birds", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
     { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
     { id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true },
     { id: "incubator", name: "Incubator 🥚", type: "incubator", icon: "egg", runs: [], hidden: true },
@@ -192,6 +192,10 @@ function migrateData(data) {
     if (h.type === "meat_chickens") {
       if (!("currentBatch" in h)) h.currentBatch = null;
       if (!Array.isArray(h.archivedBatches)) h.archivedBatches = [];
+      // Rename old "Meat Chickens" to "Meat Birds" — the hobby now supports
+      // any bird type (turkey, duck, goose, etc.) at batch creation time.
+      // Only auto-rename if user hasn't customized the name to something else.
+      if (h.name === "Meat Chickens") h.name = "Meat Birds";
     }
   });
 
@@ -2245,7 +2249,15 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   const deaths = entries
     .filter((e) => e.action === "death" && e.batchId === batch.id)
     .reduce((s, e) => s + (Number(e.count) || 1), 0);
-  const alive = batch.startCount - deaths;
+  // Birds also leave the batch via butcher and soft culls (sold/rehomed/etc).
+  // Without subtracting these the home tile shows stale counts after partial
+  // butchers — a real user-reported bug. Mirrors the same math used in the
+  // butcher modal so the two views never disagree.
+  const butcheredCount = (batch.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
+  const softCulledCount = entries
+    .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
+    .reduce((s, e) => s + Number(e.cullCount), 0);
+  const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount);
   return (
     <div>
       <div
@@ -3571,7 +3583,7 @@ function ManageHobbiesSection({ data, update }) {
   const HOBBY_LABELS = {
     garden: "Garden",
     egg_layers: "Egg Layers",
-    meat_chickens: "Meat Chickens",
+    meat_chickens: "Meat Birds",
     rabbits: "Rabbits",
     bees: "Beekeeping",
     incubator: "Incubator",
@@ -4924,7 +4936,7 @@ function AddHobbyModal({ update, onClose }) {
         <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="garden">Like Garden (planting/harvest)</option>
           <option value="egg_layers">Like Egg Layers (ongoing flock)</option>
-          <option value="meat_chickens">Like Meat Chickens (seasonal batches)</option>
+          <option value="meat_chickens">Like Meat Birds (seasonal batches)</option>
           <option value="custom">Custom (just notes)</option>
         </select>
       </Field>
@@ -4945,7 +4957,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Chickens", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" };
   return (
     <Modal open onClose={onClose} title="Manage Hobbies">
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
@@ -5203,7 +5215,10 @@ function EditBatchModal({ hobby, update, onClose }) {
     onClose();
     return null;
   }
+  const BIRD_TYPES_LOCAL = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const [name, setName] = useState(batch.name || "");
+  // Default to Chicken for legacy batches that predate the bird-type field
+  const [birdType, setBirdType] = useState(batch.birdType || "Chicken");
   const [count, setCount] = useState(String(batch.startCount || 0));
   const [date, setDate] = useState(batch.startDate || todayStr());
   const [cost, setCost] = useState(batch.chickCost ? String(batch.chickCost) : "");
@@ -5217,6 +5232,7 @@ function EditBatchModal({ hobby, update, onClose }) {
       h.currentBatch = {
         ...h.currentBatch,
         name: name.trim(),
+        birdType,
         startDate: date,
         startCount: n,
         chickCost: parseFloat(cost) || 0,
@@ -5231,13 +5247,30 @@ function EditBatchModal({ hobby, update, onClose }) {
       <Field label="Batch name">
         <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Number of chicks (started with)">
+      <Field label="Bird type">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {BIRD_TYPES_LOCAL.map(t => (
+            <button
+              key={t}
+              onClick={() => setBirdType(t)}
+              style={{
+                padding: "8px 12px", borderRadius: 8,
+                border: `1.5px solid ${birdType === t ? palette.ink : palette.line}`,
+                background: birdType === t ? palette.ink : palette.card,
+                color: birdType === t ? palette.bg : palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >{t}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"} (started with)`}>
         <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
-      <Field label="Cost of chicks">
+      <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
         <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -5246,7 +5279,13 @@ function EditBatchModal({ hobby, update, onClose }) {
 }
 
 function HatchBatchModal({ hobby, update, onClose }) {
+  // Bird type picker — matches BIRD_TYPES from the flock-side modals so the
+  // batch knows whether it's meat chickens, ducks, turkeys, etc. The freezer
+  // log already reads batch.birdType (with a Chicken fallback) so existing
+  // batches without this field continue to work.
+  const BIRD_TYPES_LOCAL = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const [name, setName] = useState(`Batch ${(hobby.archivedBatches || []).length + 1}`);
+  const [birdType, setBirdType] = useState("Chicken");
   const [count, setCount] = useState("");
   const [date, setDate] = useState(todayStr());
   const [cost, setCost] = useState("");
@@ -5255,13 +5294,30 @@ function HatchBatchModal({ hobby, update, onClose }) {
       <Field label="Batch name">
         <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
-      <Field label="Number of chicks">
+      <Field label="Bird type">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {BIRD_TYPES_LOCAL.map(t => (
+            <button
+              key={t}
+              onClick={() => setBirdType(t)}
+              style={{
+                padding: "8px 12px", borderRadius: 8,
+                border: `1.5px solid ${birdType === t ? palette.ink : palette.line}`,
+                background: birdType === t ? palette.ink : palette.card,
+                color: birdType === t ? palette.bg : palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >{t}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
         <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
-      <Field label="Cost of chicks (optional)">
+      <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"} (optional)`}>
         <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} />
       </Field>
       <Btn variant="primary" onClick={() => {
@@ -5272,6 +5328,7 @@ function HatchBatchModal({ hobby, update, onClose }) {
           h.currentBatch = {
             id: newId(),
             name: name.trim(),
+            birdType,
             startDate: date,
             startCount: n,
             chickCost: parseFloat(cost) || 0,
@@ -7024,7 +7081,7 @@ function OnboardingWizard({ update, onClose }) {
               checked={hobbies.meat_chickens}
               onToggle={() => setHobbies((h) => ({ ...h, meat_chickens: !h.meat_chickens }))}
               icon="🍗"
-              label="Meat chickens"
+              label="Meat birds"
               sub="Per-batch tracking, butcher day"
             />
             <HobbyCheckbox
@@ -7463,7 +7520,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const avgWeight = totalButchered > 0 ? (totalWeight/totalButchered).toFixed(1) : "—";
       const deaths = entries.filter(e => e.action === "death").reduce((s,e)=>s+(Number(e.count)||1),0);
       return {
-        emoji: "🍗", label: "Meat Chickens",
+        emoji: "🍗", label: "Meat Birds",
         stats: [
           { label: "Birds raised", value: totalBirds },
           { label: "Butchered", value: totalButchered },
@@ -7872,7 +7929,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "🔧",
     title: "Enable the hobbies you do",
-    body: "You only see what's relevant to you. Hide meat chickens if you don't raise them. Enable Ducks, Rabbits, or Bees when you're ready.",
+    body: "You only see what's relevant to you. Hide meat birds if you don't raise them. Enable Ducks, Rabbits, or Bees when you're ready.",
     tip: "Tap 'More hobbies?' on the home screen, or go to ⚙️ Settings. You can also hide the Sales tab there if you don't sell anything.",
   },
   {
@@ -7896,7 +7953,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "❄️",
     title: "Butcher any bird",
-    body: "It's not just for meat chickens. Process a few quail, an extra rooster, a duck — any bird from any flock can go to the freezer log with date, count, and average weight.",
+    body: "It's not just for meat birds. Process a few quail, an extra rooster, a duck — any bird from any flock can go to the freezer log with date, count, and average weight.",
     tip: "Tap a flock on the Egg Layers home tab and choose 'Butcher' to send some birds to the freezer log.",
   },
   {
@@ -7914,7 +7971,7 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "💰",
     title: "Sales tab",
-    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat chickens, rabbits, or garden produce. Track repeat customers and see revenue over time.",
+    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat birds, rabbits, or garden produce. Track repeat customers and see revenue over time.",
     tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically. Don't sell anything? Hide this tab in ⚙️ Settings.",
   },
   {
