@@ -66,7 +66,7 @@ const defaultData = () => ({
   hobbies: [
     { id: "garden", name: "Garden", type: "garden", icon: "sprout", currentSeason: null, archivedSeasons: [] },
     { id: "egg_layers", name: "Egg Layers", type: "egg_layers", icon: "egg", flocks: [] },
-    { id: "meat_chickens", name: "Meat Birds", type: "meat_chickens", icon: "drumstick", currentBatch: null, archivedBatches: [] },
+    { id: "meat_chickens", name: "Meat Birds", type: "meat_chickens", icon: "drumstick", currentBatches: [], archivedBatches: [] },
     { id: "rabbits", name: "Rabbits 🐇 (Beta)", type: "rabbits", icon: "rabbit", hutches: [], hidden: true },
     { id: "bees", name: "Beekeeping 🐝 (Beta)", type: "bees", icon: "bee", hives: [], hidden: true },
     { id: "incubator", name: "Incubator 🥚", type: "incubator", icon: "egg", runs: [], hidden: true },
@@ -190,7 +190,20 @@ function migrateData(data) {
       if (typeof h.hidden === "undefined") h.hidden = true;
     }
     if (h.type === "meat_chickens") {
-      if (!("currentBatch" in h)) h.currentBatch = null;
+      // Push 4b — multi-batch support. Old shape: hobby.currentBatch (single
+      // object or null). New shape: hobby.currentBatches (array, can have
+      // 0+ active batches at once — e.g. running broilers and turkeys side
+      // by side). Migrate any pre-4b data by wrapping the legacy single
+      // batch into the array, then null out the legacy field so we can
+      // detect un-migrated data later if a bug ever rolls back the shape.
+      if (!Array.isArray(h.currentBatches)) h.currentBatches = [];
+      if (h.currentBatch) {
+        // Only push if not already present (guard against double-migration)
+        if (!h.currentBatches.some((b) => b.id === h.currentBatch.id)) {
+          h.currentBatches.push(h.currentBatch);
+        }
+        h.currentBatch = null;
+      }
       if (!Array.isArray(h.archivedBatches)) h.archivedBatches = [];
       // Rename old "Meat Chickens" to "Meat Birds" — the hobby now supports
       // any bird type (turkey, duck, goose, etc.) at batch creation time.
@@ -499,9 +512,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 13;
+const CURRENT_VERSION = 14;
 
 const WHATS_NEW = [
+  "🐣 Multiple meat-bird batches — run more than one batch of meat chickens at the same time. Each batch has its own age, feed log, and butcher records. Pick which batch you're logging to when you have more than one going.",
   "🐴 Horses hobby — per-horse tracking with rides, farrier visits, vet, deworming, breeding & foaling reminders",
   "🐑 Custom breeds — added \"Other\" option to breed dropdowns on Sheep, Goats, Cows, and Horses so you can type in any breed",
   "🍞 Sourdough hobby — track starters with feeding logs, bakes with cost & profit, recipes, and crumb ratings",
@@ -1634,10 +1648,15 @@ function HomePage({ hobby, data, update, setModal }) {
                   // would keep showing meat the user said was deleted.
                   if (e.action === "butcher") {
                     const h = d.hobbies.find((x) => x.id === hobby.id);
-                    if (h?.currentBatch?.butchered) {
-                      h.currentBatch.butchered = h.currentBatch.butchered.filter(
-                        (b) => b.id !== e.id
-                      );
+                    // Find which active batch this entry belonged to, then
+                    // strip the matching butcher record from THAT batch's
+                    // butchered[] so the remaining-bird count recovers. With
+                    // multi-batch support, e.batchId tells us which one.
+                    if (h && Array.isArray(h.currentBatches)) {
+                      const b = h.currentBatches.find((x) => x.id === e.batchId);
+                      if (b && Array.isArray(b.butchered)) {
+                        b.butchered = b.butchered.filter((bu) => bu.id !== e.id);
+                      }
                     }
                     if (Array.isArray(d.freezerLog)) {
                       d.freezerLog = d.freezerLog.filter(
@@ -1699,8 +1718,11 @@ function QuickLogTiles({ hobby, setModal }) {
     );
   }
   if (hobby.type === "meat_chickens") {
-    // Disable actions until a batch is started (the Summary card has the Hatch CTA)
-    if (!hobby.currentBatch) {
+    // Disable actions until at least one batch is started (the Summary card
+    // has the Hatch CTA). With multi-batch support, the Log modal will show
+    // a batch picker when there's >1 active batch.
+    const activeBatches = hobby.currentBatches || [];
+    if (activeBatches.length === 0) {
       return (
         <div style={{
           padding: 16, background: palette.bgAlt, border: `1.5px dashed ${palette.line}`,
@@ -1799,38 +1821,54 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
     }
   }
 
-  if (hobby.type === "meat_chickens" && hobby.currentBatch) {
-    const batch = hobby.currentBatch;
-    const startDate = batch.startDate ? new Date(batch.startDate + "T12:00") : null;
-    if (startDate) {
+  if (hobby.type === "meat_chickens") {
+    // Per-batch age nudges. Only fire for chicken batches — turkeys, ducks,
+    // geese, etc. all have different butcher timelines and the "7-8 week"
+    // Cornish Cross window doesn't apply to them. Each batch gets its own
+    // nudge so a user with both broilers (ready) and turkeys (months out)
+    // doesn't get spammed about the turkeys.
+    const activeBatches = hobby.currentBatches || [];
+    activeBatches.forEach((batch) => {
+      const birdType = batch.birdType || "Chicken";
+      if (birdType !== "Chicken") return;
+      const startDate = batch.startDate ? new Date(batch.startDate + "T12:00") : null;
+      if (!startDate) return;
       const ageWeeks = Math.floor((today.getTime() - startDate.getTime()) / (7 * dayMs));
+      // Use the batch name in the message so multi-batch users know WHICH
+      // batch the nudge is about. The action opens the butcher modal pre-
+      // pointed at this specific batch (modal will skip its internal picker).
+      const batchTag = activeBatches.length > 1 ? ` (${batch.name})` : "";
       if (ageWeeks >= 7 && ageWeeks <= 9) {
         nudges.push({
           icon: "🍗",
-          text: `Birds are ${ageWeeks} weeks old`,
+          text: `Birds are ${ageWeeks} weeks old${batchTag}`,
           sub: "Cornish Cross typically butcher around 7-8 weeks",
-          action: () => setModal({ type: "hatchBatch" }),
+          action: () => setModal({ type: "butcher", batchId: batch.id }),
           actionLabel: "Send to freezer camp",
         });
       } else if (ageWeeks > 9) {
         nudges.push({
           icon: "🍗",
-          text: `Birds are ${ageWeeks} weeks old — past typical butcher age`,
+          text: `Birds are ${ageWeeks} weeks old — past typical butcher age${batchTag}`,
           sub: "Each extra week means more feed cost",
-          action: () => setModal({ type: "hatchBatch" }),
+          action: () => setModal({ type: "butcher", batchId: batch.id }),
           actionLabel: "Send to freezer camp",
         });
       }
-    }
-    // Feed
-    const feedDays = daysSince("fed");
-    if (feedDays !== null && feedDays > 7) {
-      nudges.push({
-        icon: "🌾",
-        text: `Last feed entry was ${feedDays} days ago`,
-        action: () => setModal({ type: "log", action: "fed" }),
-        actionLabel: "Log feed",
-      });
+    });
+    // Feed nudge is hobby-wide (one feeding usually covers all batches in the
+    // same coop, and we don't want to nag the user N times if they're behind).
+    // Only show once even with multiple active batches.
+    if (activeBatches.length > 0) {
+      const feedDays = daysSince("fed");
+      if (feedDays !== null && feedDays > 7) {
+        nudges.push({
+          icon: "🌾",
+          text: `Last feed entry was ${feedDays} days ago`,
+          action: () => setModal({ type: "log", action: "fed" }),
+          actionLabel: "Log feed",
+        });
+      }
     }
   }
 
@@ -2226,7 +2264,12 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
 }
 
 function MeatChickensSummary({ hobby, entries, update, setModal }) {
-  if (!hobby.currentBatch) {
+  // Push 4b — multi-batch support. Users can have multiple active batches
+  // at once (e.g. broilers + turkeys + ducks). Render one card per batch
+  // plus a button to hatch another. Empty state retained for fresh hobbies.
+  const activeBatches = hobby.currentBatches || [];
+
+  if (activeBatches.length === 0) {
     return (
       <div style={{
         background: palette.card, border: `2px dashed ${palette.ink}`, borderRadius: 12,
@@ -2243,41 +2286,50 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
       </div>
     );
   }
-  const batch = hobby.currentBatch;
-  const days = Math.floor((Date.now() - new Date(batch.startDate).getTime()) / (1000 * 60 * 60 * 24));
-  const weeks = (days / 7).toFixed(1);
-  const deaths = entries
-    .filter((e) => e.action === "death" && e.batchId === batch.id)
-    .reduce((s, e) => s + (Number(e.count) || 1), 0);
-  // Birds also leave the batch via butcher and soft culls (sold/rehomed/etc).
-  // Without subtracting these the home tile shows stale counts after partial
-  // butchers — a real user-reported bug. Mirrors the same math used in the
-  // butcher modal so the two views never disagree.
-  const butcheredCount = (batch.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
-  const softCulledCount = entries
-    .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
-    .reduce((s, e) => s + Number(e.cullCount), 0);
-  const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount);
+
   return (
     <div>
-      <div
-        onClick={() => setModal({ type: "editBatch", hobbyId: hobby.id })}
-        style={{
-          background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
-          marginBottom: 10, cursor: "pointer",
-        }}
-      >
-        <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-          <span>Active Batch · {batch.name}</span>
-          <Edit3 size={12} />
-        </div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, color: palette.yolk, lineHeight: 1 }}>{alive}</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>
-            birds · {weeks} weeks · started {fmtDate(batch.startDate)}
-            {batch.chickCost > 0 && <> · {fmtMoney(batch.chickCost)}</>}
+      {activeBatches.map((batch) => {
+        const days = Math.floor((Date.now() - new Date(batch.startDate).getTime()) / (1000 * 60 * 60 * 24));
+        const weeks = (days / 7).toFixed(1);
+        const deaths = entries
+          .filter((e) => e.action === "death" && e.batchId === batch.id)
+          .reduce((s, e) => s + (Number(e.count) || 1), 0);
+        const butcheredCount = (batch.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
+        const softCulledCount = entries
+          .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
+          .reduce((s, e) => s + Number(e.cullCount), 0);
+        const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount);
+        return (
+          <div
+            key={batch.id}
+            onClick={() => setModal({ type: "editBatch", hobbyId: hobby.id, batchId: batch.id })}
+            style={{
+              background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
+              marginBottom: 10, cursor: "pointer",
+            }}
+          >
+            <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4, display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+              <span>Active Batch · {batch.name}{batch.birdType && batch.birdType !== "Chicken" ? ` · ${batch.birdType}` : ""}</span>
+              <Edit3 size={12} />
+            </div>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, color: palette.yolk, lineHeight: 1 }}>{alive}</div>
+              <div style={{ fontSize: 13, opacity: 0.85 }}>
+                birds · {weeks} weeks · started {fmtDate(batch.startDate)}
+                {batch.chickCost > 0 && <> · {fmtMoney(batch.chickCost)}</>}
+              </div>
+            </div>
           </div>
-        </div>
+        );
+      })}
+      {/* Hatch-another CTA — sits below the active batch cards so multi-batch
+          users can easily start another. Uses ghost styling so it doesn't
+          compete visually with the active batch cards. */}
+      <div style={{ marginTop: 4, marginBottom: 4 }}>
+        <Btn variant="ghost" onClick={() => setModal({ type: "hatchBatch" })}>
+          🐣 Hatch another batch
+        </Btn>
       </div>
     </div>
   );
@@ -2804,18 +2856,22 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
   // transitions (e.g. switching activeHobby while still on the analytics tab).
   if (!hobby) return <EmptyState text="Loading…" />;
 
-  // Combine current batch (in-progress) + archived batches
-  const currentBatch = hobby.currentBatch;
+  // Combine ALL active batches (currentBatches[]) + archived batches.
+  // Push 4b — users can have multiple active batches at once, so we walk
+  // the array instead of pulling a single currentBatch.
+  const activeBatches = hobby.currentBatches || [];
   const archived = hobby.archivedBatches || [];
 
   // For all-time: show summary across all batches (archived + active)
   // For seasonal filter: filter batches whose start date falls in that season
   let batches = [...archived];
-  if (currentBatch) batches.push({
-    ...currentBatch,
-    isActive: true,
-    butchered: currentBatch.butchered || [],
-    finalEntries: entries.filter(e => e.batchId === currentBatch.id),
+  activeBatches.forEach((b) => {
+    batches.push({
+      ...b,
+      isActive: true,
+      butchered: b.butchered || [],
+      finalEntries: entries.filter((e) => e.batchId === b.id),
+    });
   });
 
   if (seasonFilter !== "all") {
@@ -3086,18 +3142,20 @@ function PhotoLibraryPage({ data, user }) {
           groups.push({ id: b.id, label: b.name, photos, dateForSort: b.startDate });
         }
       });
-      if (hobby.currentBatch) {
-        const photos = expandPhotos(allEntries.filter((e) => e.batchId === hobby.currentBatch.id));
+      // Multi-batch: one group per active batch so users with broilers +
+      // turkeys see them separated by batch, same as archived view.
+      (hobby.currentBatches || []).forEach((cb) => {
+        const photos = expandPhotos(allEntries.filter((e) => e.batchId === cb.id));
         if (photos.length > 0) {
           groups.push({
-            id: hobby.currentBatch.id,
-            label: `${hobby.currentBatch.name} (active)`,
+            id: cb.id,
+            label: `${cb.name} (active)`,
             photos,
-            dateForSort: hobby.currentBatch.startDate,
+            dateForSort: cb.startDate,
             active: true,
           });
         }
-      }
+      });
       groups.sort((a, b) => (b.dateForSort || "").localeCompare(a.dateForSort || ""));
       return { hobby, groups };
     }
@@ -3391,9 +3449,9 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <EditBatchModal hobby={targetHobby} update={update} onClose={close} />;
+    return <EditBatchModal hobby={targetHobby} batchId={modal.batchId} update={update} onClose={close} />;
   }
-  if (modal.type === "butcher") return <ButcherModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
+  if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
@@ -4946,7 +5004,7 @@ function AddHobbyModal({ update, onClose }) {
           const id = name.toLowerCase().replace(/\s+/g, "_") + "_" + newId().slice(0, 4);
           const newHobby = { id, name: name.trim(), type, icon: "sprout" };
           if (type === "egg_layers") { newHobby.flockSize = 0; newHobby.flockHistory = []; }
-          if (type === "meat_chickens") { newHobby.currentBatch = null; newHobby.archivedBatches = []; }
+          if (type === "meat_chickens") { newHobby.currentBatches = []; newHobby.archivedBatches = []; }
           d.hobbies.push(newHobby);
           return d;
         });
@@ -5209,8 +5267,13 @@ function EditFlockEntryModal({ hobby, index, update, onClose }) {
 }
 
 // Edit the current meat-chicken batch. Lets you fix the name, date, count, or cost.
-function EditBatchModal({ hobby, update, onClose }) {
-  const batch = hobby.currentBatch;
+function EditBatchModal({ hobby, batchId, update, onClose }) {
+  // Push 4b — find the specific batch in currentBatches[]. batchId is
+  // passed in by the caller (MeatChickensSummary). For safety on stale
+  // hobby data (legacy single-batch users mid-migration, etc.) we fall
+  // back to the first active batch when batchId isn't found.
+  const activeBatches = hobby.currentBatches || [];
+  const batch = activeBatches.find((b) => b.id === batchId) || activeBatches[0];
   if (!batch) {
     onClose();
     return null;
@@ -5222,21 +5285,72 @@ function EditBatchModal({ hobby, update, onClose }) {
   const [count, setCount] = useState(String(batch.startCount || 0));
   const [date, setDate] = useState(batch.startDate || todayStr());
   const [cost, setCost] = useState(batch.chickCost ? String(batch.chickCost) : "");
+  // Confirmation gate for the destructive Delete action — we don't want a
+  // misclick to nuke an active batch with butcher/death history on it.
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   const save = () => {
     const n = parseInt(count);
     if (!n || n < 1 || !name.trim()) return;
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
-      if (!h || !h.currentBatch) return d;
-      h.currentBatch = {
-        ...h.currentBatch,
+      if (!h || !Array.isArray(h.currentBatches)) return d;
+      const idx = h.currentBatches.findIndex((b) => b.id === batch.id);
+      if (idx === -1) return d;
+      h.currentBatches[idx] = {
+        ...h.currentBatches[idx],
         name: name.trim(),
         birdType,
         startDate: date,
         startCount: n,
         chickCost: parseFloat(cost) || 0,
       };
+      return d;
+    });
+    onClose();
+  };
+
+  // Finalize: archive this batch to archivedBatches[] and remove from
+  // currentBatches[]. Matches the ButcherModal "also finalize" behavior so
+  // users with no remaining birds (or who just want to close out an active
+  // batch without going through a butcher entry) have a direct path.
+  const finalize = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h || !Array.isArray(h.currentBatches)) return d;
+      const idx = h.currentBatches.findIndex((b) => b.id === batch.id);
+      if (idx === -1) return d;
+      const target = h.currentBatches[idx];
+      const finalBatch = JSON.parse(JSON.stringify(target));
+      finalBatch.endDate = todayStr();
+      finalBatch.finalEntries = (d.entries[hobby.id] || []).filter((e) => e.batchId === target.id);
+      h.archivedBatches = h.archivedBatches || [];
+      h.archivedBatches.push(finalBatch);
+      // Keep the entries tagged with this batchId out of the active log
+      // (they'll live on under archived.finalEntries for analytics).
+      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== target.id);
+      h.currentBatches.splice(idx, 1);
+      return d;
+    });
+    onClose();
+  };
+
+  // Delete: remove the batch outright, without archiving. Also removes any
+  // entries tagged to this batch. Destructive — gated behind a confirm. This
+  // is intended for accidentally-created batches the user wants gone rather
+  // than archived (e.g. mistyped startCount, never actually used).
+  const remove = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h || !Array.isArray(h.currentBatches)) return d;
+      h.currentBatches = h.currentBatches.filter((b) => b.id !== batch.id);
+      // Also drop entries for this batch — they'd otherwise orphan to a
+      // batch that no longer exists, polluting analytics.
+      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== batch.id);
+      // And any freezer-log rows from this batch (mirrored butcher entries)
+      if (Array.isArray(d.freezerLog)) {
+        d.freezerLog = d.freezerLog.filter((f) => f.batchId !== batch.id);
+      }
       return d;
     });
     onClose();
@@ -5274,6 +5388,31 @@ function EditBatchModal({ hobby, update, onClose }) {
         <input type="number" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <Btn variant="primary" onClick={save}>Save changes</Btn>
+      {/* Finalize / Delete row — separated visually from the primary save
+          action by a small gap and explanatory text. Both are gated to
+          avoid misclicks: Delete requires explicit confirm; Finalize moves
+          the batch to archives (recoverable in the data file). */}
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${palette.line}` }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.4 }}>
+          Close out this batch without going through a butcher entry, or remove it entirely.
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn variant="ghost" onClick={finalize} small>📦 Finalize batch</Btn>
+          {!confirmDelete ? (
+            <Btn variant="ghost" onClick={() => setConfirmDelete(true)} small>🗑️ Delete batch</Btn>
+          ) : (
+            <>
+              <Btn variant="primary" onClick={remove} small>Yes, delete</Btn>
+              <Btn variant="ghost" onClick={() => setConfirmDelete(false)} small>Cancel</Btn>
+            </>
+          )}
+        </div>
+        {confirmDelete && (
+          <div style={{ fontSize: 11, color: palette.accent, marginTop: 8, lineHeight: 1.4 }}>
+            ⚠️ Deletes the batch and all entries tagged to it. This can't be undone.
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }
@@ -5284,7 +5423,11 @@ function HatchBatchModal({ hobby, update, onClose }) {
   // log already reads batch.birdType (with a Chicken fallback) so existing
   // batches without this field continue to work.
   const BIRD_TYPES_LOCAL = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
-  const [name, setName] = useState(`Batch ${(hobby.archivedBatches || []).length + 1}`);
+  // Push 4b — auto-generated name now considers BOTH active batches
+  // (currentBatches[]) and archived for numbering so users don't end up
+  // with two "Batch 3"s side-by-side.
+  const startingCount = ((hobby.archivedBatches || []).length + (hobby.currentBatches || []).length) + 1;
+  const [name, setName] = useState(`Batch ${startingCount}`);
   const [birdType, setBirdType] = useState("Chicken");
   const [count, setCount] = useState("");
   const [date, setDate] = useState(todayStr());
@@ -5325,14 +5468,17 @@ function HatchBatchModal({ hobby, update, onClose }) {
         if (!n || n < 1 || !name.trim()) return;
         update((d) => {
           const h = d.hobbies.find((x) => x.id === hobby.id);
-          h.currentBatch = {
+          // Push 4b — append to currentBatches[] instead of replacing a
+          // single currentBatch. This is what makes multi-batch possible.
+          if (!Array.isArray(h.currentBatches)) h.currentBatches = [];
+          h.currentBatches.push({
             id: newId(),
             name: name.trim(),
             birdType,
             startDate: date,
             startCount: n,
             chickCost: parseFloat(cost) || 0,
-          };
+          });
           return d;
         });
         onClose();
@@ -5341,7 +5487,7 @@ function HatchBatchModal({ hobby, update, onClose }) {
   );
 }
 
-function ButcherModal({ hobby, entries, update, onClose }) {
+function ButcherModal({ hobby, batchId, entries, update, onClose }) {
   // Same cull-reason design as the flock-side modal (egg layers), adapted for
   // meat-bird batches. Default reason is butchered since that's the most
   // common reason birds leave a meat-chicken batch, but users can also log
@@ -5358,9 +5504,20 @@ function ButcherModal({ hobby, entries, update, onClose }) {
   // Only ask about finalizing if the action would empty the batch. Defaults
   // OFF so the user has to opt in.
   const [alsoFinalize, setAlsoFinalize] = useState(false);
-  const batch = hobby.currentBatch;
 
-  if (!batch) {
+  // Push 4b — multi-batch support. The caller may pass batchId (e.g.
+  // from a nudge that already knows which batch); otherwise we show an
+  // internal picker when there's >1 active batch. With exactly 1 batch,
+  // we just pick it implicitly.
+  const activeBatches = hobby.currentBatches || [];
+  const [selectedBatchId, setSelectedBatchId] = useState(() => {
+    if (batchId && activeBatches.some((b) => b.id === batchId)) return batchId;
+    if (activeBatches.length === 1) return activeBatches[0].id;
+    return "";
+  });
+  const batch = activeBatches.find((b) => b.id === selectedBatchId) || null;
+
+  if (activeBatches.length === 0) {
     return (
       <Modal open onClose={onClose} title="Remove from batch">
         <div>No active batch. Hatch one first.</div>
@@ -5382,21 +5539,28 @@ function ButcherModal({ hobby, entries, update, onClose }) {
     { value: "other",       label: "❓ Other",          desc: "Anything else — explain in notes." },
   ];
 
-  const deaths = entries
+  // All downstream calcs depend on a selected batch. When the picker hasn't
+  // been resolved yet (>1 active batch and user hasn't picked), these stay
+  // zeroed so the form renders without throwing.
+  const deaths = batch ? entries
     .filter((e) => e.action === "death" && e.batchId === batch.id)
-    .reduce((s, e) => s + (Number(e.count) || 1), 0);
-  const previouslyButchered = (hobby.currentBatch.butchered || []).reduce((s, x) => s + (x.count || 0), 0);
+    .reduce((s, e) => s + (Number(e.count) || 1), 0) : 0;
+  const previouslyButchered = batch ? (batch.butchered || []).reduce((s, x) => s + (x.count || 0), 0) : 0;
   // Count "removed via note" entries (soft culls) as also gone from the batch.
-  const previouslySoftRemoved = (entries || [])
+  const previouslySoftRemoved = batch ? (entries || [])
     .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
-    .reduce((s, e) => s + Number(e.cullCount), 0);
-  const remaining = batch.startCount - deaths - previouslyButchered - previouslySoftRemoved;
+    .reduce((s, e) => s + Number(e.cullCount), 0) : 0;
+  const remaining = batch ? (batch.startCount - deaths - previouslyButchered - previouslySoftRemoved) : 0;
 
   const plannedCount = parseInt(count) || 0;
   const remainingAfter = Math.max(0, remaining - plannedCount);
   const willEmptyBatch = plannedCount > 0 && remainingAfter === 0;
 
   const validate = () => {
+    if (!batch) {
+      setValidationError("Pick a batch first.");
+      return false;
+    }
     const n = parseInt(count);
     const w = parseFloat(avgWeight);
     if (!count || isNaN(n) || n <= 0) {
@@ -5420,6 +5584,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
   // feel weird ("Send to freezer camp" doesn't apply for a sold bird).
   const titleByReason = () => {
     if (confirming) return "Confirm";
+    if (!batch) return "Remove from batch";
     if (isButcher) return `❄️ Send to freezer camp · ${batch.name}`;
     if (isSoftCull) return `Remove from ${batch.name}`;
     if (isDeath) return `Log loss in ${batch.name}`;
@@ -5440,9 +5605,32 @@ function ButcherModal({ hobby, entries, update, onClose }) {
     <Modal open onClose={onClose} title={titleByReason()}>
       {!confirming ? (
         <>
-          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
-            {remaining} bird{remaining === 1 ? "" : "s"} remaining in this batch.
-          </div>
+          {/* Batch picker — only shown when caller didn't pre-select a batch
+              AND there's more than one active batch to choose from. With
+              exactly 1 batch, selectedBatchId was set in initial state, so
+              this picker is hidden and the user just sees the form. */}
+          {!batchId && activeBatches.length > 1 && (
+            <Field label="Which batch?">
+              <select
+                style={inputStyle}
+                value={selectedBatchId}
+                onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
+              >
+                <option value="">— pick a batch —</option>
+                {activeBatches.map((b) => (
+                  <option key={b.id} value={b.id}>
+                    {b.name}{b.birdType && b.birdType !== "Chicken" ? ` (${b.birdType})` : ""}
+                  </option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          {batch && (
+            <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
+              {remaining} bird{remaining === 1 ? "" : "s"} remaining in {batch.name}.
+            </div>
+          )}
 
           <Field label="What happened?">
             <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
@@ -5462,7 +5650,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
               style={inputStyle}
               value={count}
               onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
-              placeholder={`e.g. 5 (of ${remaining})`}
+              placeholder={batch ? `e.g. 5 (of ${remaining})` : "Pick a batch first"}
             />
           </Field>
 
@@ -5595,22 +5783,28 @@ function ButcherModal({ hobby, entries, update, onClose }) {
               const entryId = newId();
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === hobby.id);
-                if (!h || !h.currentBatch) return d;
+                if (!h || !Array.isArray(h.currentBatches)) return d;
+                // Find the target batch in currentBatches[] by id. Anything
+                // we mutate (butchered[], finalize) goes through this index.
+                const targetIdx = h.currentBatches.findIndex((b) => b.id === batch.id);
+                if (targetIdx === -1) return d;
+                const target = h.currentBatches[targetIdx];
                 d.entries[hobby.id] = d.entries[hobby.id] || [];
 
                 if (isButcher) {
-                  // Existing butcher behavior: append to currentBatch.butchered
-                  // (drives remaining-birds math), entries log, and freezerLog
-                  h.currentBatch.butchered = h.currentBatch.butchered || [];
-                  h.currentBatch.butchered.push({ id: entryId, date, count: n, avgWeight: w });
+                  // Existing butcher behavior: append to the target batch's
+                  // butchered[] (drives remaining-birds math), entries log,
+                  // and the universal freezer log.
+                  target.butchered = target.butchered || [];
+                  target.butchered.push({ id: entryId, date, count: n, avgWeight: w });
                   d.entries[hobby.id].push({
                     id: entryId, date, action: "butcher", count: n, avgWeight: w,
-                    batchId: batch.id, note: note.trim(), created: Date.now(),
+                    batchId: target.id, note: note.trim(), created: Date.now(),
                   });
                   if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
                   d.freezerLog.push({
-                    id: newId(), date, hobbyId: hobby.id, batchId: batch.id,
-                    batchName: batch.name, birdType: batch.birdType || "Chicken",
+                    id: newId(), date, hobbyId: hobby.id, batchId: target.id,
+                    batchName: target.name, birdType: target.birdType || "Chicken",
                     count: n, avgWeight: w, note: note.trim(), created: Date.now(),
                   });
                 } else if (isDeath) {
@@ -5618,7 +5812,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
                   d.entries[hobby.id].push({
                     id: entryId, date, action: "death", count: n,
                     cause: reason === "culled" ? `culled: ${note.trim() || "no detail"}` : (note.trim() || "unknown"),
-                    batchId: batch.id, created: Date.now(),
+                    batchId: target.id, created: Date.now(),
                   });
                 } else {
                   // Soft cull (sold/rehomed/given_away) or "other" — note-style
@@ -5635,7 +5829,7 @@ function ButcherModal({ hobby, entries, update, onClose }) {
                   d.entries[hobby.id].push({
                     id: entryId, date, action: "note",
                     note: `${reasonLabel} · ${n} bird${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
-                    batchId: batch.id,
+                    batchId: target.id,
                     cullReason: reason,
                     cullCount: n,
                     cullAvgWeight: w || undefined,
@@ -5643,15 +5837,17 @@ function ButcherModal({ hobby, entries, update, onClose }) {
                   });
                 }
 
-                // Optional finalize if batch is now empty and user opted in
+                // Optional finalize if batch is now empty and user opted in.
+                // Push 4b — splice the target out of currentBatches[] rather
+                // than nulling a single slot. The other active batches stay.
                 if (alsoFinalize && willEmptyBatch) {
-                  const finalBatch = JSON.parse(JSON.stringify(h.currentBatch));
+                  const finalBatch = JSON.parse(JSON.stringify(target));
                   finalBatch.endDate = todayStr();
-                  finalBatch.finalEntries = (d.entries[hobby.id] || []).filter((e) => e.batchId === batch.id);
+                  finalBatch.finalEntries = (d.entries[hobby.id] || []).filter((e) => e.batchId === target.id);
                   h.archivedBatches = h.archivedBatches || [];
                   h.archivedBatches.push(finalBatch);
-                  d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== batch.id);
-                  h.currentBatch = null;
+                  d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== target.id);
+                  h.currentBatches.splice(targetIdx, 1);
                 }
                 return d;
               });
@@ -6304,6 +6500,21 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
 function LogModal({ hobby, action, data, update, onClose, user, existingEntry }) {
   const isEdit = !!existingEntry;
 
+  // Push 4b — multi-batch support for meat chickens. Active batches live in
+  // hobby.currentBatches[] (array). The picker is shown only when there's
+  // more than one active batch AND the action is batch-scoped (death, fed,
+  // watered, note, etc — anything tied to the birds themselves rather than
+  // hobby-wide infrastructure). For single-batch hobbies we auto-attach so
+  // the UI stays uncluttered.
+  const activeBatches = (hobby.type === "meat_chickens" && Array.isArray(hobby.currentBatches))
+    ? hobby.currentBatches
+    : [];
+  // Actions that belong to a specific batch. "infrastructure" is hobby-wide
+  // (coop building, fencing, etc.) and stays un-batched.
+  const batchScopedActions = ["fed", "watered", "death", "note"];
+  const isBatchScoped = hobby.type === "meat_chickens" && batchScopedActions.includes(action);
+  const needsBatchPicker = isBatchScoped && activeBatches.length > 1 && !isEdit;
+
   // Pre-populate from existingEntry when editing.
   const [date, setDate] = useState(() => existingEntry ? existingEntry.date : todayStr());
   const [fields, setFields] = useState(() => {
@@ -6312,6 +6523,15 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     const { id, date: _d, action: _a, created, photoPath, photoPaths, weather, batchId, seasonId, ...rest } = existingEntry;
     return rest;
   });
+  // Selected batch for new meat-chicken entries. Auto-set when only one
+  // active batch exists; left empty when multiple, so submit gate fires.
+  const [selectedBatchId, setSelectedBatchId] = useState(() => {
+    if (isEdit) return existingEntry.batchId || "";
+    if (isBatchScoped && activeBatches.length === 1) return activeBatches[0].id;
+    return "";
+  });
+  // Validation error shown inline above the submit button.
+  const [validationError, setValidationError] = useState("");
   // existingPaths: paths from already-uploaded photos that we want to KEEP on this entry.
   // (Distinct from new files the user is uploading this session.)
   const [existingPaths, setExistingPaths] = useState(() => {
@@ -6331,6 +6551,13 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
   const totalPhotoCount = existingPaths.length + photoFiles.length;
 
   const submit = async () => {
+    // Push 4b — gate submission when a batch picker was required but skipped.
+    if (needsBatchPicker && !selectedBatchId) {
+      setValidationError("Please pick which batch this entry belongs to.");
+      return;
+    }
+    setValidationError("");
+
     // Coerce numeric fields from string inputs to actual numbers
     const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen"];
     const cleanFields = { ...fields };
@@ -6417,9 +6644,12 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
       // For new entries only, attach context and trigger side-effects.
       if (!isEdit) {
-        // attach to current batch for meat chickens
-        if (hobby.type === "meat_chickens" && hobby.currentBatch) {
-          entry.batchId = hobby.currentBatch.id;
+        // Push 4b — attach to selected batch for meat chickens. selectedBatchId
+        // is auto-set when only one active batch exists; the picker forces a
+        // choice when there are multiple. Batch-scoped actions only — infra
+        // entries stay un-batched.
+        if (hobby.type === "meat_chickens" && isBatchScoped && selectedBatchId) {
+          entry.batchId = selectedBatchId;
         }
         // tag egg-layer entries with flock so per-flock analytics work.
         // Picker UI sets flockId for multi-flock users; this fallback covers
@@ -6507,6 +6737,28 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             {hobby.flocks.map(f => (
               <option key={f.id} value={f.id}>
                 {f.name}{f.birdType ? ` (${f.birdType})` : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
+
+      {/* Batch picker — meat-chicken actions get scoped to a specific batch
+          when more than one is active. Auto-selected on submit when only one
+          batch exists; required (no default) when multiple, so the user is
+          forced to choose. Hidden entirely on edits (batchId is already on
+          the entry) and for infrastructure actions which are hobby-wide. */}
+      {needsBatchPicker && (
+        <Field label="Which batch?">
+          <select
+            style={inputStyle}
+            value={selectedBatchId}
+            onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
+          >
+            <option value="">— Pick a batch —</option>
+            {activeBatches.map(b => (
+              <option key={b.id} value={b.id}>
+                {b.name || "Batch"}{b.startCount ? ` (${b.startCount} birds)` : ""}
               </option>
             ))}
           </select>
@@ -6833,6 +7085,16 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           fontSize: 11, color: palette.inkSoft, marginBottom: 14, textAlign: "center",
         }}>
           📷 Sign in to add photos to your entries.
+        </div>
+      )}
+
+      {validationError && (
+        <div style={{
+          padding: 10, marginBottom: 12, borderRadius: 6,
+          background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          fontSize: 13, color: palette.accent,
+        }}>
+          {validationError}
         </div>
       )}
 
@@ -7512,8 +7774,10 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     }
     if (hobby.type === "meat_chickens") {
       const archived = hobby.archivedBatches || [];
-      const current = hobby.currentBatch;
-      const allBatches = current ? [...archived, current] : archived;
+      // Push 4b — currentBatches is an array. Combine all active batches with
+      // archived for the lifetime totals shown on the share card.
+      const current = Array.isArray(hobby.currentBatches) ? hobby.currentBatches : [];
+      const allBatches = [...archived, ...current];
       const totalBirds = allBatches.reduce((s, b) => s + (b.startCount||0), 0);
       const totalButchered = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0), 0), 0);
       const totalWeight = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0)*(bu.avgWeight||0), 0), 0);
