@@ -41,6 +41,7 @@ export default function YearInReviewPage({ data }) {
   const pigsEnabled = hobbies.some(h => h.type === "pigs" && !h.hidden);
   const sheepEnabled = hobbies.some(h => h.type === "sheep" && !h.hidden);
   const sourdoughEnabled = hobbies.some(h => h.type === "sourdough" && !h.hidden);
+  const horsesEnabled = hobbies.some(h => h.type === "horses" && !h.hidden);
   const farmstandEnabled = hobbies.some(h => h.type === "farmstand" && !h.hidden);
 
   return (
@@ -75,7 +76,7 @@ export default function YearInReviewPage({ data }) {
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
-          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} farmstandEnabled={farmstandEnabled} />
+          <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} horsesEnabled={horsesEnabled} farmstandEnabled={farmstandEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
           {meatChickensEnabled && <MeatChickensCard stats={stats} />}
@@ -87,6 +88,7 @@ export default function YearInReviewPage({ data }) {
           {pigsEnabled && <PigsCard stats={stats} />}
           {sheepEnabled && <SheepCard stats={stats} />}
           {sourdoughEnabled && <SourdoughCard stats={stats} />}
+          {horsesEnabled && <HorsesCard stats={stats} />}
           {farmstandEnabled && <FarmstandCard stats={stats} />}
           {stats.freezerBirds > 0 && <FreezerCard stats={stats} />}
           <ActivityCard stats={stats} />
@@ -151,7 +153,7 @@ function CoverCard({ year, stats }) {
   );
 }
 
-function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, sheepEnabled, sourdoughEnabled, farmstandEnabled }) {
+function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEnabled, rabbitsEnabled, beesEnabled, goatsEnabled, cowsEnabled, pigsEnabled, sheepEnabled, sourdoughEnabled, horsesEnabled, farmstandEnabled }) {
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
@@ -163,6 +165,7 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
   if (sheepEnabled && stats.sheepLambsBorn > 0) items.push({ icon: "🐑", number: stats.sheepLambsBorn, label: `lamb${stats.sheepLambsBorn === 1 ? "" : "s"} born`, accent: palette.leafSoft });
   if (sourdoughEnabled && stats.sourdoughLoaves > 0) items.push({ icon: "🍞", number: stats.sourdoughLoaves, label: `loa${stats.sourdoughLoaves === 1 ? "f" : "ves"} baked`, accent: palette.yolk });
+  if (horsesEnabled && stats.horseRides > 0) items.push({ icon: "🐴", number: stats.horseRides, label: `ride${stats.horseRides === 1 ? "" : "s"}`, accent: palette.feather });
   if (farmstandEnabled && stats.farmstandRevenue > 0) items.push({ icon: "🧾", number: fmtMoney(stats.farmstandRevenue).replace(/\.\d\d$/, ""), label: `farmstand revenue`, accent: palette.leaf });
 
   if (items.length === 0) return null;
@@ -547,6 +550,31 @@ function SourdoughCard({ stats }) {
       {sourdoughTopRecipe && (
         <div style={{ marginTop:12,fontSize:13,color:palette.inkSoft }}>
           Top recipe: <strong style={{ color:palette.ink }}>{sourdoughTopRecipe.name}</strong> — {sourdoughTopRecipe.loaves} loa{sourdoughTopRecipe.loaves === 1 ? "f" : "ves"}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+function HorsesCard({ stats }) {
+  const { horseCount, horseRides, horseRideHours, horseFoalsBorn, horseFoalsAlive, horseFarrierCount, horseVetCount, horseDewormCount, horseTotalCareCost, horseTopRider } = stats;
+  if (!horseCount && !horseRides) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐴 Horses</div>
+      {horseRides > 0 && <CountUp number={horseRides} suffix={`ride${horseRides === 1 ? "" : "s"}`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {horseCount > 0 && <Stat big={horseCount} label="horses" accent={palette.feather}/>}
+        {horseRideHours > 0 && <Stat big={horseRideHours.toFixed(1)} label="hours in saddle" accent={palette.yolk}/>}
+        {horseFoalsBorn > 0 && <Stat big={horseFoalsBorn} label={`foal${horseFoalsBorn === 1 ? "" : "s"} born`} accent={palette.leaf}/>}
+        {horseFarrierCount > 0 && <Stat big={horseFarrierCount} label={`farrier${horseFarrierCount === 1 ? "" : " visits"}`} accent={palette.feather}/>}
+        {horseVetCount > 0 && <Stat big={horseVetCount} label={`vet${horseVetCount === 1 ? "" : " visits"}`} accent={palette.accent}/>}
+        {horseDewormCount > 0 && <Stat big={horseDewormCount} label="dewormings" accent={palette.leafSoft}/>}
+        {horseTotalCareCost > 0 && <Stat big={fmtMoney(horseTotalCareCost)} label="care cost" accent={palette.feather}/>}
+      </div>
+      {horseTopRider && (
+        <div style={{ marginTop:12,fontSize:13,color:palette.inkSoft }}>
+          Most-ridden horse: <strong style={{ color:palette.ink }}>{horseTopRider.name}</strong> — {horseTopRider.rides} ride{horseTopRider.rides === 1 ? "" : "s"}
         </div>
       )}
     </Card>
@@ -1009,6 +1037,40 @@ function computeStats(data, year) {
   const sourdoughSaleCost = sourdoughSales.reduce((s,x) => s + (Number(x.totalCost)||0), 0);
   const sourdoughProfit = sourdoughRevenue - sourdoughSaleCost;
 
+  // Horse stats
+  const horsesHobby = (data.hobbies||[]).find(h => h.type === "horses");
+  const horseCount = (horsesHobby?.animals || []).filter(h => !h.archived).length;
+  const yearRides = (horsesHobby?.rides || []).filter(r => r.date && r.date >= yearStart && r.date <= yearEnd);
+  const horseRides = yearRides.length;
+  const horseRideMinutes = yearRides.reduce((s,r) => s + (Number(r.durationMinutes)||0), 0);
+  const horseRideHours = horseRideMinutes / 60;
+  // Most-ridden horse
+  const ridesByHorse = {};
+  yearRides.forEach(r => {
+    if (!r.horseId) return;
+    ridesByHorse[r.horseId] = (ridesByHorse[r.horseId]||0) + 1;
+  });
+  const topRiderEntry = Object.entries(ridesByHorse).sort((a,b)=>b[1]-a[1])[0];
+  const horseTopRider = topRiderEntry ? (() => {
+    const h = (horsesHobby?.animals || []).find(x => x.id === topRiderEntry[0]);
+    return h ? { name: h.name, rides: topRiderEntry[1] } : null;
+  })() : null;
+  // Care logs in this year
+  const yearFarrier = (horsesHobby?.farrier || []).filter(r => r.date && r.date >= yearStart && r.date <= yearEnd);
+  const yearVet = (horsesHobby?.vet || []).filter(r => r.date && r.date >= yearStart && r.date <= yearEnd);
+  const yearDeworm = (horsesHobby?.deworming || []).filter(r => r.date && r.date >= yearStart && r.date <= yearEnd);
+  const horseFarrierCount = yearFarrier.length;
+  const horseVetCount = yearVet.length;
+  const horseDewormCount = yearDeworm.length;
+  const horseTotalCareCost =
+    yearFarrier.reduce((s,r) => s + (Number(r.cost)||0), 0) +
+    yearVet.reduce((s,r) => s + (Number(r.cost)||0), 0) +
+    yearDeworm.reduce((s,r) => s + (Number(r.cost)||0), 0);
+  // Foaling in this year
+  const yearFoalings = (horsesHobby?.breedings || []).filter(b => b.foaledDate && b.foaledDate >= yearStart && b.foaledDate <= yearEnd);
+  const horseFoalsBorn = yearFoalings.reduce((s,b) => s + (Number(b.foalsBorn)||0), 0);
+  const horseFoalsAlive = yearFoalings.reduce((s,b) => s + (Number(b.foalsAlive)||0), 0);
+
   // Freezer log — universal butcher records this year
   const freezerLogYear = (data.freezerLog || []).filter(r =>
     r.date >= yearStart && r.date <= yearEnd
@@ -1091,6 +1153,9 @@ function computeStats(data, year) {
     // Sourdough
     sourdoughBakes, sourdoughLoaves, sourdoughTotalCost, sourdoughTopRecipe,
     sourdoughLoavesSold, sourdoughRevenue, sourdoughProfit,
+    // Horses
+    horseCount, horseRides, horseRideHours, horseFoalsBorn, horseFoalsAlive,
+    horseFarrierCount, horseVetCount, horseDewormCount, horseTotalCareCost, horseTopRider,
     // Farmstand
     farmstandRevenue, farmstandCost, farmstandProfit, farmstandSaleCount, farmstandTopItem, farmstandItemCount,
     // Freezer log (universal butcher records — any flock, any bird type)

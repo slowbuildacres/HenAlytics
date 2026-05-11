@@ -20,7 +20,7 @@ const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
 
-const GOAT_BREEDS=["Nubian","Boer","Alpine","LaMancha","Oberhasli","Saanen","Toggenburg","Nigerian Dwarf","Kiko","Myotonic (Fainting)","Angora","Pygmy","Mixed/Other"];
+const GOAT_BREEDS=["Nubian","Boer","Alpine","LaMancha","Oberhasli","Saanen","Toggenburg","Nigerian Dwarf","Kiko","Myotonic (Fainting)","Angora","Pygmy","Mixed","Other"];
 const GOAT_PURPOSES=["Dairy","Meat","Both"];
 const GOAT_SEXES=["Doe","Buck","Wether","Kid"];
 
@@ -39,7 +39,13 @@ function ChartCard({title,children}){return <div style={{background:palette.card
 function AnimalModal({animal,hobbyId,update,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
-  const[breed,setBreed]=useState(animal?.breed||"Mixed/Other");
+  // Breed: dropdown with common breeds, "Other" shows a custom text field.
+  // On edit, preselect "Other" if the saved breed isn't in the dropdown.
+  const initBreed = (animal?.breed || "").trim();
+  const initIsKnown = GOAT_BREEDS.includes(initBreed);
+  const[breedSelect,setBreedSelect]=useState(initBreed && initIsKnown ? initBreed : (initBreed ? "Other" : "Mixed"));
+  const[breedCustom,setBreedCustom]=useState(initBreed && !initIsKnown ? initBreed : "");
+  const finalBreed = breedSelect === "Other" ? breedCustom.trim() : breedSelect;
   const[purpose,setPurpose]=useState(animal?.purpose||"Dairy");
   const[sex,setSex]=useState(animal?.sex||"Doe");
   const[dob,setDob]=useState(animal?.dob||"");
@@ -48,14 +54,19 @@ function AnimalModal({animal,hobbyId,update,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed,purpose,sex,dob,notes,created:animal?.created||Date.now()};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,notes,created:animal?.created||Date.now()};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit goat":"Add a goat"}>
       <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Buttercup" autoFocus/></Field>
-      <Field label="Breed"><select style={inputStyle} value={breed} onChange={e=>setBreed(e.target.value)}>{GOAT_BREEDS.map(b=><option key={b}>{b}</option>)}</select></Field>
+      <Field label="Breed">
+        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{GOAT_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
+        {breedSelect === "Other" && (
+          <input style={{...inputStyle, marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Spanish, Pygora, San Clemente)" autoFocus />
+        )}
+      </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}><Field label="Purpose"><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{GOAT_PURPOSES.map(p=><button key={p} onClick={()=>setPurpose(p)} style={{padding:"7px 12px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",border:`1.5px solid ${purpose===p?palette.ink:palette.line}`,background:purpose===p?palette.ink:palette.card,color:purpose===p?palette.bg:palette.ink}}>{p}</button>)}</div></Field></div>
         <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{GOAT_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>

@@ -20,7 +20,7 @@ const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
 
-const COW_BREEDS=["Angus","Hereford","Holstein","Jersey","Simmental","Charolais","Longhorn","Dexter","Highland","Brown Swiss","Guernsey","Limousin","Red Angus","Shorthorn","Mixed/Other"];
+const COW_BREEDS=["Angus","Hereford","Holstein","Jersey","Simmental","Charolais","Longhorn","Dexter","Highland","Brown Swiss","Guernsey","Limousin","Red Angus","Shorthorn","Mixed","Other"];
 const COW_PURPOSES=["Dairy","Beef","Both"];
 const COW_SEXES=["Cow","Bull","Steer","Heifer","Calf"];
 
@@ -39,7 +39,12 @@ function ChartCard({title,children}){return <div style={{background:palette.card
 function AnimalModal({animal,hobbyId,update,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
-  const[breed,setBreed]=useState(animal?.breed||"Mixed/Other");
+  // Breed: dropdown + "Other" custom text field
+  const initBreed = (animal?.breed || "").trim();
+  const initIsKnown = COW_BREEDS.includes(initBreed);
+  const[breedSelect,setBreedSelect]=useState(initBreed && initIsKnown ? initBreed : (initBreed ? "Other" : "Mixed"));
+  const[breedCustom,setBreedCustom]=useState(initBreed && !initIsKnown ? initBreed : "");
+  const finalBreed = breedSelect === "Other" ? breedCustom.trim() : breedSelect;
   const[purpose,setPurpose]=useState(animal?.purpose||"Dairy");
   const[sex,setSex]=useState(animal?.sex||"Cow");
   const[dob,setDob]=useState(animal?.dob||"");
@@ -49,14 +54,19 @@ function AnimalModal({animal,hobbyId,update,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed,purpose,sex,dob,tagId,notes,created:animal?.created||Date.now()};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,notes,created:animal?.created||Date.now()};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit cow":"Add a cow"}>
       <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Bessie" autoFocus/></Field>
-      <Field label="Breed"><select style={inputStyle} value={breed} onChange={e=>setBreed(e.target.value)}>{COW_BREEDS.map(b=><option key={b}>{b}</option>)}</select></Field>
+      <Field label="Breed">
+        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{COW_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
+        {breedSelect === "Other" && (
+          <input style={{...inputStyle, marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Wagyu, Belted Galloway, Devon)" autoFocus />
+        )}
+      </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}><Field label="Purpose"><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{COW_PURPOSES.map(p=><button key={p} onClick={()=>setPurpose(p)} style={{padding:"7px 12px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",border:`1.5px solid ${purpose===p?palette.ink:palette.line}`,background:purpose===p?palette.ink:palette.card,color:purpose===p?palette.bg:palette.ink}}>{p}</button>)}</div></Field></div>
         <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{COW_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>

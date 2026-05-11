@@ -50,6 +50,7 @@ const HOBBY_META = {
   garden:        { label: "Garden",        emoji: "🌱", color: palette.leaf },
   farmstand:     { label: "Farm Stand",    emoji: "🧾", color: palette.leaf },
   sourdough:     { label: "Sourdough",     emoji: "🍞", color: palette.yolk },
+  horse:         { label: "Horses",        emoji: "🐴", color: palette.feather },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 };
 
@@ -170,6 +171,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
     }
     if (hobbyType === "farmstand") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "sourdough") return q * (Number(pricePerUnit) || 0);
+    if (hobbyType === "horse") return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     return Number(flatPrice) || 0;
   }, [hobbyType, qty, unit, pricePerUnit, pricingMethod, avgWeightLbs, pricePerLb, flatPrice]);
@@ -183,6 +185,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       else if (h.type === "rabbits") types.add("rabbits");
       else if (h.type === "garden") types.add("garden");
       else if (h.type === "sourdough") types.add("sourdough");
+      else if (h.type === "horses") types.add("horse");
     });
     // Always include eggs and farmstand
     types.add("eggs");
@@ -219,6 +222,12 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
       const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
       sale = { ...sale, crop, pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
+    } else if (hobbyType === "horse") {
+      // Horse sales: one transaction = one horse (or a lease). pricePerUnit is
+      // the sale/lease price, qty is always 1, crop holds the horse's name.
+      const saleRev = Number(pricePerUnit) || 0;
+      // saleType (sold vs leased) goes in the otherItem field for now
+      sale = { ...sale, crop, saleType: otherItem || "sold", pricePerUnit: saleRev, totalRevenue: saleRev };
     } else if (hobbyType === "garden") {
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit) || 0 };
     } else {
@@ -541,6 +550,22 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 </div>
               </>}
 
+              {/* Horse */}
+              {hobbyType === "horse" && <>
+                <Field label="Horse name">
+                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="e.g. Thunder, Buttercup" />
+                </Field>
+                <Field label="Type of transaction">
+                  <select style={inputStyle} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
+                    <option value="sold">Sold</option>
+                    <option value="leased">Leased</option>
+                  </select>
+                </Field>
+                <Field label="Sale / lease price">
+                  <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                </Field>
+              </>}
+
               {/* Other */}
               {hobbyType === "other" && <>
                 <Field label="What was sold?">
@@ -651,6 +676,8 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit||""} @ ${fmtMoney(sale.pricePerUnit||0)}/unit`;
   } else if (sale.hobbyType === "sourdough") {
     detail = `${sale.crop || "Bread"} · ${sale.qty} loa${sale.qty === 1 ? "f" : "ves"} @ ${fmtMoney(sale.pricePerUnit||0)}/loaf`;
+  } else if (sale.hobbyType === "horse") {
+    detail = `${sale.crop || "Horse"} · ${sale.saleType || "sold"}`;
   } else if (sale.hobbyType === "garden") {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit || ""}`;
   } else {

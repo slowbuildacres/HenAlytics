@@ -260,6 +260,19 @@ function computeWeeklyStats(data) {
     sourdoughRevenue = weekSourdoughSales.reduce((s,x) => s+(Number(x.totalRevenue)||0), 0);
   }
 
+  // Horse stats
+  const horsesHobby = hobbies.find(h => h.type === 'horses' && !h.hidden);
+  let horseRides = 0, horseRideMinutes = 0, horseFoalsBorn = 0, horseVetVisits = 0, horseFarrierVisits = 0;
+  if (horsesHobby) {
+    const weekRides = (horsesHobby.rides || []).filter(r => r.date && r.date >= sevenDaysAgoIso);
+    horseRides = weekRides.length;
+    horseRideMinutes = weekRides.reduce((s,r) => s+(Number(r.durationMinutes)||0), 0);
+    const weekFoalings = (horsesHobby.breedings || []).filter(b => b.foaledDate && b.foaledDate >= sevenDaysAgoIso);
+    horseFoalsBorn = weekFoalings.reduce((s,b) => s+(Number(b.foalsBorn)||0), 0);
+    horseVetVisits = (horsesHobby.vet || []).filter(r => r.date && r.date >= sevenDaysAgoIso).length;
+    horseFarrierVisits = (horsesHobby.farrier || []).filter(r => r.date && r.date >= sevenDaysAgoIso).length;
+  }
+
   // Farm stand sales stats
   const farmstandSales = (data.sales || []).filter(s => s.hobbyType === 'farmstand' && s.date >= sevenDaysAgoIso);
   const farmstandRevenue = farmstandSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
@@ -284,6 +297,7 @@ function computeWeeklyStats(data) {
     pigLitters, pigButchered, pigMeatLbs, hasPigs: !!pigsHobby,
     sheepMilkGal, sheepLambsBorn, sheepWoolLbs, sheepButchered, hasSheep: !!sheepHobby,
     sourdoughBakes, sourdoughLoaves, sourdoughLoavesSold, sourdoughRevenue, hasSourdough: !!sourdoughHobby,
+    horseRides, horseRideMinutes, horseFoalsBorn, horseVetVisits, horseFarrierVisits, hasHorses: !!horsesHobby,
     freezerBirds, freezerLbs,
   };
 }
@@ -366,6 +380,17 @@ function buildDigestEmail(email, data, stats) {
   if (stats.hasSourdough) {
     if (stats.sourdoughLoaves > 0) lines.push(`🍞 <strong>${stats.sourdoughLoaves}</strong> loa${stats.sourdoughLoaves===1?'f':'ves'} baked across <strong>${stats.sourdoughBakes}</strong> session${stats.sourdoughBakes===1?'':'s'}`);
     if (stats.sourdoughLoavesSold > 0) lines.push(`💰 <strong>${stats.sourdoughLoavesSold}</strong> loa${stats.sourdoughLoavesSold===1?'f':'ves'} sold · <strong>${fmtMoney(stats.sourdoughRevenue)}</strong> revenue`);
+  }
+
+  // Horse lines
+  if (stats.hasHorses) {
+    if (stats.horseRides > 0) {
+      const hrs = (stats.horseRideMinutes / 60).toFixed(1);
+      lines.push(`🐴 <strong>${stats.horseRides}</strong> ride${stats.horseRides===1?'':'s'} · <strong>${hrs} hr${hrs==='1.0'?'':'s'}</strong> in the saddle`);
+    }
+    if (stats.horseFoalsBorn > 0) lines.push(`🍼 <strong>${stats.horseFoalsBorn}</strong> foal${stats.horseFoalsBorn===1?'':'s'} born this week`);
+    if (stats.horseVetVisits > 0) lines.push(`🩺 <strong>${stats.horseVetVisits}</strong> vet visit${stats.horseVetVisits===1?'':'s'} logged`);
+    if (stats.horseFarrierVisits > 0) lines.push(`🔨 <strong>${stats.horseFarrierVisits}</strong> farrier visit${stats.horseFarrierVisits===1?'':'s'} logged`);
   }
 
   // Farm stand lines
