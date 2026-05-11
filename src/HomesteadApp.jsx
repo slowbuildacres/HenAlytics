@@ -5,7 +5,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
-  MapPin, CloudRain, Thermometer, Share2, Store
+  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
@@ -799,6 +799,110 @@ const getSeason = (dateStr, data) => {
   if (m >= 2 && m <= 4) return `Spring ${y}`;
   if (m >= 5 && m <= 7) return `Summer ${y}`;
   return `Fall ${y}`;
+};
+
+// ============================================================================
+// SEASON INFO (richer than getSeason) — used by HomePage filter + Journal page
+// ----------------------------------------------------------------------------
+// Returns a structured object instead of just a label string. Winter labels
+// use a year range ("Winter 2025–26") because winter straddles two calendar
+// years; the other seasons are single-year. `sortOrder` is a number suitable
+// for sorting seasons newest→oldest (or oldest→newest).
+//
+// Solstices (~June 21 and Sept 21) split the frost-free growing window into
+// spring/summer/fall. Outside the frost-free window is winter.
+//
+// Northern hemisphere with location:
+//   • Winter Y/Y+1: from fallFrost(Y) through springFrost(Y+1) inclusive
+//   • Spring Y:    springFrost(Y)+1 through June 21 inclusive
+//   • Summer Y:    June 22 through Sept 21
+//   • Fall Y:      Sept 22 through fallFrost(Y)-1
+//
+// Returns:
+//   {
+//     key: "winter-2025",     // stable id (start year for winter, calendar year for others)
+//     label: "Winter 2025–26", // human display
+//     type: "winter" | "spring" | "summer" | "fall",
+//     startYear: 2025,        // for winter: year of fall frost; otherwise calendar year
+//     sortOrder: 2025.4       // higher = more recent; winter > fall > summer > spring within a year
+//   }
+// ============================================================================
+const SOLSTICE_SUMMER_START = 172; // June 21 day-of-year (172 in non-leap; off by ≤1 in leap years, close enough)
+const SOLSTICE_FALL_START = 264;   // Sept 21
+const SEASON_SORT_OFFSET = { winter: 0.4, fall: 0.3, summer: 0.2, spring: 0.1 };
+
+const _makeSeasonInfo = (type, startYear) => {
+  const endYY = String((startYear + 1) % 100).padStart(2, "0");
+  const label = type === "winter"
+    ? `Winter ${startYear}\u2013${endYY}`
+    : `${type.charAt(0).toUpperCase() + type.slice(1)} ${startYear}`;
+  return {
+    key: `${type}-${startYear}`,
+    label,
+    type,
+    startYear,
+    sortOrder: startYear + SEASON_SORT_OFFSET[type],
+  };
+};
+
+const getSeasonInfo = (dateStr, data) => {
+  const d = parseLocalDate(dateStr);
+  const y = d.getFullYear();
+  const m = d.getMonth();
+  const doy = dayOfYear(d);
+  const lat = data?.homesteadLocation?.lat;
+  const frost = estimateFrostDates(lat);
+  const south = getCurrentHemisphere() === "south";
+
+  // Southern hemisphere — calendar splits, winter is mid-year, summer straddles Dec→Feb
+  if (south) {
+    if (frost) {
+      const sFrost = ((frost.springFrostDayOfYear + 183 - 1) % 365) + 1;
+      const fFrost = ((frost.fallFrostDayOfYear + 183 - 1) % 365) + 1;
+      const inWinter = doy >= fFrost && doy <= sFrost;
+      if (inWinter) return _makeSeasonInfo("winter", y);
+    }
+    if (m >= 8 && m <= 10) return _makeSeasonInfo("spring", y);
+    if (m === 11) return _makeSeasonInfo("summer", y);             // Dec — start of straddling summer
+    if (m >= 0 && m <= 1) return _makeSeasonInfo("summer", y - 1); // Jan/Feb — still last Dec's summer
+    return _makeSeasonInfo("fall", y);
+  }
+
+  // Northern hemisphere with location — frost-aware winter, solstice-split growing season
+  if (frost) {
+    const sFrost = frost.springFrostDayOfYear;
+    const fFrost = frost.fallFrostDayOfYear;
+    if (doy <= sFrost) return _makeSeasonInfo("winter", y - 1);
+    if (doy >= fFrost) return _makeSeasonInfo("winter", y);
+    if (doy <= SOLSTICE_SUMMER_START) return _makeSeasonInfo("spring", y);
+    if (doy <= SOLSTICE_FALL_START) return _makeSeasonInfo("summer", y);
+    return _makeSeasonInfo("fall", y);
+  }
+
+  // No location — meteorological winter (Dec/Jan/Feb), solstices for the rest
+  if (m === 11) return _makeSeasonInfo("winter", y);
+  if (m >= 0 && m <= 1) return _makeSeasonInfo("winter", y - 1);
+  if (doy <= SOLSTICE_SUMMER_START) return _makeSeasonInfo("spring", y);
+  if (doy <= SOLSTICE_FALL_START) return _makeSeasonInfo("summer", y);
+  return _makeSeasonInfo("fall", y);
+};
+
+// Season info for today. Used by HomePage's current+previous-season filter.
+const getCurrentSeasonInfo = (data) => {
+  const today = new Date();
+  const iso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  return getSeasonInfo(iso, data);
+};
+
+// Season info for the season immediately before the given one. Spring Y's
+// predecessor is Winter (Y-1)/Y; summer→spring; fall→summer; winter→fall (same year).
+const getPreviousSeasonInfo = (info) => {
+  if (!info) return null;
+  const { type, startYear } = info;
+  if (type === "spring") return _makeSeasonInfo("winter", startYear - 1);
+  if (type === "summer") return _makeSeasonInfo("spring", startYear);
+  if (type === "fall")   return _makeSeasonInfo("summer", startYear);
+  return _makeSeasonInfo("fall", startYear); // winter → fall (same start year)
 };
 
 // formatWeatherI18n — localized version of formatWeather. Renders the daily
@@ -1745,6 +1849,17 @@ export default function HomesteadApp() {
               <BarnIcon size={22} />
             </button>
             <button
+              onClick={() => setPage("journal")}
+              style={{
+                background: "none", border: "none", cursor: "pointer", padding: 6,
+                color: page === "journal" ? palette.accent : palette.ink,
+              }}
+              title="Journal"
+              aria-label="Journal"
+            >
+              <BookOpen size={20} />
+            </button>
+            <button
               onClick={() => setModal({ type: "settings" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
               title="Settings"
@@ -1756,7 +1871,7 @@ export default function HomesteadApp() {
         </div>
 
         {/* HOBBY PICKER (hidden on Photos page since it shows all hobbies) */}
-        {page !== "sales" && page !== "year" && page !== "calendar" && (
+        {page !== "sales" && page !== "year" && page !== "calendar" && page !== "journal" && (
         <div style={{ maxWidth: 720, margin: "16px auto 0", position: "relative" }}>
           <button
             onClick={() => setHobbyMenuOpen(!hobbyMenuOpen)}
@@ -1842,7 +1957,7 @@ export default function HomesteadApp() {
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "20px 20px 40px" }}>
         <ErrorBoundary resetKey={`${page}|${activeHobby}`} label={`${page}/${activeHobby}`}>
         {page === "home" && (
-          <HomePage hobby={hobby} data={data} update={update} setModal={setModal} />
+          <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data}>
@@ -1952,6 +2067,9 @@ export default function HomesteadApp() {
         {page === "calendar" && (
           <CalendarPage data={data} update={update} setModal={setModal} />
         )}
+        {page === "journal" && (
+          <JournalPage data={data} update={update} setModal={setModal} />
+        )}
         {page === "sales" && (
           <SalesPage data={data} update={update} />
         )}
@@ -1992,9 +2110,29 @@ export default function HomesteadApp() {
 }
 
 // ============ HOME PAGE ============
-function HomePage({ hobby, data, update, setModal }) {
+function HomePage({ hobby, data, update, setModal, setPage }) {
   const entries = data.entries[hobby.id] || [];
-  const recent = [...entries].sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created).slice(0, 8);
+
+  // Recent activity scope: keep the main view to the current season plus the
+  // previous one (smooth transition — never vanishes mid-season), capped at
+  // 20 rows. Anything older or beyond the cap goes to the Journal page.
+  // Sorted newest-first the same way as before.
+  const recentScope = React.useMemo(() => {
+    const current = getCurrentSeasonInfo(data);
+    const prev = getPreviousSeasonInfo(current);
+    const cutoff = prev ? prev.sortOrder : current.sortOrder;
+    const withSeason = entries.map((e) => ({ e, season: getSeasonInfo(e.date, data) }));
+    const inWindow = withSeason
+      .filter(({ season }) => season.sortOrder >= cutoff)
+      .map(({ e }) => e);
+    inWindow.sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
+    const CAP = 20;
+    const visible = inWindow.slice(0, CAP);
+    // "Hidden" = anything not visible: older-than-prev-season OR beyond the cap.
+    const hidden = entries.length - visible.length;
+    return { visible, hidden };
+  }, [entries, data]);
+  const recent = recentScope.visible;
 
   return (
     <div>
@@ -2072,7 +2210,303 @@ function HomePage({ hobby, data, update, setModal }) {
           ))}
         </div>
       )}
+
+      {/* Journal overflow footer — surfaces when older entries exist outside the
+          current+previous-season window OR beyond the 20-row cap. */}
+      {recentScope.hidden > 0 && (
+        <button
+          onClick={() => { if (setPage) setPage("journal"); }}
+          style={{
+            marginTop: 12,
+            width: "100%",
+            padding: "12px 14px",
+            background: palette.card,
+            border: `1.5px dashed ${palette.line}`,
+            borderRadius: 10,
+            cursor: "pointer",
+            fontFamily: FONT_BODY,
+            fontSize: 13,
+            color: palette.inkSoft,
+            textAlign: "center",
+            lineHeight: 1.4,
+          }}
+        >
+          {recentScope.hidden === 1
+            ? "1 older entry lives in the Journal"
+            : `${recentScope.hidden} older entries live in the Journal`}
+          <div style={{ fontSize: 11, marginTop: 2, color: palette.inkSoft, opacity: 0.7 }}>
+            📓 Tap to open
+          </div>
+        </button>
+      )}
     </div>
+  );
+}
+
+// ============================================================================
+// JOURNAL PAGE
+// ----------------------------------------------------------------------------
+// Full historical entry browser, grouped by season. Sorted newest-first.
+// HomePage's "recent activity" shows only the current + previous season (capped
+// at 20 entries). Everything else lives here. Tap any entry to open the same
+// edit modal HomePage uses, so edits/deletes stay consistent.
+//
+// UX: a "filter by hobby" pill row at the top, then a list of collapsible
+// season groups. Each header shows the season label + entry count. Tap a
+// header to toggle. Only one season is expanded by default (the most recent
+// one with entries) so the page doesn't open as a wall of text.
+// ============================================================================
+function JournalPage({ data, update, setModal }) {
+  const [hobbyFilter, setHobbyFilter] = useState("all");
+  const [openSeasons, setOpenSeasons] = useState(() => new Set());
+  const initializedRef = useRef(false);
+
+  // Hobbies that actually have entries (avoid showing pills for unused ones).
+  // We respect the user's hobby ordering / hidden flags via data.hobbies.
+  const hobbiesWithEntries = React.useMemo(() => {
+    const list = [];
+    for (const h of data.hobbies || []) {
+      if (h.hidden) continue;
+      const arr = data.entries?.[h.id];
+      if (Array.isArray(arr) && arr.length > 0) list.push(h);
+    }
+    return list;
+  }, [data.hobbies, data.entries]);
+
+  // Collect all entries (or just the filtered hobby's) and tag with season +
+  // hobby info. Then group by season key, sort groups newest-first, sort
+  // entries within each group newest-first.
+  const grouped = React.useMemo(() => {
+    const byKey = new Map(); // key → { info, items: [{ entry, hobby }] }
+    const includeHobby = (h) => hobbyFilter === "all" || hobbyFilter === h.id;
+    for (const h of data.hobbies || []) {
+      if (h.hidden) continue;
+      if (!includeHobby(h)) continue;
+      const arr = data.entries?.[h.id];
+      if (!Array.isArray(arr)) continue;
+      for (const e of arr) {
+        if (!e || !e.date) continue;
+        const info = getSeasonInfo(e.date, data);
+        if (!byKey.has(info.key)) byKey.set(info.key, { info, items: [] });
+        byKey.get(info.key).items.push({ entry: e, hobby: h });
+      }
+    }
+    // Sort each group's items newest-first
+    for (const g of byKey.values()) {
+      g.items.sort((a, b) => b.entry.date.localeCompare(a.entry.date) || (b.entry.created || 0) - (a.entry.created || 0));
+    }
+    // Sort groups newest season first
+    return Array.from(byKey.values()).sort((a, b) => b.info.sortOrder - a.info.sortOrder);
+  }, [data.hobbies, data.entries, data.homesteadLocation, hobbyFilter]);
+
+  // On first render (or when filter changes and we have results), expand only
+  // the most recent season so the page doesn't open as a giant wall.
+  React.useEffect(() => {
+    if (grouped.length === 0) return;
+    if (!initializedRef.current) {
+      setOpenSeasons(new Set([grouped[0].info.key]));
+      initializedRef.current = true;
+    }
+  }, [grouped]);
+
+  const toggleSeason = (key) => {
+    setOpenSeasons((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Delete handler — mirrors HomePage's logic so the Journal stays consistent
+  // (butcher entries also clean up freezerLog + currentBatch.butchered).
+  const deleteEntry = (entry, hobby) => {
+    getEntryPhotos(entry).forEach((p) => deletePhoto(p).catch(() => {}));
+    update((d) => {
+      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== entry.id);
+      if (entry.action === "butcher") {
+        const h = d.hobbies.find((x) => x.id === hobby.id);
+        if (h && Array.isArray(h.currentBatches)) {
+          const b = h.currentBatches.find((x) => x.id === entry.batchId);
+          if (b && Array.isArray(b.butchered)) {
+            b.butchered = b.butchered.filter((bu) => bu.id !== entry.id);
+          }
+        }
+        if (Array.isArray(d.freezerLog)) {
+          d.freezerLog = d.freezerLog.filter(
+            (f) => !(f.batchId === entry.batchId && f.date === entry.date && f.count === entry.count)
+          );
+        }
+      }
+      return d;
+    });
+  };
+
+  const totalEntries = grouped.reduce((sum, g) => sum + g.items.length, 0);
+
+  return (
+    <div>
+      {/* PAGE HEADER */}
+      <div style={{ marginBottom: 18 }}>
+        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, margin: 0, color: palette.ink }}>
+          Journal
+        </h1>
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginTop: 4, lineHeight: 1.5 }}>
+          Your full history, organized by season. Tap any entry to view or edit.
+        </div>
+      </div>
+
+      {/* HOBBY FILTER PILLS — "All" + one per hobby with entries */}
+      {hobbiesWithEntries.length > 1 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 18 }}>
+          <PillButton
+            active={hobbyFilter === "all"}
+            onClick={() => setHobbyFilter("all")}
+          >
+            All hobbies
+          </PillButton>
+          {hobbiesWithEntries.map((h) => (
+            <PillButton
+              key={h.id}
+              active={hobbyFilter === h.id}
+              onClick={() => setHobbyFilter(h.id)}
+            >
+              {h.name}
+            </PillButton>
+          ))}
+        </div>
+      )}
+
+      {/* EMPTY STATE */}
+      {totalEntries === 0 && (
+        <div style={{
+          padding: 32, background: palette.card, border: `1.5px dashed ${palette.line}`,
+          borderRadius: 12, textAlign: "center", color: palette.inkSoft, lineHeight: 1.6,
+        }}>
+          <div style={{ fontSize: 32, marginBottom: 6 }}>📓</div>
+          {hobbyFilter === "all"
+            ? "Nothing in the Journal yet. Log a few entries and they'll appear here organized by season."
+            : "No entries for this hobby yet. Switch the filter or log a few entries."}
+        </div>
+      )}
+
+      {/* SEASON GROUPS */}
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {grouped.map((g) => {
+          const open = openSeasons.has(g.info.key);
+          return (
+            <div
+              key={g.info.key}
+              style={{
+                background: palette.card,
+                border: `1.5px solid ${palette.line}`,
+                borderRadius: 12,
+                overflow: "hidden",
+                boxShadow: "2px 2px 0 " + palette.line,
+              }}
+            >
+              <button
+                onClick={() => toggleSeason(g.info.key)}
+                style={{
+                  width: "100%",
+                  padding: "12px 14px",
+                  background: "transparent",
+                  border: "none",
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  fontFamily: FONT_BODY,
+                  fontSize: 15,
+                  color: palette.ink,
+                  textAlign: "left",
+                }}
+                aria-expanded={open}
+              >
+                <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                  <span style={{ fontSize: 18 }}>
+                    {g.info.type === "winter" ? "❄️" :
+                     g.info.type === "spring" ? "🌱" :
+                     g.info.type === "summer" ? "☀️" :
+                     "🍂"}
+                  </span>
+                  <span style={{ fontFamily: FONT_DISPLAY, fontSize: 18 }}>{g.info.label}</span>
+                  <span style={{ fontSize: 12, color: palette.inkSoft, fontWeight: 500 }}>
+                    · {g.items.length} {g.items.length === 1 ? "entry" : "entries"}
+                  </span>
+                </span>
+                <ChevronDown
+                  size={18}
+                  style={{
+                    transform: open ? "rotate(180deg)" : "rotate(0deg)",
+                    transition: "transform 150ms ease",
+                    color: palette.inkSoft,
+                  }}
+                />
+              </button>
+              {open && (
+                <div style={{
+                  padding: "4px 12px 12px",
+                  borderTop: `1px solid ${palette.line}`,
+                  display: "flex",
+                  flexDirection: "column",
+                  gap: 8,
+                }}>
+                  {g.items.map(({ entry, hobby }) => (
+                    <div key={`${hobby.id}-${entry.id}`}>
+                      {/* When filter is "all", show which hobby each entry belongs to.
+                          When filtered, the hobby is already implied — skip the badge. */}
+                      {hobbyFilter === "all" && (
+                        <div style={{
+                          fontSize: 10,
+                          textTransform: "uppercase",
+                          letterSpacing: 0.8,
+                          color: palette.inkSoft,
+                          marginBottom: 3,
+                          marginLeft: 2,
+                          fontWeight: 600,
+                        }}>
+                          {hobby.name}
+                        </div>
+                      )}
+                      <ActivityRow
+                        entry={entry}
+                        hobbyType={hobby.type}
+                        onEdit={() => setModal({ type: "log", action: entry.action, existingEntry: entry, hobbyIdOverride: hobby.id })}
+                        onDelete={() => deleteEntry(entry, hobby)}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// Small pill-button used by JournalPage's hobby filter. Kept local because
+// nothing else in the file uses this exact look.
+function PillButton({ active, onClick, children }) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        padding: "6px 12px",
+        borderRadius: 999,
+        border: `1.5px solid ${active ? palette.ink : palette.line}`,
+        background: active ? palette.ink : palette.card,
+        color: active ? palette.bg : palette.ink,
+        cursor: "pointer",
+        fontFamily: FONT_BODY,
+        fontWeight: 600,
+        fontSize: 12,
+      }}
+    >
+      {children}
+    </button>
   );
 }
 
@@ -3961,7 +4395,16 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
-  if (modal.type === "log") return <LogModal hobby={hobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
+  if (modal.type === "log") {
+    // Normally the LogModal operates on the currently-active hobby. When the
+    // Journal opens an entry from a non-active hobby, it passes a
+    // hobbyIdOverride so the edit goes to the right entries array. Fall back
+    // to the active hobby for every other call site.
+    const targetHobby = modal.hobbyIdOverride
+      ? (data.hobbies.find((h) => h.id === modal.hobbyIdOverride) || hobby)
+      : hobby;
+    return <LogModal hobby={targetHobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
+  }
   if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} />;
   if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
   if (modal.type === "addCalendarEvent") return <AddCalendarEventModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
