@@ -495,14 +495,14 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 13;
+const CURRENT_VERSION = 14;
 
 const WHATS_NEW = [
+  "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Plus your hardiness zone system (USDA, UK RHS, Australia, etc) now auto-picks from your homestead location. Find it in Settings.",
   "🐴 Horses hobby — per-horse tracking with rides, farrier visits, vet, deworming, breeding & foaling reminders",
   "🐑 Custom breeds — added \"Other\" option to breed dropdowns on Sheep, Goats, Cows, and Horses so you can type in any breed",
   "🍞 Sourdough hobby — track starters with feeding logs, bakes with cost & profit, recipes, and crumb ratings",
   "🐝 Beekeeping upgrades — log hive cost when you add a hive, plus a varroa mite testing log with high-mite alerts",
-  "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Find it in Settings.",
   "🐑 Sheep hobby — dairy, meat, wool, or mixed flocks with lambing tracking, shearing logs, and calendar reminders",
   "🐔 Per-flock tracking — feed, bedding, deaths, and sold eggs now attach to a specific flock so you get real per-flock cost-per-egg numbers",
   "🙏 Monthly thank-you got an upgrade — clearer mission note + a 'Buy Henalytics a bag of feed' button to support the app",
