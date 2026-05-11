@@ -446,6 +446,10 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
 
 // ============ HIVE DETAIL VIEW ============
 function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEntry, onEditEntry }) {
+  // Track delete confirmation locally so we can show inline "Confirm delete?"
+  // instead of a native window.confirm() dialog (which looks bad on iOS and
+  // even worse when wrapped in Capacitor for the App Store).
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const hiveEntries = entries.filter(e => e.hiveId === hive.id).sort((a,b) => (b.date||"").localeCompare(a.date||""));
   const totalHarvestLbs = hiveEntries.filter(e=>e.action==="harvest").reduce((s,e)=>s+(Number(e.lbs)||0),0);
   const totalJars = hiveEntries.filter(e=>e.action==="harvest").reduce((s,e)=>s+(Number(e.jars)||0),0);
@@ -481,9 +485,16 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
               {hive.location && ` · ${hive.location}`}
             </div>
           </div>
-          <div style={{ display:"flex",gap:8 }}>
+          <div style={{ display:"flex",gap:8,alignItems:"center" }}>
             <button onClick={onEdit} style={{ background:"none",border:"none",cursor:"pointer",color:palette.bg,opacity:0.7,padding:4 }}><Edit3 size={16}/></button>
-            <button onClick={onDelete} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4 }}><Trash2 size={16}/></button>
+            {!confirmingDelete ? (
+              <button onClick={() => setConfirmingDelete(true)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4 }} title="Delete hive"><Trash2 size={16}/></button>
+            ) : (
+              <div style={{ display:"flex",gap:6,alignItems:"center" }}>
+                <button onClick={onDelete} style={{ background:palette.accent,color:palette.bg,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,fontFamily:FONT_BODY }}>Confirm delete</button>
+                <button onClick={() => setConfirmingDelete(false)} style={{ background:"rgba(255,255,255,0.15)",color:palette.bg,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontFamily:FONT_BODY }}>Cancel</button>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -787,7 +798,7 @@ export default function BeesPage({ hobby, data, update }) {
   };
 
   const deleteHive = (hiveId) => {
-    if (!window.confirm("Delete this hive and all its entries?")) return;
+    // Confirmation handled inline in HiveDetail; this just performs the deletion.
     update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; h.hives=(h.hives||[]).filter(x=>x.id!==hiveId); d.entries[hobby.id]=(d.entries[hobby.id]||[]).filter(e=>e.hiveId!==hiveId); return d; });
     setSelectedHive(null);
   };

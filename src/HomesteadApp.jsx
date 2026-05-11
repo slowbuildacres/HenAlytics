@@ -14,7 +14,7 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 import {
   loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
-  sendFeedback, notifySignup, acceptInvite,
+  sendFeedback, notifySignup, acceptInvite, deleteAccount,
 } from "./sync.js";
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
@@ -1589,7 +1589,7 @@ function HomePage({ hobby, data, update, setModal }) {
       {/* HOBBY-SPECIFIC SUMMARY */}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
-      {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} setModal={setModal} />}
+      {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} />}
 
       {/* QUICK LOG TILES */}
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "24px 0 12px", color: palette.ink }}>
@@ -1865,7 +1865,10 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
 }
 
 // ============ HOBBY SUMMARIES ============
-function GardenSummary({ hobby, data, setModal }) {
+function GardenSummary({ hobby, data, update, setModal }) {
+  // Track which perennial is currently in "confirm delete?" state, so we can
+  // replace the native window.confirm() dialog with inline UI (mobile-friendly).
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // Perennials section shown at bottom of garden home regardless of season
   const perennials = hobby.perennials || [];
 
@@ -1935,7 +1938,27 @@ function GardenSummary({ hobby, data, setModal }) {
                 <div style={{ display:"flex",gap:5,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end" }}>
                   <button onClick={() => setModal({ type:"logPerennialHarvest",hobbyId:hobby.id,perennialId:p.id })} style={{ background:palette.leaf,border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,color:"#fff",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap" }}>Log harvest</button>
                   <button onClick={() => setModal({ type:"editPerennial",hobbyId:hobby.id,perennialId:p.id })} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY }}>Edit</button>
-                  <button onClick={() => { if (window.confirm("Delete " + p.name + "?")) update(d => { const h=d.hobbies.find(x=>x.id===hobby.id); if(h) h.perennials=(h.perennials||[]).filter(x=>x.id!==p.id); return d; }); }} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.accent,fontFamily:FONT_BODY }}>Delete</button>
+                  {confirmDeleteId === p.id ? (
+                    <>
+                      <button
+                        onClick={() => {
+                          update(d => { const h=d.hobbies.find(x=>x.id===hobby.id); if(h) h.perennials=(h.perennials||[]).filter(x=>x.id!==p.id); return d; });
+                          setConfirmDeleteId(null);
+                        }}
+                        style={{ background:palette.accent,border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.bg,fontFamily:FONT_BODY,fontWeight:600 }}
+                      >
+                        Confirm
+                      </button>
+                      <button
+                        onClick={() => setConfirmDeleteId(null)}
+                        style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY }}
+                      >
+                        Cancel
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => setConfirmDeleteId(p.id)} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.accent,fontFamily:FONT_BODY }}>Delete</button>
+                  )}
                 </div>
               </div>
             ))}
@@ -2364,7 +2387,29 @@ function EntryPhotoThumb({ path, size = 40 }) {
             alt=""
             style={{ maxWidth: "100%", maxHeight: "100%", borderRadius: 8 }}
             onClick={(e) => e.stopPropagation()}
+            onError={(e) => {
+              // Signed URLs expire after 1 hour. If the photo failed to load,
+              // replace with a placeholder so the user doesn't see a broken icon.
+              e.target.style.display = "none";
+              const placeholder = e.target.nextSibling;
+              if (placeholder && placeholder.dataset?.placeholder) {
+                placeholder.style.display = "flex";
+              }
+            }}
           />
+          <div
+            data-placeholder="true"
+            style={{
+              display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 8, padding: 32, background: "rgba(255,255,255,0.05)", borderRadius: 8,
+              color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: FONT_BODY,
+              minWidth: 200, minHeight: 200,
+            }}
+          >
+            <ImageIcon size={32} color="rgba(255,255,255,0.5)" />
+            <div>Photo unavailable</div>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>Try refreshing the page</div>
+          </div>
           <button
             onClick={() => setOpen(false)}
             style={{
@@ -2783,7 +2828,9 @@ function MeatChickensAnalytics({ hobby, entries, seasonFilter, spouseMode }) {
   const ageData = Object.entries(ageBuckets).map(([w, count]) => ({
     week: `${w}w`,
     count,
-    pct: ((count / totalDeaths) * 100).toFixed(0),
+    // Guard against div-by-zero in case ageBuckets ever populates from a path
+    // that doesn't increment totalDeaths in sync (e.g. data migration edge case)
+    pct: totalDeaths > 0 ? ((count / totalDeaths) * 100).toFixed(0) : "0",
   })).sort((a, b) => parseInt(a.week) - parseInt(b.week));
 
   return (
@@ -3178,7 +3225,27 @@ function PhotoTile({ photo }) {
             alt=""
             style={{ maxWidth: "100%", maxHeight: "85vh", borderRadius: 8 }}
             onClick={(e) => e.stopPropagation()}
+            onError={(e) => {
+              e.target.style.display = "none";
+              const placeholder = e.target.nextSibling;
+              if (placeholder && placeholder.dataset?.placeholder) {
+                placeholder.style.display = "flex";
+              }
+            }}
           />
+          <div
+            data-placeholder="true"
+            style={{
+              display: "none", flexDirection: "column", alignItems: "center", justifyContent: "center",
+              gap: 8, padding: 32, background: "rgba(255,255,255,0.05)", borderRadius: 8,
+              color: "rgba(255,255,255,0.7)", fontSize: 14, fontFamily: FONT_BODY,
+              minWidth: 200, minHeight: 200,
+            }}
+          >
+            <ImageIcon size={32} color="rgba(255,255,255,0.5)" />
+            <div>Photo unavailable</div>
+            <div style={{ fontSize: 11, opacity: 0.7 }}>Try refreshing the page</div>
+          </div>
           <div style={{
             color: "#fff", fontSize: 13, textAlign: "center",
             background: "rgba(0,0,0,0.4)", padding: "6px 12px", borderRadius: 6,
@@ -3700,6 +3767,15 @@ function InternationalSection({ data, update }) {
 function SettingsModal({ data, update, onClose, setModal, user }) {
   const [showReset, setShowReset] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
+  // Account deletion state — gated behind two confirmations:
+  //   showDeleteAccount: false → button only; true → modal opens
+  //   deleteConfirmText: must equal "DELETE" to enable the final button
+  //   deletingAccount: in-flight indicator
+  //   deleteError: any error from the endpoint
+  const [showDeleteAccount, setShowDeleteAccount] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [deletingAccount, setDeletingAccount] = useState(false);
+  const [deleteError, setDeleteError] = useState("");
 
   const handleSignOut = async () => {
     setSigningOut(true);
@@ -3711,6 +3787,28 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
     }
     setSigningOut(false);
     onClose();
+  };
+
+  const handleDeleteAccount = async () => {
+    if (deleteConfirmText !== "DELETE") return;
+    setDeletingAccount(true);
+    setDeleteError("");
+    try {
+      await deleteAccount();
+      // The server has already deleted the auth row. Sign out locally to
+      // clear the session token so the next page load shows the auth UI.
+      try {
+        if (supabase) await supabase.auth.signOut();
+      } catch (e) {
+        // Already deleted server-side, signOut will fail but that's fine
+      }
+      // Force a full page reload to clear all React state and start fresh.
+      window.location.href = "/";
+    } catch (e) {
+      console.error("Account deletion failed", e);
+      setDeleteError(e.message || "Could not delete account. Please email slowbuildacres@gmail.com.");
+      setDeletingAccount(false);
+    }
   };
 
   return (
@@ -3879,6 +3977,26 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           : "Your data is saved only to your own browser right now. Nothing is shared or sold. When you sign in, your email is used only for support — never sold or shared."}
       </div>
 
+      {/* Privacy policy / terms of service links — App Store requires these be accessible in-app */}
+      <div style={{ marginTop: 10, display: "flex", gap: 14, justifyContent: "center", flexWrap: "wrap" }}>
+        <a
+          href="https://henalytics.com/privacy"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 12, color: palette.inkSoft, textDecoration: "underline" }}
+        >
+          Privacy policy
+        </a>
+        <a
+          href="https://henalytics.com/terms"
+          target="_blank"
+          rel="noopener noreferrer"
+          style={{ fontSize: 12, color: palette.inkSoft, textDecoration: "underline" }}
+        >
+          Terms of service
+        </a>
+      </div>
+
       {!showReset ? (
         <button
           onClick={() => setShowReset(true)}
@@ -3905,6 +4023,87 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
             <Btn variant="ghost" small onClick={() => setShowReset(false)}>Cancel</Btn>
           </div>
         </div>
+      )}
+
+      {/* DELETE ACCOUNT — Apple App Store guideline 5.1.1(v) requires this be accessible in-app */}
+      {user && (
+        !showDeleteAccount ? (
+          <div style={{ marginTop: 4 }}>
+            <button
+              onClick={() => { setShowDeleteAccount(true); setDeleteConfirmText(""); setDeleteError(""); }}
+              style={{
+                background: "none", border: "none",
+                color: palette.accent, fontSize: 12, cursor: "pointer",
+                textDecoration: "underline", padding: 4,
+              }}
+            >
+              Delete my account
+            </button>
+          </div>
+        ) : (
+          <div style={{ marginTop: 14, padding: 14, background: palette.card, borderRadius: 8, border: `2px solid ${palette.accent}` }}>
+            <div style={{ fontSize: 14, marginBottom: 8, color: palette.accent, fontWeight: 700 }}>
+              ⚠️ Permanently delete your account
+            </div>
+            <div style={{ fontSize: 12, color: palette.ink, marginBottom: 10, lineHeight: 1.5 }}>
+              This will permanently delete:
+            </div>
+            <ul style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.7, marginTop: 0, marginBottom: 12, paddingLeft: 18 }}>
+              <li>Your account ({user.email})</li>
+              <li>All your homestead data (entries, photos, sales, calendar)</li>
+              <li>Any homesteads you own where you're the only member</li>
+            </ul>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+              If you share a homestead with farmhands, ownership transfers to the next member so they don't lose access.
+            </div>
+            <div style={{ fontSize: 13, color: palette.ink, fontWeight: 600, marginBottom: 6 }}>
+              This cannot be undone.
+            </div>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8 }}>
+              Type <strong style={{ color: palette.accent, fontFamily: "monospace" }}>DELETE</strong> below to confirm:
+            </div>
+            <input
+              type="text"
+              value={deleteConfirmText}
+              onChange={(e) => setDeleteConfirmText(e.target.value)}
+              placeholder="Type DELETE here"
+              autoCapitalize="characters"
+              autoCorrect="off"
+              spellCheck={false}
+              disabled={deletingAccount}
+              style={{
+                width: "100%", padding: "10px 12px", marginBottom: 12,
+                borderRadius: 6, border: `1.5px solid ${deleteConfirmText === "DELETE" ? palette.accent : palette.line}`,
+                background: palette.bg, fontFamily: "monospace", fontSize: 14,
+                color: palette.ink, boxSizing: "border-box",
+                letterSpacing: 1,
+              }}
+            />
+            {deleteError && (
+              <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10, padding: "8px 10px", background: palette.bgAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                {deleteError}
+              </div>
+            )}
+            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+              <Btn
+                variant="danger"
+                small
+                onClick={handleDeleteAccount}
+                disabled={deleteConfirmText !== "DELETE" || deletingAccount}
+              >
+                {deletingAccount ? "Deleting..." : "Delete my account permanently"}
+              </Btn>
+              <Btn
+                variant="ghost"
+                small
+                onClick={() => { setShowDeleteAccount(false); setDeleteConfirmText(""); setDeleteError(""); }}
+                disabled={deletingAccount}
+              >
+                Cancel
+              </Btn>
+            </div>
+          </div>
+        )
       )}
 
       {/* International friends? — collapsible panel for users outside the US */}

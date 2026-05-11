@@ -810,8 +810,26 @@ function pickRegionalEggPrice(location) {
 
 function shortDate(dateStr) {
   if (!dateStr) return "";
+  // Parse "YYYY-MM-DD" as local time, not UTC. `new Date("2026-05-10")` is
+  // UTC midnight which, for west-coast users, displays as May 9th. We
+  // explicitly construct from year/month/day to stay in local time.
+  if (typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    const dt = new Date(y, (m || 1) - 1, d || 1);
+    return `${monthLabels[dt.getMonth()]} ${dt.getDate()}`;
+  }
   const d = new Date(dateStr);
   return `${monthLabels[d.getMonth()]} ${d.getDate()}`;
+}
+
+// Helper for the other two places that need local-time parsing of YYYY-MM-DD
+function parseLocalDate(dateStr) {
+  if (!dateStr) return new Date();
+  if (typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}/.test(dateStr)) {
+    const [y, m, d] = dateStr.split("-").map(Number);
+    return new Date(y, (m || 1) - 1, d || 1);
+  }
+  return new Date(dateStr);
 }
 
 function collectYears(data) {
@@ -875,7 +893,7 @@ function computeStats(data, year) {
 
   const eggRevenueByMonth = {};
   for (let m = 0; m < 12; m++) eggRevenueByMonth[m] = { collected: 0 };
-  eggLaidEntries.forEach((e) => { const m = new Date(e.date).getMonth(); eggRevenueByMonth[m].collected += Number(e.count) || 0; });
+  eggLaidEntries.forEach((e) => { const m = parseLocalDate(e.date).getMonth(); eggRevenueByMonth[m].collected += Number(e.count) || 0; });
   let peakEggMonth = null, peakEggMonthCount = 0;
   for (let m = 0; m < 12; m++) {
     if (eggRevenueByMonth[m].collected > peakEggMonthCount) { peakEggMonthCount = eggRevenueByMonth[m].collected; peakEggMonth = monthLabels[m]; }
@@ -1083,7 +1101,7 @@ function computeStats(data, year) {
   const activeDays = datesSet.size;
   const totalEntries = allEntries.length;
   const monthCounts = new Array(12).fill(0);
-  allEntries.forEach((e) => { if (e.date) monthCounts[new Date(e.date).getMonth()]++; });
+  allEntries.forEach((e) => { if (e.date) monthCounts[parseLocalDate(e.date).getMonth()]++; });
   let busiestMonthIdx = -1, busiestCount = 0;
   monthCounts.forEach((c, i) => { if (c > busiestCount) { busiestCount = c; busiestMonthIdx = i; } });
   const busiestMonth = busiestMonthIdx >= 0 ? monthLabels[busiestMonthIdx] : null;
@@ -1091,7 +1109,7 @@ function computeStats(data, year) {
   const sortedDays = Array.from(datesSet).sort();
   let longestStreak = 0, currentStreak = 0, prevDate = null;
   sortedDays.forEach((d) => {
-    if (prevDate) { const diff = (new Date(d) - new Date(prevDate)) / (1000 * 60 * 60 * 24); if (diff === 1) currentStreak++; else currentStreak = 1; }
+    if (prevDate) { const diff = (parseLocalDate(d) - parseLocalDate(prevDate)) / (1000 * 60 * 60 * 24); if (diff === 1) currentStreak++; else currentStreak = 1; }
     else currentStreak = 1;
     if (currentStreak > longestStreak) longestStreak = currentStreak;
     prevDate = d;

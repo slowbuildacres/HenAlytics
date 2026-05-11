@@ -18,8 +18,8 @@
 // Sales: writes to data.sales[] with hobbyType: "horse", crop: horse name.
 // ============================================================================
 
-import React, { useState, useMemo } from "react";
-import { X, Edit3, Plus, Trash2 } from "lucide-react";
+import React, { useState } from "react";
+import { X, Edit3 } from "lucide-react";
 import { fmtMoney } from "./units.js";
 
 const palette = {

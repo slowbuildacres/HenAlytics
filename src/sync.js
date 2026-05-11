@@ -413,6 +413,50 @@ export function sendFarmhandInvite({ inviteCode }) {
   });
 }
 
+// Account deletion — calls the server-side /api/delete-account endpoint.
+// This is destructive and irreversible. The client UI requires typing
+// "DELETE" to confirm; we forward that confirmation to the server, which
+// requires it as defense-in-depth.
+//
+// On success, the local cache is cleared. The caller should also call
+// supabase.auth.signOut() after this resolves (though by then the user
+// already won't exist server-side).
+export async function deleteAccount() {
+  if (!isSupabaseConfigured) {
+    throw new Error('Cannot delete account when not configured');
+  }
+  // Pull the active session's JWT for the Authorization header
+  const headers = { 'Content-Type': 'application/json' };
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (session?.access_token) {
+      headers['Authorization'] = `Bearer ${session.access_token}`;
+    }
+  } catch (e) {
+    // Server will return 401 if no JWT — handled below
+  }
+
+  const res = await fetch('/api/delete-account', {
+    method: 'POST',
+    headers,
+    body: JSON.stringify({ confirmation: 'DELETE' }),
+  });
+
+  const text = await res.text().catch(() => '');
+  let parsed = null;
+  try { parsed = JSON.parse(text); } catch (e) { /* not JSON */ }
+
+  if (!res.ok && res.status !== 207) {
+    const msg = parsed?.error || text || `HTTP ${res.status}`;
+    throw new Error(msg);
+  }
+
+  // Clear local state. The session will become invalid since the auth row
+  // is gone, but we still call signOut() in the caller for a clean state.
+  clearLocalHomestead();
+  return parsed || { ok: true };
+}
+
 export async function compressImage(file, maxDim = 1600, quality = 0.85) {
   const img = await fileToImage(file);
 
