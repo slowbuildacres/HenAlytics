@@ -1,84 +1,48 @@
-/* Henalytics service worker — minimal, safe, and self-updating.
+/* Henalytics service worker — KILL SWITCH.
  *
- * What this does:
- *  - Caches the app shell (HTML/CSS/JS/icons) so the app loads instantly
- *    on repeat visits and works offline once it's been opened once.
- *  - Uses "stale-while-revalidate" for static assets: serve from cache
- *    immediately, refresh from network in the background.
- *  - Bypasses caching entirely for:
- *     - API calls (/api/*)
- *     - Supabase requests (auth, database, storage)
- *     - Resend, weather APIs, anything cross-origin we don't control
+ * Previous versions of the app registered a service worker that turned out
+ * to interfere with auth redirects (specifically, password recovery from
+ * Supabase). This file replaces the old service worker with one that
+ * deliberately removes itself on activation.
  *
- * What this does NOT do:
- *  - Cache user data. The app already handles that via localStorage
- *    + Supabase. Service worker has no business caching API responses
- *    here — users could see stale data and that's worse than offline.
+ * Once every active client has loaded this new version of sw.js, the old
+ * cached service worker is gone and the site behaves like a normal SPA
+ * again (no offline caching, no fetch interception).
+ *
+ * To bring caching back later, we'll wire up vite-plugin-pwa properly with
+ * an explicit allowlist of routes that excludes auth callbacks.
  */
 
-const CACHE_NAME = "henalytics-v1";
-
-// On install: pre-cache the bare minimum so first-load offline works.
-// We don't pre-cache JS bundles because their filenames are hashed by Vite —
-// the runtime fetch handler will cache them as they're requested.
-self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches.open(CACHE_NAME).then((cache) =>
-      cache.addAll([
-        "/",
-        "/manifest.webmanifest",
-        "/icon-192.png",
-        "/icon-512.png",
-        "/apple-touch-icon.png",
-      ]).catch(() => { /* Ignore individual asset failures */ })
-    )
-  );
-  self.skipWaiting(); // Activate immediately — don't wait for old tabs
+self.addEventListener("install", () => {
+  // Don't wait for old SW to finish; activate this kill-switch immediately.
+  self.skipWaiting();
 });
 
-// On activate: clean up old caches from previous deploys.
 self.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches.keys().then((keys) =>
-      Promise.all(keys.map((k) => k !== CACHE_NAME ? caches.delete(k) : null))
-    )
-  );
-  self.clients.claim();
+  event.waitUntil((async () => {
+    // Delete all caches this SW (or its predecessor) created.
+    try {
+      const keys = await caches.keys();
+      await Promise.all(keys.map((k) => caches.delete(k)));
+    } catch (_) { /* ignore */ }
+
+    // Take control of all open clients so we can unregister mid-session.
+    try { await self.clients.claim(); } catch (_) {}
+
+    // Unregister ourselves. Any future fetches will go straight to the
+    // network with no SW interception.
+    try { await self.registration.unregister(); } catch (_) {}
+
+    // Force-reload all open clients so they see the freshly-fetched HTML
+    // without the SW middleman. Without this, the current tab keeps using
+    // the now-unregistered SW until the user manually refreshes.
+    try {
+      const clients = await self.clients.matchAll({ type: "window" });
+      for (const client of clients) {
+        client.navigate(client.url);
+      }
+    } catch (_) { /* not all browsers support client.navigate; ignore */ }
+  })());
 });
 
-self.addEventListener("fetch", (event) => {
-  const { request } = event;
-
-  // Only handle GET requests
-  if (request.method !== "GET") return;
-
-  const url = new URL(request.url);
-
-  // Bypass for cross-origin (Supabase, Resend, weather APIs, etc.)
-  if (url.origin !== self.location.origin) return;
-
-  // Bypass for API routes (our serverless functions)
-  if (url.pathname.startsWith("/api/")) return;
-
-  // Bypass for Supabase storage signed URLs (just in case they're somehow same-origin)
-  if (url.pathname.includes("/storage/")) return;
-
-  // App shell + assets: stale-while-revalidate
-  event.respondWith(
-    caches.open(CACHE_NAME).then(async (cache) => {
-      const cached = await cache.match(request);
-      const network = fetch(request)
-        .then((response) => {
-          if (response && response.ok) {
-            // Only cache same-origin successful responses
-            cache.put(request, response.clone()).catch(() => {});
-          }
-          return response;
-        })
-        .catch(() => cached); // If network fails, fall back to cached
-
-      // Return cached immediately if we have it; otherwise wait for network
-      return cached || network;
-    })
-  );
-});
+// No fetch handler — we don't want to intercept anything.
