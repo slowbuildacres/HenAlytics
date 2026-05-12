@@ -196,3 +196,94 @@ export function formatWeather(w) {
   }
   return bits.length ? bits.join(' · ') : null;
 }
+
+// ============================================================================
+// FORECAST (next 2 days) — used by the freeze warning banner
+// ----------------------------------------------------------------------------
+// Calls Open-Meteo's forecast endpoint asking for today + tomorrow. We cache
+// the result for 2 hours (forecasts update slowly; no need to hammer the API
+// on every page render). The cache is separate from the daily-weather cache
+// since this returns a different shape.
+//
+// Returns:
+//   {
+//     today: { lowF, highF, date: "YYYY-MM-DD" },
+//     tomorrow: { lowF, highF, date: "YYYY-MM-DD" },
+//   }
+// or null if anything goes wrong (offline, API down, missing data, etc.).
+// Callers should treat null as "no data available — don't show a warning."
+// ============================================================================
+
+const FORECAST_CACHE_KEY_PREFIX = 'henalytics_forecast_';
+const FORECAST_CACHE_TTL_MS = 2 * 60 * 60 * 1000; // 2 hours
+
+function forecastCacheKey(lat, lon) {
+  return `${FORECAST_CACHE_KEY_PREFIX}${lat.toFixed(2)}-${lon.toFixed(2)}`;
+}
+
+function readForecastCache(lat, lon) {
+  try {
+    const raw = localStorage.getItem(forecastCacheKey(lat, lon));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed.t && Date.now() - parsed.t < FORECAST_CACHE_TTL_MS) {
+      return parsed.data;
+    }
+  } catch (e) {}
+  return null;
+}
+
+function writeForecastCache(lat, lon, data) {
+  try {
+    localStorage.setItem(
+      forecastCacheKey(lat, lon),
+      JSON.stringify({ t: Date.now(), data })
+    );
+  } catch (e) {}
+}
+
+export async function getForecast(lat, lon) {
+  if (lat == null || lon == null) return null;
+
+  // Cache hit?
+  const cached = readForecastCache(lat, lon);
+  if (cached) return cached;
+
+  // forecast_days=2 → today + tomorrow. timezone=auto so the "day" boundaries
+  // match the user's local calendar (otherwise UTC days can give weird splits).
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=2`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    if (!json.daily || !Array.isArray(json.daily.time) || json.daily.time.length < 1) return null;
+
+    const cToF = (c) => (c == null ? null : Math.round(c * 9 / 5 + 32));
+    const days = json.daily.time;
+    const lows = json.daily.temperature_2m_min || [];
+    const highs = json.daily.temperature_2m_max || [];
+
+    const result = {
+      today: days[0] ? {
+        date: days[0],
+        lowF: cToF(lows[0]),
+        highF: cToF(highs[0]),
+      } : null,
+      tomorrow: days[1] ? {
+        date: days[1],
+        lowF: cToF(lows[1]),
+        highF: cToF(highs[1]),
+      } : null,
+    };
+
+    // Require at least one day's data to consider the response useful.
+    if (!result.today && !result.tomorrow) return null;
+
+    writeForecastCache(lat, lon, result);
+    return result;
+  } catch (e) {
+    console.warn('Forecast fetch failed', e);
+    return null;
+  }
+}

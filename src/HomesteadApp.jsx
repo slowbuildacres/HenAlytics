@@ -17,7 +17,7 @@ import {
   sendFeedback, notifySignup, acceptInvite, deleteAccount,
 } from "./sync.js";
 import {
-  getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
+  getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather, getForecast,
 } from "./weather.js";
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
@@ -2245,6 +2245,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       {/* HOBBY-SPECIFIC SUMMARY */}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
+      {hobby.type === "garden" && <FreezeWarningBanner data={data} />}
       {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} />}
 
       {/* QUICK LOG TILES */}
@@ -2337,6 +2338,111 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
           </div>
         </button>
       )}
+    </div>
+  );
+}
+
+// ============================================================================
+// FREEZE WARNING BANNER (garden home page)
+// ----------------------------------------------------------------------------
+// Surfaces a blue warning banner when the forecast low for today OR tomorrow
+// is at or below 32°F (freezing). Gated on:
+//   1. We have lat/lon (no forecast without a location)
+//   2. The current season per getSeasonInfo is NOT winter — winter is expected
+//      to be cold, surfacing freeze warnings every day in January would be
+//      noise. Only useful in shoulder seasons (spring/fall) when a freeze
+//      could actually catch someone unprepared.
+//   3. Forecast fetch returned data (silent fail if not)
+//
+// Persistence: no dismiss button. The banner auto-clears when the forecast
+// warms up (cache expires every 2 hours so we re-check). Freeze warnings are
+// the kind of thing where "I dismissed it once" shouldn't override real,
+// life-of-your-plants weather conditions.
+//
+// Returns null when nothing should render — caller can drop this component
+// anywhere on the garden home page and it's a no-op unless conditions match.
+// ============================================================================
+const FREEZE_THRESHOLD_F = 32;
+
+function FreezeWarningBanner({ data }) {
+  const [forecast, setForecast] = useState(null);
+  const lat = data?.homesteadLocation?.lat;
+  const lon = data?.homesteadLocation?.lon;
+
+  useEffect(() => {
+    if (lat == null || lon == null) return;
+    let cancelled = false;
+    (async () => {
+      const f = await getForecast(lat, lon);
+      if (!cancelled) setForecast(f);
+    })();
+    return () => { cancelled = true; };
+  }, [lat, lon]);
+
+  // Gate: no location → nothing to warn about
+  if (lat == null || lon == null) return null;
+
+  // Gate: in winter, freezes are expected — don't surface as a warning
+  const today = new Date();
+  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+  const seasonInfo = getSeasonInfo(todayIso, data);
+  if (seasonInfo?.type === "winter") return null;
+
+  // Gate: still loading or fetch failed
+  if (!forecast) return null;
+
+  const todayLow = forecast.today?.lowF;
+  const tomorrowLow = forecast.tomorrow?.lowF;
+  const todayCold = todayLow != null && todayLow <= FREEZE_THRESHOLD_F;
+  const tomorrowCold = tomorrowLow != null && tomorrowLow <= FREEZE_THRESHOLD_F;
+
+  if (!todayCold && !tomorrowCold) return null;
+
+  // Build the message. If both days are cold, surface the colder one;
+  // mention "today" if relevant since that's most urgent.
+  let when;
+  let lowToShow;
+  if (todayCold && tomorrowCold) {
+    when = "tonight and tomorrow";
+    lowToShow = Math.min(todayLow, tomorrowLow);
+  } else if (todayCold) {
+    when = "tonight";
+    lowToShow = todayLow;
+  } else {
+    when = "tomorrow";
+    lowToShow = tomorrowLow;
+  }
+
+  return (
+    <div
+      role="alert"
+      style={{
+        background: "#DCE9F4",                  // soft blue — universal freeze convention
+        border: "1.5px solid #4A6FA5",
+        borderRadius: 12,
+        padding: "12px 14px",
+        marginBottom: 14,
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 10,
+        boxShadow: `2px 2px 0 ${palette.line}`,
+      }}
+    >
+      <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }} aria-hidden="true">❄️</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
+          color: "#1F3A5F", lineHeight: 1.3, marginBottom: 2,
+        }}>
+          Freeze warning — low of {lowToShow}°F {when}
+        </div>
+        <div style={{
+          fontFamily: FONT_BODY, fontSize: 12,
+          color: "#3D5A85", lineHeight: 1.5,
+        }}>
+          Cover sensitive plants, bring potted ones indoors, and water deeply ahead of the cold snap.
+        </div>
+      </div>
     </div>
   );
 }
