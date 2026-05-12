@@ -89,6 +89,7 @@ const defaultData = () => ({
   varieties: {},      // Push 5 — per-crop variety registry { cropId: [{ id, name, daysToHarvest }] }
   tutorialDismissed: false, // true after user completes or skips tutorial (web)
   nativeTutorialDismissed: false, // true after user completes or skips the native iOS/Android tutorial — tracked separately so web-completed users still see the native walkthrough on first app launch
+  lastSeenSupporterWall: null, // ISO date string of the most recent month-end the supporter wall was shown/dismissed. null = never seen. Used to fire the wall only once per month on the last day.
   lastSeenVersion: 0,        // tracks what's new popup
   salesHidden: false,        // true if user hides the Sales tab
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
@@ -809,6 +810,11 @@ const dayOfYear = (d) => {
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 };
 
+// A stable key for "the calendar month that this date belongs to" — "2026-05"
+// for any day in May 2026. Used to dedupe the supporter wall: a month-key
+// recorded in lastSeenSupporterWall means we won't show again this month.
+const getMonthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+
 const getSeason = (dateStr, data) => {
   const d = parseLocalDate(dateStr);
   const m = d.getMonth();
@@ -1326,7 +1332,6 @@ export default function HomesteadApp() {
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
-  const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all"); // garden-only: season ID
   // Date-range filter for non-garden analytics. dateFilter is one of:
   // "all" | "7d" | "30d" | "60d" | "90d" | "custom". customStart/customEnd
@@ -1389,23 +1394,30 @@ export default function HomesteadApp() {
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.nativeTutorialDismissed, passwordRecoveryPending]);
 
-  // ---- Monthly supporter thank-you ----
-  // Shows once on the 9th-11th of each month if the user hasn't dismissed it yet
-  // for this calendar month. Tracked in data.supportersDismissedMonth ("YYYY-MM").
-  // 3-day window so users who don't open the app on the 9th still see it.
-  const supporterThanksShownRef = React.useRef(false);
+  // ---- Monthly supporter wall ----
+  // Fires once on the 1st, 2nd, or 3rd of each calendar month, recognizing
+  // the previous month's active supporters. 3-day window so users who don't
+  // open the app on the 1st still see it within the first few days.
+  // Tracked in data.lastSeenSupporterWall ("YYYY-MM") — once set for the
+  // current month, the wall won't reopen until next month.
+  //
+  // Dedupe key is the CURRENT month (the month that just started). When a
+  // user dismisses on June 1, we write "2026-06" — the wall won't fire again
+  // until July 1.
+  const supporterWallShownRef = React.useRef(false);
   useEffect(() => {
-    if (supporterThanksShownRef.current) return;
+    if (supporterWallShownRef.current) return;
     if (!data?.onboardedAt) return;
+    if (passwordRecoveryPending) return; // don't stack on top of reset flow
     const now = new Date();
     const dayOfMonth = now.getDate();
-    if (dayOfMonth < 9 || dayOfMonth > 11) return; // only show 9th-11th of the month
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    if (data?.supportersDismissedMonth === monthKey) return;
-    supporterThanksShownRef.current = true;
-    const timer = setTimeout(() => setShowSupporterThanks(true), 2200);
+    if (dayOfMonth < 1 || dayOfMonth > 3) return;
+    const currentMonthKey = getMonthKey(now);
+    if (data?.lastSeenSupporterWall === currentMonthKey) return;
+    supporterWallShownRef.current = true;
+    const timer = setTimeout(() => setModal({ type: "supporterWall" }), 2200);
     return () => clearTimeout(timer);
-  }, [data?.onboardedAt, data?.supportersDismissedMonth]);
+  }, [data?.onboardedAt, data?.lastSeenSupporterWall, passwordRecoveryPending]);
 
   // ---- App Store fundraiser popup ----
   // Fires once per calendar month for users who haven't tipped yet and haven't
@@ -1843,30 +1855,8 @@ export default function HomesteadApp() {
         }} />
       )}
 
-      {/* Monthly supporter thank-you popup (9th-11th of each month) */}
-      {showSupporterThanks && !showWhatsNew && (
-        <SupporterThanksModal
-          onClose={() => {
-            setShowSupporterThanks(false);
-            const now = new Date();
-            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-            update(d => { d.supportersDismissedMonth = monthKey; return d; });
-          }}
-          onLeaveTip={() => {
-            // User tapped a Stripe button. The href opens Stripe in a new
-            // tab (the <a> tag handles that natively). We just need to
-            // mark this month as dismissed and close the popup so they
-            // come back to a clean app, not the popup again.
-            setShowSupporterThanks(false);
-            const now = new Date();
-            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-            update(d => { d.supportersDismissedMonth = monthKey; return d; });
-          }}
-        />
-      )}
-
       {/* App Store fundraiser popup (once per month for non-tippers) */}
-      {showAppStoreFund && !showWhatsNew && !showSupporterThanks && (
+      {showAppStoreFund && !showWhatsNew && (
         <AppStoreFundModal
           onClose={() => {
             setShowAppStoreFund(false);
@@ -4436,8 +4426,20 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
-  if (modal.type === "support") return <SupportModal onClose={close} />;
+  if (modal.type === "support") return <SupportModal onClose={close} setModal={setModal} />;
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
+  if (modal.type === "supporterWall") {
+    // Dismissing the wall (X button) OR clicking "Tap to add yours" both
+    // route through onClose. Either way we mark this month as seen so the
+    // wall doesn't re-fire on the 2nd/3rd if a user dismisses on the 1st.
+    const closeWall = () => {
+      const k = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+      update((d) => { d.lastSeenSupporterWall = k; return d; });
+      close();
+    };
+    return <SupporterWallModal onClose={closeWall} setModal={setModal} />;
+  }
+  if (modal.type === "supporterClaim") return <SupporterClaimModal onClose={() => { close(); setTimeout(() => setModal({ type: "supporterName" }), 100); }} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
@@ -5467,7 +5469,7 @@ function AboutModal({ onClose }) {
 // Two CTAs: one-time tip ("buy a bag of feed") and monthly patron tier.
 // All flow through Stripe Payment Links (Ko-fi kept commented as backup).
 // ============================================================================
-function SupportModal({ onClose }) {
+function SupportModal({ onClose, setModal }) {
   // New design: monthly is featured (3 tiers — $3, $5, $10) with one-time
   // tip as a smaller secondary option below. Each button calls startCheckout
   // which goes through our server (auth + user-ID linking + supporter row).
@@ -5590,6 +5592,28 @@ function SupportModal({ onClose }) {
         }}>
           🌱 Thanks for being here.
         </div>
+
+        {/* Subtle entry point for existing Payment Link supporters to claim
+            their spot on the wall. Doesn't draw attention away from the new
+            signup buttons above. */}
+        {setModal && (
+          <div style={{
+            marginTop: 14, textAlign: "center", paddingTop: 12,
+            borderTop: `1px dashed ${palette.line}`,
+          }}>
+            <button
+              type="button"
+              onClick={() => { onClose(); setTimeout(() => setModal({ type: "supporterClaim" }), 50); }}
+              style={{
+                background: "none", border: "none", padding: 0,
+                color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12,
+                textDecoration: "underline", cursor: "pointer",
+              }}
+            >
+              Already supporting from before? Claim your wall spot.
+            </button>
+          </div>
+        )}
       </div>
     </Modal>
   );
@@ -5817,6 +5841,405 @@ function SupporterNamePromptModal({ user, onClose }) {
                 }}
               >
                 Stay anonymous
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SUPPORTER WALL MODAL (monthly thank-you)
+// ----------------------------------------------------------------------------
+// Triggered on the last day of each month by an effect in the App body.
+// Shows every active+approved supporter, sorted by tenure (longest at top
+// permanently). Anonymous supporters (no name, opted out, or flagged) are
+// summed into a single footer line.
+//
+// Data source: the public Supabase views public_supporter_wall and
+// public_supporter_count. Both are readable by anon — no auth required.
+// We still want to handle network errors gracefully so the modal doesn't
+// crash if Supabase is down on the 31st.
+//
+// Single CTA: "Tap to add yours" opens SupportModal. Existing supporters
+// who haven't claimed yet are reached via the "Already a supporter?" link
+// inside SupportModal (which routes to SupporterClaimModal).
+// ============================================================================
+function SupporterWallModal({ onClose, setModal }) {
+  const [supporters, setSupporters] = useState(null); // null = loading; [] = empty; array = loaded
+  const [anonCount, setAnonCount] = useState(0);
+  const [errorMsg, setErrorMsg] = useState("");
+
+  // The label at the top recognizes the *previous* calendar month, since the
+  // wall fires in the first 3 days of each new month. "Today is June 2 →
+  // header reads 'Thank you, May 2026.'" Compute by stepping back one day
+  // from the 1st of today's month.
+  const monthLabel = React.useMemo(() => {
+    const today = new Date();
+    const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+    const lastOfPrevMonth = new Date(firstOfThisMonth.getTime() - 24 * 60 * 60 * 1000);
+    return lastOfPrevMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        // Public views — readable without auth. We still go through the
+        // existing supabase client so URL + headers are consistent with
+        // the rest of the app.
+        const [wallRes, countRes] = await Promise.all([
+          supabase.from("public_supporter_wall").select("homestead_name, supporting_since_month"),
+          supabase.from("public_supporter_count").select("anonymous_count").maybeSingle(),
+        ]);
+        if (cancelled) return;
+
+        if (wallRes.error) throw wallRes.error;
+        // Sort ascending by supporting_since_month so longest-tenured appears
+        // at the top. The view itself sorts but we re-sort defensively in
+        // case PostgREST returns them in an unexpected order.
+        const list = (wallRes.data || []).slice().sort((a, b) => {
+          const ad = a.supporting_since_month || "";
+          const bd = b.supporting_since_month || "";
+          return ad.localeCompare(bd);
+        });
+        setSupporters(list);
+
+        if (countRes.error) {
+          console.warn("supporter count fetch failed:", countRes.error);
+          setAnonCount(0);
+        } else {
+          setAnonCount(countRes.data?.anonymous_count || 0);
+        }
+      } catch (e) {
+        if (cancelled) return;
+        console.error("supporter wall fetch failed:", e);
+        setSupporters([]); // show empty state rather than spinner-forever
+        setErrorMsg("Couldn't load the supporter list right now.");
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const formatTenure = (supportingSinceMonth) => {
+    if (!supportingSinceMonth) return "Supporter";
+    // supporting_since_month is a UTC timestamp truncated to month-start.
+    // Render as "Month Year" — friendly + tenure-revealing without exposing
+    // exact subscription dates.
+    const d = new Date(supportingSinceMonth);
+    if (isNaN(d.getTime())) return "Supporter";
+    return `Supporting since ${d.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;
+  };
+
+  const openSupportModal = () => {
+    onClose();
+    // Re-open SupportModal after this one closes. setModal is passed in from
+    // ModalRouter via App body, so it persists across the close.
+    setTimeout(() => setModal({ type: "support" }), 50);
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 200, padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: palette.bg, borderRadius: 20, maxWidth: 480, width: "100%",
+        maxHeight: "92vh", display: "flex", flexDirection: "column",
+        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+        fontFamily: FONT_BODY, overflow: "hidden",
+      }}>
+        {/* HEADER */}
+        <div style={{
+          background: palette.leaf, padding: "22px 24px 18px", textAlign: "center",
+          position: "relative", color: palette.card,
+        }}>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position: "absolute", top: 12, right: 12,
+              background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%",
+              width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+              color: palette.card, cursor: "pointer", padding: 0,
+            }}
+          >
+            <X size={18} />
+          </button>
+          <div style={{ fontSize: 38, marginBottom: 4 }}>🌾</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, lineHeight: 1.2 }}>
+            Thank you, {monthLabel}.
+          </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 6, lineHeight: 1.5 }}>
+            These are the homesteads keeping the lights on this month.
+            Henalytics stays free because of them.
+          </div>
+        </div>
+
+        {/* LIST */}
+        <div style={{
+          flex: 1, overflowY: "auto", padding: "16px 20px",
+          background: palette.card,
+        }}>
+          {supporters === null ? (
+            <div style={{ textAlign: "center", padding: "32px 8px", color: palette.inkSoft, fontSize: 13 }}>
+              Loading…
+            </div>
+          ) : supporters.length === 0 && anonCount === 0 ? (
+            <div style={{ textAlign: "center", padding: "24px 8px", color: palette.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 28, marginBottom: 8 }}>🌱</div>
+              No named supporters yet — be the first.
+            </div>
+          ) : (
+            <>
+              {supporters.map((s, i) => (
+                <div
+                  key={`${s.homestead_name}-${i}`}
+                  style={{
+                    padding: "12px 14px",
+                    background: palette.bg,
+                    border: `1.5px solid ${palette.line}`,
+                    borderRadius: 10,
+                    marginBottom: 8,
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 12,
+                  }}
+                >
+                  <div style={{
+                    fontSize: 20, lineHeight: 1, flexShrink: 0,
+                  }}>
+                    {i === 0 ? "🌾" : "🐔"}
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{
+                      fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink,
+                      lineHeight: 1.2, marginBottom: 2,
+                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                    }}>
+                      {s.homestead_name}
+                    </div>
+                    <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                      {formatTenure(s.supporting_since_month)}
+                    </div>
+                  </div>
+                </div>
+              ))}
+              {anonCount > 0 && (
+                <div style={{
+                  textAlign: "center", marginTop: 14, fontSize: 12, color: palette.inkSoft,
+                  fontStyle: "italic", lineHeight: 1.5,
+                }}>
+                  + {anonCount} anonymous supporter{anonCount === 1 ? "" : "s"} keeping the lights on
+                </div>
+              )}
+            </>
+          )}
+          {errorMsg && (
+            <div style={{
+              marginTop: 12, padding: 10,
+              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              borderRadius: 8, fontSize: 12, color: palette.accent, textAlign: "center",
+            }}>
+              {errorMsg}
+            </div>
+          )}
+        </div>
+
+        {/* FOOTER CTA */}
+        <div style={{
+          padding: "14px 20px 18px",
+          borderTop: `1.5px solid ${palette.line}`,
+          background: palette.bg,
+          textAlign: "center",
+        }}>
+          <button
+            type="button"
+            onClick={openSupportModal}
+            style={{
+              width: "100%", padding: "12px 16px", borderRadius: 10,
+              border: `1.5px solid ${palette.ink}`, background: palette.ink,
+              color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
+              boxShadow: "2px 2px 0 " + palette.line, cursor: "pointer",
+            }}
+          >
+            🌾 Tap to add yours
+          </button>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 8, lineHeight: 1.4 }}>
+            Starting at $3/month. Cancel anytime. The app stays free either way.
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// SUPPORTER CLAIM MODAL
+// ----------------------------------------------------------------------------
+// For users who already donate via the old Stripe Payment Links (before pass 1
+// shipped). They have an active subscription but no row in the supporters
+// table, so the wall doesn't see them. This modal lets them:
+//
+//   1. Enter the email they used at the original Stripe checkout
+//   2. Our server (/api/claim-supporter) verifies they have an active sub
+//      under that email
+//   3. Creates a supporter row, links it to their Henalytics user_id
+//   4. Triggers the homestead-name prompt so they can join the wall
+//
+// We use the email as the proof — anyone could TYPE an email, but we then
+// verify against Stripe's customer list before granting access. This means:
+//   - Only people with a verifiable active Stripe subscription can claim
+//   - Their Henalytics login email doesn't have to match the Stripe email
+//     (which is the whole point — Payment Links didn't capture user_id)
+// ============================================================================
+function SupporterClaimModal({ onClose }) {
+  const [email, setEmail] = useState("");
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const submit = async () => {
+    setError("");
+    const trimmed = email.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setError("Please enter a valid email.");
+      return;
+    }
+    setWorking(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        setError("Please sign in first.");
+        setWorking(false);
+        return;
+      }
+      const res = await fetch("/api/claim-supporter", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Authorization": `Bearer ${session.access_token}`,
+        },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        // Common errors surfaced verbatim from the server
+        setError(json.error || `Couldn't verify (${res.status}). Try again or email slowbuildacres@gmail.com.`);
+        setWorking(false);
+        return;
+      }
+      setDone(true);
+      // Brief celebration, then close. The supported-return-style modal will
+      // appear right after via ModalRouter (we set sessionStorage to "1" to
+      // avoid the supported-return effect firing additionally — that one's
+      // for fresh Stripe returns, not claims).
+      setTimeout(() => {
+        onClose();
+      }, 1200);
+    } catch (e) {
+      console.error("claim error:", e);
+      setError("Couldn't reach the server. Check your connection and try again.");
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 200, padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
+        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+        fontFamily: FONT_BODY, overflow: "hidden",
+      }}>
+        <div style={{
+          background: palette.yolk, padding: "20px 24px 16px",
+          position: "relative", color: palette.ink, textAlign: "center",
+        }}>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position: "absolute", top: 12, right: 12,
+              background: "rgba(44,24,16,0.1)", border: "none", borderRadius: "50%",
+              width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+              color: palette.ink, cursor: "pointer", padding: 0,
+            }}
+          >
+            <X size={18} />
+          </button>
+          <div style={{ fontSize: 32, marginBottom: 4 }}>🐔</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, lineHeight: 1.2 }}>
+            Already a supporter? Claim your wall spot.
+          </div>
+        </div>
+
+        <div style={{ padding: "18px 24px 22px" }}>
+          {done ? (
+            <div style={{ textAlign: "center", padding: "12px 0 24px", fontSize: 15, color: palette.ink, lineHeight: 1.6 }}>
+              ✅ Verified! Loading your name prompt…
+            </div>
+          ) : (
+            <>
+              <p style={{ margin: "0 0 12px", fontSize: 14, color: palette.ink, lineHeight: 1.6 }}>
+                If you've been donating via Stripe and want your homestead added to the supporter wall, enter the email you used at checkout.
+              </p>
+              <p style={{ margin: "0 0 14px", fontSize: 12, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.5 }}>
+                Doesn't have to match your Henalytics login email — Stripe and Henalytics tracked them separately before now. We'll verify your subscription before linking.
+              </p>
+
+              <label style={{ display: "block", marginBottom: 10 }}>
+                <div style={{
+                  fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+                  textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+                }}>
+                  Stripe receipt email
+                </div>
+                <input
+                  type="email"
+                  value={email}
+                  onChange={(e) => { setEmail(e.target.value); setError(""); }}
+                  placeholder="you@example.com"
+                  autoComplete="email"
+                  disabled={working}
+                  autoFocus
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 8,
+                    border: `1.5px solid ${palette.line}`, background: palette.card,
+                    fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
+                  }}
+                />
+              </label>
+
+              {error && (
+                <div style={{
+                  padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+                  borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 12, lineHeight: 1.4,
+                }}>
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={submit}
+                disabled={working || !email.trim()}
+                style={{
+                  width: "100%", padding: "12px 16px", borderRadius: 10,
+                  border: `1.5px solid ${palette.ink}`, background: palette.ink,
+                  color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
+                  cursor: (working || !email.trim()) ? "wait" : "pointer",
+                  boxShadow: "2px 2px 0 " + palette.line,
+                  opacity: (working || !email.trim()) ? 0.6 : 1,
+                }}
+              >
+                {working ? "Verifying…" : "Verify and claim"}
               </button>
             </>
           )}
