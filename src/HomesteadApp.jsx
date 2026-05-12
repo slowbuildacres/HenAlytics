@@ -6676,49 +6676,135 @@ function AddHobbyModal({ update, onClose }) {
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
   const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" };
+
+  // Category groups. Each group is a list of hobby types it contains.
+  // Hobby types NOT in any group render flat at the top of the modal.
+  const GROUPS = [
+    { id: "livestock", label: "Livestock 🐑", types: ["goats", "cows", "pigs", "sheep", "horses"] },
+    { id: "kitchen",   label: "Kitchen 🍞",   types: ["baking", "sourdough"] },
+    { id: "preserving", label: "Preserving 🥫", types: ["canning", "freeze_drying", "dehydrating", "fermentation"] },
+  ];
+
+  // Per-group "show all" state. Default false so only enabled hobbies show
+  // initially — keeps the list short. User taps "See more" to reveal all.
+  const [expandedGroups, setExpandedGroups] = useState(() => {
+    const init = {};
+    GROUPS.forEach(g => { init[g.id] = false; });
+    return init;
+  });
+
+  // Map hobby type → group id, for partitioning the hobby list
+  const typeToGroup = {};
+  GROUPS.forEach(g => g.types.forEach(t => { typeToGroup[t] = g.id; }));
+
+  // The "jump to" logic that runs after enabling a hidden hobby. Routes the
+  // user straight into the page they just enabled (same as before, but
+  // extracted so we can call it from the reusable HobbyRow).
+  const jumpToHobby = (h) => {
+    if (h.type === "rabbits") { setActiveHobby("rabbits"); setPage("rabbits"); }
+    else if (h.type === "bees") { setActiveHobby("bees"); setPage("bees"); }
+    else if (h.type === "incubator") { setActiveHobby("incubator"); setPage("incubator"); }
+    else if (h.type === "goats") { setActiveHobby("goats"); setPage("goats"); }
+    else if (h.type === "cows") { setActiveHobby("cows"); setPage("cows"); }
+    else if (h.type === "pigs") { setActiveHobby("pigs"); setPage("pigs"); }
+    else if (h.type === "sheep") { setActiveHobby("sheep"); setPage("sheep"); }
+    else if (h.type === "horses") { setActiveHobby("horses"); setPage("horses"); }
+    else if (h.type === "sourdough") { setActiveHobby("sourdough"); setPage("sourdough"); }
+    else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
+    else if (h.type === "baking") { setActiveHobby("baking"); setPage("baking"); }
+    else if (h.type === "canning") { setActiveHobby("canning"); setPage("canning"); }
+    else if (h.type === "freeze_drying") { setActiveHobby("freeze_drying"); setPage("freeze_drying"); }
+    else if (h.type === "dehydrating") { setActiveHobby("dehydrating"); setPage("dehydrating"); }
+    else if (h.type === "fermentation") { setActiveHobby("fermentation"); setPage("fermentation"); }
+    else if (h.type === "dogs") { setActiveHobby("dogs"); setPage("dogs"); }
+    else { setActiveHobby(h.id); setPage("home"); }
+    onClose();
+  };
+
+  // Render a single hobby row (toggle + name). Extracted so the same JSX
+  // works inside groups and in the ungrouped flat list at the top.
+  const renderHobbyRow = (h) => (
+    <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+      <div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
+        <div style={{ fontSize: 11, color: palette.inkSoft }}>{friendlyType[h.type] || h.type}</div>
+      </div>
+      <button
+        onClick={() => {
+          const wasHidden = h.hidden;
+          update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
+          if (wasHidden) jumpToHobby(h);
+        }}
+        style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.ink : palette.bgAlt, color: h.hidden ? palette.bg : palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+      >
+        {h.hidden ? "Enable" : "Visible ✓"}
+      </button>
+    </div>
+  );
+
+  // Partition the hobbies list. Flat = uncategorized; groupedHobbies maps
+  // group id → array of hobbies in that group, preserving the original
+  // data.hobbies order so the user's mental layout is stable.
+  const flatHobbies = data.hobbies.filter(h => !typeToGroup[h.type]);
+  const groupedHobbies = {};
+  GROUPS.forEach(g => { groupedHobbies[g.id] = []; });
+  data.hobbies.forEach(h => {
+    if (typeToGroup[h.type]) groupedHobbies[typeToGroup[h.type]].push(h);
+  });
+
   return (
     <Modal open onClose={onClose} title="Manage Hobbies">
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
         Toggle hobbies on or off. Hidden hobbies keep their data — they just won't show in the menu.
       </div>
+
+      {/* Ungrouped hobbies — render flat at the top */}
       <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 16 }}>
-        {data.hobbies.map(h => (
-          <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
-            <div>
-              <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
-              <div style={{ fontSize: 11, color: palette.inkSoft }}>{friendlyType[h.type] || h.type}</div>
-            </div>
-            <button
-              onClick={() => {
-                update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
-                if (h.hidden) {
-                  if (h.type === "rabbits") { setActiveHobby("rabbits"); setPage("rabbits"); }
-                  else if (h.type === "bees") { setActiveHobby("bees"); setPage("bees"); }
-                  else if (h.type === "incubator") { setActiveHobby("incubator"); setPage("incubator"); }
-                  else if (h.type === "goats") { setActiveHobby("goats"); setPage("goats"); }
-                  else if (h.type === "cows") { setActiveHobby("cows"); setPage("cows"); }
-                  else if (h.type === "pigs") { setActiveHobby("pigs"); setPage("pigs"); }
-                  else if (h.type === "sheep") { setActiveHobby("sheep"); setPage("sheep"); }
-                  else if (h.type === "horses") { setActiveHobby("horses"); setPage("horses"); }
-                  else if (h.type === "sourdough") { setActiveHobby("sourdough"); setPage("sourdough"); }
-                  else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
-                  else if (h.type === "baking") { setActiveHobby("baking"); setPage("baking"); }
-                  else if (h.type === "canning") { setActiveHobby("canning"); setPage("canning"); }
-                  else if (h.type === "freeze_drying") { setActiveHobby("freeze_drying"); setPage("freeze_drying"); }
-                  else if (h.type === "dehydrating") { setActiveHobby("dehydrating"); setPage("dehydrating"); }
-                  else if (h.type === "fermentation") { setActiveHobby("fermentation"); setPage("fermentation"); }
-                  else if (h.type === "dogs") { setActiveHobby("dogs"); setPage("dogs"); }
-                  else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
-                  onClose();
-                }
-              }}
-              style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.ink : palette.bgAlt, color: h.hidden ? palette.bg : palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-            >
-              {h.hidden ? "Enable" : "Visible ✓"}
-            </button>
-          </div>
-        ))}
+        {flatHobbies.map(renderHobbyRow)}
       </div>
+
+      {/* Grouped sections — each shows enabled hobbies first, with a
+          "See more" expander to reveal everything in the group. */}
+      {GROUPS.map(group => {
+        const hobbies = groupedHobbies[group.id];
+        if (hobbies.length === 0) return null;
+        const visible = hobbies.filter(h => !h.hidden);
+        const hidden = hobbies.filter(h => h.hidden);
+        const isExpanded = expandedGroups[group.id];
+        const showHidden = isExpanded || visible.length === 0; // if nothing enabled, show all so user can pick something
+        return (
+          <div key={group.id} style={{ marginBottom: 16 }}>
+            <div style={{
+              fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink,
+              marginBottom: 8, paddingLeft: 2,
+            }}>
+              {group.label}
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+              {visible.map(renderHobbyRow)}
+              {showHidden && hidden.map(renderHobbyRow)}
+            </div>
+            {/* "See more" / "See less" toggle — only show when there are
+                hidden hobbies AND we're not already forced-open because the
+                group has zero enabled. */}
+            {hidden.length > 0 && visible.length > 0 && (
+              <button
+                onClick={() => setExpandedGroups(g => ({ ...g, [group.id]: !g[group.id] }))}
+                style={{
+                  marginTop: 8, padding: "8px 12px", width: "100%",
+                  background: "transparent", border: `1.5px dashed ${palette.line}`,
+                  borderRadius: 8, cursor: "pointer",
+                  fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+                  color: palette.inkSoft,
+                }}
+              >
+                {isExpanded ? `Hide ${hidden.length} other ${hidden.length === 1 ? "hobby" : "hobbies"}` : `See ${hidden.length} more ${hidden.length === 1 ? "hobby" : "hobbies"}`}
+              </button>
+            )}
+          </div>
+        );
+      })}
+
       <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1.5px solid ${palette.line}`, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 11, color: palette.inkSoft, textAlign: "center" }}>Go to Settings to toggle visibility anytime.</div>
         <button
