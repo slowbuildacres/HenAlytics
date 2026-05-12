@@ -483,6 +483,50 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
     if (!data.units.currency) data.units.currency = "USD";
     if (!data.units.hemisphere) data.units.hemisphere = "auto";
   }
+
+  // One-time: reconcile death entries with animal archive state. Before this
+  // change, Cows/Goats/Pigs would log a death entry with animalId set but
+  // never archive the animal — so the animal stayed in the active list.
+  // Now we walk existing entries and:
+  //   1. If a death entry has animalId and that animal isn't archived → archive it.
+  //   2. If a death entry has no animalId AND the hobby has exactly one
+  //      un-archived animal → attribute the death to that animal and archive
+  //      it. (Per user request — only acts when the attribution is unambiguous.)
+  // Guarded by a flag so it only runs once per account.
+  // Sheep & Dogs already handle this correctly in their own save handlers,
+  // but the migration still applies to any old entries on those hobbies
+  // where the animal was somehow never archived. Defensive.
+  if (!data.deathArchiveMigrationV1) {
+    const livestockTypes = new Set(["cows", "goats", "pigs", "sheep", "horses", "dogs"]);
+    for (const h of data.hobbies || []) {
+      if (!livestockTypes.has(h.type)) continue;
+      if (!Array.isArray(h.animals)) continue;
+      const entries = data.entries?.[h.id];
+      if (!Array.isArray(entries)) continue;
+      const deaths = entries.filter(e => e && e.action === "death");
+      for (const e of deaths) {
+        let animal = null;
+        if (e.animalId) {
+          animal = h.animals.find(a => a.id === e.animalId);
+        } else {
+          // Try unambiguous attribution: exactly one un-archived animal.
+          const alive = h.animals.filter(a => !a.archived);
+          if (alive.length === 1) {
+            animal = alive[0];
+            e.animalId = animal.id;
+            e.animalName = animal.name;
+          }
+        }
+        if (animal && !animal.archived) {
+          animal.archived = true;
+          animal.archivedReason = e.cause ? `Died: ${e.cause}` : "Died";
+          animal.archivedDate = e.date || todayStr();
+        }
+      }
+    }
+    data.deathArchiveMigrationV1 = true;
+  }
+
   return data;
 }
 
@@ -641,9 +685,10 @@ const newId = () => Math.random().toString(36).slice(2, 10);
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 21;
+const CURRENT_VERSION = 22;
 
 const WHATS_NEW = [
+  "💀 Death logs now archive the animal — when you report a death on a cow, goat, pig, or a named bird in a flock, that animal moves out of your active list (with the cause noted, if you added one). Old death entries on your account were tidied up too. Tap an archived animal to restore it if it was a misclick.",
   "🥧 Baking + 🫙 Canning hobbies — save your favorite recipes (with links and notes), log bakes with ratings, and track canning batches in a pantry view with eat-by date warnings. Both can sell into the Sales tab so you can track loaves sold and jars sold alongside everything else. Find them in Settings → Manage Hobbies.",
   "📦 Farmstand inventory + restock — items now track stock, with low-stock warnings on the page and inside the sell modal. New 📦 Restock button on each item lets you add batches with optional batch cost. Quantity presets (+½ doz, +1 lb, etc) make logging sales by the dozen or pound one tap. Reset password emails now properly drop you into a 'set new password' form. The ❤️ Support Henalytics button moved out of the barn into its own icon at the top of the screen so it's easier to find.",
   "🐇 Rabbits redesigned — per-rabbit tracking instead of hutch counts. Each rabbit gets a name, breed, sex, role, pedigree, breeding history, and weight log. Does have a 🐇 Bred button that auto-creates a kindle reminder 31 days out. Each rabbit can have a hutch label, and the page auto-groups by hutch once you have two or more (a flat list when you only have one). Your old hutches were automatically converted to individual rabbits (you can rename them anytime). Old log entries are kept under a 'Legacy log entries' section so nothing's lost.",
@@ -3490,9 +3535,11 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
 
       {/* Named birds — optional sub-list. Users with named favorites can
           track them; flocks without named birds just see a small "Name a bird"
-          button. Doesn't replace birdCount — that stays the source of truth. */}
+          button. Doesn't replace birdCount — that stays the source of truth.
+          Archived (e.g. died) birds are filtered out here; they're still
+          accessible via the "Manage named birds" modal under "Past birds". */}
       {(() => {
-        const namedBirds = flock.namedBirds || [];
+        const namedBirds = (flock.namedBirds || []).filter(b => !b.archived);
         return (
           <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${palette.line}` }}>
             {namedBirds.length > 0 ? (
@@ -6963,6 +7010,11 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
   );
   const [newName, setNewName] = useState("");
   const [newBandColor, setNewBandColor] = useState("");
+  // Per-bird death confirm state. When set, that bird's row expands to ask
+  // for date + cause and commit immediately (death isn't undoable via Cancel).
+  const [dyingBirdId, setDyingBirdId] = useState(null);
+  const [deathDate, setDeathDate] = useState(todayStr());
+  const [deathCause, setDeathCause] = useState("");
 
   if (!flock) { onClose(); return null; }
 
@@ -6999,6 +7051,74 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
     setBirds(prev => prev.filter(b => b.id !== id));
   };
 
+  // Mark a named bird as died. This commits IMMEDIATELY (bypassing the modal's
+  // local birds state and the Cancel-on-close protection) because:
+  //   - A death is a real event the user shouldn't be able to undo by closing.
+  //   - It also writes a death entry to d.entries and decrements flock.birdCount.
+  // The local birds state is updated in lockstep so the UI reflects the change.
+  const commitDeath = (birdId) => {
+    const bird = birds.find(b => b.id === birdId);
+    if (!bird) return;
+    const cause = deathCause.trim();
+    const date = deathDate || todayStr();
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const fl = (h.flocks || []).find(x => x.id === flockId);
+      if (!fl) return d;
+      // Mark archived on the named-bird record. We DON'T commit the full local
+      // `birds` array here — only the targeted bird — so any in-progress
+      // edits to other birds aren't accidentally saved.
+      fl.namedBirds = (fl.namedBirds || []).map(nb =>
+        nb.id === birdId
+          ? { ...nb, archived: true, archivedReason: cause ? `Died: ${cause}` : "Died", archivedDate: date }
+          : nb
+      );
+      fl.birdCount = Math.max(0, (Number(fl.birdCount) || 0) - 1);
+      // Write a death entry so the journal & analytics pick it up.
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      d.entries[hobbyId].push({
+        id: Math.random().toString(36).slice(2, 10),
+        date,
+        action: "death",
+        count: 1,
+        cause,
+        flockId,
+        namedBirdId: birdId,
+        namedBirdName: bird.name,
+        created: Date.now(),
+      });
+      // Egg-layer hobby's flockSize fallback (mirrors the count-based death
+      // path in LogModal at the egg-layer save handler).
+      h.flockSize = Math.max(0, (h.flockSize || 0) - 1);
+      return d;
+    });
+    // Reflect in local state so UI updates without round-trip.
+    setBirds(prev => prev.map(b =>
+      b.id === birdId
+        ? { ...b, archived: true, archivedReason: cause ? `Died: ${cause}` : "Died", archivedDate: date }
+        : b
+    ));
+    setDyingBirdId(null);
+    setDeathCause("");
+    setDeathDate(todayStr());
+  };
+
+  // Restore an accidentally-archived bird. Removes the archived flags locally;
+  // the actual flock.namedBirds reflects this on Save like other edits.
+  // Note: this does NOT delete the death entry from d.entries, on purpose —
+  // the historical record stays. User can delete the entry from the journal.
+  // It also does NOT re-increment flock.birdCount because we don't know the
+  // user's intent (was the count adjusted manually after?). They can edit
+  // the count via the flock-edit modal if needed.
+  const restoreBird = (birdId) => {
+    setBirds(prev => prev.map(b => {
+      if (b.id !== birdId) return b;
+      const { archived, archivedReason, archivedDate, ...rest } = b;
+      return rest;
+    }));
+  };
+
   const save = () => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
@@ -7014,16 +7134,20 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
     onClose();
   };
 
+  // Split into live + archived so they render in separate sections.
+  const liveBirds = birds.filter(b => !b.archived);
+  const archivedBirds = birds.filter(b => b.archived);
+
   return (
     <Modal open onClose={onClose} title={`Named birds — ${flock.name}`}>
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
         Track individual birds in this flock by name and leg band color. Optional — most flocks don't need this, but it's handy for favorites, breeding stock, or birds with quirks worth remembering.
       </div>
 
-      {/* Existing named birds */}
-      {birds.length > 0 && (
+      {/* Existing named birds (live) */}
+      {liveBirds.length > 0 && (
         <div style={{ marginBottom: 14 }}>
-          {birds.map(b => (
+          {liveBirds.map(b => (
             <div key={b.id} style={{
               padding: "10px 12px", marginBottom: 8,
               background: palette.card, border: `1.5px solid ${palette.line}`,
@@ -7061,6 +7185,37 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
                 onChange={(e) => updateBird(b.id, { notes: e.target.value })}
                 placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
               />
+              {dyingBirdId === b.id ? (
+                <div style={{ marginTop: 8, padding: 10, background: palette.bgAlt, border: `1.5px solid ${palette.accent}`, borderRadius: 8 }}>
+                  <div style={{ fontSize: 12, color: palette.ink, marginBottom: 8, lineHeight: 1.5 }}>
+                    Mark {b.name} as died? This decrements your flock count by 1 and adds a death entry.
+                  </div>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                    <input type="date" style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, flex: 1 }} value={deathDate} onChange={(e) => setDeathDate(e.target.value)} />
+                  </div>
+                  <input
+                    style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginBottom: 8 }}
+                    value={deathCause}
+                    onChange={(e) => setDeathCause(e.target.value)}
+                    placeholder="Cause (optional): predator, illness, unknown…"
+                  />
+                  <div style={{ display: "flex", gap: 6 }}>
+                    <Btn small variant="ghost" onClick={() => { setDyingBirdId(null); setDeathCause(""); setDeathDate(todayStr()); }}>Cancel</Btn>
+                    <Btn small variant="danger" onClick={() => commitDeath(b.id)}>Confirm — mark as died</Btn>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setDyingBirdId(b.id); setDeathDate(todayStr()); setDeathCause(""); }}
+                  style={{
+                    marginTop: 8, background: "transparent", border: "none",
+                    color: palette.accent, fontSize: 12, padding: 0, cursor: "pointer",
+                    fontFamily: FONT_BODY, textDecoration: "underline",
+                  }}
+                >
+                  💀 Mark as died
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -7096,6 +7251,44 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
           + Add bird
         </Btn>
       </div>
+
+      {/* Past birds (archived) — collapsed by default. Tap a row to restore. */}
+      {archivedBirds.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          <details>
+            <summary style={{ cursor: "pointer", color: palette.inkSoft, fontSize: 13, padding: 6 }}>
+              Past birds ({archivedBirds.length})
+            </summary>
+            <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+              {archivedBirds.map(b => (
+                <div key={b.id} style={{
+                  padding: "8px 10px", background: palette.bgAlt, borderRadius: 8,
+                  display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+                }}>
+                  <div style={{ fontSize: 12, color: palette.inkSoft }}>
+                    <span style={{ color: palette.ink, fontWeight: 600 }}>{b.name}</span>
+                    {" — "}{b.archivedReason || "archived"}
+                    {b.archivedDate ? ` · ${b.archivedDate}` : ""}
+                  </div>
+                  <button
+                    onClick={() => restoreBird(b.id)}
+                    style={{
+                      background: "transparent", border: `1.5px solid ${palette.line}`,
+                      borderRadius: 6, padding: "4px 8px", fontSize: 11,
+                      fontFamily: FONT_BODY, color: palette.ink, cursor: "pointer",
+                    }}
+                  >
+                    Restore
+                  </button>
+                </div>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, marginLeft: 6, lineHeight: 1.5 }}>
+              Restoring re-adds the bird to your active list, but doesn't delete the death entry from your journal or change the flock count. Adjust the flock count from the flock edit screen if needed.
+            </div>
+          </details>
+        </div>
+      )}
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -10144,7 +10337,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const milkOz = milk.reduce((s,e) => s + (Number(e.oz)||0), 0);
       const milkGal = milkOz / 128;
       const kids = entries.filter(e => e.action === "kid").reduce((s,e) => s + (Number(e.count)||1), 0);
-      const goatCount = (hobby.animals||[]).length;
+      const goatCount = (hobby.animals||[]).filter(a => !a.archived).length;
       const butchered = entries.filter(e => e.action === "butcher").length;
       return {
         emoji: "🐐", label: "Goats",
@@ -10160,7 +10353,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const milk = entries.filter(e => e.action === "milk");
       const milkGal = milk.reduce((s,e) => s + (Number(e.gallons)||Number(e.gal)||0), 0);
       const calves = entries.filter(e => e.action === "calf").reduce((s,e) => s + (Number(e.count)||1), 0);
-      const cowCount = (hobby.animals||[]).length;
+      const cowCount = (hobby.animals||[]).filter(a => !a.archived).length;
       const butchered = entries.filter(e => e.action === "butcher").length;
       return {
         emoji: "🐄", label: "Cows",
@@ -10176,7 +10369,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const litters = entries.filter(e => e.action === "litter").reduce((s,e) => s + (Number(e.count)||1), 0);
       const butchered = entries.filter(e => e.action === "butcher");
       const meatLbs = butchered.reduce((s,e) => s + (Number(e.weight)||0), 0);
-      const pigCount = (hobby.animals||[]).length;
+      const pigCount = (hobby.animals||[]).filter(a => !a.archived).length;
       return {
         emoji: "🐷", label: "Pigs",
         stats: [

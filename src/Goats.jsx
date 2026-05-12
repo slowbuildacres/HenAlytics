@@ -200,6 +200,9 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   const[count,setCount]=useState("");
   const[weight,setWeight]=useState("");
   const[notes,setNotes]=useState("");
+  // Death-only: optional cause. Stored on the entry AND folded into archivedReason
+  // so the existing "Archived goats" section reads "Died: predator" etc.
+  const[cause,setCause]=useState("");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
     if(action==="milk")entry.oz=Number(oz)||0;
@@ -207,10 +210,27 @@ function LogModal({animal,hobbyId,action,update,onClose}){
     if(action==="kid")entry.count=Number(count)||1;
     if(action==="weight"||action==="butcher")entry.weight=Number(weight)||0;
     if(action==="butcher")entry.cost=Number(cost)||0;
-    update(d=>{d.entries[hobbyId]=d.entries[hobbyId]||[];d.entries[hobbyId].push(entry);return d;});
+    if(action==="death")entry.cause=cause.trim();
+    update(d=>{
+      d.entries[hobbyId]=d.entries[hobbyId]||[];
+      d.entries[hobbyId].push(entry);
+      // Death also archives the animal so it drops out of the active list and
+      // shows up under "Archived goats". Mirrors Sheep/Dogs behavior.
+      if(action==="death"){
+        const h=d.hobbies.find(x=>x.id===hobbyId);
+        const a=(h?.animals||[]).find(x=>x.id===animal.id);
+        if(a&&!a.archived){
+          a.archived=true;
+          a.archivedReason=cause.trim()?`Died: ${cause.trim()}`:"Died";
+          a.archivedDate=date;
+        }
+      }
+      return d;
+    });
     onClose();
   };
   const titles={milk:"Log milk",fed:"Log feed",kid:"Log kids born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",note:"Add note"};
+  const isDeath=action==="death";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
@@ -219,8 +239,10 @@ function LogModal({animal,hobbyId,action,update,onClose}){
       {action==="kid"&&<Field label="Kids born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
       {(action==="weight"||action==="butcher")&&<Field label="Weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>}
       {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
+      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
-      <Btn onClick={save}>Save</Btn>
+      {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list. You can restore from there if this was a mistake.</div>}
+      <Btn onClick={save} variant={isDeath?"danger":"primary"}>{isDeath?"Save & archive":"Save"}</Btn>
     </Modal>
   );
 }
