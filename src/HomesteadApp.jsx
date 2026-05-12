@@ -6680,8 +6680,8 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
   // Category groups. Each group is a list of hobby types it contains.
   // Hobby types NOT in any group render flat at the top of the modal.
   const GROUPS = [
-    { id: "livestock", label: "Livestock 🐑", types: ["goats", "cows", "pigs", "sheep", "horses"] },
-    { id: "kitchen",   label: "Kitchen 🍞",   types: ["baking", "sourdough"] },
+    { id: "livestock",  label: "Livestock",     types: ["goats", "cows", "pigs", "sheep", "horses"] },
+    { id: "kitchen",    label: "Kitchen",       types: ["baking", "sourdough"] },
     { id: "preserving", label: "Preserving 🥫", types: ["canning", "freeze_drying", "dehydrating", "fermentation"] },
   ];
 
@@ -6763,43 +6763,48 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
         {flatHobbies.map(renderHobbyRow)}
       </div>
 
-      {/* Grouped sections — each shows enabled hobbies first, with a
-          "See more" expander to reveal everything in the group. */}
+      {/* Grouped sections — each is a collapsible card. Tap the header to
+          reveal all hobbies in that group. Defaults closed so the modal
+          stays short; users expand the categories they care about. */}
       {GROUPS.map(group => {
         const hobbies = groupedHobbies[group.id];
         if (hobbies.length === 0) return null;
-        const visible = hobbies.filter(h => !h.hidden);
-        const hidden = hobbies.filter(h => h.hidden);
+        const enabledCount = hobbies.filter(h => !h.hidden).length;
         const isExpanded = expandedGroups[group.id];
-        const showHidden = isExpanded || visible.length === 0; // if nothing enabled, show all so user can pick something
         return (
-          <div key={group.id} style={{ marginBottom: 16 }}>
-            <div style={{
-              fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink,
-              marginBottom: 8, paddingLeft: 2,
-            }}>
-              {group.label}
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-              {visible.map(renderHobbyRow)}
-              {showHidden && hidden.map(renderHobbyRow)}
-            </div>
-            {/* "See more" / "See less" toggle — only show when there are
-                hidden hobbies AND we're not already forced-open because the
-                group has zero enabled. */}
-            {hidden.length > 0 && visible.length > 0 && (
-              <button
-                onClick={() => setExpandedGroups(g => ({ ...g, [group.id]: !g[group.id] }))}
-                style={{
-                  marginTop: 8, padding: "8px 12px", width: "100%",
-                  background: "transparent", border: `1.5px dashed ${palette.line}`,
-                  borderRadius: 8, cursor: "pointer",
-                  fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
-                  color: palette.inkSoft,
-                }}
-              >
-                {isExpanded ? `Hide ${hidden.length} other ${hidden.length === 1 ? "hobby" : "hobbies"}` : `See ${hidden.length} more ${hidden.length === 1 ? "hobby" : "hobbies"}`}
-              </button>
+          <div key={group.id} style={{ marginBottom: 12 }}>
+            <button
+              onClick={() => setExpandedGroups(g => ({ ...g, [group.id]: !g[group.id] }))}
+              style={{
+                width: "100%", padding: "12px 14px", borderRadius: 10,
+                background: palette.card, border: `1.5px solid ${palette.line}`,
+                cursor: "pointer", textAlign: "left",
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink,
+              }}
+            >
+              <span>{group.label}</span>
+              <span style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                {enabledCount > 0 && (
+                  <span style={{
+                    fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600,
+                    color: palette.inkSoft,
+                    background: palette.bgAlt, padding: "2px 8px", borderRadius: 999,
+                  }}>
+                    {enabledCount} on
+                  </span>
+                )}
+                <span style={{
+                  fontFamily: FONT_BODY, fontSize: 14, color: palette.inkSoft,
+                  transform: isExpanded ? "rotate(180deg)" : "",
+                  transition: "transform 0.2s", display: "inline-block",
+                }}>▼</span>
+              </span>
+            </button>
+            {isExpanded && (
+              <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
+                {hobbies.map(renderHobbyRow)}
+              </div>
             )}
           </div>
         );
