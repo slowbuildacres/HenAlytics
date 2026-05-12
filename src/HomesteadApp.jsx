@@ -275,6 +275,17 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   });
   const gardenHobby = data.hobbies.find(h => h.type === "garden");
   if (gardenHobby && !Array.isArray(gardenHobby.perennials)) gardenHobby.perennials = [];
+  // Backfill category + actions log on existing perennials.
+  // Heuristic: anything with "tree" in the name becomes an orchard tree;
+  // everything else (bushes, vines, asparagus, rhubarb, strawberries) stays as a plant.
+  if (gardenHobby) {
+    gardenHobby.perennials.forEach(p => {
+      if (!p.category) {
+        p.category = /\btree\b/i.test(p.name || "") ? "tree" : "plant";
+      }
+      if (!Array.isArray(p.actions)) p.actions = [];
+    });
+  }
   if (typeof data.lastSeenVersion !== "number") data.lastSeenVersion = 0;
   const hasBees = data.hobbies.some(h => h.id === "bees");
   if (!hasBees) {
@@ -688,6 +699,7 @@ const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep
 const CURRENT_VERSION = 22;
 
 const WHATS_NEW = [
+  "🌳 Orchard + plant action logs — perennials are now split into 🌿 Perennial Plants (berry bushes, asparagus, rhubarb, vines) and 🌳 Orchard (fruit and nut trees), each in its own expandable section. Tap any plant or tree to open its detail page where you can log actions like spray, prune, fertilize, mulch, or treat — each one dated and saved to that plant's history. Existing perennials with 'tree' in the name automatically moved to the Orchard; you can move any item between sections from its edit screen.",
   "💀 Death logs now archive the animal — when you report a death on a cow, goat, pig, or a named bird in a flock, that animal moves out of your active list (with the cause noted, if you added one). Old death entries on your account were tidied up too. Tap an archived animal to restore it if it was a misclick.",
   "🥧 Baking + 🫙 Canning hobbies — save your favorite recipes (with links and notes), log bakes with ratings, and track canning batches in a pantry view with eat-by date warnings. Both can sell into the Sales tab so you can track loaves sold and jars sold alongside everything else. Find them in Settings → Manage Hobbies.",
   "📦 Farmstand inventory + restock — items now track stock, with low-stock warnings on the page and inside the sell modal. New 📦 Restock button on each item lets you add batches with optional batch cost. Quantity presets (+½ doz, +1 lb, etc) make logging sales by the dozen or pound one tap. Reset password emails now properly drop you into a 'set new password' form. The ❤️ Support Henalytics button moved out of the barn into its own icon at the top of the screen so it's easier to find.",
@@ -3199,6 +3211,61 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
   );
 }
 
+// ============ PERENNIAL SECTION (collapsible) ============
+function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, setModal }) {
+  const [open, setOpen] = useState(true);
+  return (
+    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom: open ? 10 : 0 }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{ background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink }}
+          aria-expanded={open}
+        >
+          <span style={{ fontSize:12,display:"inline-block",transform: open ? "rotate(90deg)" : "rotate(0deg)",transition:"transform 0.15s" }}>▶</span>
+          {title}
+          <span style={{ fontSize:12,color:palette.inkSoft,fontFamily:FONT_BODY,fontWeight:400 }}>
+            {items.length > 0 ? `(${items.length})` : ""}
+          </span>
+        </button>
+        <button
+          onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id,category:defaultCategory })}
+          style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
+        >
+          + Add
+        </button>
+      </div>
+      {open && (
+        <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+          {items.length === 0 ? (
+            <div style={{ fontSize:12,color:palette.inkSoft,padding:"6px 4px",fontStyle:"italic" }}>{emptyHint}</div>
+          ) : items.map(p => {
+            const lastAction = (p.actions || []).slice(-1)[0];
+            const lastHarvest = (p.harvests || []).slice(-1)[0];
+            const subtitle =
+              lastAction ? `Last: ${lastAction.type} · ${lastAction.date}` :
+              lastHarvest ? `Last harvest: ${lastHarvest.date}` :
+              `Planted ${p.plantDate || "unknown"}`;
+            return (
+              <button
+                key={p.id}
+                onClick={() => setModal({ type:"perennialDetail",hobbyId:hobby.id,perennialId:p.id })}
+                style={{ display:"flex",alignItems:"center",gap:8,padding:"10px",background:palette.bgAlt,borderRadius:8,border:"none",cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FONT_BODY }}
+              >
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>{p.name}{p.variety ? ` — ${p.variety}` : ""}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>{subtitle}</div>
+                </div>
+                <span style={{ fontSize:14,color:palette.inkSoft,flexShrink:0 }}>›</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ HOBBY SUMMARIES ============
 function GardenSummary({ hobby, data, update, setModal }) {
   // Track which perennial is currently in "confirm delete?" state, so we can
@@ -3237,73 +3304,30 @@ function GardenSummary({ hobby, data, update, setModal }) {
   const pinCount = hasMap ? (season.gardenMap.pins || []).length : 0;
   return (
     <div>
-      {/* Perennials section */}
-      {perennials.length > 0 && (
-        <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
-          <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
-            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink }}>🌳 Perennials</div>
-            <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}>+ Add</button>
-          </div>
-          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-            {perennials.map(p => (
-              <div key={p.id} style={{ display:"flex",alignItems:"flex-start",gap:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:8 }}>
-                <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>{p.name}{p.variety ? ` — ${p.variety}` : ""}</div>
-                  <div style={{ fontSize:11,color:palette.inkSoft }}>Planted {p.plantDate||"unknown"}{p.totalHarvest ? ` · ${p.totalHarvest} lbs harvested` : ""}</div>
-                  {p.harvests && p.harvests.length > 0 && (
-                    <div style={{ marginTop:4,display:"flex",flexDirection:"column",gap:2 }}>
-                      {[...p.harvests].reverse().slice(0,3).map(h => (
-                        <div key={h.id} style={{ display:"flex",justifyContent:"space-between",alignItems:"center",fontSize:11,color:palette.inkSoft,gap:6 }}>
-                          <span>{h.date} · {h.qty} {h.unit}</span>
-                          <button onClick={() => update(d => {
-                            const hob = d.hobbies.find(x => x.id === hobby.id);
-                            if (!hob) return d;
-                            const per = (hob.perennials||[]).find(x => x.id === p.id);
-                            if (!per) return d;
-                            const removed = per.harvests.find(x => x.id === h.id);
-                            per.harvests = per.harvests.filter(x => x.id !== h.id);
-                            if (removed && h.unit === "lbs") per.totalHarvest = Math.max(0,(per.totalHarvest||0)-(removed.qty||0));
-                            return d;
-                          })} aria-label="Remove harvest" style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,fontSize:11,padding:"0 2px",lineHeight:1 }}>✕</button>
-                        </div>
-                      ))}
-                    </div>
-                  )}
-                </div>
-                <div style={{ display:"flex",gap:5,flexShrink:0,flexWrap:"wrap",justifyContent:"flex-end" }}>
-                  <button onClick={() => setModal({ type:"logPerennialHarvest",hobbyId:hobby.id,perennialId:p.id })} style={{ background:palette.leaf,border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,color:"#fff",cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,whiteSpace:"nowrap" }}>Log harvest</button>
-                  <button onClick={() => setModal({ type:"editPerennial",hobbyId:hobby.id,perennialId:p.id })} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY }}>Edit</button>
-                  {confirmDeleteId === p.id ? (
-                    <>
-                      <button
-                        onClick={() => {
-                          update(d => { const h=d.hobbies.find(x=>x.id===hobby.id); if(h) h.perennials=(h.perennials||[]).filter(x=>x.id!==p.id); return d; });
-                          setConfirmDeleteId(null);
-                        }}
-                        style={{ background:palette.accent,border:"none",borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.bg,fontFamily:FONT_BODY,fontWeight:600 }}
-                      >
-                        Confirm
-                      </button>
-                      <button
-                        onClick={() => setConfirmDeleteId(null)}
-                        style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY }}
-                      >
-                        Cancel
-                      </button>
-                    </>
-                  ) : (
-                    <button onClick={() => setConfirmDeleteId(p.id)} style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 8px",fontSize:11,cursor:"pointer",color:palette.accent,fontFamily:FONT_BODY }}>Delete</button>
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-      {perennials.length === 0 && (
+      {/* Perennials section — split into Plants and Orchard */}
+      {perennials.length === 0 ? (
         <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"10px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
           🌳 Track perennials (fruit trees, asparagus, berry bushes...)
         </button>
+      ) : (
+        <>
+          <PerennialSection
+            title="🌿 Perennial Plants"
+            emptyHint="Berry bushes, asparagus, rhubarb, vines..."
+            items={perennials.filter(p => (p.category || "plant") === "plant")}
+            defaultCategory="plant"
+            hobby={hobby}
+            setModal={setModal}
+          />
+          <PerennialSection
+            title="🌳 Orchard"
+            emptyHint="Fruit and nut trees"
+            items={perennials.filter(p => p.category === "tree")}
+            defaultCategory="tree"
+            hobby={hobby}
+            setModal={setModal}
+          />
+        </>
       )}
       <div style={{
         background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
@@ -4881,7 +4905,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "addPerennial") {
     const gardenHobby = data.hobbies.find(h => h.type === "garden");
-    return <AddPerennialModal hobbyId={modal.hobbyId} update={update} onClose={close} />;
+    return <AddPerennialModal hobbyId={modal.hobbyId} category={modal.category} update={update} onClose={close} />;
   }
   if (modal.type === "logPerennialHarvest") {
     const gardenHobby = data.hobbies.find(h => h.type === "garden");
@@ -4889,6 +4913,20 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const perennial = (gardenHobby.perennials||[]).find(p => p.id === modal.perennialId);
     if (!perennial) { close(); return null; }
     return <LogPerennialHarvestModal hobbyId={modal.hobbyId} perennial={perennial} update={update} onClose={close} />;
+  }
+  if (modal.type === "perennialDetail") {
+    const gardenHobby = data.hobbies.find(h => h.type === "garden");
+    if (!gardenHobby) { close(); return null; }
+    const perennial = (gardenHobby.perennials||[]).find(p => p.id === modal.perennialId);
+    if (!perennial) { close(); return null; }
+    return <PerennialDetailModal hobbyId={modal.hobbyId} perennial={perennial} update={update} setModal={setModal} onClose={close} />;
+  }
+  if (modal.type === "logPerennialAction") {
+    const gardenHobby = data.hobbies.find(h => h.type === "garden");
+    if (!gardenHobby) { close(); return null; }
+    const perennial = (gardenHobby.perennials||[]).find(p => p.id === modal.perennialId);
+    if (!perennial) { close(); return null; }
+    return <LogPerennialActionModal hobbyId={modal.hobbyId} perennial={perennial} update={update} onClose={close} />;
   }
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
@@ -10965,16 +11003,31 @@ export function TutorialPrompt({ onStart, onSkip }) {
 // ============================================================================
 // ADD PERENNIAL MODAL
 // ============================================================================
-function AddPerennialModal({ hobbyId, update, onClose }) {
+function AddPerennialModal({ hobbyId, category: initialCategory = "plant", update, onClose }) {
+  const [category, setCategory] = useState(initialCategory);
   const [name, setName] = useState("");
   const [variety, setVariety] = useState("");
   const [plantDate, setPlantDate] = useState("");
   const [notes, setNotes] = useState("");
-  const SUGGESTIONS = ["Apple tree","Pear tree","Peach tree","Cherry tree","Plum tree","Fig tree","Blueberry bush","Raspberry bush","Blackberry bush","Strawberry bed","Asparagus","Rhubarb","Horseradish","Artichoke","Grape vine","Kiwi vine"];
+  const PLANT_SUGGESTIONS = ["Blueberry bush","Raspberry bush","Blackberry bush","Strawberry bed","Asparagus","Rhubarb","Horseradish","Artichoke","Grape vine","Kiwi vine"];
+  const TREE_SUGGESTIONS  = ["Apple tree","Pear tree","Peach tree","Cherry tree","Plum tree","Fig tree","Apricot tree","Pecan tree","Walnut tree"];
+  const SUGGESTIONS = category === "tree" ? TREE_SUGGESTIONS : PLANT_SUGGESTIONS;
   return (
-    <Modal open onClose={onClose} title="Add a perennial">
-      <Field label="Plant / tree name">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="Apple tree, asparagus, blueberries..." autoFocus />
+    <Modal open onClose={onClose} title={category === "tree" ? "Add a tree" : "Add a perennial plant"}>
+      <Field label="Type">
+        <div style={{ display:"flex",gap:6 }}>
+          {[{id:"plant",label:"🌿 Plant"},{id:"tree",label:"🌳 Tree"}].map(opt => (
+            <button key={opt.id} onClick={() => setCategory(opt.id)} style={{
+              flex:1,padding:"8px",borderRadius:8,cursor:"pointer",fontFamily:FONT_BODY,fontSize:13,
+              border:`1.5px solid ${category===opt.id ? palette.ink : palette.line}`,
+              background: category===opt.id ? palette.ink : "transparent",
+              color: category===opt.id ? palette.bg : palette.ink,
+            }}>{opt.label}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label={category === "tree" ? "Tree name" : "Plant name"}>
+        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder={category === "tree" ? "Apple tree, peach tree..." : "Blueberries, asparagus..."} autoFocus />
         {!name && (
           <div style={{ display:"flex",flexWrap:"wrap",gap:4,marginTop:6 }}>
             {SUGGESTIONS.slice(0,8).map(s=>(
@@ -10990,7 +11043,7 @@ function AddPerennialModal({ hobbyId, update, onClose }) {
         <input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, notes..." />
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, rootstock..." />
       </Field>
       <Btn variant="primary" onClick={() => {
         if (!name.trim()) return;
@@ -10998,11 +11051,11 @@ function AddPerennialModal({ hobbyId, update, onClose }) {
           const h = d.hobbies.find(x => x.id === hobbyId);
           if (!h) return d;
           if (!Array.isArray(h.perennials)) h.perennials = [];
-          h.perennials.push({ id: newId(), name: name.trim(), variety, plantDate, notes, totalHarvest: 0, harvests: [], created: Date.now() });
+          h.perennials.push({ id: newId(), category, name: name.trim(), variety, plantDate, notes, totalHarvest: 0, harvests: [], actions: [], created: Date.now() });
           return d;
         });
         onClose();
-      }}>Add {name || "perennial"}</Btn>
+      }}>Add {name || (category === "tree" ? "tree" : "plant")}</Btn>
     </Modal>
   );
 }
@@ -11011,6 +11064,7 @@ function AddPerennialModal({ hobbyId, update, onClose }) {
 // EDIT PERENNIAL MODAL
 // ============================================================================
 function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
+  const [category, setCategory] = useState(perennial.category || "plant");
   const [name, setName] = useState(perennial.name || "");
   const [variety, setVariety] = useState(perennial.variety || "");
   const [plantDate, setPlantDate] = useState(perennial.plantDate || "");
@@ -11022,7 +11076,7 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const p = (h.perennials||[]).find(x => x.id === perennial.id);
-      if (p) { p.name = name.trim(); p.variety = variety; p.plantDate = plantDate; p.notes = notes; }
+      if (p) { p.category = category; p.name = name.trim(); p.variety = variety; p.plantDate = plantDate; p.notes = notes; }
       return d;
     });
     onClose();
@@ -11037,6 +11091,18 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
   };
   return (
     <Modal open onClose={onClose} title="Edit perennial">
+      <Field label="Type">
+        <div style={{ display:"flex",gap:6 }}>
+          {[{id:"plant",label:"🌿 Plant"},{id:"tree",label:"🌳 Tree"}].map(opt => (
+            <button key={opt.id} onClick={() => setCategory(opt.id)} style={{
+              flex:1,padding:"8px",borderRadius:8,cursor:"pointer",fontFamily:FONT_BODY,fontSize:13,
+              border:`1.5px solid ${category===opt.id ? palette.ink : palette.line}`,
+              background: category===opt.id ? palette.ink : "transparent",
+              color: category===opt.id ? palette.bg : palette.ink,
+            }}>{opt.label}</button>
+          ))}
+        </div>
+      </Field>
       <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} autoFocus /></Field>
       <Field label="Variety (optional)"><input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp" /></Field>
       <Field label="Plant date (optional)"><input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} /></Field>
@@ -11091,6 +11157,118 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
         });
         onClose();
       }}>Log {qty||"0"} {unit}</Btn>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// PERENNIAL DETAIL MODAL — shows info, actions, harvests, and entry points
+// ============================================================================
+function PerennialDetailModal({ hobbyId, perennial, update, setModal, onClose }) {
+  const actions = [...(perennial.actions || [])].sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+  const harvests = [...(perennial.harvests || [])].sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+
+  const removeAction = (id) => update(d => {
+    const h = d.hobbies.find(x => x.id === hobbyId);
+    if (!h) return d;
+    const p = (h.perennials||[]).find(x => x.id === perennial.id);
+    if (p) p.actions = (p.actions||[]).filter(a => a.id !== id);
+    return d;
+  });
+
+  return (
+    <Modal open onClose={onClose} title={perennial.name + (perennial.variety ? ` — ${perennial.variety}` : "")}>
+      <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:12 }}>
+        {perennial.category === "tree" ? "🌳 Orchard tree" : "🌿 Perennial plant"}
+        {perennial.plantDate ? ` · Planted ${perennial.plantDate}` : ""}
+        {perennial.totalHarvest ? ` · ${perennial.totalHarvest} lbs lifetime` : ""}
+      </div>
+
+      <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:14 }}>
+        <Btn variant="primary" onClick={() => setModal({ type:"logPerennialAction",hobbyId,perennialId:perennial.id })}>
+          + Log action
+        </Btn>
+        <Btn onClick={() => setModal({ type:"logPerennialHarvest",hobbyId,perennialId:perennial.id })}>
+          🧺 Log harvest
+        </Btn>
+        <Btn variant="ghost" onClick={() => setModal({ type:"editPerennial",hobbyId,perennialId:perennial.id })}>
+          Edit
+        </Btn>
+      </div>
+
+      {actions.length > 0 && (
+        <>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:14,color:palette.ink,marginBottom:6 }}>Action history</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:4,marginBottom:14 }}>
+            {actions.map(a => (
+              <div key={a.id} style={{ display:"flex",alignItems:"center",gap:8,padding:"6px 10px",background:palette.bgAlt,borderRadius:6,fontSize:12 }}>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ color:palette.ink }}><strong>{a.type}</strong> · {a.date}</div>
+                  {a.notes && <div style={{ color:palette.inkSoft,fontSize:11 }}>{a.notes}</div>}
+                </div>
+                <button onClick={() => removeAction(a.id)} aria-label="Remove" style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,fontSize:14,padding:"0 4px" }}>✕</button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {harvests.length > 0 && (
+        <>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:14,color:palette.ink,marginBottom:6 }}>Harvest history</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:4 }}>
+            {harvests.slice(0,10).map(h => (
+              <div key={h.id} style={{ padding:"6px 10px",background:palette.bgAlt,borderRadius:6,fontSize:12,color:palette.ink }}>
+                {h.date} · {h.qty} {h.unit}{h.notes ? ` — ${h.notes}` : ""}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {actions.length === 0 && harvests.length === 0 && (
+        <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",padding:"8px 0" }}>
+          No history yet. Log an action or harvest to start tracking.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ============================================================================
+// LOG PERENNIAL ACTION MODAL
+// ============================================================================
+const PERENNIAL_ACTION_TYPES = ["Spray","Prune","Fertilize","Mulch","Treat (pest/disease)","Inspect","Water","Thin","Other"];
+
+function LogPerennialActionModal({ hobbyId, perennial, update, onClose }) {
+  const [type, setType] = useState("Spray");
+  const [date, setDate] = useState(todayStr());
+  const [notes, setNotes] = useState("");
+  return (
+    <Modal open onClose={onClose} title={`Log action — ${perennial.name}`}>
+      <Field label="Action">
+        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
+          {PERENNIAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+      </Field>
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how hard you pruned, etc." />
+      </Field>
+      <Btn variant="primary" onClick={() => {
+        update(d => {
+          const h = d.hobbies.find(x => x.id === hobbyId);
+          if (!h) return d;
+          const p = (h.perennials||[]).find(x => x.id === perennial.id);
+          if (!p) return d;
+          p.actions = p.actions || [];
+          p.actions.push({ id: newId(), type, date, notes, created: Date.now() });
+          return d;
+        });
+        onClose();
+      }}>Log {type}</Btn>
     </Modal>
   );
 }
