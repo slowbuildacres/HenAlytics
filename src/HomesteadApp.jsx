@@ -9289,13 +9289,45 @@ function OnboardingWizard({ update, onClose }) {
   const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
+  //
+  // Per-country quirks Zippopotam handles non-uniformly:
+  //   - US, MX: 5-digit zips, used as-is
+  //   - CA: Canadian postal codes are 6 chars like "K1A 0B1". Zippopotam only
+  //     indexes the first 3 chars (Forward Sortation Area). Send "K1A".
+  //   - GB: UK postcodes are "SW1A 1AA" style. Zippopotam indexes the
+  //     outward code (1-4 chars before the space). Send "SW1A".
+  //   - Most other supported countries use the postal code as-is.
+  //
+  // We normalize: strip whitespace, uppercase, then truncate for CA/GB.
+  const normalizeZipForApi = (rawZip, countryCode) => {
+    const trimmed = rawZip.trim().toUpperCase().replace(/\s+/g, " ");
+    if (countryCode === "ca") {
+      // First 3 chars, no space (works whether user typed "K1A 0B1" or "K1A0B1")
+      return trimmed.replace(/\s+/g, "").slice(0, 3);
+    }
+    if (countryCode === "gb") {
+      // Everything before the first space — that's the outward code
+      const idx = trimmed.indexOf(" ");
+      return idx === -1 ? trimmed : trimmed.slice(0, idx);
+    }
+    return trimmed;
+  };
+
   const lookupZip = async () => {
     if (!zip.trim()) return;
     setZipLookupStatus("loading");
     setZipError("");
     try {
-      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(zip.trim())}`);
+      const normalized = normalizeZipForApi(zip, country);
+      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(normalized)}`);
       if (!res.ok) {
+        // Country-specific hint when format is the likely culprit
+        if (country === "ca") {
+          throw new Error("Couldn't find that postal code. Try the first 3 characters (e.g. K1A).");
+        }
+        if (country === "gb") {
+          throw new Error("Couldn't find that postcode. Try the outward portion (e.g. SW1A).");
+        }
         throw new Error("Zip code not found");
       }
       const json = await res.json();
@@ -9451,7 +9483,12 @@ function OnboardingWizard({ update, onClose }) {
                   style={{ ...inputStyle, flex: 1 }}
                   value={zip}
                   onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
-                  placeholder="e.g. 66002"
+                  placeholder={
+                    country === "ca" ? "e.g. K1A or K1A 0B1"
+                    : country === "gb" ? "e.g. SW1A or SW1A 1AA"
+                    : country === "us" ? "e.g. 66002"
+                    : "Postal code"
+                  }
                   inputMode="text"
                   autoComplete="postal-code"
                 />
