@@ -9289,6 +9289,17 @@ function OnboardingWizard({ update, onClose }) {
   const [zipError, setZipError] = useState("");
   const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false });
 
+  // Signup-step state (step 4). Local to the wizard — the actual auth
+  // call goes through the same `supabase.auth.signUp` that the AuthModal
+  // uses, so behavior matches the existing sign-up flow exactly. We never
+  // block onClose() if signup fails — the user can tap "I'll do this later"
+  // or close entirely, and their localStorage data is preserved either way.
+  const [signupEmail, setSignupEmail] = useState("");
+  const [signupPassword, setSignupPassword] = useState("");
+  const [signupWorking, setSignupWorking] = useState(false);
+  const [signupError, setSignupError] = useState("");
+  const [signupInfo, setSignupInfo] = useState(""); // for "check your email to confirm" message
+
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   //
   // Per-country quirks Zippopotam handles non-uniformly:
@@ -9351,6 +9362,62 @@ function OnboardingWizard({ update, onClose }) {
     }
   };
 
+  // Sign up the user from the wizard. Same flow as AuthModal — calls
+  // supabase.auth.signUp, sends the signup_notify email, and advances to
+  // step 5 on success. If the user has unconfirmed-email flow on, we still
+  // advance (their localStorage data is preserved; signup confirmation
+  // happens out of band).
+  const handleSignup = async () => {
+    setSignupError("");
+    setSignupInfo("");
+
+    if (!isSupabaseConfigured) {
+      setSignupError("Sign-up isn't configured on this site yet. You can skip this step and add an account later.");
+      return;
+    }
+    if (!signupEmail.trim() || !signupPassword) {
+      setSignupError("Please enter both email and password.");
+      return;
+    }
+    if (signupPassword.length < 6) {
+      setSignupError("Password must be at least 6 characters.");
+      return;
+    }
+
+    setSignupWorking(true);
+    try {
+      const { data, error } = await supabase.auth.signUp({
+        email: signupEmail.trim(),
+        password: signupPassword,
+      });
+      if (error) throw error;
+      // Fire signup_notify email (same as AuthModal does). Fire-and-forget.
+      try {
+        await fetch('/api/send-email', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ kind: 'signup_notify', newUserEmail: signupEmail.trim() }),
+        });
+      } catch (e) {
+        console.warn('Signup notification failed', e);
+      }
+      // If Supabase is configured for email confirmation, data.session will
+      // be null and the user needs to check their inbox. Either way we
+      // advance to step 5 — their localStorage data is preserved and will
+      // sync to the cloud once they're actually signed in.
+      if (!data.session) {
+        setSignupInfo("Check your email to confirm your account. Your homestead data is saved on this device.");
+        setTimeout(() => setStep(5), 1800);
+      } else {
+        setStep(5);
+      }
+    } catch (err) {
+      setSignupError(err.message || "Couldn't create your account. You can try again or skip this step.");
+    } finally {
+      setSignupWorking(false);
+    }
+  };
+
   const finish = () => {
     update((d) => {
       if (name.trim()) d.homesteadName = name.trim();
@@ -9405,7 +9472,7 @@ function OnboardingWizard({ update, onClose }) {
       }}>
         {/* Step indicator */}
         <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
-          {[1, 2, 3, 4].map((i) => (
+          {[1, 2, 3, 4, 5].map((i) => (
             <div
               key={i}
               style={{
@@ -9665,6 +9732,111 @@ function OnboardingWizard({ update, onClose }) {
         )}
 
         {step === 4 && (
+          // Optional signup step. Header is intentionally framed as "back up
+          // your data" rather than "create an account" — users care about
+          // not losing entries, not about account creation as an end in itself.
+          // The "I'll do this later" link advances to step 5 without signup;
+          // their localStorage data is preserved either way.
+          <>
+            <div style={{ fontSize: 32, marginBottom: 6, textAlign: "center" }}>🔒</div>
+            <h2 style={{
+              fontFamily: FONT_DISPLAY, fontSize: 22, margin: "0 0 6px",
+              color: palette.ink, lineHeight: 1.2, textAlign: "center",
+            }}>
+              Sign up to back up your data
+            </h2>
+            <p style={{
+              fontSize: 13, color: palette.inkSoft, margin: "0 0 14px",
+              lineHeight: 1.5, textAlign: "center",
+            }}>
+              Free, no ads. Syncs across phone, tablet, and computer. Your email is used only for support and recovery — never sold or shared.
+            </p>
+
+            <div style={{ marginBottom: 10 }}>
+              <div style={{
+                fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+                textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              }}>
+                Email
+              </div>
+              <input
+                type="email"
+                style={inputStyle}
+                value={signupEmail}
+                onChange={(e) => { setSignupEmail(e.target.value); setSignupError(""); }}
+                placeholder="you@example.com"
+                autoComplete="email"
+                disabled={signupWorking}
+                autoFocus
+              />
+            </div>
+
+            <div style={{ marginBottom: 12 }}>
+              <div style={{
+                fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+                textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              }}>
+                Password <span style={{ textTransform: "none", letterSpacing: 0, color: palette.inkSoft, fontWeight: 400 }}>(min 6 characters)</span>
+              </div>
+              <input
+                type="password"
+                style={inputStyle}
+                value={signupPassword}
+                onChange={(e) => { setSignupPassword(e.target.value); setSignupError(""); }}
+                placeholder="••••••••"
+                autoComplete="new-password"
+                disabled={signupWorking}
+              />
+            </div>
+
+            {signupError && (
+              <div style={{
+                padding: 10, background: "#FBE5DE",
+                border: `1.5px solid ${palette.accent}`, borderRadius: 8,
+                fontSize: 13, color: palette.accent, marginBottom: 12,
+                lineHeight: 1.4,
+              }}>
+                {signupError}
+              </div>
+            )}
+
+            {signupInfo && (
+              <div style={{
+                padding: 10, background: palette.yolkSoft,
+                border: `1.5px solid ${palette.line}`, borderRadius: 8,
+                fontSize: 13, color: palette.ink, marginBottom: 12,
+                lineHeight: 1.4,
+              }}>
+                {signupInfo}
+              </div>
+            )}
+
+            <Btn
+              variant="primary"
+              onClick={handleSignup}
+              disabled={signupWorking}
+              style={{ width: "100%", marginBottom: 10 }}
+            >
+              {signupWorking ? "Working..." : "Create account"}
+            </Btn>
+
+            <div style={{ textAlign: "center" }}>
+              <button
+                onClick={() => setStep(5)}
+                disabled={signupWorking}
+                style={{
+                  background: "none", border: "none", padding: "8px 4px",
+                  color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12,
+                  textDecoration: "underline", cursor: signupWorking ? "wait" : "pointer",
+                }}
+              >
+                I'll do this later
+              </button>
+            </div>
+          </>
+        )}
+
+        {step === 5 && (
           // Internal flex layout so on small screens the content scrolls but
           // the "Got it" button stays visible at the bottom. Mirrors the
           // What's New modal pattern: outer flex column, scrollable middle,
