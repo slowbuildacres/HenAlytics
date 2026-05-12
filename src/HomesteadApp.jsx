@@ -2909,6 +2909,7 @@ function QuickLogTiles({ hobby, setModal }) {
     return (
       <div style={grid}>
         <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
+        <Tile icon={Leaf} label="Fertilized" color={palette.leafSoft || "#A8C078"} onClick={() => setModal({ type: "log", action: "fertilized" })} />
         <Tile icon={Sprout} label="Planted" color={palette.leaf} onClick={() => setModal({ type: "log", action: "planted" })} />
         <Tile icon={Scissors} label="Harvested" color={palette.accent} onClick={() => setModal({ type: "log", action: "harvested" })} />
         <Tile icon={AlertTriangle} label="Report Issue" color={palette.yolk} onClick={() => setModal({ type: "log", action: "issue" })} />
@@ -3486,6 +3487,58 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
           <button onClick={reset} style={{ padding: "9px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: "transparent", color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12, cursor: "pointer" }}>Clear</button>
         </div>
       )}
+
+      {/* Named birds — optional sub-list. Users with named favorites can
+          track them; flocks without named birds just see a small "Name a bird"
+          button. Doesn't replace birdCount — that stays the source of truth. */}
+      {(() => {
+        const namedBirds = flock.namedBirds || [];
+        return (
+          <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${palette.line}` }}>
+            {namedBirds.length > 0 ? (
+              <>
+                <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>
+                  Named birds ({namedBirds.length})
+                </div>
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+                  {namedBirds.map(b => (
+                    <button
+                      key={b.id}
+                      onClick={() => setModal({ type: "namedBirds", hobbyId: hobby.id, flockId: flock.id })}
+                      style={{
+                        display: "flex", alignItems: "center", gap: 6,
+                        padding: "4px 10px", borderRadius: 999,
+                        background: palette.card, border: `1.5px solid ${palette.line}`,
+                        fontSize: 12, color: palette.ink, cursor: "pointer",
+                        fontFamily: FONT_BODY,
+                      }}
+                    >
+                      {b.bandColor && (
+                        <span style={{
+                          display: "inline-block", width: 10, height: 10, borderRadius: "50%",
+                          background: b.bandColor,
+                          border: `1px solid ${palette.line}`,
+                        }} />
+                      )}
+                      <span>{b.name}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            ) : null}
+            <button
+              onClick={() => setModal({ type: "namedBirds", hobbyId: hobby.id, flockId: flock.id })}
+              style={{
+                background: "transparent", border: "none",
+                color: palette.inkSoft, fontSize: 12, padding: 0, cursor: "pointer",
+                fontFamily: FONT_BODY, textDecoration: "underline",
+              }}
+            >
+              {namedBirds.length > 0 ? "Manage named birds" : "+ Name a bird"}
+            </button>
+          </div>
+        );
+      })()}
     </div>
   );
 }
@@ -3572,7 +3625,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     sold_eggs: "Eggs sold", infrastructure: "Infrastructure",
   };
   const icons = {
-    watered: Droplet, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
+    watered: Droplet, fertilized: Leaf, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
     fed: Sun, free_range: Bird, eggs: Egg, eggs_laid: Egg, bedding: Archive, death: Skull,
     butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, infrastructure: Hammer,
   };
@@ -3580,6 +3633,20 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
   let detail = "";
   switch (entry.action) {
     case "watered": detail = entry.gallons ? `${entry.gallons} gal` : (entry.amount || ""); break;
+    case "fertilized": {
+      const typeLabels = {
+        compost: "Compost", manure: "Manure", granular: "Granular",
+        liquid: "Liquid feed", foliar: "Foliar spray",
+        amendment: "Amendment", cover_crop: "Cover crop", other: "Fertilizer",
+      };
+      const parts = [typeLabels[entry.fertilizerType] || "Fertilizer"];
+      if (entry.product) parts.push(entry.product);
+      if (entry.amount) parts.push(entry.amount);
+      if (entry.bed) parts.push(entry.bed);
+      if (entry.cost && Number(entry.cost) > 0) parts.push(fmtMoney(entry.cost));
+      detail = parts.filter(Boolean).join(" · ");
+      break;
+    }
     case "planted": detail = `${entry.plant || ""} ${entry.quantity ? "× " + entry.quantity : ""}`.trim(); break;
     case "harvested": detail = `${entry.plant || ""} · ${entry.quantity || 0} ${entry.unit || "lbs"}`; break;
     case "fed": detail = `${entry.lbs || 0} lbs · ${fmtMoney(entry.cost)}`; break;
@@ -3970,6 +4037,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
   const totalCostRaw = entries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const totalCost = spouseCost(totalCostRaw, spouseMode);
   const waterings = entries.filter((e) => e.action === "watered").length;
+  const fertilizations = entries.filter((e) => e.action === "fertilized").length;
   const plantings = entries.filter((e) => e.action === "planted").length;
 
   // by-plant aggregate
@@ -3995,6 +4063,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
         <StatCard label="Total Harvest" value={totalHarvest.toFixed(1)} sub="lbs / units" accent={palette.leaf} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
         <StatCard label="Waterings" value={waterings} accent="#3F7CAC" />
+        {fertilizations > 0 && <StatCard label="Fertilizations" value={fertilizations} accent={palette.leafSoft || "#A8C078"} />}
       </div>
 
       {plantData.length > 0 && (
@@ -4728,6 +4797,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
     return <EditFlockModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} setModal={setModal} />;
+  }
+  if (modal.type === "namedBirds") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <NamedBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} />;
   }
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -6877,6 +6951,161 @@ function AddFlockModal({ hobbyId, update, onClose }) {
   );
 }
 
+// ============================================================================
+// NAMED BIRDS MODAL — optional per-flock list of named individual birds with
+// leg band color. Doesn't replace birdCount on the flock — these are favorites
+// or otherwise notable birds the user wants to track by name.
+// ============================================================================
+function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
+  const flock = (hobby.flocks || []).find(f => f.id === flockId);
+  const [birds, setBirds] = useState(() =>
+    (flock?.namedBirds || []).map(b => ({ ...b }))
+  );
+  const [newName, setNewName] = useState("");
+  const [newBandColor, setNewBandColor] = useState("");
+
+  if (!flock) { onClose(); return null; }
+
+  const COMMON_COLORS = [
+    { hex: "", label: "(no band)" },
+    { hex: "#E63946", label: "Red" },
+    { hex: "#F4A261", label: "Orange" },
+    { hex: "#E9C46A", label: "Yellow" },
+    { hex: "#7AB852", label: "Green" },
+    { hex: "#3F7CAC", label: "Blue" },
+    { hex: "#7B4F9B", label: "Purple" },
+    { hex: "#FF9CCB", label: "Pink" },
+    { hex: "#FFFFFF", label: "White" },
+    { hex: "#1A1A1A", label: "Black" },
+  ];
+
+  const addBird = () => {
+    if (!newName.trim()) return;
+    setBirds(prev => [...prev, {
+      id: Math.random().toString(36).slice(2, 10),
+      name: newName.trim(),
+      bandColor: newBandColor,
+      notes: "",
+    }]);
+    setNewName("");
+    setNewBandColor("");
+  };
+
+  const updateBird = (id, patch) => {
+    setBirds(prev => prev.map(b => b.id === id ? { ...b, ...patch } : b));
+  };
+
+  const removeBird = (id) => {
+    setBirds(prev => prev.filter(b => b.id !== id));
+  };
+
+  const save = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const fl = (h.flocks || []).find(x => x.id === flockId);
+      if (fl) fl.namedBirds = birds.map(b => ({
+        ...b,
+        name: (b.name || "").trim(),
+        notes: (b.notes || "").trim(),
+      })).filter(b => b.name);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Named birds — ${flock.name}`}>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        Track individual birds in this flock by name and leg band color. Optional — most flocks don't need this, but it's handy for favorites, breeding stock, or birds with quirks worth remembering.
+      </div>
+
+      {/* Existing named birds */}
+      {birds.length > 0 && (
+        <div style={{ marginBottom: 14 }}>
+          {birds.map(b => (
+            <div key={b.id} style={{
+              padding: "10px 12px", marginBottom: 8,
+              background: palette.card, border: `1.5px solid ${palette.line}`,
+              borderRadius: 10,
+            }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                {b.bandColor && (
+                  <span style={{
+                    display: "inline-block", width: 14, height: 14, borderRadius: "50%",
+                    background: b.bandColor, border: `1.5px solid ${palette.line}`, flexShrink: 0,
+                  }} />
+                )}
+                <input
+                  style={{ ...inputStyle, flex: 1, padding: "6px 10px" }}
+                  value={b.name}
+                  onChange={(e) => updateBird(b.id, { name: e.target.value })}
+                  placeholder="Bird name"
+                />
+                <button onClick={() => removeBird(b.id)} aria-label="Remove" style={{
+                  background: "none", border: "none", color: palette.accent, cursor: "pointer", padding: 4,
+                }}><X size={16} /></button>
+              </div>
+              <select
+                style={{ ...inputStyle, padding: "6px 10px", fontSize: 13 }}
+                value={b.bandColor || ""}
+                onChange={(e) => updateBird(b.id, { bandColor: e.target.value })}
+              >
+                {COMMON_COLORS.map(c => (
+                  <option key={c.hex || "none"} value={c.hex}>{c.label}</option>
+                ))}
+              </select>
+              <input
+                style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                value={b.notes || ""}
+                onChange={(e) => updateBird(b.id, { notes: e.target.value })}
+                placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
+              />
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Add new bird */}
+      <div style={{
+        padding: "10px 12px", background: palette.bgAlt, borderRadius: 10,
+        border: `1.5px dashed ${palette.line}`, marginBottom: 14,
+      }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.5, fontWeight: 600, marginBottom: 6 }}>
+          Add a bird
+        </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+          <input
+            style={{ ...inputStyle, flex: 1 }}
+            value={newName}
+            onChange={(e) => setNewName(e.target.value)}
+            placeholder="Name (e.g. Henrietta, Big Red)"
+            onKeyDown={(e) => { if (e.key === "Enter") addBird(); }}
+          />
+        </div>
+        <select
+          style={inputStyle}
+          value={newBandColor}
+          onChange={(e) => setNewBandColor(e.target.value)}
+        >
+          {COMMON_COLORS.map(c => (
+            <option key={c.hex || "none"} value={c.hex}>{c.label}</option>
+          ))}
+        </select>
+        <Btn small variant="leaf" onClick={addBird} disabled={!newName.trim()} style={{ marginTop: 8, width: "100%" }}>
+          + Add bird
+        </Btn>
+      </div>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant="primary" onClick={save}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+
 function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) {
   const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
@@ -8392,7 +8621,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     setValidationError("");
 
     // Coerce numeric fields from string inputs to actual numbers
-    const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen"];
+    const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen", "unitQty", "pricePerUnit", "customEggsPerUnit"];
     const cleanFields = { ...fields };
     numericKeys.forEach((k) => {
       if (cleanFields[k] !== undefined && cleanFields[k] !== "") {
@@ -8400,6 +8629,23 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         cleanFields[k] = isNaN(n) ? 0 : n;
       }
     });
+
+    // For sold_eggs with new unit-based fields, derive the canonical `count`
+    // (total eggs) and `pricePerDozen` so existing analytics keep working.
+    // Old entries (without unit/unitQty) still have count and pricePerDozen
+    // set directly — the derivation only runs when the new fields are present.
+    if (action === "sold_eggs" && cleanFields.unit && cleanFields.unitQty) {
+      const unitToCount = {
+        single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+        custom: cleanFields.customEggsPerUnit || 0,
+      };
+      const eggsPerUnit = unitToCount[cleanFields.unit] || 12;
+      const totalEggs = (cleanFields.unitQty || 0) * eggsPerUnit;
+      const totalRevenue = (cleanFields.unitQty || 0) * (cleanFields.pricePerUnit || 0);
+      cleanFields.count = totalEggs;
+      // Back-compute price per dozen for older analytics (totalRevenue / dozens)
+      cleanFields.pricePerDozen = totalEggs > 0 ? (totalRevenue / (totalEggs / 12)) : 0;
+    }
 
     // We need an entry id up front so we can attach photos to it.
     // For edits, we keep the existing id so we don't create a duplicate.
@@ -8610,6 +8856,35 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         </Field>
       )}
 
+      {action === "fertilized" && hobby.type === "garden" && (
+        <>
+          <Field label="Type">
+            <select style={inputStyle} value={fields.fertilizerType || "compost"} onChange={(e) => set("fertilizerType", e.target.value)}>
+              <option value="compost">Compost</option>
+              <option value="manure">Manure</option>
+              <option value="granular">Granular (synthetic)</option>
+              <option value="liquid">Liquid feed</option>
+              <option value="foliar">Foliar spray</option>
+              <option value="amendment">Soil amendment (lime, gypsum, etc.)</option>
+              <option value="cover_crop">Cover crop / green manure</option>
+              <option value="other">Other</option>
+            </select>
+          </Field>
+          <Field label="Product / source (optional)">
+            <input style={inputStyle} value={fields.product || ""} onChange={(e) => set("product", e.target.value)} placeholder="e.g. Espoma Plant-tone, chicken manure" />
+          </Field>
+          <Field label="Amount (optional)">
+            <input style={inputStyle} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder='e.g. "2 lbs", "1 wheelbarrow", "1 gal diluted"' />
+          </Field>
+          <Field label="Where (optional)">
+            <input style={inputStyle} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} placeholder="All beds, tomato bed, etc." />
+          </Field>
+          <Field label="Cost ($, optional)">
+            <input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0.00" />
+          </Field>
+        </>
+      )}
+
       {action === "planted" && (
         <>
           <Field label="Plant / crop">
@@ -8777,23 +9052,56 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
       {action === "sold_eggs" && (
         <>
-          <Field label="Number of eggs sold">
-            <input type="number" inputMode="numeric" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 24 (= 2 dozen)" />
+          {/* Unit-based selling: user picks a unit size and enters quantity
+              of units sold plus price per unit. Total egg count is derived
+              for downstream analytics (cost/egg, etc.). Unit options match
+              how eggs are actually sold at farmer's markets / farm gates. */}
+          <Field label="Unit">
+            <select style={inputStyle} value={fields.unit || "dozen"} onChange={(e) => set("unit", e.target.value)}>
+              <option value="single">Single eggs (1 each)</option>
+              <option value="half_dozen">Half dozen (6)</option>
+              <option value="dozen">Dozen (12)</option>
+              <option value="eighteen">18-pack</option>
+              <option value="flat">Flat (30)</option>
+              <option value="custom">Custom count</option>
+            </select>
           </Field>
-          <Field label="Price per dozen ($)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.pricePerDozen || ""} onChange={(e) => set("pricePerDozen", e.target.value)} placeholder="e.g. 6.00" />
+          {fields.unit === "custom" && (
+            <Field label="Eggs per unit">
+              <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.customEggsPerUnit || ""} onChange={(e) => set("customEggsPerUnit", e.target.value)} placeholder="e.g. 24" />
+            </Field>
+          )}
+          <Field label="Number of units">
+            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.unitQty || ""} onChange={(e) => set("unitQty", e.target.value)} placeholder="how many" />
+          </Field>
+          <Field label="Price per unit ($)">
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
           </Field>
           <Field label="Sold to / notes (optional)">
             <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
           </Field>
-          {fields.count && fields.pricePerDozen && (
-            <div style={{
-              padding: 10, background: palette.yolkSoft, borderRadius: 6,
-              fontSize: 13, color: palette.ink, marginBottom: 14, textAlign: "center",
-            }}>
-              Revenue: <strong>{fmtMoney(((Number(fields.count) || 0) / 12) * (Number(fields.pricePerDozen) || 0))}</strong>
-            </div>
-          )}
+          {(() => {
+            const unitToCount = {
+              single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+              custom: parseInt(fields.customEggsPerUnit, 10) || 0,
+            };
+            const eggsPerUnit = unitToCount[fields.unit || "dozen"] || 12;
+            const units = Number(fields.unitQty) || 0;
+            const price = Number(fields.pricePerUnit) || 0;
+            const totalEggs = units * eggsPerUnit;
+            const totalRevenue = units * price;
+            if (units > 0 && price > 0) {
+              return (
+                <div style={{
+                  padding: 10, background: palette.yolkSoft, borderRadius: 6,
+                  fontSize: 13, color: palette.ink, marginBottom: 14, textAlign: "center",
+                }}>
+                  <strong>{totalEggs} eggs</strong> · Revenue: <strong>{fmtMoney(totalRevenue)}</strong>
+                </div>
+              );
+            }
+            return null;
+          })()}
         </>
       )}
 
