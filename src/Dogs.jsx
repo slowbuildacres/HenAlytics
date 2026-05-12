@@ -1,0 +1,1308 @@
+// ============================================================================
+// DOGS PAGE
+// ----------------------------------------------------------------------------
+// Hobby for tracking dogs: pets, breeding stock, working dogs, livestock
+// guardian dogs (LGDs). LGDs unlock attack-prevention tracking — a real
+// differentiator for homesteaders who depend on their dogs to protect
+// chickens, sheep, goats, etc.
+//
+// Data shape on the hobby:
+//   hobby.animals[] = [{ id, name, breed, birthdate, sex, isLGD, color,
+//                        microchipId, purchaseCost, purchasedFrom,
+//                        sireId, sire, damId, dam, registryNumber,
+//                        registryName, archived, archivedReason, archivedDate }]
+//   hobby.breedings[] = [{ id, damId, sireId, sireExternal, breedDate,
+//                           expectedWhelpDate, whelpedDate, puppiesBorn,
+//                           puppiesAlive, notes }]
+//   hobby.litters[] = [{ id, breedingId, whelpDate, totalBorn, notes,
+//                         puppies: [{ id, name, sex, color, status,
+//                                     placedTo, placePrice, placeDate,
+//                                     notes }] }]
+//   hobby.attacks[] = [{ id, date, dogId, predatorType, livestockSpecies,
+//                         attackResult, notes }]
+//
+// Entries (data.entries["dogs"]): weight, health, note, death — shared
+// LogEntryModal pattern from Sheep.
+//
+// Dog gestation = 58–68 days. Default expected whelp = +63 days.
+// ============================================================================
+
+import React, { useState, useMemo } from "react";
+import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { fmtMoney } from "./units.js";
+
+const palette = {
+  bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
+  accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
+  yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
+  line: "#2C181030", card: "#FAF5EA",
+};
+const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
+const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
+
+const DOG_GESTATION_DAYS = 63;
+
+const inputStyle = {
+  width: "100%", padding: "10px 12px", borderRadius: 8,
+  border: `1.5px solid ${palette.line}`, background: palette.card,
+  fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
+};
+
+const newId = () => Math.random().toString(36).slice(2, 10);
+const localDateStr = (date) => {
+  const d = date instanceof Date ? date : new Date(date);
+  return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
+};
+const todayStr = () => localDateStr(new Date());
+const parseLocalDate = (s) => { if (!s) return new Date(); const [y,m,d] = s.split("-").map(Number); return new Date(y,(m||1)-1,d||1); };
+const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
+
+const addDays = (dateStr, days) => {
+  const d = parseLocalDate(dateStr);
+  d.setDate(d.getDate() + days);
+  return localDateStr(d);
+};
+
+const ageInMonths = (birthdate) => {
+  if (!birthdate) return null;
+  const b = parseLocalDate(birthdate);
+  const now = new Date();
+  return Math.floor((now - b) / (1000 * 60 * 60 * 24 * 30.44));
+};
+
+const fmtAge = (birthdate) => {
+  const m = ageInMonths(birthdate);
+  if (m === null) return "—";
+  if (m < 12) return `${m} mo`;
+  const yrs = Math.floor(m / 12);
+  const remMo = m % 12;
+  return remMo ? `${yrs}y ${remMo}mo` : `${yrs}y`;
+};
+
+// ============ SHARED UI ============
+function Btn({ children, onClick, variant = "primary", small = false, style = {}, type = "button", disabled = false }) {
+  const variants = {
+    primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
+    leaf: { bg: palette.leaf, color: "#FAF5EA", border: palette.leaf },
+    accent: { bg: palette.accent, color: "#FAF5EA", border: palette.accent },
+    ghost: { bg: "transparent", color: palette.ink, border: palette.line },
+    danger: { bg: palette.accent, color: palette.bg, border: palette.accent },
+  };
+  const v = variants[variant] || variants.primary;
+  return (
+    <button type={type} disabled={disabled} onClick={onClick}
+      style={{
+        background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
+        borderRadius: 10, padding: small ? "8px 12px" : "10px 16px",
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14,
+        cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
+        boxShadow: variant === "ghost" ? "none" : "2px 2px 0 " + palette.line,
+        ...style,
+      }}>
+      {children}
+    </button>
+  );
+}
+
+function StatCard({ label, value, sub, accent = palette.accent }) {
+  return (
+    <div style={{
+      flex: 1, minWidth: 100, padding: "12px 14px",
+      background: palette.card, border: `1.5px solid ${palette.line}`,
+      borderRadius: 12,
+    }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: accent, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+      {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
+    </div>
+  );
+}
+
+function Field({ label, children }) {
+  return (
+    <div style={{ marginBottom: 10 }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 4, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
+      {children}
+    </div>
+  );
+}
+
+function ModalShell({ title, onClose, children, maxWidth = 460 }) {
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+      display: "flex", alignItems: "flex-end", justifyContent: "center",
+      zIndex: 200, padding: 0,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: palette.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
+        maxWidth, width: "100%", maxHeight: "92vh", overflowY: "auto",
+        border: `2px solid ${palette.ink}`, boxShadow: `0 -6px 0 ${palette.line}`,
+        WebkitOverflowScrolling: "touch",
+        padding: "18px 22px max(18px, env(safe-area-inset-bottom)) 22px",
+      }}>
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 14 }}>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: 0, color: palette.ink }}>{title}</h2>
+          <button onClick={onClose} aria-label="Close" style={{
+            background: "none", border: "none", padding: 6, cursor: "pointer", color: palette.ink,
+          }}><X size={20} /></button>
+        </div>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+// ============ DOG MODAL ============
+const DOG_BREEDS = [
+  "Great Pyrenees", "Anatolian Shepherd", "Maremma", "Akbash", "Kangal",
+  "Border Collie", "Australian Shepherd", "German Shepherd",
+  "Labrador Retriever", "Golden Retriever", "Mixed", "Other",
+];
+
+function DogModal({ dog, dogs, onSave, onDelete, onClose }) {
+  const [name, setName] = useState(dog?.name || "");
+  const initBreed = (dog?.breed || "").trim();
+  const initIsKnown = DOG_BREEDS.includes(initBreed);
+  const [breedSelect, setBreedSelect] = useState(initBreed && initIsKnown ? initBreed : (initBreed ? "Other" : ""));
+  const [breedCustom, setBreedCustom] = useState(initBreed && !initIsKnown ? initBreed : "");
+  const [birthdate, setBirthdate] = useState(dog?.birthdate || "");
+  const [sex, setSex] = useState(dog?.sex || "female");
+  const [isLGD, setIsLGD] = useState(!!dog?.isLGD);
+  const [color, setColor] = useState(dog?.color || "");
+  const [microchipId, setMicrochipId] = useState(dog?.microchipId || "");
+  const [purchaseCost, setPurchaseCost] = useState(dog?.purchaseCost ? String(dog.purchaseCost) : "");
+  const [purchasedFrom, setPurchasedFrom] = useState(dog?.purchasedFrom || "");
+  const [sireId, setSireId] = useState(dog?.sireId || "");
+  const [sire, setSire] = useState(dog?.sire || "");
+  const [damId, setDamId] = useState(dog?.damId || "");
+  const [dam, setDam] = useState(dog?.dam || "");
+  const [registryNumber, setRegistryNumber] = useState(dog?.registryNumber || "");
+  const [registryName, setRegistryName] = useState(dog?.registryName || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const finalBreed = breedSelect === "Other" ? breedCustom.trim() : breedSelect;
+  const males = (dogs || []).filter(a => a.sex === "male" && a.id !== dog?.id && !a.archived);
+  const females = (dogs || []).filter(a => a.sex === "female" && a.id !== dog?.id && !a.archived);
+
+  const handleSave = () => {
+    if (!name.trim()) return;
+    onSave({
+      id: dog?.id || newId(),
+      name: name.trim(),
+      breed: finalBreed,
+      birthdate,
+      sex,
+      isLGD,
+      color: color.trim(),
+      microchipId: microchipId.trim(),
+      purchaseCost: parseFloat(purchaseCost) || 0,
+      purchasedFrom: purchasedFrom.trim(),
+      sireId: sireId || null,
+      sire: sire.trim(),
+      damId: damId || null,
+      dam: dam.trim(),
+      registryNumber: registryNumber.trim(),
+      registryName: registryName.trim(),
+      archived: dog?.archived || false,
+      created: dog?.created || Date.now(),
+    });
+    onClose();
+  };
+
+  return (
+    <ModalShell title={dog ? "Edit dog" : "Add a dog"} onClose={onClose}>
+      <Field label="Name">
+        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Beau, Maggie" autoFocus />
+      </Field>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Sex">
+            <select style={inputStyle} value={sex} onChange={(e) => setSex(e.target.value)}>
+              <option value="female">Female</option>
+              <option value="male">Male</option>
+            </select>
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Birthdate">
+            <input type="date" style={inputStyle} value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      <Field label="Breed">
+        <select style={inputStyle} value={breedSelect} onChange={(e) => setBreedSelect(e.target.value)}>
+          <option value="">— pick a breed —</option>
+          {DOG_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
+        </select>
+        {breedSelect === "Other" && (
+          <input style={{ ...inputStyle, marginTop: 8 }} value={breedCustom} onChange={(e) => setBreedCustom(e.target.value)} placeholder="Breed name" />
+        )}
+      </Field>
+
+      <Field label="Color / markings">
+        <input style={inputStyle} value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. White with black mask" />
+      </Field>
+
+      {/* LGD toggle */}
+      <div style={{
+        padding: "12px 14px", marginBottom: 12,
+        background: isLGD ? palette.leafSoft : palette.bgAlt,
+        border: `1.5px solid ${isLGD ? palette.leaf : palette.line}`,
+        borderRadius: 10, cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 12,
+      }} onClick={() => setIsLGD(!isLGD)}>
+        <div style={{
+          width: 22, height: 22, borderRadius: 6,
+          border: `1.5px solid ${palette.ink}`,
+          background: isLGD ? palette.ink : palette.bg,
+          display: "flex", alignItems: "center", justifyContent: "center",
+          flexShrink: 0, color: palette.bg, fontSize: 14, fontWeight: 700,
+        }}>
+          {isLGD ? "✓" : ""}
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontWeight: 700, fontSize: 14, color: palette.ink }}>🛡️ Livestock Guardian Dog</div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, lineHeight: 1.4 }}>
+            Unlocks attack-prevention tracking — log each predator threat this dog deterred.
+          </div>
+        </div>
+      </div>
+
+      <Field label="Microchip ID (optional)">
+        <input style={inputStyle} value={microchipId} onChange={(e) => setMicrochipId(e.target.value)} placeholder="15-digit ID" />
+      </Field>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Purchase cost ($)">
+            <input type="number" step="0.01" min={0} style={inputStyle} value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} placeholder="0.00" />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Purchased from">
+            <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="Breeder name" />
+          </Field>
+        </div>
+      </div>
+
+      {/* Pedigree section */}
+      <div style={{ marginTop: 14, marginBottom: 8, fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>
+        Pedigree (optional)
+      </div>
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Sire (father)">
+            <select style={inputStyle} value={sireId} onChange={(e) => { setSireId(e.target.value); const m = males.find(x => x.id === e.target.value); if (m) setSire(m.name); }}>
+              <option value="">— pick or type —</option>
+              {males.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            {!sireId && (
+              <input style={{ ...inputStyle, marginTop: 6 }} value={sire} onChange={(e) => setSire(e.target.value)} placeholder="External sire name" />
+            )}
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Dam (mother)">
+            <select style={inputStyle} value={damId} onChange={(e) => { setDamId(e.target.value); const f = females.find(x => x.id === e.target.value); if (f) setDam(f.name); }}>
+              <option value="">— pick or type —</option>
+              {females.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            {!damId && (
+              <input style={{ ...inputStyle, marginTop: 6 }} value={dam} onChange={(e) => setDam(e.target.value)} placeholder="External dam name" />
+            )}
+          </Field>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Registry #">
+            <input style={inputStyle} value={registryNumber} onChange={(e) => setRegistryNumber(e.target.value)} placeholder="AKC, UKC, etc." />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Registered name">
+            <input style={inputStyle} value={registryName} onChange={(e) => setRegistryName(e.target.value)} placeholder="Show name" />
+          </Field>
+        </div>
+      </div>
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+        {dog && onDelete ? (
+          confirmDelete ? (
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="ghost" small onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+              <Btn variant="danger" small onClick={() => { onDelete(dog.id); onClose(); }}>Confirm delete</Btn>
+            </div>
+          ) : (
+            <Btn variant="ghost" small onClick={() => setConfirmDelete(true)}>Delete</Btn>
+          )
+        ) : <div />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={handleSave} disabled={!name.trim()}>Save</Btn>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============ BREEDING MODAL ============
+function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent }) {
+  const dams = animals.filter(a => !a.archived && a.sex === "female");
+  const sires = animals.filter(a => !a.archived && a.sex === "male");
+
+  const [damId, setDamId] = useState(breeding?.damId || dams[0]?.id || "");
+  const [sireId, setSireId] = useState(breeding?.sireId || sires[0]?.id || "");
+  const [sireExternal, setSireExternal] = useState(breeding?.sireExternal || "");
+  const [useSireExternal, setUseSireExternal] = useState(!!breeding?.sireExternal);
+  const [breedDate, setBreedDate] = useState(breeding?.breedDate || todayStr());
+  const [notes, setNotes] = useState(breeding?.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const expectedWhelpDate = breedDate ? addDays(breedDate, DOG_GESTATION_DAYS) : "";
+
+  const handleSave = () => {
+    if (!damId || !breedDate) return;
+    const id = breeding?.id || newId();
+    onSave({
+      id,
+      damId,
+      sireId: useSireExternal ? null : sireId,
+      sireExternal: useSireExternal ? sireExternal.trim() : "",
+      breedDate,
+      expectedWhelpDate,
+      whelpedDate: breeding?.whelpedDate || null,
+      puppiesBorn: breeding?.puppiesBorn || null,
+      puppiesAlive: breeding?.puppiesAlive || null,
+      notes: notes.trim(),
+    });
+    if (!breeding && expectedWhelpDate && addCalendarEvent) {
+      const damName = animals.find(a => a.id === damId)?.name || "dam";
+      addCalendarEvent({
+        id: newId(),
+        date: expectedWhelpDate,
+        title: `🐕 Expected whelp — ${damName}`,
+        kind: "dogs_whelping",
+        relatedId: id,
+      });
+    }
+    onClose();
+  };
+
+  return (
+    <ModalShell title={breeding ? "Edit breeding" : "Log breeding"} onClose={onClose}>
+      {dams.length === 0 && (
+        <div style={{ padding: 12, background: palette.bgAlt, borderRadius: 8, fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
+          You'll need at least one female dog to log a breeding.
+        </div>
+      )}
+      <Field label="Dam (mother)">
+        <select style={inputStyle} value={damId} onChange={(e) => setDamId(e.target.value)}>
+          {dams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </Field>
+
+      <Field label="Sire (father)">
+        {!useSireExternal ? (
+          <>
+            <select style={inputStyle} value={sireId} onChange={(e) => setSireId(e.target.value)}>
+              {sires.length === 0 && <option value="">No male dogs — switch to external</option>}
+              {sires.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+            <button onClick={() => setUseSireExternal(true)} style={{
+              marginTop: 6, background: "none", border: "none", padding: 0,
+              color: palette.inkSoft, fontSize: 12, textDecoration: "underline", cursor: "pointer",
+            }}>Or use external stud</button>
+          </>
+        ) : (
+          <>
+            <input style={inputStyle} value={sireExternal} onChange={(e) => setSireExternal(e.target.value)} placeholder="External stud name" />
+            <button onClick={() => setUseSireExternal(false)} style={{
+              marginTop: 6, background: "none", border: "none", padding: 0,
+              color: palette.inkSoft, fontSize: 12, textDecoration: "underline", cursor: "pointer",
+            }}>Pick from my dogs instead</button>
+          </>
+        )}
+      </Field>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Breed date">
+            <input type="date" style={inputStyle} value={breedDate} onChange={(e) => setBreedDate(e.target.value)} />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Expected whelp">
+            <input type="date" style={{ ...inputStyle, opacity: 0.7 }} value={expectedWhelpDate} readOnly />
+          </Field>
+        </div>
+      </div>
+
+      <Field label="Notes">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Heat cycle notes, conditions, etc." />
+      </Field>
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+        {breeding && onDelete ? (
+          confirmDelete ? (
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="ghost" small onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+              <Btn variant="danger" small onClick={() => { onDelete(breeding.id); onClose(); }}>Confirm delete</Btn>
+            </div>
+          ) : (
+            <Btn variant="ghost" small onClick={() => setConfirmDelete(true)}>Delete</Btn>
+          )
+        ) : <div />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={handleSave} disabled={!damId || !breedDate}>Save</Btn>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============ LITTER MODAL ============
+// Create a litter from a breeding. Handles whelp date, total born, and
+// individual puppy records (name, sex, color, status).
+function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) {
+  const editing = !!litter;
+  const eligibleBreedings = breedings.filter(b => !b.archived);
+  const [breedingId, setBreedingId] = useState(litter?.breedingId || eligibleBreedings[0]?.id || "");
+  const [whelpDate, setWhelpDate] = useState(litter?.whelpDate || todayStr());
+  const [totalBorn, setTotalBorn] = useState(litter?.totalBorn ? String(litter.totalBorn) : "");
+  const [notes, setNotes] = useState(litter?.notes || "");
+  const [puppies, setPuppies] = useState(() =>
+    litter?.puppies?.length
+      ? litter.puppies.map(p => ({ ...p }))
+      : []
+  );
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const addPuppy = () => {
+    setPuppies(p => [...p, {
+      id: newId(),
+      name: `Puppy ${p.length + 1}`,
+      sex: "female",
+      color: "",
+      status: "kept",
+      placedTo: "",
+      placePrice: "",
+      placeDate: "",
+      notes: "",
+    }]);
+  };
+
+  const updatePuppy = (idx, patch) => {
+    setPuppies(p => p.map((x, i) => i === idx ? { ...x, ...patch } : x));
+  };
+
+  const removePuppy = (idx) => {
+    setPuppies(p => p.filter((_, i) => i !== idx));
+  };
+
+  const handleSave = () => {
+    if (!breedingId || !whelpDate) return;
+    onSave({
+      id: litter?.id || newId(),
+      breedingId,
+      whelpDate,
+      totalBorn: parseInt(totalBorn) || puppies.length,
+      notes: notes.trim(),
+      puppies: puppies.map(p => ({
+        ...p,
+        placePrice: parseFloat(p.placePrice) || 0,
+        name: (p.name || "").trim(),
+        color: (p.color || "").trim(),
+        placedTo: (p.placedTo || "").trim(),
+        notes: (p.notes || "").trim(),
+      })),
+    });
+    onClose();
+  };
+
+  const breeding = eligibleBreedings.find(b => b.id === breedingId);
+  const dam = animals.find(a => a.id === breeding?.damId);
+
+  return (
+    <ModalShell title={editing ? "Edit litter" : "Record litter"} onClose={onClose} maxWidth={520}>
+      {eligibleBreedings.length === 0 ? (
+        <div style={{ padding: 14, background: palette.bgAlt, borderRadius: 8, fontSize: 13, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+          You'll need to log a breeding first before recording a litter.
+        </div>
+      ) : (
+        <>
+          <Field label="From breeding">
+            <select style={inputStyle} value={breedingId} onChange={(e) => setBreedingId(e.target.value)}>
+              {eligibleBreedings.map(b => {
+                const damName = animals.find(a => a.id === b.damId)?.name || "?";
+                return <option key={b.id} value={b.id}>{damName} · {fmtDate(b.breedDate)}</option>;
+              })}
+            </select>
+          </Field>
+
+          {dam && (
+            <div style={{ padding: "8px 12px", background: palette.yolkSoft, borderRadius: 8, fontSize: 12, color: palette.ink, marginBottom: 12, lineHeight: 1.4 }}>
+              Dam: <strong>{dam.name}</strong>{breeding?.expectedWhelpDate ? ` · expected ${fmtDate(breeding.expectedWhelpDate)}` : ""}
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Field label="Whelp date">
+                <input type="date" style={inputStyle} value={whelpDate} onChange={(e) => setWhelpDate(e.target.value)} />
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label="Total born">
+                <input type="number" min={0} style={inputStyle} value={totalBorn} onChange={(e) => setTotalBorn(e.target.value)} placeholder="auto from puppy count" />
+              </Field>
+            </div>
+          </div>
+
+          <Field label="Notes">
+            <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Complications, vet intervention, etc." />
+          </Field>
+
+          {/* PUPPIES */}
+          <div style={{ marginTop: 18, marginBottom: 8, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>
+              Puppies ({puppies.length})
+            </div>
+            <Btn small variant="leaf" onClick={addPuppy}>+ Add puppy</Btn>
+          </div>
+
+          {puppies.length === 0 && (
+            <div style={{ padding: 14, background: palette.card, border: `1.5px dashed ${palette.line}`, borderRadius: 8, fontSize: 12, color: palette.inkSoft, textAlign: "center", marginBottom: 10 }}>
+              Tap "+ Add puppy" for each pup in the litter.
+            </div>
+          )}
+
+          {puppies.map((p, idx) => (
+            <div key={p.id} style={{
+              padding: 12, marginBottom: 10,
+              background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10,
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                <input
+                  style={{ ...inputStyle, fontWeight: 600, padding: "6px 10px", width: "60%" }}
+                  value={p.name}
+                  onChange={(e) => updatePuppy(idx, { name: e.target.value })}
+                  placeholder="Puppy name"
+                />
+                <button onClick={() => removePuppy(idx)} aria-label="Remove puppy" style={{
+                  background: "none", border: "none", color: palette.accent, cursor: "pointer", padding: 4,
+                }}><Trash2 size={16} /></button>
+              </div>
+              <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+                <select style={{ ...inputStyle, flex: 1 }} value={p.sex} onChange={(e) => updatePuppy(idx, { sex: e.target.value })}>
+                  <option value="female">Female</option>
+                  <option value="male">Male</option>
+                </select>
+                <input style={{ ...inputStyle, flex: 1 }} value={p.color} onChange={(e) => updatePuppy(idx, { color: e.target.value })} placeholder="Color" />
+              </div>
+              <select style={inputStyle} value={p.status} onChange={(e) => updatePuppy(idx, { status: e.target.value })}>
+                <option value="kept">Keeping</option>
+                <option value="sold">Sold</option>
+                <option value="gifted">Gifted</option>
+                <option value="died">Died</option>
+              </select>
+              {(p.status === "sold" || p.status === "gifted") && (
+                <div style={{ marginTop: 8 }}>
+                  <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
+                    <input style={{ ...inputStyle, flex: 2 }} value={p.placedTo} onChange={(e) => updatePuppy(idx, { placedTo: e.target.value })} placeholder="Placed with" />
+                    {p.status === "sold" && (
+                      <input type="number" step="0.01" min={0} style={{ ...inputStyle, flex: 1 }} value={p.placePrice} onChange={(e) => updatePuppy(idx, { placePrice: e.target.value })} placeholder="$" />
+                    )}
+                  </div>
+                  <input type="date" style={inputStyle} value={p.placeDate} onChange={(e) => updatePuppy(idx, { placeDate: e.target.value })} />
+                </div>
+              )}
+            </div>
+          ))}
+        </>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+        {editing && onDelete ? (
+          confirmDelete ? (
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="ghost" small onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+              <Btn variant="danger" small onClick={() => { onDelete(litter.id); onClose(); }}>Confirm delete</Btn>
+            </div>
+          ) : (
+            <Btn variant="ghost" small onClick={() => setConfirmDelete(true)}>Delete</Btn>
+          )
+        ) : <div />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={handleSave} disabled={!breedingId || !whelpDate}>Save</Btn>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============ ATTACK PREVENTED MODAL ============
+const PREDATOR_TYPES = ["Coyote", "Fox", "Hawk", "Eagle", "Owl", "Bear", "Cougar", "Bobcat", "Stray dog", "Unknown", "Other"];
+const LIVESTOCK_SPECIES = ["Chickens", "Ducks", "Turkeys", "Sheep", "Goats", "Cattle", "Pigs", "Rabbits", "Multiple", "Other"];
+
+function AttackModal({ dogs, attack, onSave, onDelete, onClose }) {
+  const lgds = dogs.filter(d => !d.archived && d.isLGD);
+  const [date, setDate] = useState(attack?.date || todayStr());
+  const [dogId, setDogId] = useState(attack?.dogId || lgds[0]?.id || "");
+  const [predatorType, setPredatorType] = useState(attack?.predatorType || "Coyote");
+  const [livestockSpecies, setLivestockSpecies] = useState(attack?.livestockSpecies || "Chickens");
+  const [attackResult, setAttackResult] = useState(attack?.attackResult || "deterred");
+  const [notes, setNotes] = useState(attack?.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const handleSave = () => {
+    if (!dogId || !date) return;
+    onSave({
+      id: attack?.id || newId(),
+      date, dogId, predatorType, livestockSpecies, attackResult,
+      notes: notes.trim(),
+    });
+    onClose();
+  };
+
+  return (
+    <ModalShell title={attack ? "Edit attack record" : "🛡️ Log attack prevented"} onClose={onClose}>
+      {lgds.length === 0 ? (
+        <div style={{ padding: 14, background: palette.bgAlt, borderRadius: 8, fontSize: 13, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+          Mark at least one dog as a Livestock Guardian Dog (LGD) to log attacks. Open a dog and toggle the LGD checkbox.
+        </div>
+      ) : (
+        <>
+          <Field label="Date">
+            <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+          </Field>
+          <Field label="Guardian dog">
+            <select style={inputStyle} value={dogId} onChange={(e) => setDogId(e.target.value)}>
+              {lgds.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
+            </select>
+          </Field>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Field label="Predator">
+                <select style={inputStyle} value={predatorType} onChange={(e) => setPredatorType(e.target.value)}>
+                  {PREDATOR_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label="Threatened">
+                <select style={inputStyle} value={livestockSpecies} onChange={(e) => setLivestockSpecies(e.target.value)}>
+                  {LIVESTOCK_SPECIES.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
+          </div>
+          <Field label="Outcome">
+            <select style={inputStyle} value={attackResult} onChange={(e) => setAttackResult(e.target.value)}>
+              <option value="deterred">Deterred — no losses</option>
+              <option value="partial">Some losses, prevented more</option>
+              <option value="killed_predator">Dog killed the predator</option>
+            </select>
+          </Field>
+          <Field label="Notes">
+            <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Time of day, observation, etc." />
+          </Field>
+        </>
+      )}
+
+      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
+        {attack && onDelete ? (
+          confirmDelete ? (
+            <div style={{ display: "flex", gap: 6 }}>
+              <Btn variant="ghost" small onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+              <Btn variant="danger" small onClick={() => { onDelete(attack.id); onClose(); }}>Confirm delete</Btn>
+            </div>
+          ) : (
+            <Btn variant="ghost" small onClick={() => setConfirmDelete(true)}>Delete</Btn>
+          )
+        ) : <div />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          <Btn variant="primary" onClick={handleSave} disabled={!dogId || !date || lgds.length === 0}>Save</Btn>
+        </div>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============ LOG ENTRY MODAL (weight / health / note / death) ============
+function LogEntryModal({ animals, action, onSave, onClose }) {
+  const live = animals.filter(a => !a.archived);
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [weight, setWeight] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const animalRequired = action === "weight" || action === "health" || action === "death";
+
+  const titles = {
+    weight: "⚖️ Log weight",
+    health: "💊 Vet / meds",
+    death:  "🪦 Log death",
+    note:   "📝 Add note",
+  };
+  const subtexts = {
+    weight: "Weight check — useful for growth tracking and dosage calculations.",
+    health: "Vaccines, dewormer, heartworm, vet visits — anything health-related.",
+    death:  "This will archive the dog. Cause of death goes in notes.",
+    note:   "General observation about a specific dog or the pack overall.",
+  };
+  const noteRequired = action === "note" || action === "health" || action === "death";
+
+  const canSave = (() => {
+    if (animalRequired && !animalId) return false;
+    if (action === "weight" && !parseFloat(weight)) return false;
+    if (noteRequired && !notes.trim()) return false;
+    return true;
+  })();
+
+  const handleSave = () => {
+    if (!canSave) return;
+    const entry = {
+      id: newId(), date, action,
+      animalId: animalId || null,
+      notes: notes.trim(),
+      created: Date.now(),
+    };
+    if (action === "weight") entry.weight = parseFloat(weight) || 0;
+    if (action === "death") {
+      onSave({ entry, animalId, archiveReason: "died" });
+    } else {
+      onSave(entry);
+    }
+    onClose();
+  };
+
+  return (
+    <ModalShell title={titles[action] || "Log entry"} onClose={onClose}>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>{subtexts[action]}</div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label={animalRequired ? "Dog" : "Dog (optional)"}>
+        <select style={inputStyle} value={animalId} onChange={e => setAnimalId(e.target.value)}>
+          {!animalRequired && <option value="">— Whole pack —</option>}
+          {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </Field>
+      {action === "weight" && (
+        <Field label="Weight (lbs)">
+          <input type="number" step="0.1" min={0} style={inputStyle} value={weight} onChange={e => setWeight(e.target.value)} placeholder="0" autoFocus inputMode="decimal" />
+        </Field>
+      )}
+      <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
+        <input
+          style={inputStyle} value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder={
+            action === "health" ? "e.g. Rabies vaccine, heartworm prevention" :
+            action === "death" ? "Cause / circumstances" :
+            action === "note" ? "What happened" : ""
+          }
+          autoFocus={action !== "weight"}
+        />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn
+          variant={action === "death" ? "danger" : "primary"}
+          onClick={handleSave}
+          disabled={!canSave}
+        >
+          {action === "death" ? "Save & archive" : "Save"}
+        </Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============================================================================
+// MAIN DOGS PAGE
+// ============================================================================
+export default function DogsPage({ hobby, data, update, setModal }) {
+  const [dogModal, setDogModal] = useState({ open: false, dog: null });
+  const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
+  const [litterModal, setLitterModal] = useState({ open: false, litter: null });
+  const [attackModal, setAttackModal] = useState({ open: false, attack: null });
+  const [logEntryAction, setLogEntryAction] = useState(null);
+
+  const dogs = (hobby?.animals || []).filter(a => !a.archived);
+  const archived = (hobby?.animals || []).filter(a => a.archived);
+  const lgds = dogs.filter(d => d.isLGD);
+  const breedings = (hobby?.breedings || []).slice().sort((a, b) => (b.breedDate || "").localeCompare(a.breedDate || ""));
+  const litters = (hobby?.litters || []).slice().sort((a, b) => (b.whelpDate || "").localeCompare(a.whelpDate || ""));
+  const attacks = (hobby?.attacks || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  const saveDog = (dog) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      if (!Array.isArray(h.animals)) h.animals = [];
+      const idx = h.animals.findIndex(x => x.id === dog.id);
+      if (idx >= 0) h.animals[idx] = dog; else h.animals.push(dog);
+      return d;
+    });
+  };
+  const deleteDog = (id) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (h) h.animals = (h.animals || []).filter(a => a.id !== id);
+      return d;
+    });
+  };
+  const archiveDog = (id, reason) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      const a = (h?.animals || []).find(x => x.id === id);
+      if (a) {
+        a.archived = true;
+        a.archivedReason = reason;
+        a.archivedDate = todayStr();
+      }
+      return d;
+    });
+  };
+  const saveBreeding = (b) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      if (!Array.isArray(h.breedings)) h.breedings = [];
+      const idx = h.breedings.findIndex(x => x.id === b.id);
+      if (idx >= 0) h.breedings[idx] = b; else h.breedings.push(b);
+      return d;
+    });
+  };
+  const deleteBreeding = (id) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (h) h.breedings = (h.breedings || []).filter(b => b.id !== id);
+      return d;
+    });
+  };
+  const saveLitter = (l) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      if (!Array.isArray(h.litters)) h.litters = [];
+      const idx = h.litters.findIndex(x => x.id === l.id);
+      if (idx >= 0) h.litters[idx] = l; else h.litters.push(l);
+      return d;
+    });
+  };
+  const deleteLitter = (id) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (h) h.litters = (h.litters || []).filter(l => l.id !== id);
+      return d;
+    });
+  };
+  const saveAttack = (a) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      if (!Array.isArray(h.attacks)) h.attacks = [];
+      const idx = h.attacks.findIndex(x => x.id === a.id);
+      if (idx >= 0) h.attacks[idx] = a; else h.attacks.push(a);
+      return d;
+    });
+  };
+  const deleteAttack = (id) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (h) h.attacks = (h.attacks || []).filter(a => a.id !== id);
+      return d;
+    });
+  };
+  const addEntry = (entry) => {
+    update(d => {
+      if (!d.entries) d.entries = {};
+      if (!Array.isArray(d.entries[hobby.id])) d.entries[hobby.id] = [];
+      d.entries[hobby.id].push(entry);
+      return d;
+    });
+  };
+  const addCalendarEvent = (event) => {
+    update(d => {
+      if (!Array.isArray(d.calendarEvents)) d.calendarEvents = [];
+      d.calendarEvents.push(event);
+      return d;
+    });
+  };
+
+  // Active upcoming whelpings (within next 21 days, no whelpedDate yet)
+  const upcomingWhelpings = breedings.filter(b => {
+    if (b.whelpedDate) return false;
+    if (!b.expectedWhelpDate) return false;
+    const d = parseLocalDate(b.expectedWhelpDate);
+    const now = new Date();
+    const diff = (d - now) / (1000 * 60 * 60 * 24);
+    return diff >= -3 && diff <= 30; // include slightly overdue
+  });
+
+  const totalAttacks = attacks.length;
+  const totalPuppiesBorn = litters.reduce((s, l) => s + (l.totalBorn || (l.puppies?.length || 0)), 0);
+  const totalRevenue = litters.reduce((s, l) =>
+    s + (l.puppies || []).reduce((ps, p) => ps + (p.status === "sold" ? (p.placePrice || 0) : 0), 0)
+  , 0);
+
+  return (
+    <div style={{ paddingBottom: 100 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
+        <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 28, margin: 0, color: palette.ink }}>🐕 Dogs</h1>
+        <Btn variant="primary" small onClick={() => setDogModal({ open: true, dog: null })}>+ Add dog</Btn>
+      </div>
+
+      {/* Quick stats */}
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+        <StatCard label="Dogs" value={dogs.length} accent={palette.leaf} />
+        {lgds.length > 0 && <StatCard label="LGDs" value={lgds.length} accent={palette.feather} />}
+        {lgds.length > 0 && <StatCard label="Attacks prevented" value={totalAttacks} accent={palette.accent} />}
+        {litters.length > 0 && <StatCard label="Litters" value={litters.length} sub={`${totalPuppiesBorn} pups`} accent={palette.yolk} />}
+      </div>
+
+      {/* LGD ATTACK QUICK-LOG (only if any LGDs exist) */}
+      {lgds.length > 0 && (
+        <div style={{
+          marginBottom: 16, padding: "12px 14px",
+          background: palette.leafSoft, border: `1.5px solid ${palette.leaf}`,
+          borderRadius: 12,
+        }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 10 }}>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink, lineHeight: 1.2 }}>🛡️ Guardian protection</div>
+              <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>
+                {totalAttacks === 0 ? "No attacks logged yet" : `${totalAttacks} threat${totalAttacks === 1 ? "" : "s"} deterred`}
+              </div>
+            </div>
+            <Btn small variant="leaf" onClick={() => setAttackModal({ open: true, attack: null })}>+ Log attack</Btn>
+          </div>
+        </div>
+      )}
+
+      {/* UPCOMING WHELPINGS */}
+      {upcomingWhelpings.length > 0 && (
+        <div style={{ marginBottom: 16, padding: "12px 14px", background: palette.yolkSoft, borderRadius: 10, border: `1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, marginBottom: 6, color: palette.ink }}>🐕 Upcoming whelpings</div>
+          {upcomingWhelpings.map(b => {
+            const dam = dogs.find(a => a.id === b.damId);
+            const daysUntil = Math.ceil((parseLocalDate(b.expectedWhelpDate) - new Date()) / (1000 * 60 * 60 * 24));
+            return (
+              <div key={b.id} style={{ fontSize: 13, color: palette.ink, marginTop: 2 }}>
+                <strong>{dam?.name || "Dam"}</strong> — {fmtDate(b.expectedWhelpDate)} ({daysUntil > 0 ? `in ${daysUntil} day${daysUntil === 1 ? "" : "s"}` : daysUntil === 0 ? "today!" : `${Math.abs(daysUntil)} day${Math.abs(daysUntil) === 1 ? "" : "s"} overdue`})
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* QUICK ACTIONS */}
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))", gap: 8, marginBottom: 18 }}>
+        <Btn small variant="leaf" onClick={() => setBreedingModal({ open: true, breeding: null })} style={{ width: "100%" }}>🐕 Breeding</Btn>
+        <Btn small variant="leaf" onClick={() => setLitterModal({ open: true, litter: null })} style={{ width: "100%" }}>👶 Litter</Btn>
+        <Btn small onClick={() => setLogEntryAction("weight")} style={{ width: "100%" }}>⚖️ Weight</Btn>
+        <Btn small onClick={() => setLogEntryAction("health")} style={{ width: "100%" }}>💊 Vet / meds</Btn>
+        <Btn small onClick={() => setLogEntryAction("note")} style={{ width: "100%" }}>📝 Note</Btn>
+        <Btn small variant="danger" onClick={() => setLogEntryAction("death")} style={{ width: "100%" }}>🪦 Died</Btn>
+      </div>
+
+      {/* DOGS LIST */}
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, margin: "16px 0 10px", color: palette.ink }}>The pack</h2>
+      {dogs.length === 0 ? (
+        <div style={{ padding: "24px 16px", textAlign: "center", background: palette.card, border: `1.5px dashed ${palette.line}`, borderRadius: 12, color: palette.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
+          <div style={{ fontSize: 28, marginBottom: 6 }}>🐕</div>
+          No dogs yet. Tap <strong>+ Add dog</strong>.
+        </div>
+      ) : (
+        dogs.map(d => {
+          const dogAttacks = d.isLGD ? attacks.filter(a => a.dogId === d.id) : [];
+          return (
+            <div key={d.id} onClick={() => setDogModal({ open: true, dog: d })} style={{
+              padding: "12px 14px", background: palette.card,
+              border: `1.5px solid ${palette.line}`, borderRadius: 10,
+              marginBottom: 8, cursor: "pointer",
+            }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2, display: "flex", alignItems: "center", gap: 8 }}>
+                    {d.name}
+                    {d.isLGD && <span style={{ fontSize: 11, padding: "2px 6px", background: palette.leafSoft, color: palette.ink, borderRadius: 999, fontFamily: FONT_BODY, fontWeight: 600 }}>🛡️ LGD</span>}
+                  </div>
+                  <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
+                    {d.sex === "female" ? "♀" : "♂"} · {fmtAge(d.birthdate)}
+                    {d.breed && ` · ${d.breed}`}
+                    {d.color && ` · ${d.color}`}
+                  </div>
+                  {d.isLGD && dogAttacks.length > 0 && (
+                    <div style={{ fontSize: 12, color: palette.leaf, marginTop: 4, fontWeight: 600 }}>
+                      🛡️ {dogAttacks.length} attack{dogAttacks.length === 1 ? "" : "s"} deterred
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })
+      )}
+
+      {/* BREEDINGS */}
+      {breedings.length > 0 && (
+        <>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, margin: "20px 0 10px", color: palette.ink }}>Breedings</h2>
+          {breedings.slice(0, 6).map(b => {
+            const dam = dogs.find(a => a.id === b.damId) || archived.find(a => a.id === b.damId);
+            const sire = b.sireExternal || (dogs.find(a => a.id === b.sireId) || archived.find(a => a.id === b.sireId))?.name || "?";
+            return (
+              <div key={b.id} onClick={() => setBreedingModal({ open: true, breeding: b })} style={{
+                padding: "10px 12px", background: palette.card,
+                border: `1.5px solid ${palette.line}`, borderRadius: 10,
+                marginBottom: 8, cursor: "pointer",
+              }}>
+                <div style={{ fontSize: 13, color: palette.ink }}>
+                  <strong>{dam?.name || "Dam"}</strong> × {sire}
+                </div>
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+                  Bred {fmtDate(b.breedDate)}
+                  {b.expectedWhelpDate && ` · expected ${fmtDate(b.expectedWhelpDate)}`}
+                  {b.whelpedDate && ` · whelped ${fmtDate(b.whelpedDate)}`}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* LITTERS */}
+      {litters.length > 0 && (
+        <>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, margin: "20px 0 10px", color: palette.ink }}>Litters</h2>
+          {litters.map(l => {
+            const breeding = breedings.find(b => b.id === l.breedingId);
+            const dam = dogs.find(a => a.id === breeding?.damId) || archived.find(a => a.id === breeding?.damId);
+            return (
+              <div key={l.id} onClick={() => setLitterModal({ open: true, litter: l })} style={{
+                padding: "12px 14px", background: palette.card,
+                border: `1.5px solid ${palette.line}`, borderRadius: 10,
+                marginBottom: 8, cursor: "pointer",
+              }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink }}>
+                    {dam?.name || "Dam"}'s litter
+                  </div>
+                  <div style={{ fontSize: 11, color: palette.inkSoft }}>{fmtDate(l.whelpDate)}</div>
+                </div>
+                <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
+                  {l.puppies?.length || 0} pup{(l.puppies?.length || 0) === 1 ? "" : "s"}
+                  {l.puppies && ` · ${l.puppies.filter(p => p.status === "sold").length} sold, ${l.puppies.filter(p => p.status === "kept").length} kept`}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* ATTACK LOG (LGD only) */}
+      {lgds.length > 0 && attacks.length > 0 && (
+        <>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, margin: "20px 0 10px", color: palette.ink }}>🛡️ Attacks deterred</h2>
+          {attacks.slice(0, 10).map(a => {
+            const dog = dogs.find(d => d.id === a.dogId) || archived.find(d => d.id === a.dogId);
+            return (
+              <div key={a.id} onClick={() => setAttackModal({ open: true, attack: a })} style={{
+                padding: "10px 12px", background: palette.card,
+                border: `1.5px solid ${palette.line}`, borderRadius: 10,
+                marginBottom: 8, cursor: "pointer",
+              }}>
+                <div style={{ fontSize: 13, color: palette.ink }}>
+                  <strong>{dog?.name || "Dog"}</strong> vs {a.predatorType.toLowerCase()} — protecting {a.livestockSpecies.toLowerCase()}
+                </div>
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{fmtDate(a.date)}</div>
+                {a.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{a.notes}</div>}
+              </div>
+            );
+          })}
+        </>
+      )}
+
+      {/* ARCHIVED DOGS */}
+      {archived.length > 0 && (
+        <div style={{ marginTop: 24 }}>
+          <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, marginBottom: 8 }}>
+            Past dogs ({archived.length})
+          </div>
+          {archived.slice(0, 5).map(a => (
+            <div key={a.id} style={{ padding: "6px 10px", fontSize: 12, color: palette.inkSoft, borderBottom: `1px solid ${palette.line}` }}>
+              {a.name} {a.archivedDate ? `· ${fmtDate(a.archivedDate)}` : ""} {a.archivedReason ? `· ${a.archivedReason}` : ""}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* MODALS */}
+      {dogModal.open && (
+        <DogModal
+          dog={dogModal.dog} dogs={hobby?.animals || []}
+          onSave={saveDog}
+          onDelete={dogModal.dog ? deleteDog : null}
+          onClose={() => setDogModal({ open: false, dog: null })}
+        />
+      )}
+      {breedingModal.open && (
+        <BreedingModal
+          animals={hobby?.animals || []}
+          breeding={breedingModal.breeding}
+          onSave={saveBreeding}
+          onDelete={breedingModal.breeding ? deleteBreeding : null}
+          onClose={() => setBreedingModal({ open: false, breeding: null })}
+          addCalendarEvent={addCalendarEvent}
+        />
+      )}
+      {litterModal.open && (
+        <LitterModal
+          animals={hobby?.animals || []}
+          breedings={hobby?.breedings || []}
+          litter={litterModal.litter}
+          onSave={saveLitter}
+          onDelete={litterModal.litter ? deleteLitter : null}
+          onClose={() => setLitterModal({ open: false, litter: null })}
+        />
+      )}
+      {attackModal.open && (
+        <AttackModal
+          dogs={hobby?.animals || []}
+          attack={attackModal.attack}
+          onSave={saveAttack}
+          onDelete={attackModal.attack ? deleteAttack : null}
+          onClose={() => setAttackModal({ open: false, attack: null })}
+        />
+      )}
+      {logEntryAction && (
+        <LogEntryModal
+          animals={hobby?.animals || []}
+          action={logEntryAction}
+          onSave={(payload) => {
+            if (payload && payload.entry) {
+              addEntry(payload.entry);
+              if (payload.archiveReason && payload.animalId) {
+                archiveDog(payload.animalId, payload.archiveReason);
+              }
+            } else {
+              addEntry(payload);
+            }
+          }}
+          onClose={() => setLogEntryAction(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// ANALYTICS
+// ============================================================================
+export function DogsAnalytics({ hobby }) {
+  const dogs = (hobby?.animals || []).filter(a => !a.archived);
+  const lgds = dogs.filter(d => d.isLGD);
+  const attacks = hobby?.attacks || [];
+  const litters = hobby?.litters || [];
+
+  // Aggregate puppies across litters
+  const allPuppies = litters.flatMap(l => l.puppies || []);
+  const totalBorn = litters.reduce((s, l) => s + (l.totalBorn || (l.puppies?.length || 0)), 0);
+  const sold = allPuppies.filter(p => p.status === "sold");
+  const kept = allPuppies.filter(p => p.status === "kept").length;
+  const gifted = allPuppies.filter(p => p.status === "gifted").length;
+  const died = allPuppies.filter(p => p.status === "died").length;
+  const revenue = sold.reduce((s, p) => s + (p.placePrice || 0), 0);
+
+  // Attacks per dog
+  const attacksByDog = useMemo(() => {
+    const map = {};
+    attacks.forEach(a => {
+      if (!map[a.dogId]) map[a.dogId] = 0;
+      map[a.dogId] += 1;
+    });
+    return lgds
+      .map(d => ({ name: d.name, attacks: map[d.id] || 0 }))
+      .sort((a, b) => b.attacks - a.attacks);
+  }, [attacks, lgds]);
+
+  // Attacks by predator type
+  const attacksByPredator = useMemo(() => {
+    const map = {};
+    attacks.forEach(a => {
+      const k = a.predatorType || "Unknown";
+      if (!map[k]) map[k] = 0;
+      map[k] += 1;
+    });
+    return Object.entries(map).map(([predator, count]) => ({ predator, count })).sort((a, b) => b.count - a.count);
+  }, [attacks]);
+
+  return (
+    <div style={{ paddingBottom: 80 }}>
+      <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 14px", color: palette.ink }}>🐕 Dogs Stats</h1>
+
+      <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
+        <StatCard label="Dogs" value={dogs.length} accent={palette.leaf} />
+        {lgds.length > 0 && <StatCard label="Guardians" value={lgds.length} accent={palette.feather} />}
+        {lgds.length > 0 && <StatCard label="Attacks deterred" value={attacks.length} accent={palette.accent} />}
+        {litters.length > 0 && <StatCard label="Litters" value={litters.length} accent={palette.yolk} />}
+      </div>
+
+      {/* LGD chart */}
+      {lgds.length > 0 && attacks.length > 0 && (
+        <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>🛡️ Attacks deterred per dog</div>
+          <div style={{ height: 200 }}>
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={attacksByDog}>
+                <XAxis dataKey="name" style={{ fontSize: 11 }} />
+                <YAxis style={{ fontSize: 11 }} allowDecimals={false} />
+                <Tooltip />
+                <Bar dataKey="attacks" fill={palette.leaf} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
+        </div>
+      )}
+
+      {/* Predator breakdown */}
+      {attacksByPredator.length > 0 && (
+        <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>Predators deterred</div>
+          {attacksByPredator.map(({ predator, count }) => (
+            <div key={predator} style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: `1px solid ${palette.line}`, fontSize: 13, color: palette.ink }}>
+              <span>{predator}</span>
+              <strong>{count}</strong>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Litter / puppy stats */}
+      {litters.length > 0 && (
+        <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>Puppies</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <StatCard label="Born" value={totalBorn} accent={palette.leaf} />
+            <StatCard label="Sold" value={sold.length} accent={palette.accent} />
+            <StatCard label="Kept" value={kept} accent={palette.feather} />
+            <StatCard label="Gifted" value={gifted} accent={palette.yolk} />
+            {revenue > 0 && <StatCard label="Revenue" value={fmtMoney(revenue)} accent={palette.leaf} />}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
