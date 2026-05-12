@@ -1406,8 +1406,9 @@ export default function HomesteadApp() {
     if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) return;
     if (passwordRecoveryPending) return;
     whatsNewShownRef.current = true;
-    const timer = setTimeout(() => setShowWhatsNew(true), 1500);
-    return () => clearTimeout(timer);
+    // Deliberately no cleanup: re-renders during the 1.5s window would cancel
+    // the timer mid-flight (same bug we hit with the supporter-return modal).
+    setTimeout(() => setShowWhatsNew(true), 1500);
   }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
 
   // ---- Native tutorial prompt (once-per-account) ----
@@ -1426,8 +1427,8 @@ export default function HomesteadApp() {
     if (data?.nativeTutorialDismissed) return; // already dismissed on this device/account
     if (passwordRecoveryPending) return;       // don't stack on top of reset flow
     nativeTutorialShownRef.current = true;
-    const timer = setTimeout(() => setShowTutorialPrompt(true), 800);
-    return () => clearTimeout(timer);
+    // No cleanup — see whatsNew effect above for why.
+    setTimeout(() => setShowTutorialPrompt(true), 800);
   }, [data?.onboardedAt, data?.nativeTutorialDismissed, passwordRecoveryPending]);
 
   // ---- Monthly supporter wall ----
@@ -1451,8 +1452,8 @@ export default function HomesteadApp() {
     const currentMonthKey = getMonthKey(now);
     if (data?.lastSeenSupporterWall === currentMonthKey) return;
     supporterWallShownRef.current = true;
-    const timer = setTimeout(() => setModal({ type: "supporterWall" }), 2200);
-    return () => clearTimeout(timer);
+    // No cleanup — see whatsNew effect above for why.
+    setTimeout(() => setModal({ type: "supporterWall" }), 2200);
   }, [data?.onboardedAt, data?.lastSeenSupporterWall, passwordRecoveryPending]);
 
   // ---- App Store fundraiser popup ----
@@ -1475,8 +1476,8 @@ export default function HomesteadApp() {
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     if (data?.appStoreFundDismissedMonth === monthKey) return;
     appStoreFundShownRef.current = true;
-    const timer = setTimeout(() => setShowAppStoreFund(true), 4000);
-    return () => clearTimeout(timer);
+    // No cleanup — see whatsNew effect above for why.
+    setTimeout(() => setShowAppStoreFund(true), 4000);
   }, [data?.onboardedAt, data?.appStoreFundDismissedMonth, data?.userHasTipped]);
 
   // ---- Sync user units (currency, temperature, hemisphere) to the module-level

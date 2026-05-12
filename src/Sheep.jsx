@@ -578,6 +578,125 @@ function FedLogModal({ onSave, onClose }) {
   );
 }
 
+// ============================================================================
+// LOG ENTRY MODAL — shared modal for weight / health / death / note
+// ----------------------------------------------------------------------------
+// Sheep originally had per-action modals (Milk, Butcher, Fed). For the broader
+// set of entry types (weight check, vet/meds, death, general note) we use a
+// single cows-style modal that branches on action. Keeps the per-action modals
+// for milk/butcher/feeding intact (they have unique side-effects and fields)
+// while still letting the user log weight + meds + notes + deaths without
+// four separate modals.
+//
+// Animal selection is required for weight/health/death; optional for note.
+// Death also archives the animal (same pattern as butcher).
+// ============================================================================
+function LogEntryModal({ animals, action, onSave, onClose }) {
+  const live = animals.filter(a => !a.archived);
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [weight, setWeight] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const animalRequired = action === "weight" || action === "health" || action === "death";
+
+  const titles = {
+    weight: "⚖️ Log weight",
+    health: "💊 Vet / meds",
+    death:  "🪦 Log death",
+    note:   "📝 Add note",
+  };
+
+  const subtexts = {
+    weight: "Weigh-ins help track growth and butcher-readiness.",
+    health: "Record treatments, dewormers, vaccinations, vet visits, or anything else worth remembering.",
+    death:  "This will archive the animal. Cause of death goes in the notes.",
+    note:   "Anything else worth tracking against this animal or the flock.",
+  };
+
+  const noteRequired = action === "note" || action === "health" || action === "death";
+  const canSave = (() => {
+    if (animalRequired && !animalId) return false;
+    if (action === "weight" && !parseFloat(weight)) return false;
+    if (noteRequired && !notes.trim()) return false;
+    return true;
+  })();
+
+  const handleSave = () => {
+    if (!canSave) return;
+    const entry = {
+      id: newId(),
+      date,
+      action,
+      animalId: animalId || null,
+      notes: notes.trim(),
+      created: Date.now(),
+    };
+    if (action === "weight") entry.weight = parseFloat(weight) || 0;
+    if (action === "death") {
+      // Pass {entry, animalId} so the caller can archive the animal (same
+      // shape as ButcherLogModal). Note action also has animalId on the entry
+      // so we can pull historical notes per-animal later.
+      onSave({ entry, animalId, archiveReason: "died" });
+    } else {
+      onSave(entry);
+    }
+    onClose();
+  };
+
+  return (
+    <ModalShell title={titles[action] || "Log entry"} onClose={onClose}>
+      <div style={{
+        fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5,
+      }}>
+        {subtexts[action]}
+      </div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label={animalRequired ? "Sheep" : "Sheep (optional)"}>
+        <select style={inputStyle} value={animalId} onChange={e => setAnimalId(e.target.value)}>
+          {!animalRequired && <option value="">— Whole flock —</option>}
+          {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+        </select>
+      </Field>
+      {action === "weight" && (
+        <Field label="Weight (lbs)">
+          <input
+            type="number" step="0.1" min={0}
+            style={inputStyle} value={weight}
+            onChange={e => setWeight(e.target.value)}
+            placeholder="0" autoFocus inputMode="decimal"
+          />
+        </Field>
+      )}
+      <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
+        <input
+          style={inputStyle} value={notes}
+          onChange={e => setNotes(e.target.value)}
+          placeholder={
+            action === "health" ? "e.g. Ivermectin 1cc — dewormer round" :
+            action === "death" ? "Cause / circumstances" :
+            action === "note" ? "What happened" :
+            ""
+          }
+          autoFocus={action !== "weight"}
+        />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn
+          variant={action === "death" ? "danger" : "primary"}
+          onClick={handleSave}
+          disabled={!canSave}
+        >
+          {action === "death" ? "Save & archive" : "Save"}
+        </Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
 // ============ MAIN HOME PAGE ============
 export default function SheepPage({ hobby, data, update, setModal }) {
   const [animalModal, setAnimalModal] = useState({ open: false, animal: null });
@@ -590,6 +709,9 @@ export default function SheepPage({ hobby, data, update, setModal }) {
   const [milkOpen, setMilkOpen] = useState(false);
   const [fedOpen, setFedOpen] = useState(false);
   const [butcherOpen, setButcherOpen] = useState(false);
+  // Shared modal for the broader entry types (weight, health/vet, death, note).
+  // null when closed; one of the action strings when open.
+  const [logEntryAction, setLogEntryAction] = useState(null);
 
   const animals = (hobby?.animals || []).filter(a => !a.archived);
   const archived = (hobby?.animals || []).filter(a => a.archived);
@@ -734,6 +856,25 @@ export default function SheepPage({ hobby, data, update, setModal }) {
       )}
       {milkOpen && <MilkLogModal animals={hobby?.animals || []} onSave={addEntry} onClose={() => setMilkOpen(false)} />}
       {fedOpen && <FedLogModal onSave={addEntry} onClose={() => setFedOpen(false)} />}
+      {logEntryAction && (
+        <LogEntryModal
+          animals={hobby?.animals || []}
+          action={logEntryAction}
+          onSave={(payload) => {
+            // death returns { entry, animalId, archiveReason } so the page
+            // can archive the animal. Other actions just return the entry.
+            if (payload && payload.entry) {
+              addEntry(payload.entry);
+              if (payload.archiveReason && payload.animalId) {
+                archiveAnimal(payload.animalId, payload.archiveReason);
+              }
+            } else {
+              addEntry(payload);
+            }
+          }}
+          onClose={() => setLogEntryAction(null)}
+        />
+      )}
       {butcherOpen && (
         <ButcherLogModal
           animals={hobby?.animals || []}
@@ -779,7 +920,11 @@ export default function SheepPage({ hobby, data, update, setModal }) {
         {showMilk && <Btn small variant="leaf" onClick={() => setMilkOpen(true)} style={{ width:"100%" }}>🥛 Milk</Btn>}
         <Btn small variant="leaf" onClick={() => setBreedingModal({ open: true, breeding: null })} style={{ width:"100%" }}>🐑 Breeding</Btn>
         {showWool && <Btn small variant="accent" onClick={() => setShearingModal({ open: true, shearing: null })} style={{ width:"100%" }}>✂️ Shear</Btn>}
+        <Btn small onClick={() => setLogEntryAction("weight")} style={{ width:"100%" }}>⚖️ Weight</Btn>
+        <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
+        <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
         <Btn small variant="danger" onClick={() => setButcherOpen(true)} style={{ width:"100%" }}>🥩 Butcher</Btn>
+        <Btn small variant="danger" onClick={() => setLogEntryAction("death")} style={{ width:"100%" }}>🪦 Died</Btn>
       </div>
 
       {/* Upcoming lambings banner */}
