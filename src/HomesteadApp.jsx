@@ -1558,19 +1558,20 @@ export default function HomesteadApp() {
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
-  // Detect a password-recovery link synchronously, before Supabase has a chance
-  // to merge it with any cached session. Supabase puts `type=recovery` in the
-  // URL hash (or query string for some providers) when redirecting back from
-  // a reset email. If we see it on initial load, set the pending flag right
-  // away so the modal opens regardless of whether `PASSWORD_RECOVERY` fires.
-  // This catches the stale-session edge case where a leftover session in
-  // localStorage swallows the recovery event.
-  const [passwordRecoveryPending, setPasswordRecoveryPending] = useState(() => {
-    if (typeof window === "undefined") return false;
-    const hash = window.location.hash || "";
-    const search = window.location.search || "";
-    return /[?&#]type=recovery\b/.test(hash) || /[?&#]type=recovery\b/.test(search);
-  });
+  // Password recovery flow:
+  //
+  // Supabase JS auto-processes the URL hash/code on client init (createClient
+  // sets detectSessionInUrl: true by default). By the time our React component
+  // mounts, the token is already in Supabase's internal state and the URL hash
+  // has been cleared. So we CANNOT detect recovery from window.location alone.
+  //
+  // Instead we rely entirely on the `PASSWORD_RECOVERY` event from
+  // onAuthStateChange, fired in the useEffect below. To bridge the gap where
+  // an event might fire before this state is set up, we also seed the value
+  // by checking for the `henalytics-auth` storage key marker that Supabase
+  // populates after URL processing — but most of the time the event listener
+  // catches it correctly on its own.
+  const [passwordRecoveryPending, setPasswordRecoveryPending] = useState(false);
 
   // Show what's new popup once after Supabase data loads.
   // Triggers when (a) onboarding is complete and (b) the user's saved
@@ -1771,31 +1772,7 @@ export default function HomesteadApp() {
   // ---- Auth state listener ----
   useEffect(() => {
     if (!isSupabaseConfigured) return;
-    // If the URL signaled a recovery flow at mount, the device may have a
-    // cached session for a different account that will swallow the recovery
-    // token. Force a clean slate: sign out any existing session, strip the
-    // session keys from localStorage, then let Supabase process the recovery
-    // token from the URL on the next render. We use a ref-style sessionStorage
-    // marker so we only do this once per recovery click (otherwise we'd loop).
-    if (passwordRecoveryPending) {
-      const marker = "henalytics-recovery-cleaned";
-      if (!sessionStorage.getItem(marker)) {
-        sessionStorage.setItem(marker, "1");
-        (async () => {
-          try { await supabase.auth.signOut({ scope: "local" }); } catch (_) {}
-          // Reload so Supabase reprocesses the URL with no cached session.
-          // The `type=recovery` hash is still in the URL, so on reload our
-          // synchronous detector fires again, but the marker is now set so
-          // we skip this cleanup branch and proceed to open the modal.
-          window.location.reload();
-        })();
-        return; // Don't run the rest of auth init this render — we're reloading.
-      }
-      // Second-pass: recovery URL still present, marker set, cached session
-      // already cleared. Open the modal and trust Supabase to fire
-      // PASSWORD_RECOVERY against the recovery token.
-      setModal({ type: "setNewPassword" });
-    }
+
     supabase.auth.getSession().then(({ data: { session } }) => {
       setUser(session?.user || null);
       setAuthReady(true);
