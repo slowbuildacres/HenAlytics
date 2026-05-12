@@ -265,7 +265,13 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
     data.hobbies.push({ id: "incubator", name: "Incubator 🥚", type: "incubator", icon: "egg", runs: [], hidden: true });
   }
   data.hobbies.forEach(h => {
-    if (h.type === "incubator") { if (!Array.isArray(h.runs)) h.runs = []; }
+    if (h.type === "incubator") {
+      if (!Array.isArray(h.runs)) h.runs = [];
+      // Brooder workflow: after a run hatches, chicks move into a brooder
+      // batch. Each batch tracks dispositions (sold, moved to flock, died,
+      // kept) which sum down toward the initial count.
+      if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
+    }
   });
   const gardenHobby = data.hobbies.find(h => h.type === "garden");
   if (gardenHobby && !Array.isArray(gardenHobby.perennials)) gardenHobby.perennials = [];

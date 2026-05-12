@@ -44,6 +44,37 @@ const BIRD_INCUBATION = {
 const BIRD_TYPES = Object.keys(BIRD_INCUBATION);
 const BIRD_EMOJI = { Chicken:"🐔", Duck:"🦆", Turkey:"🦃", Quail:"🐦", Goose:"🪿", Guinea:"🐦‍⬛", Other:"🐣" };
 
+// ============================================================================
+// AGE FORMATTING — for chicks/birds since their hatch date.
+// Format escalates from days → weeks → months → years so glance-readability
+// matches how owners actually think about their birds at each stage.
+// ============================================================================
+const fmtAgeSince = (isoDate) => {
+  if (!isoDate) return "";
+  const days = Math.floor((new Date() - parseLocalDate(isoDate)) / (1000 * 60 * 60 * 24));
+  if (days < 0) return "";
+  if (days === 0) return "today";
+  if (days === 1) return "1 day old";
+  if (days < 14) return `${days} days old`;
+  if (days < 60) {
+    const w = Math.floor(days / 7);
+    return `${w} week${w === 1 ? "" : "s"} old`;
+  }
+  if (days < 730) {
+    const m = Math.floor(days / 30.44);
+    return `${m} month${m === 1 ? "" : "s"} old`;
+  }
+  const yrs = Math.floor(days / 365.25);
+  return `${yrs} year${yrs === 1 ? "" : "s"} old`;
+};
+
+// Sum disposition counts to get remaining chicks in a brooder batch.
+const remainingInBrooder = (batch) => {
+  if (!batch) return 0;
+  const disposed = (batch.dispositions || []).reduce((s, d) => s + (Number(d.count) || 0), 0);
+  return Math.max(0, (batch.initialCount || 0) - disposed);
+};
+
 function Btn({ children, onClick, variant="primary", small=false, style={}, disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
@@ -224,25 +255,35 @@ function RunModal({ run, hobbyId, update, onClose }) {
 // ============================================================================
 // LOG HATCH MODAL — record hatch results
 // ============================================================================
-function LogHatchModal({ run, hobbyId, update, onClose }) {
+function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
   const [hatched, setHatched] = useState(run.eggsHatched != null ? String(run.eggsHatched) : "");
   const [notes, setNotes] = useState(run.notes || "");
   const hatchRate = hatched && run.eggsSet ? ((Number(hatched)/run.eggsSet)*100).toFixed(1) : null;
+  const wasAlreadyHatched = run.status === "hatched";
 
   const save = () => {
+    const hatchedCount = Number(hatched) || 0;
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const r = (h.runs||[]).find(x => x.id === run.id);
       if (r) {
-        r.eggsHatched = Number(hatched) || 0;
+        r.eggsHatched = hatchedCount;
         r.notes = notes;
         r.status = "hatched";
-        r.hatchedDate = todayStr();
+        // Preserve original hatch date on re-edits so age math stays anchored.
+        if (!r.hatchedDate) r.hatchedDate = todayStr();
       }
       return d;
     });
-    onClose();
+    // If this is a NEW hatch (not re-editing) AND any chicks hatched,
+    // chain into the "Move to brooder" prompt. The parent decides whether
+    // to show the modal — we just signal that it should.
+    if (!wasAlreadyHatched && hatchedCount > 0 && onAfterSave) {
+      onAfterSave({ runId: run.id, hatchedCount });
+    } else {
+      onClose();
+    }
   };
 
   return (
@@ -267,9 +308,358 @@ function LogHatchModal({ run, hobbyId, update, onClose }) {
 }
 
 // ============================================================================
+// MOVE TO BROODER MODAL
+// ----------------------------------------------------------------------------
+// Triggered either right after logging a fresh hatch (auto-chained), OR
+// manually from a completed RunCard. Pre-populates initialCount from the
+// run's eggsHatched but lets the user adjust (e.g., late losses before the
+// chicks made it to the brooder, or splitting a run across brooders).
+// ============================================================================
+function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
+  const [name, setName] = useState(`${run.birdType} chicks from ${run.name}`);
+  const [initialCount, setInitialCount] = useState(
+    run.eggsHatched != null ? String(run.eggsHatched) : ""
+  );
+  const [startDate, setStartDate] = useState(run.hatchedDate || todayStr());
+  const [notes, setNotes] = useState("");
+
+  const canSave = parseInt(initialCount, 10) > 0;
+
+  const save = () => {
+    if (!canSave) return;
+    const count = parseInt(initialCount, 10);
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
+      h.brooderBatches.push({
+        id: newId(),
+        sourceBatchId: run.id,        // link back to the originating run
+        name: name.trim() || `${run.birdType} chicks`,
+        startDate,
+        initialCount: count,
+        birdType: run.birdType,
+        variety: run.variety || "",
+        notes: notes.trim(),
+        dispositions: [],
+        archived: false,
+        created: Date.now(),
+      });
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🐣 Move to brooder">
+      <div style={{ marginBottom: 14, padding: "10px 12px", background: palette.leafSoft, borderRadius: 8, fontSize: 13, color: palette.ink, lineHeight: 1.5 }}>
+        {run.eggsHatched} chicks hatched from <strong>{run.name}</strong>. Move them into a brooder batch so you can track what happens next.
+      </div>
+      <Field label="Brooder batch name">
+        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 chicks" autoFocus />
+      </Field>
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Chicks in brooder">
+            <input type="number" min={1} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Start date">
+            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Skip</Btn>
+        <Btn onClick={save} disabled={!canSave}>Create brooder batch</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// BROODER DISPOSITION MODAL
+// ----------------------------------------------------------------------------
+// The interesting one. Lets the user record what happened to N chicks from
+// a brooder batch. Four disposition types:
+//   - sold (records price/buyer; pushes to data.sales with hobbyType="incubator")
+//   - moved_to_flock (picks a target egg-layer flock or meat-bird batch;
+//     increments that target's count)
+//   - died (records cause, no further integration)
+//   - kept (no-op, just shrinks remaining count)
+// Supports partial dispositions: user can disposition 5 of 14, leaving 9
+// in the brooder for later.
+// ============================================================================
+function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
+  const remaining = remainingInBrooder(batch);
+  const [type, setType] = useState("sold");
+  const [count, setCount] = useState("1");
+  const [date, setDate] = useState(todayStr());
+
+  // Type-specific fields
+  const [pricePerBird, setPricePerBird] = useState("");
+  const [soldTo, setSoldTo] = useState("");
+  const [targetFlockKey, setTargetFlockKey] = useState(""); // "egg_layers:<flockId>" or "meat_chickens:<batchId>"
+  const [cause, setCause] = useState("");
+  const [dispNotes, setDispNotes] = useState("");
+
+  // Build target options for "moved to flock" — pulls live flocks/batches
+  // from elsewhere in the data tree. Each option carries hobby type + id
+  // so the save fn knows where to push the count.
+  const flockOptions = useMemo(() => {
+    const out = [];
+    const eggLayers = (data.hobbies || []).find(h => h.type === "egg_layers");
+    if (eggLayers && Array.isArray(eggLayers.flocks)) {
+      eggLayers.flocks.forEach(fl => {
+        out.push({
+          key: `egg_layers:${fl.id}`,
+          label: `🥚 ${fl.name || "Flock"} (${fl.birdCount || 0} birds)`,
+          hobbyType: "egg_layers",
+          targetId: fl.id,
+        });
+      });
+    }
+    const meat = (data.hobbies || []).find(h => h.type === "meat_chickens");
+    if (meat && Array.isArray(meat.currentBatches)) {
+      meat.currentBatches.forEach(b => {
+        out.push({
+          key: `meat_chickens:${b.id}`,
+          label: `🍗 ${b.name || "Meat batch"} (${b.startCount || 0} birds)`,
+          hobbyType: "meat_chickens",
+          targetId: b.id,
+        });
+      });
+    }
+    return out;
+  }, [data.hobbies]);
+
+  // Default the target selection to the first option once flocks exist.
+  // Skipping this caused targetFlockKey="" and a broken save if user just
+  // tapped Save without touching the dropdown.
+  React.useEffect(() => {
+    if (type === "moved_to_flock" && !targetFlockKey && flockOptions.length > 0) {
+      setTargetFlockKey(flockOptions[0].key);
+    }
+  }, [type, targetFlockKey, flockOptions]);
+
+  const n = parseInt(count, 10) || 0;
+  const validCount = n > 0 && n <= remaining;
+  const canSave = (() => {
+    if (!validCount) return false;
+    if (type === "moved_to_flock") return !!targetFlockKey;
+    return true;
+  })();
+
+  const save = () => {
+    if (!canSave) return;
+    const disposition = {
+      id: newId(),
+      date, type, count: n,
+      notes: dispNotes.trim(),
+      created: Date.now(),
+    };
+    if (type === "sold") {
+      disposition.pricePerBird = parseFloat(pricePerBird) || 0;
+      disposition.soldTo = soldTo.trim();
+    } else if (type === "moved_to_flock") {
+      const opt = flockOptions.find(o => o.key === targetFlockKey);
+      if (opt) {
+        disposition.targetFlockId = opt.targetId;
+        disposition.targetFlockType = opt.hobbyType;
+      }
+    } else if (type === "died") {
+      disposition.cause = cause.trim();
+    }
+
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const b = (h.brooderBatches || []).find(x => x.id === batch.id);
+      if (!b) return d;
+      if (!Array.isArray(b.dispositions)) b.dispositions = [];
+      b.dispositions.push(disposition);
+
+      // Sales integration: push to data.sales so the chick income shows up
+      // in the unified sales ledger. We tag with hobbyType="incubator" so
+      // the Sales page can filter / attribute it correctly.
+      if (type === "sold" && disposition.pricePerBird > 0) {
+        if (!Array.isArray(d.sales)) d.sales = [];
+        d.sales.push({
+          id: newId(),
+          date,
+          hobbyId: h.id,
+          hobbyType: "incubator",
+          item: `${b.birdType || "Bird"} chicks (${b.name || "brooder"})`,
+          quantity: n,
+          unit: "chicks",
+          pricePerUnit: disposition.pricePerBird,
+          totalRevenue: disposition.pricePerBird * n,
+          customer: disposition.soldTo,
+          notes: disposition.notes,
+          created: Date.now(),
+        });
+      }
+
+      // Flock integration: bump the target flock/batch count. We branch on
+      // hobbyType because egg_layers and meat_chickens use different field
+      // names (birdCount vs startCount).
+      if (type === "moved_to_flock" && disposition.targetFlockId) {
+        if (disposition.targetFlockType === "egg_layers") {
+          const eggH = d.hobbies.find(x => x.type === "egg_layers");
+          const fl = eggH?.flocks?.find(x => x.id === disposition.targetFlockId);
+          if (fl) {
+            fl.birdCount = (fl.birdCount || 0) + n;
+            // History entry so the user can see why the count jumped.
+            if (!Array.isArray(fl.history)) fl.history = [];
+            fl.history.push({
+              date,
+              count: fl.birdCount,
+              cost: 0,
+              purchasedFrom: `Brooder transfer (${b.name})`,
+            });
+          }
+        } else if (disposition.targetFlockType === "meat_chickens") {
+          const meatH = d.hobbies.find(x => x.type === "meat_chickens");
+          const bt = meatH?.currentBatches?.find(x => x.id === disposition.targetFlockId);
+          if (bt) {
+            bt.startCount = (bt.startCount || 0) + n;
+          }
+        }
+      }
+
+      // Auto-archive batch if it's been fully dispositioned.
+      const newRemaining = remainingInBrooder(b);
+      if (newRemaining <= 0) b.archived = true;
+
+      return d;
+    });
+    onClose();
+  };
+
+  const TYPE_OPTIONS = [
+    { key: "sold",           label: "💰 Sold",            help: "Record a sale (price logged to your sales ledger)" },
+    { key: "moved_to_flock", label: "🐔 Move to flock",   help: "Graduate to layer flock or meat-bird batch" },
+    { key: "kept",           label: "📝 Kept (other)",     help: "Just remove from brooder — kept for some other purpose" },
+    { key: "died",           label: "🪦 Died",            help: "Record loss with cause" },
+  ];
+
+  return (
+    <Modal open onClose={onClose} title="Log brooder disposition">
+      <div style={{ marginBottom: 14, padding: "10px 12px", background: palette.bgAlt, borderRadius: 8, fontSize: 13, color: palette.ink }}>
+        <strong>{batch.name}</strong> · {remaining} chick{remaining === 1 ? "" : "s"} remaining
+      </div>
+
+      <Field label="What happened?">
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {TYPE_OPTIONS.map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => setType(opt.key)}
+              style={{
+                padding: "10px 12px", borderRadius: 8, cursor: "pointer",
+                border: `1.5px solid ${type === opt.key ? palette.ink : palette.line}`,
+                background: type === opt.key ? palette.ink : palette.card,
+                color: type === opt.key ? palette.bg : palette.ink,
+                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+                textAlign: "left",
+              }}
+            >
+              <div>{opt.label}</div>
+              <div style={{ fontSize: 11, marginTop: 2, opacity: 0.85, fontWeight: 400 }}>{opt.help}</div>
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="How many">
+            <input
+              type="number" min={1} max={remaining}
+              style={inputStyle} value={count}
+              onChange={e => setCount(e.target.value)}
+              inputMode="numeric"
+            />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Date">
+            <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+
+      {!validCount && n > 0 && (
+        <div style={{ marginBottom: 12, fontSize: 12, color: palette.accent }}>
+          Only {remaining} chick{remaining === 1 ? "" : "s"} remaining in this batch.
+        </div>
+      )}
+
+      {/* Type-specific fields */}
+      {type === "sold" && (
+        <>
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Field label="Price each ($)">
+                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerBird} onChange={e => setPricePerBird(e.target.value)} placeholder="0.00" inputMode="decimal" />
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label="Sold to">
+                <input style={inputStyle} value={soldTo} onChange={e => setSoldTo(e.target.value)} placeholder="Buyer name" />
+              </Field>
+            </div>
+          </div>
+          {pricePerBird && n > 0 && (
+            <div style={{ marginBottom: 12, padding: "8px 12px", background: palette.leafSoft, borderRadius: 8, fontSize: 13, color: palette.ink }}>
+              Total: <strong>${(parseFloat(pricePerBird) * n).toFixed(2)}</strong>
+            </div>
+          )}
+        </>
+      )}
+
+      {type === "moved_to_flock" && (
+        flockOptions.length === 0 ? (
+          <div style={{ marginBottom: 14, padding: "10px 12px", background: palette.yolkSoft, borderRadius: 8, fontSize: 13, color: palette.ink, lineHeight: 1.5 }}>
+            No layer flocks or meat-bird batches to move them into. Create a flock first, or pick a different option.
+          </div>
+        ) : (
+          <Field label="Target">
+            <select style={inputStyle} value={targetFlockKey} onChange={e => setTargetFlockKey(e.target.value)}>
+              {flockOptions.map(opt => (
+                <option key={opt.key} value={opt.key}>{opt.label}</option>
+              ))}
+            </select>
+          </Field>
+        )
+      )}
+
+      {type === "died" && (
+        <Field label="Cause (optional)">
+          <input style={inputStyle} value={cause} onChange={e => setCause(e.target.value)} placeholder="e.g. failure to thrive, pasty butt" />
+        </Field>
+      )}
+
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={dispNotes} onChange={e => setDispNotes(e.target.value)} placeholder="Anything else worth noting" />
+      </Field>
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
 // RUN CARD — shown on home tab
 // ============================================================================
-function RunCard({ run, hobbyId, update, setModal, calendarEvents }) {
+function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatches = [] }) {
   const today = todayStr();
   const incubation = BIRD_INCUBATION[run.birdType] || BIRD_INCUBATION.Chicken;
   const daysIn = run.dateSet ? Math.floor((parseLocalDate(today) - parseLocalDate(run.dateSet)) / (24*60*60*1000)) : 0;
@@ -310,12 +700,38 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents }) {
         <button onClick={() => setModal({ type:"editRun", runId:run.id })} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Edit3 size={14}/></button>
       </div>
 
-      {run.status === "hatched" ? (
-        <div style={{ padding:"10px 12px",background:palette.yolkSoft,borderRadius:8,fontSize:13,color:palette.ink }}>
-          🐣 Hatched {run.eggsHatched} of {run.eggsSet} ({((run.eggsHatched/run.eggsSet)*100).toFixed(0)}% hatch rate)
-          {run.notes && <div style={{ fontSize:11,color:palette.inkSoft,marginTop:4 }}>{run.notes}</div>}
-        </div>
-      ) : (
+      {run.status === "hatched" ? (() => {
+        // Find any brooder batch already created from this run. We hide the
+        // "Move to brooder" CTA if one exists (avoiding duplicate creation)
+        // but still surface a link so users can jump to the batch.
+        const existingBrooder = brooderBatches.find(b => b.sourceBatchId === run.id);
+        return (
+          <div style={{ padding:"10px 12px",background:palette.yolkSoft,borderRadius:8,fontSize:13,color:palette.ink }}>
+            <div>
+              🐣 Hatched {run.eggsHatched} of {run.eggsSet} ({((run.eggsHatched/run.eggsSet)*100).toFixed(0)}% hatch rate)
+            </div>
+            {run.hatchedDate && (
+              <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
+                {fmtDate(run.hatchedDate)} · {fmtAgeSince(run.hatchedDate)}
+              </div>
+            )}
+            {run.notes && <div style={{ fontSize:11,color:palette.inkSoft,marginTop:4 }}>{run.notes}</div>}
+            <div style={{ marginTop: 10, display: "flex", gap: 8, flexWrap: "wrap" }}>
+              {existingBrooder ? (
+                <div style={{ fontSize: 11, color: palette.leaf, fontWeight: 600 }}>
+                  ✓ In brooder: {existingBrooder.name}
+                </div>
+              ) : (
+                run.eggsHatched > 0 && (
+                  <Btn small variant="accent" onClick={() => setModal({ type: "moveToBrooder", runId: run.id })}>
+                    🐣 Move to brooder
+                  </Btn>
+                )
+              )}
+            </div>
+          </div>
+        );
+      })() : (
         <>
           {/* Progress bar */}
           <div style={{ marginBottom:8 }}>
@@ -364,6 +780,94 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents }) {
 }
 
 // ============================================================================
+// BROODER BATCH CARD — shows a single brooder batch with its remaining count
+// and a quick action to log a disposition. Tapping the card itself surfaces
+// the full disposition history.
+// ============================================================================
+function BrooderBatchCard({ batch, hobbyId, data, update, setModal }) {
+  const [showHistory, setShowHistory] = useState(false);
+  const remaining = remainingInBrooder(batch);
+  const totalDisposed = (batch.dispositions || []).reduce((s, d) => s + (Number(d.count) || 0), 0);
+  const age = fmtAgeSince(batch.startDate);
+
+  // Pre-archived / fully-dispositioned batches still render but with a
+  // muted style so they don't crowd active batches.
+  const isFullyDisposed = remaining <= 0;
+
+  return (
+    <div style={{
+      background: palette.card,
+      border: `1.5px solid ${isFullyDisposed ? palette.line : palette.leaf}`,
+      borderRadius: 12, padding: 14, marginBottom: 10,
+      opacity: isFullyDisposed ? 0.7 : 1,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+            <span style={{ fontSize: 18 }}>{BIRD_EMOJI[batch.birdType] || "🐣"}</span>
+            <span style={{ fontWeight: 700, fontSize: 15, color: palette.ink }}>{batch.name}</span>
+          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 3 }}>
+            Started {fmtDate(batch.startDate)} · {age}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: isFullyDisposed ? palette.inkSoft : palette.leaf, lineHeight: 1 }}>
+            {remaining}
+          </div>
+          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>
+            of {batch.initialCount}
+          </div>
+        </div>
+      </div>
+
+      {batch.notes && (
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, fontStyle: "italic" }}>{batch.notes}</div>
+      )}
+
+      {/* Disposition history (collapsible). Useful as the batch ages and the
+          user wants to look back at where chicks went. */}
+      {(batch.dispositions || []).length > 0 && (
+        <div style={{ marginBottom: 8 }}>
+          <button onClick={() => setShowHistory(s => !s)} style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            fontSize: 11, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600,
+            textDecoration: "underline",
+          }}>
+            {showHistory ? "Hide history" : `${batch.dispositions.length} disposition${batch.dispositions.length === 1 ? "" : "s"} (${totalDisposed} chick${totalDisposed === 1 ? "" : "s"})`}
+          </button>
+          {showHistory && (
+            <div style={{ marginTop: 6, padding: "8px 10px", background: palette.bgAlt, borderRadius: 6 }}>
+              {batch.dispositions.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(d => {
+                let label = "";
+                if (d.type === "sold") label = `💰 Sold ${d.count} @ $${(d.pricePerBird || 0).toFixed(2)} ea`;
+                else if (d.type === "moved_to_flock") label = `🐔 Moved ${d.count} to flock`;
+                else if (d.type === "died") label = `🪦 ${d.count} died${d.cause ? ` — ${d.cause}` : ""}`;
+                else label = `📝 ${d.count} ${d.notes || "removed"}`;
+                return (
+                  <div key={d.id} style={{ fontSize: 11, color: palette.ink, padding: "2px 0" }}>
+                    <span style={{ color: palette.inkSoft }}>{fmtDate(d.date)}</span> · {label}
+                    {d.soldTo && <span style={{ color: palette.inkSoft }}> · {d.soldTo}</span>}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {!isFullyDisposed && (
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <Btn small variant="accent" onClick={() => setModal({ type: "brooderDispose", batchId: batch.id })}>
+            Log disposition
+          </Btn>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
 // INCUBATOR HOME PAGE
 // ============================================================================
 function IncubatorHome({ hobby, update, setModal, data }) {
@@ -371,6 +875,12 @@ function IncubatorHome({ hobby, update, setModal, data }) {
   const activeRuns = runs.filter(r => r.status !== "hatched" && r.status !== "closed");
   const completedRuns = runs.filter(r => r.status === "hatched" || r.status === "closed");
   const calendarEvents = data.calendarEvents || [];
+  const allBrooderBatches = hobby.brooderBatches || [];
+  // Active brooder batches = anything with chicks still in it. Archived
+  // batches drop out of the headline section but stay readable inside the
+  // RunCard "✓ In brooder: ..." link plus the disposition history.
+  const activeBrooders = allBrooderBatches.filter(b => !b.archived && remainingInBrooder(b) > 0);
+  const fullyDisposedBrooders = allBrooderBatches.filter(b => b.archived || remainingInBrooder(b) <= 0);
 
   return (
     <div>
@@ -390,15 +900,43 @@ function IncubatorHome({ hobby, update, setModal, data }) {
         </div>
       ) : (
         activeRuns.map(run => (
-          <RunCard key={run.id} run={run} hobbyId={hobby.id} update={update} setModal={setModal} calendarEvents={calendarEvents} />
+          <RunCard key={run.id} run={run} hobbyId={hobby.id} update={update} setModal={setModal} calendarEvents={calendarEvents} brooderBatches={allBrooderBatches} />
         ))
+      )}
+
+      {/* BROODER SECTION — surfaces all batches with chicks still in them.
+          Sits between Active Runs and Completed so the user's workflow
+          flows top-to-bottom: incubating → brooding → completed. */}
+      {activeBrooders.length > 0 && (
+        <>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:10,marginTop:20 }}>
+            🐣 Brooder
+          </div>
+          {activeBrooders.map(batch => (
+            <BrooderBatchCard key={batch.id} batch={batch} hobbyId={hobby.id} data={data} update={update} setModal={setModal} />
+          ))}
+        </>
       )}
 
       {completedRuns.length > 0 && (
         <>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink,marginBottom:10,marginTop:4 }}>Completed</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink,marginBottom:10,marginTop:20 }}>Completed</div>
           {completedRuns.slice(0,5).map(run => (
-            <RunCard key={run.id} run={run} hobbyId={hobby.id} update={update} setModal={setModal} calendarEvents={calendarEvents} />
+            <RunCard key={run.id} run={run} hobbyId={hobby.id} update={update} setModal={setModal} calendarEvents={calendarEvents} brooderBatches={allBrooderBatches} />
+          ))}
+        </>
+      )}
+
+      {/* Past brooder batches (fully dispositioned) — only show if user has
+          some history. Smaller heading + collapsed by default to keep the
+          home page clean. */}
+      {fullyDisposedBrooders.length > 0 && (
+        <>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:16,color:palette.inkSoft,marginBottom:10,marginTop:20 }}>
+            Past brooder batches ({fullyDisposedBrooders.length})
+          </div>
+          {fullyDisposedBrooders.slice(0,3).map(batch => (
+            <BrooderBatchCard key={batch.id} batch={batch} hobbyId={hobby.id} data={data} update={update} setModal={setModal} />
           ))}
         </>
       )}
@@ -487,7 +1025,7 @@ export function IncubatorAnalytics({ hobby }) {
 // ============================================================================
 // MODAL ROUTER for Incubator modals
 // ============================================================================
-function IncubatorModalRouter({ modal, hobby, update, setModal, onClose }) {
+function IncubatorModalRouter({ modal, hobby, data, update, setModal, onClose }) {
   if (!modal) return null;
 
   if (modal.type === "addRun") {
@@ -501,7 +1039,28 @@ function IncubatorModalRouter({ modal, hobby, update, setModal, onClose }) {
   if (modal.type === "logHatch") {
     const run = (hobby.runs||[]).find(r => r.id === modal.runId);
     if (!run) { onClose(); return null; }
-    return <LogHatchModal run={run} hobbyId={hobby.id} update={update} onClose={onClose} />;
+    // After logging a fresh hatch (not an edit), chain into the brooder
+    // creation modal so chicks don't fall into limbo. Passing onAfterSave
+    // gives LogHatchModal a hook to transition rather than just close.
+    return (
+      <LogHatchModal
+        run={run}
+        hobbyId={hobby.id}
+        update={update}
+        onClose={onClose}
+        onAfterSave={({ runId }) => setModal({ type: "moveToBrooder", runId })}
+      />
+    );
+  }
+  if (modal.type === "moveToBrooder") {
+    const run = (hobby.runs||[]).find(r => r.id === modal.runId);
+    if (!run) { onClose(); return null; }
+    return <MoveToBrooderModal run={run} hobbyId={hobby.id} update={update} onClose={onClose} />;
+  }
+  if (modal.type === "brooderDispose") {
+    const batch = (hobby.brooderBatches||[]).find(b => b.id === modal.batchId);
+    if (!batch) { onClose(); return null; }
+    return <BrooderDispositionModal batch={batch} hobbyId={hobby.id} data={data} update={update} onClose={onClose} />;
   }
   return null;
 }
@@ -518,7 +1077,7 @@ export default function IncubatorPage({ hobby, data, update, setModal }) {
 
   return (
     <div>
-      <IncubatorModalRouter modal={localModal} hobby={hobby} update={update} setModal={setLocalModal} onClose={closeModal} />
+      <IncubatorModalRouter modal={localModal} hobby={hobby} data={data} update={update} setModal={setLocalModal} onClose={closeModal} />
       <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} data={data} />
     </div>
   );
