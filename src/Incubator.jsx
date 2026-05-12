@@ -328,12 +328,17 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
   const save = () => {
     if (!canSave) return;
     const count = parseInt(initialCount, 10);
+    const brooderBatchId = newId();
+    // Reminder ~6 weeks out — typical age when chicks are feathered enough
+    // to leave the heated brooder and move to outdoor coop. Stored alongside
+    // other incubator calendar events using the existing `type` field convention.
+    const readyDate = addDays(startDate, 42);
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
       h.brooderBatches.push({
-        id: newId(),
+        id: brooderBatchId,
         sourceBatchId: run.id,        // link back to the originating run
         name: name.trim() || `${run.birdType} chicks`,
         startDate,
@@ -345,6 +350,21 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
         archived: false,
         created: Date.now(),
       });
+      // Auto-add a "ready to move out" calendar reminder. Only add if no
+      // existing event is tied to this brooder batch to avoid duplicates if
+      // the user re-opens this flow somehow.
+      if (!Array.isArray(d.calendarEvents)) d.calendarEvents = [];
+      const alreadyHas = d.calendarEvents.some(e => e.brooderBatchId === brooderBatchId);
+      if (!alreadyHas) {
+        d.calendarEvents.push({
+          id: newId(),
+          date: readyDate,
+          title: `🐥 Brooder ready: ${name.trim() || run.birdType}`,
+          type: "brooder_ready",
+          notes: `${count} ${run.birdType.toLowerCase()} chicks should be feathered enough to leave the brooder.`,
+          brooderBatchId,
+        });
+      }
       return d;
     });
     onClose();
@@ -1014,6 +1034,53 @@ export function IncubatorAnalytics({ hobby }) {
           </div>
         </ChartCard>
       )}
+
+      {/* BROODER ANALYTICS — only renders if user has brooder data.
+          Survival = initial chicks minus those marked "died" in dispositions.
+          Note: we count died, not just "remaining at end" because chicks that
+          were sold/moved/kept are all survivors — only "died" reduces survival. */}
+      {(() => {
+        const brooderBatches = hobby.brooderBatches || [];
+        if (brooderBatches.length === 0) return null;
+        const totalChicks = brooderBatches.reduce((s, b) => s + (b.initialCount || 0), 0);
+        const totalDied = brooderBatches.reduce((s, b) =>
+          s + (b.dispositions || []).filter(d => d.type === "died").reduce((ds, d) => ds + (d.count || 0), 0)
+        , 0);
+        const overallSurvivalRate = totalChicks > 0
+          ? (((totalChicks - totalDied) / totalChicks) * 100).toFixed(1)
+          : "—";
+        // Per-batch chart data — newest 10 batches
+        const survivalChart = brooderBatches.slice(-10).map(b => {
+          const died = (b.dispositions || []).filter(d => d.type === "died").reduce((s, d) => s + (d.count || 0), 0);
+          const surviving = (b.initialCount || 0) - died;
+          const rate = (b.initialCount || 0) > 0 ? Number(((surviving / b.initialCount) * 100).toFixed(1)) : 0;
+          return { name: (b.name || "Batch").slice(0, 12), rate };
+        });
+
+        return (
+          <>
+            <div style={{ display:"flex",gap:10,flexWrap:"wrap",margin:"20px 0 16px" }}>
+              <StatCard label="Brooder batches" value={brooderBatches.length} accent={palette.feather} />
+              <StatCard label="Chicks brooded" value={totalChicks} accent={palette.yolk} />
+              <StatCard label="Brooder survival" value={overallSurvivalRate === "—" ? "—" : `${overallSurvivalRate}%`} accent={palette.leaf} />
+              {totalDied > 0 && <StatCard label="Lost in brooder" value={totalDied} accent={palette.accent} />}
+            </div>
+
+            {survivalChart.length > 1 && (
+              <ChartCard title="🐥 Brooder survival rate by batch">
+                <ResponsiveContainer width="100%" height={180}>
+                  <BarChart data={survivalChart}>
+                    <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
+                    <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={v=>`${v}%`} domain={[0,100]} />
+                    <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v=>[`${v}%`,"Survival rate"]} />
+                    <Bar dataKey="rate" fill={palette.leaf} radius={[6,6,0,0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+          </>
+        );
+      })()}
 
       {runs.length === 0 && (
         <div style={{ padding:24,textAlign:"center",color:palette.inkSoft,fontSize:13 }}>No incubation runs yet.</div>
