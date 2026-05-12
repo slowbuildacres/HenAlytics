@@ -2348,10 +2348,11 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
 // Surfaces a blue warning banner when the forecast low for today OR tomorrow
 // is at or below 32°F (freezing). Gated on:
 //   1. We have lat/lon (no forecast without a location)
-//   2. The current season per getSeasonInfo is NOT winter — winter is expected
-//      to be cold, surfacing freeze warnings every day in January would be
-//      noise. Only useful in shoulder seasons (spring/fall) when a freeze
-//      could actually catch someone unprepared.
+//   2. Calendar month is NOT deep winter (Dec/Jan in northern hemisphere;
+//      Jun/Jul in southern). Other months stay armed even if they rarely
+//      trigger — the temp threshold handles the silent no-op in summer.
+//      Frost-aware winter would suppress Apr/Oct shoulder-season freezes,
+//      which is exactly when surprise freezes catch growers off guard.
 //   3. Forecast fetch returned data (silent fail if not)
 //
 // Persistence: no dismiss button. The banner auto-clears when the forecast
@@ -2382,11 +2383,20 @@ function FreezeWarningBanner({ data }) {
   // Gate: no location → nothing to warn about
   if (lat == null || lon == null) return null;
 
-  // Gate: in winter, freezes are expected — don't surface as a warning
+  // Gate: suppress in deep winter (Dec/Jan in northern hemisphere; Jun/Jul in
+  // southern). Frost-aware winter would *also* suppress April/October — but
+  // those are exactly the shoulder-season months when surprise freezes matter
+  // most, so we use calendar months instead. The remaining 10 months might
+  // never actually trigger (mid-summer lows aren't anywhere near 32°F for most
+  // users) but the threshold check below silently handles that.
   const today = new Date();
-  const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
-  const seasonInfo = getSeasonInfo(todayIso, data);
-  if (seasonInfo?.type === "winter") return null;
+  const month = today.getMonth(); // 0 = Jan
+  const south = getCurrentHemisphere() === "south";
+  if (south) {
+    if (month === 5 || month === 6) return null; // June/July
+  } else {
+    if (month === 11 || month === 0) return null; // Dec/Jan
+  }
 
   // Gate: still loading or fetch failed
   if (!forecast) return null;
