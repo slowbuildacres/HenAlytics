@@ -17,7 +17,7 @@ import {
   sendFeedback, notifySignup, acceptInvite, deleteAccount,
 } from "./sync.js";
 import {
-  getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather, getForecast,
+  getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
 } from "./weather.js";
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
@@ -42,6 +42,9 @@ import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 import BakingPage, { BakingAnalytics } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics } from "./Canning.jsx";
+import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
+import DehydratingPage, { DehydratingAnalytics } from "./Dehydrating.jsx";
+import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -81,6 +84,13 @@ const defaultData = () => ({
     { id: "farmstand", name: "Farmstand 🧾", type: "farmstand", icon: "store", items: [], hidden: true },
     { id: "baking", name: "Baking 🥧", type: "baking", icon: "sprout", recipes: [], hidden: true },
     { id: "canning", name: "Canning 🫙", type: "canning", icon: "sprout", batches: [], hidden: true },
+    // Preserving sub-types — grouped with canning under "Preserving" in the picker UI.
+    // Each is its own hobby with its own data shape; PreservingPage routes between them
+    // via tabs. No data migration needed — adding these as siblings keeps canning's
+    // existing data untouched.
+    { id: "freeze_drying", name: "Freeze Drying ❄️", type: "freeze_drying", icon: "sprout", batches: [], hidden: true },
+    { id: "dehydrating", name: "Dehydrating 🌬️", type: "dehydrating", icon: "sprout", batches: [], hidden: true },
+    { id: "fermentation", name: "Fermentation 🫧", type: "fermentation", icon: "sprout", ferments: [], recipes: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -89,8 +99,6 @@ const defaultData = () => ({
   varieties: {},      // Push 5 — per-crop variety registry { cropId: [{ id, name, daysToHarvest }] }
   tutorialDismissed: false, // true after user completes or skips tutorial (web)
   nativeTutorialDismissed: false, // true after user completes or skips the native iOS/Android tutorial — tracked separately so web-completed users still see the native walkthrough on first app launch
-  lastSeenSupporterWall: null, // ISO date string of the most recent month-end the supporter wall was shown/dismissed. null = never seen. Used to fire the wall only once per month on the last day.
-  defaultHobby: null, // null = open to "garden" (legacy default). Set to a hobby ID (e.g. "egg_layers") to open that hobby's home page on app launch.
   lastSeenVersion: 0,        // tracks what's new popup
   salesHidden: false,        // true if user hides the Sales tab
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
@@ -311,6 +319,33 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   data.hobbies.forEach((h) => {
     if (h.type === "canning") {
       if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+  });
+  // ---- Preserving sub-types (freeze drying / dehydrating / fermentation) ----
+  // Backfill missing sub-hobbies so the PreservingPage tab bar always has all
+  // four destinations. New users get them defaulted to hidden via defaultData;
+  // existing users (who never saw these hobbies before) get them backfilled here.
+  // Critically: hidden=true for everyone unless they were already enabled by
+  // the user. We don't want to silently un-hide hobbies users didn't ask for.
+  const preservingTypes = [
+    { id: "freeze_drying", name: "Freeze Drying ❄️", type: "freeze_drying", icon: "sprout", batches: [] },
+    { id: "dehydrating",   name: "Dehydrating 🌬️", type: "dehydrating", icon: "sprout", batches: [] },
+    { id: "fermentation",  name: "Fermentation 🫧", type: "fermentation", icon: "sprout", ferments: [], recipes: [] },
+  ];
+  preservingTypes.forEach(({ id, name, type, icon, ...shape }) => {
+    if (!data.hobbies.some(h => h.id === id)) {
+      data.hobbies.push({ id, name, type, icon, hidden: true, ...shape });
+    }
+  });
+  data.hobbies.forEach((h) => {
+    if (h.type === "freeze_drying" || h.type === "dehydrating") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+    if (h.type === "fermentation") {
+      if (!Array.isArray(h.ferments)) h.ferments = [];
+      if (!Array.isArray(h.recipes)) h.recipes = [];
       if (typeof h.hidden === "undefined") h.hidden = true;
     }
   });
@@ -810,11 +845,6 @@ const dayOfYear = (d) => {
   const diff = (d - start) + ((start.getTimezoneOffset() - d.getTimezoneOffset()) * 60 * 1000);
   return Math.floor(diff / (1000 * 60 * 60 * 24));
 };
-
-// A stable key for "the calendar month that this date belongs to" — "2026-05"
-// for any day in May 2026. Used to dedupe the supporter wall: a month-key
-// recorded in lastSeenSupporterWall means we won't show again this month.
-const getMonthKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 
 const getSeason = (dateStr, data) => {
   const d = parseLocalDate(dateStr);
@@ -1333,6 +1363,7 @@ export default function HomesteadApp() {
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all"); // garden-only: season ID
   // Date-range filter for non-garden analytics. dateFilter is one of:
   // "all" | "7d" | "30d" | "60d" | "90d" | "custom". customStart/customEnd
@@ -1357,41 +1388,6 @@ export default function HomesteadApp() {
     return /[?&#]type=recovery\b/.test(hash) || /[?&#]type=recovery\b/.test(search);
   });
 
-  // Detect auth errors in the URL on initial load — most commonly an expired
-  // password-recovery link ("otp_expired") or a token that was already used.
-  // Supabase puts these as `#error=...&error_code=...&error_description=...`
-  // in the hash, then leaves the user sitting on the signed-out home page
-  // with no indication why their reset link didn't work. We surface a clear
-  // message so they know to request a fresh link.
-  const [authErrorFromUrl, setAuthErrorFromUrl] = useState(() => {
-    if (typeof window === "undefined") return null;
-    const hash = window.location.hash || "";
-    if (!/[#&]error=/.test(hash)) return null;
-    const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
-    const code = params.get("error_code");
-    const description = params.get("error_description");
-    // Map known error codes to friendlier messages
-    if (code === "otp_expired") {
-      return "Your password reset link has expired. Reset links are good for one hour and can only be used once. Please request a new one.";
-    }
-    if (code === "access_denied") {
-      return "Your reset link couldn't be verified. Please request a new one.";
-    }
-    // Generic fallback — use the description Supabase provided
-    if (description) {
-      return description.replace(/\+/g, " ");
-    }
-    return "Something went wrong with your reset link. Please request a new one.";
-  });
-
-  // Once we've captured the error, clean the URL so refresh doesn't keep
-  // re-showing it.
-  useEffect(() => {
-    if (authErrorFromUrl && window.location.hash.includes("error=")) {
-      window.history.replaceState({}, "", window.location.pathname + window.location.search);
-    }
-  }, [authErrorFromUrl]);
-
   // Show what's new popup once after Supabase data loads.
   // Triggers when (a) onboarding is complete and (b) the user's saved
   // lastSeenVersion is below CURRENT_VERSION. The ref guards against
@@ -1406,9 +1402,8 @@ export default function HomesteadApp() {
     if ((data?.lastSeenVersion || 0) >= CURRENT_VERSION) return;
     if (passwordRecoveryPending) return;
     whatsNewShownRef.current = true;
-    // Deliberately no cleanup: re-renders during the 1.5s window would cancel
-    // the timer mid-flight (same bug we hit with the supporter-return modal).
-    setTimeout(() => setShowWhatsNew(true), 1500);
+    const timer = setTimeout(() => setShowWhatsNew(true), 1500);
+    return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
 
   // ---- Native tutorial prompt (once-per-account) ----
@@ -1427,34 +1422,27 @@ export default function HomesteadApp() {
     if (data?.nativeTutorialDismissed) return; // already dismissed on this device/account
     if (passwordRecoveryPending) return;       // don't stack on top of reset flow
     nativeTutorialShownRef.current = true;
-    // No cleanup — see whatsNew effect above for why.
-    setTimeout(() => setShowTutorialPrompt(true), 800);
+    const timer = setTimeout(() => setShowTutorialPrompt(true), 800);
+    return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.nativeTutorialDismissed, passwordRecoveryPending]);
 
-  // ---- Monthly supporter wall ----
-  // Fires once on the 1st, 2nd, or 3rd of each calendar month, recognizing
-  // the previous month's active supporters. 3-day window so users who don't
-  // open the app on the 1st still see it within the first few days.
-  // Tracked in data.lastSeenSupporterWall ("YYYY-MM") — once set for the
-  // current month, the wall won't reopen until next month.
-  //
-  // Dedupe key is the CURRENT month (the month that just started). When a
-  // user dismisses on June 1, we write "2026-06" — the wall won't fire again
-  // until July 1.
-  const supporterWallShownRef = React.useRef(false);
+  // ---- Monthly supporter thank-you ----
+  // Shows once on the 9th-11th of each month if the user hasn't dismissed it yet
+  // for this calendar month. Tracked in data.supportersDismissedMonth ("YYYY-MM").
+  // 3-day window so users who don't open the app on the 9th still see it.
+  const supporterThanksShownRef = React.useRef(false);
   useEffect(() => {
-    if (supporterWallShownRef.current) return;
+    if (supporterThanksShownRef.current) return;
     if (!data?.onboardedAt) return;
-    if (passwordRecoveryPending) return; // don't stack on top of reset flow
     const now = new Date();
     const dayOfMonth = now.getDate();
-    if (dayOfMonth < 1 || dayOfMonth > 3) return;
-    const currentMonthKey = getMonthKey(now);
-    if (data?.lastSeenSupporterWall === currentMonthKey) return;
-    supporterWallShownRef.current = true;
-    // No cleanup — see whatsNew effect above for why.
-    setTimeout(() => setModal({ type: "supporterWall" }), 2200);
-  }, [data?.onboardedAt, data?.lastSeenSupporterWall, passwordRecoveryPending]);
+    if (dayOfMonth < 9 || dayOfMonth > 11) return; // only show 9th-11th of the month
+    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    if (data?.supportersDismissedMonth === monthKey) return;
+    supporterThanksShownRef.current = true;
+    const timer = setTimeout(() => setShowSupporterThanks(true), 2200);
+    return () => clearTimeout(timer);
+  }, [data?.onboardedAt, data?.supportersDismissedMonth]);
 
   // ---- App Store fundraiser popup ----
   // Fires once per calendar month for users who haven't tipped yet and haven't
@@ -1476,8 +1464,8 @@ export default function HomesteadApp() {
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     if (data?.appStoreFundDismissedMonth === monthKey) return;
     appStoreFundShownRef.current = true;
-    // No cleanup — see whatsNew effect above for why.
-    setTimeout(() => setShowAppStoreFund(true), 4000);
+    const timer = setTimeout(() => setShowAppStoreFund(true), 4000);
+    return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.appStoreFundDismissedMonth, data?.userHasTipped]);
 
   // ---- Sync user units (currency, temperature, hemisphere) to the module-level
@@ -1503,7 +1491,7 @@ export default function HomesteadApp() {
       setActiveHobby(newActive);
       // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
       // bounce to "home" so we don't stay on a page tied to the hidden hobby.
-      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning"];
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning", "freeze_drying", "dehydrating", "fermentation"];
       if (hobbyPages.includes(page)) {
         const newHobbyType = (firstVisible || {}).type;
         if (hobbyPages.includes(newHobbyType)) {
@@ -1514,25 +1502,6 @@ export default function HomesteadApp() {
       }
     }
   }, [data?.hobbies, activeHobby, page]);
-
-  // ---- Apply user's preferred default hobby on initial load ----
-  // Runs once when data first becomes available. If the user has set a
-  // defaultHobby preference and that hobby exists + is visible, switch to it.
-  // The defaultHobbyAppliedRef gate ensures we only do this on the first
-  // data load — if the user then picks a different hobby during their
-  // session, we don't bounce them back when data resyncs.
-  const defaultHobbyAppliedRef = useRef(false);
-  useEffect(() => {
-    if (defaultHobbyAppliedRef.current) return;
-    if (!data?.hobbies) return;
-    defaultHobbyAppliedRef.current = true;
-    const pref = data?.defaultHobby;
-    if (!pref || pref === "garden") return; // garden is already the init default
-    const target = data.hobbies.find(h => h.id === pref && !h.hidden);
-    if (target) {
-      setActiveHobby(pref);
-    }
-  }, [data?.hobbies, data?.defaultHobby]);
 
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
@@ -1874,50 +1843,6 @@ export default function HomesteadApp() {
           ⚠️ You were signed out on this device — tap to sign back in
         </div>
       )}
-
-      {/* Auth error banner — surfaces expired/invalid reset links, etc.
-          User-dismissable since it's one-time info. */}
-      {authErrorFromUrl && (
-        <div
-          style={{
-            position: "fixed", top: 0, left: 0, right: 0, zIndex: 201,
-            background: "#C84B31", color: "#FAF5EA",
-            padding: "12px 20px",
-            paddingTop: "calc(12px + env(safe-area-inset-top))",
-            display: "flex", alignItems: "center", justifyContent: "space-between",
-            gap: 10,
-            fontFamily: "'Be Vietnam Pro', sans-serif",
-            fontWeight: 600, fontSize: 13, lineHeight: 1.4,
-          }}
-        >
-          <div style={{ flex: 1, textAlign: "center" }}>
-            ⚠️ {authErrorFromUrl}{" "}
-            <button
-              onClick={() => { setAuthErrorFromUrl(null); setModal({ type: "signin", initialMode: "reset" }); }}
-              style={{
-                background: "transparent", color: "#FAF5EA",
-                border: "1.5px solid #FAF5EA", borderRadius: 6,
-                padding: "4px 10px", marginLeft: 8,
-                fontFamily: "inherit", fontWeight: 700, fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              Request new link
-            </button>
-          </div>
-          <button
-            onClick={() => setAuthErrorFromUrl(null)}
-            aria-label="Dismiss"
-            style={{
-              background: "transparent", color: "#FAF5EA",
-              border: "none", padding: 4, marginLeft: 4,
-              cursor: "pointer", fontSize: 18, lineHeight: 1, flexShrink: 0,
-            }}
-          >
-            ×
-          </button>
-        </div>
-      )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
       <SeasonalDecorations />
 
@@ -1955,8 +1880,30 @@ export default function HomesteadApp() {
         }} />
       )}
 
+      {/* Monthly supporter thank-you popup (9th-11th of each month) */}
+      {showSupporterThanks && !showWhatsNew && (
+        <SupporterThanksModal
+          onClose={() => {
+            setShowSupporterThanks(false);
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            update(d => { d.supportersDismissedMonth = monthKey; return d; });
+          }}
+          onLeaveTip={() => {
+            // User tapped a Stripe button. The href opens Stripe in a new
+            // tab (the <a> tag handles that natively). We just need to
+            // mark this month as dismissed and close the popup so they
+            // come back to a clean app, not the popup again.
+            setShowSupporterThanks(false);
+            const now = new Date();
+            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+            update(d => { d.supportersDismissedMonth = monthKey; return d; });
+          }}
+        />
+      )}
+
       {/* App Store fundraiser popup (once per month for non-tippers) */}
-      {showAppStoreFund && !showWhatsNew && (
+      {showAppStoreFund && !showWhatsNew && !showSupporterThanks && (
         <AppStoreFundModal
           onClose={() => {
             setShowAppStoreFund(false);
@@ -2118,6 +2065,9 @@ export default function HomesteadApp() {
                         farmstand: "farmstand",
                         baking: "baking",
                         canning: "canning",
+                        freeze_drying: "freeze_drying",
+                        dehydrating: "dehydrating",
+                        fermentation: "fermentation",
                       };
                       // Garden, egg_layers, meat_chickens all share the
                       // generic "home" page (which keys off activeHobby).
@@ -2217,7 +2167,22 @@ export default function HomesteadApp() {
             <CanningAnalytics hobby={data.hobbies.find(h=>h.id==="canning")} entries={data.entries?.["canning"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && (
+        {page === "analytics" && activeHobby === "freeze_drying" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="freeze_drying")} entries={data.entries?.["freeze_drying"] || []} data={data}>
+            <FreezeDryingAnalytics hobby={data.hobbies.find(h=>h.id==="freeze_drying")} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby === "dehydrating" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dehydrating")} entries={data.entries?.["dehydrating"] || []} data={data}>
+            <DehydratingAnalytics hobby={data.hobbies.find(h=>h.id==="dehydrating")} spouseMode={data.spouseMode} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby === "fermentation" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="fermentation")} entries={data.entries?.["fermentation"] || []} data={data}>
+            <FermentationAnalytics hobby={data.hobbies.find(h=>h.id==="fermentation")} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -2251,7 +2216,16 @@ export default function HomesteadApp() {
           <BakingPage hobby={data.hobbies.find(h=>h.id==="baking")} data={data} update={update} setModal={setModal} />
         )}
         {page === "canning" && (
-          <CanningPage hobby={data.hobbies.find(h=>h.id==="canning")} data={data} update={update} setModal={setModal} />
+          <PreservingPage data={data} update={update} setModal={setModal} initialSubType="canning" />
+        )}
+        {page === "freeze_drying" && (
+          <PreservingPage data={data} update={update} setModal={setModal} initialSubType="freeze_drying" />
+        )}
+        {page === "dehydrating" && (
+          <PreservingPage data={data} update={update} setModal={setModal} initialSubType="dehydrating" />
+        )}
+        {page === "fermentation" && (
+          <PreservingPage data={data} update={update} setModal={setModal} initialSubType="fermentation" />
         )}
         {page === "sheep" && (
           <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
@@ -2294,7 +2268,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
@@ -2303,6 +2277,70 @@ export default function HomesteadApp() {
 
       {/* MODALS */}
       <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} onFreshStart={() => setData(defaultData())} />
+    </div>
+  );
+}
+
+// ============================================================================
+// PRESERVING PAGE — wrapper that routes between canning/freeze-drying/
+// dehydrating/fermentation via internal tabs. No data migration; each
+// sub-type is its own hobby under the hood.
+// ============================================================================
+function PreservingPage({ data, update, setModal, initialSubType }) {
+  const [activeSub, setActiveSub] = useState(initialSubType || "canning");
+
+  const canningHobby = data.hobbies.find(h => h.type === "canning");
+  const freezeDryingHobby = data.hobbies.find(h => h.type === "freeze_drying");
+  const dehydratingHobby = data.hobbies.find(h => h.type === "dehydrating");
+  const fermentationHobby = data.hobbies.find(h => h.type === "fermentation");
+
+  const tabs = [
+    { key: "canning",       label: "Canning",       emoji: "🫙", hobby: canningHobby },
+    { key: "freeze_drying", label: "Freeze drying", emoji: "❄️", hobby: freezeDryingHobby },
+    { key: "dehydrating",   label: "Dehydrating",   emoji: "🌬️", hobby: dehydratingHobby },
+    { key: "fermentation",  label: "Fermentation",  emoji: "🫧", hobby: fermentationHobby },
+  ];
+
+  return (
+    <div>
+      {/* Tab bar */}
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16,
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        paddingBottom: 2,
+      }}>
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSub(t.key)}
+            style={{
+              flexShrink: 0,
+              padding: "8px 14px", borderRadius: 999,
+              border: `1.5px solid ${activeSub === t.key ? palette.ink : palette.line}`,
+              background: activeSub === t.key ? palette.ink : palette.card,
+              color: activeSub === t.key ? palette.bg : palette.ink,
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Active sub-hobby page */}
+      {activeSub === "canning" && canningHobby && (
+        <CanningPage hobby={canningHobby} data={data} update={update} setModal={setModal} />
+      )}
+      {activeSub === "freeze_drying" && freezeDryingHobby && (
+        <FreezeDryingPage hobby={freezeDryingHobby} data={data} update={update} setModal={setModal} />
+      )}
+      {activeSub === "dehydrating" && dehydratingHobby && (
+        <DehydratingPage hobby={dehydratingHobby} data={data} update={update} setModal={setModal} />
+      )}
+      {activeSub === "fermentation" && fermentationHobby && (
+        <FermentationPage hobby={fermentationHobby} data={data} update={update} setModal={setModal} />
+      )}
     </div>
   );
 }
@@ -2345,7 +2383,6 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       {/* HOBBY-SPECIFIC SUMMARY */}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
-      {hobby.type === "garden" && <FreezeWarningBanner data={data} />}
       {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} />}
 
       {/* QUICK LOG TILES */}
@@ -2438,121 +2475,6 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
           </div>
         </button>
       )}
-    </div>
-  );
-}
-
-// ============================================================================
-// FREEZE WARNING BANNER (garden home page)
-// ----------------------------------------------------------------------------
-// Surfaces a blue warning banner when the forecast low for today OR tomorrow
-// is at or below 32°F (freezing). Gated on:
-//   1. We have lat/lon (no forecast without a location)
-//   2. Calendar month is NOT deep winter (Dec/Jan in northern hemisphere;
-//      Jun/Jul in southern). Other months stay armed even if they rarely
-//      trigger — the temp threshold handles the silent no-op in summer.
-//      Frost-aware winter would suppress Apr/Oct shoulder-season freezes,
-//      which is exactly when surprise freezes catch growers off guard.
-//   3. Forecast fetch returned data (silent fail if not)
-//
-// Persistence: no dismiss button. The banner auto-clears when the forecast
-// warms up (cache expires every 2 hours so we re-check). Freeze warnings are
-// the kind of thing where "I dismissed it once" shouldn't override real,
-// life-of-your-plants weather conditions.
-//
-// Returns null when nothing should render — caller can drop this component
-// anywhere on the garden home page and it's a no-op unless conditions match.
-// ============================================================================
-const FREEZE_THRESHOLD_F = 32;
-
-function FreezeWarningBanner({ data }) {
-  const [forecast, setForecast] = useState(null);
-  const lat = data?.homesteadLocation?.lat;
-  const lon = data?.homesteadLocation?.lon;
-
-  useEffect(() => {
-    if (lat == null || lon == null) return;
-    let cancelled = false;
-    (async () => {
-      const f = await getForecast(lat, lon);
-      if (!cancelled) setForecast(f);
-    })();
-    return () => { cancelled = true; };
-  }, [lat, lon]);
-
-  // Gate: no location → nothing to warn about
-  if (lat == null || lon == null) return null;
-
-  // Gate: suppress in deep winter (Dec/Jan in northern hemisphere; Jun/Jul in
-  // southern). Frost-aware winter would *also* suppress April/October — but
-  // those are exactly the shoulder-season months when surprise freezes matter
-  // most, so we use calendar months instead. The remaining 10 months might
-  // never actually trigger (mid-summer lows aren't anywhere near 32°F for most
-  // users) but the threshold check below silently handles that.
-  const today = new Date();
-  const month = today.getMonth(); // 0 = Jan
-  const south = getCurrentHemisphere() === "south";
-  if (south) {
-    if (month === 5 || month === 6) return null; // June/July
-  } else {
-    if (month === 11 || month === 0) return null; // Dec/Jan
-  }
-
-  // Gate: still loading or fetch failed
-  if (!forecast) return null;
-
-  const todayLow = forecast.today?.lowF;
-  const tomorrowLow = forecast.tomorrow?.lowF;
-  const todayCold = todayLow != null && todayLow <= FREEZE_THRESHOLD_F;
-  const tomorrowCold = tomorrowLow != null && tomorrowLow <= FREEZE_THRESHOLD_F;
-
-  if (!todayCold && !tomorrowCold) return null;
-
-  // Build the message. If both days are cold, surface the colder one;
-  // mention "today" if relevant since that's most urgent.
-  let when;
-  let lowToShow;
-  if (todayCold && tomorrowCold) {
-    when = "tonight and tomorrow";
-    lowToShow = Math.min(todayLow, tomorrowLow);
-  } else if (todayCold) {
-    when = "tonight";
-    lowToShow = todayLow;
-  } else {
-    when = "tomorrow";
-    lowToShow = tomorrowLow;
-  }
-
-  return (
-    <div
-      role="alert"
-      style={{
-        background: "#DCE9F4",                  // soft blue — universal freeze convention
-        border: "1.5px solid #4A6FA5",
-        borderRadius: 12,
-        padding: "12px 14px",
-        marginBottom: 14,
-        display: "flex",
-        alignItems: "flex-start",
-        gap: 10,
-        boxShadow: `2px 2px 0 ${palette.line}`,
-      }}
-    >
-      <div style={{ fontSize: 22, lineHeight: 1, flexShrink: 0 }} aria-hidden="true">❄️</div>
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{
-          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
-          color: "#1F3A5F", lineHeight: 1.3, marginBottom: 2,
-        }}>
-          Freeze warning — low of {lowToShow}°F {when}
-        </div>
-        <div style={{
-          fontFamily: FONT_BODY, fontSize: 12,
-          color: "#3D5A85", lineHeight: 1.5,
-        }}>
-          Cover sensitive plants, bring potted ones indoors, and water deeply ahead of the cold snap.
-        </div>
-      </div>
     </div>
   );
 }
@@ -4642,23 +4564,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "settings") return <SettingsModal data={data} update={update} onClose={close} setModal={setModal} user={user} />;
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
-  if (modal.type === "support") return <SupportModal onClose={close} setModal={setModal} />;
+  if (modal.type === "support") return <SupportModal onClose={close} />;
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
-  if (modal.type === "supporterWall") {
-    // Dismissing the wall (X button) OR clicking "Tap to add yours" both
-    // route through onClose. Either way we mark this month as seen so the
-    // wall doesn't re-fire on the 2nd/3rd if a user dismisses on the 1st.
-    const closeWall = () => {
-      const k = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
-      update((d) => { d.lastSeenSupporterWall = k; return d; });
-      close();
-    };
-    return <SupporterWallModal onClose={closeWall} setModal={setModal} />;
-  }
-  if (modal.type === "supporterClaim") return <SupporterClaimModal onClose={() => { close(); setTimeout(() => setModal({ type: "supporterName" }), 100); }} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
-  if (modal.type === "signin") return <AuthModal onClose={close} initialMode={modal.initialMode || "signin"} />;
+  if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "setNewPassword") return <AuthModal onClose={close} initialMode="setNewPassword" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} onFreshStart={onFreshStart} />;
@@ -5368,38 +5278,6 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         }}
       />
 
-      {/* Default Hobby — controls which hobby's home page opens on app launch */}
-      <div style={{
-        marginBottom: 12, padding: "12px 14px",
-        background: palette.card, border: `1.5px solid ${palette.line}`,
-        borderRadius: 12,
-      }}>
-        <div style={{ fontWeight: 700, fontSize: 14, color: palette.ink, marginBottom: 4 }}>
-          🌾 Default hobby
-        </div>
-        <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 10 }}>
-          When you open Henalytics, which hobby's home page should appear first?
-        </div>
-        <select
-          value={data.defaultHobby || "garden"}
-          onChange={(e) => update(d => { d.defaultHobby = e.target.value; return d; })}
-          style={{
-            width: "100%", padding: "10px 12px", borderRadius: 8,
-            border: `1.5px solid ${palette.line}`, background: palette.bg,
-            fontFamily: FONT_BODY, fontSize: 14, color: palette.ink,
-            cursor: "pointer", appearance: "auto",
-          }}
-        >
-          {(data.hobbies || [])
-            .filter(h => !h.hidden)
-            .map(h => (
-              <option key={h.id} value={h.id}>
-                {h.name || h.id}
-              </option>
-            ))}
-        </select>
-      </div>
-
       <SectionBtn
         icon={Lightbulb}
         label="What's new 🌾"
@@ -5717,7 +5595,7 @@ function AboutModal({ onClose }) {
 // Two CTAs: one-time tip ("buy a bag of feed") and monthly patron tier.
 // All flow through Stripe Payment Links (Ko-fi kept commented as backup).
 // ============================================================================
-function SupportModal({ onClose, setModal }) {
+function SupportModal({ onClose }) {
   // New design: monthly is featured (3 tiers — $3, $5, $10) with one-time
   // tip as a smaller secondary option below. Each button calls startCheckout
   // which goes through our server (auth + user-ID linking + supporter row).
@@ -5840,28 +5718,6 @@ function SupportModal({ onClose, setModal }) {
         }}>
           🌱 Thanks for being here.
         </div>
-
-        {/* Subtle entry point for existing Payment Link supporters to claim
-            their spot on the wall. Doesn't draw attention away from the new
-            signup buttons above. */}
-        {setModal && (
-          <div style={{
-            marginTop: 14, textAlign: "center", paddingTop: 12,
-            borderTop: `1px dashed ${palette.line}`,
-          }}>
-            <button
-              type="button"
-              onClick={() => { onClose(); setTimeout(() => setModal({ type: "supporterClaim" }), 50); }}
-              style={{
-                background: "none", border: "none", padding: 0,
-                color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12,
-                textDecoration: "underline", cursor: "pointer",
-              }}
-            >
-              Already supporting from before? Claim your wall spot.
-            </button>
-          </div>
-        )}
       </div>
     </Modal>
   );
@@ -6089,405 +5945,6 @@ function SupporterNamePromptModal({ user, onClose }) {
                 }}
               >
                 Stay anonymous
-              </button>
-            </>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// SUPPORTER WALL MODAL (monthly thank-you)
-// ----------------------------------------------------------------------------
-// Triggered on the last day of each month by an effect in the App body.
-// Shows every active+approved supporter, sorted by tenure (longest at top
-// permanently). Anonymous supporters (no name, opted out, or flagged) are
-// summed into a single footer line.
-//
-// Data source: the public Supabase views public_supporter_wall and
-// public_supporter_count. Both are readable by anon — no auth required.
-// We still want to handle network errors gracefully so the modal doesn't
-// crash if Supabase is down on the 31st.
-//
-// Single CTA: "Tap to add yours" opens SupportModal. Existing supporters
-// who haven't claimed yet are reached via the "Already a supporter?" link
-// inside SupportModal (which routes to SupporterClaimModal).
-// ============================================================================
-function SupporterWallModal({ onClose, setModal }) {
-  const [supporters, setSupporters] = useState(null); // null = loading; [] = empty; array = loaded
-  const [anonCount, setAnonCount] = useState(0);
-  const [errorMsg, setErrorMsg] = useState("");
-
-  // The label at the top recognizes the *previous* calendar month, since the
-  // wall fires in the first 3 days of each new month. "Today is June 2 →
-  // header reads 'Thank you, May 2026.'" Compute by stepping back one day
-  // from the 1st of today's month.
-  const monthLabel = React.useMemo(() => {
-    const today = new Date();
-    const firstOfThisMonth = new Date(today.getFullYear(), today.getMonth(), 1);
-    const lastOfPrevMonth = new Date(firstOfThisMonth.getTime() - 24 * 60 * 60 * 1000);
-    return lastOfPrevMonth.toLocaleDateString(undefined, { month: "long", year: "numeric" });
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        // Public views — readable without auth. We still go through the
-        // existing supabase client so URL + headers are consistent with
-        // the rest of the app.
-        const [wallRes, countRes] = await Promise.all([
-          supabase.from("public_supporter_wall").select("homestead_name, supporting_since_month"),
-          supabase.from("public_supporter_count").select("anonymous_count").maybeSingle(),
-        ]);
-        if (cancelled) return;
-
-        if (wallRes.error) throw wallRes.error;
-        // Sort ascending by supporting_since_month so longest-tenured appears
-        // at the top. The view itself sorts but we re-sort defensively in
-        // case PostgREST returns them in an unexpected order.
-        const list = (wallRes.data || []).slice().sort((a, b) => {
-          const ad = a.supporting_since_month || "";
-          const bd = b.supporting_since_month || "";
-          return ad.localeCompare(bd);
-        });
-        setSupporters(list);
-
-        if (countRes.error) {
-          console.warn("supporter count fetch failed:", countRes.error);
-          setAnonCount(0);
-        } else {
-          setAnonCount(countRes.data?.anonymous_count || 0);
-        }
-      } catch (e) {
-        if (cancelled) return;
-        console.error("supporter wall fetch failed:", e);
-        setSupporters([]); // show empty state rather than spinner-forever
-        setErrorMsg("Couldn't load the supporter list right now.");
-      }
-    })();
-    return () => { cancelled = true; };
-  }, []);
-
-  const formatTenure = (supportingSinceMonth) => {
-    if (!supportingSinceMonth) return "Supporter";
-    // supporting_since_month is a UTC timestamp truncated to month-start.
-    // Render as "Month Year" — friendly + tenure-revealing without exposing
-    // exact subscription dates.
-    const d = new Date(supportingSinceMonth);
-    if (isNaN(d.getTime())) return "Supporter";
-    return `Supporting since ${d.toLocaleDateString(undefined, { month: "long", year: "numeric" })}`;
-  };
-
-  const openSupportModal = () => {
-    onClose();
-    // Re-open SupportModal after this one closes. setModal is passed in from
-    // ModalRouter via App body, so it persists across the close.
-    setTimeout(() => setModal({ type: "support" }), 50);
-  };
-
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: 16,
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        background: palette.bg, borderRadius: 20, maxWidth: 480, width: "100%",
-        maxHeight: "92vh", display: "flex", flexDirection: "column",
-        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
-        fontFamily: FONT_BODY, overflow: "hidden",
-      }}>
-        {/* HEADER */}
-        <div style={{
-          background: palette.leaf, padding: "22px 24px 18px", textAlign: "center",
-          position: "relative", color: palette.card,
-        }}>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              position: "absolute", top: 12, right: 12,
-              background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%",
-              width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
-              color: palette.card, cursor: "pointer", padding: 0,
-            }}
-          >
-            <X size={18} />
-          </button>
-          <div style={{ fontSize: 38, marginBottom: 4 }}>🌾</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, lineHeight: 1.2 }}>
-            Thank you, {monthLabel}.
-          </div>
-          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.78)", marginTop: 6, lineHeight: 1.5 }}>
-            These are the homesteads keeping the lights on this month.
-            Henalytics stays free because of them.
-          </div>
-        </div>
-
-        {/* LIST */}
-        <div style={{
-          flex: 1, overflowY: "auto", padding: "16px 20px",
-          background: palette.card,
-        }}>
-          {supporters === null ? (
-            <div style={{ textAlign: "center", padding: "32px 8px", color: palette.inkSoft, fontSize: 13 }}>
-              Loading…
-            </div>
-          ) : supporters.length === 0 && anonCount === 0 ? (
-            <div style={{ textAlign: "center", padding: "24px 8px", color: palette.inkSoft, fontSize: 14, lineHeight: 1.6 }}>
-              <div style={{ fontSize: 28, marginBottom: 8 }}>🌱</div>
-              No named supporters yet — be the first.
-            </div>
-          ) : (
-            <>
-              {supporters.map((s, i) => (
-                <div
-                  key={`${s.homestead_name}-${i}`}
-                  style={{
-                    padding: "12px 14px",
-                    background: palette.bg,
-                    border: `1.5px solid ${palette.line}`,
-                    borderRadius: 10,
-                    marginBottom: 8,
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 12,
-                  }}
-                >
-                  <div style={{
-                    fontSize: 20, lineHeight: 1, flexShrink: 0,
-                  }}>
-                    {i === 0 ? "🌾" : "🐔"}
-                  </div>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{
-                      fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink,
-                      lineHeight: 1.2, marginBottom: 2,
-                      overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                    }}>
-                      {s.homestead_name}
-                    </div>
-                    <div style={{ fontSize: 11, color: palette.inkSoft }}>
-                      {formatTenure(s.supporting_since_month)}
-                    </div>
-                  </div>
-                </div>
-              ))}
-              {anonCount > 0 && (
-                <div style={{
-                  textAlign: "center", marginTop: 14, fontSize: 12, color: palette.inkSoft,
-                  fontStyle: "italic", lineHeight: 1.5,
-                }}>
-                  + {anonCount} anonymous supporter{anonCount === 1 ? "" : "s"} keeping the lights on
-                </div>
-              )}
-            </>
-          )}
-          {errorMsg && (
-            <div style={{
-              marginTop: 12, padding: 10,
-              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
-              borderRadius: 8, fontSize: 12, color: palette.accent, textAlign: "center",
-            }}>
-              {errorMsg}
-            </div>
-          )}
-        </div>
-
-        {/* FOOTER CTA */}
-        <div style={{
-          padding: "14px 20px 18px",
-          borderTop: `1.5px solid ${palette.line}`,
-          background: palette.bg,
-          textAlign: "center",
-        }}>
-          <button
-            type="button"
-            onClick={openSupportModal}
-            style={{
-              width: "100%", padding: "12px 16px", borderRadius: 10,
-              border: `1.5px solid ${palette.ink}`, background: palette.ink,
-              color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
-              boxShadow: "2px 2px 0 " + palette.line, cursor: "pointer",
-            }}
-          >
-            🌾 Tap to add yours
-          </button>
-          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 8, lineHeight: 1.4 }}>
-            Starting at $3/month. Cancel anytime. The app stays free either way.
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// SUPPORTER CLAIM MODAL
-// ----------------------------------------------------------------------------
-// For users who already donate via the old Stripe Payment Links (before pass 1
-// shipped). They have an active subscription but no row in the supporters
-// table, so the wall doesn't see them. This modal lets them:
-//
-//   1. Enter the email they used at the original Stripe checkout
-//   2. Our server (/api/claim-supporter) verifies they have an active sub
-//      under that email
-//   3. Creates a supporter row, links it to their Henalytics user_id
-//   4. Triggers the homestead-name prompt so they can join the wall
-//
-// We use the email as the proof — anyone could TYPE an email, but we then
-// verify against Stripe's customer list before granting access. This means:
-//   - Only people with a verifiable active Stripe subscription can claim
-//   - Their Henalytics login email doesn't have to match the Stripe email
-//     (which is the whole point — Payment Links didn't capture user_id)
-// ============================================================================
-function SupporterClaimModal({ onClose }) {
-  const [email, setEmail] = useState("");
-  const [working, setWorking] = useState(false);
-  const [error, setError] = useState("");
-  const [done, setDone] = useState(false);
-
-  const submit = async () => {
-    setError("");
-    const trimmed = email.trim().toLowerCase();
-    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
-      setError("Please enter a valid email.");
-      return;
-    }
-    setWorking(true);
-    try {
-      const { data: { session } } = await supabase.auth.getSession();
-      if (!session?.access_token) {
-        setError("Please sign in first.");
-        setWorking(false);
-        return;
-      }
-      const res = await fetch("/api/claim-supporter", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${session.access_token}`,
-        },
-        body: JSON.stringify({ email: trimmed }),
-      });
-      const json = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        // Common errors surfaced verbatim from the server
-        setError(json.error || `Couldn't verify (${res.status}). Try again or email slowbuildacres@gmail.com.`);
-        setWorking(false);
-        return;
-      }
-      setDone(true);
-      // Brief celebration, then close. The supported-return-style modal will
-      // appear right after via ModalRouter (we set sessionStorage to "1" to
-      // avoid the supported-return effect firing additionally — that one's
-      // for fresh Stripe returns, not claims).
-      setTimeout(() => {
-        onClose();
-      }, 1200);
-    } catch (e) {
-      console.error("claim error:", e);
-      setError("Couldn't reach the server. Check your connection and try again.");
-      setWorking(false);
-    }
-  };
-
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: 16,
-    }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
-        background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
-        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
-        fontFamily: FONT_BODY, overflow: "hidden",
-      }}>
-        <div style={{
-          background: palette.yolk, padding: "20px 24px 16px",
-          position: "relative", color: palette.ink, textAlign: "center",
-        }}>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              position: "absolute", top: 12, right: 12,
-              background: "rgba(44,24,16,0.1)", border: "none", borderRadius: "50%",
-              width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
-              color: palette.ink, cursor: "pointer", padding: 0,
-            }}
-          >
-            <X size={18} />
-          </button>
-          <div style={{ fontSize: 32, marginBottom: 4 }}>🐔</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, lineHeight: 1.2 }}>
-            Already a supporter? Claim your wall spot.
-          </div>
-        </div>
-
-        <div style={{ padding: "18px 24px 22px" }}>
-          {done ? (
-            <div style={{ textAlign: "center", padding: "12px 0 24px", fontSize: 15, color: palette.ink, lineHeight: 1.6 }}>
-              ✅ Verified! Loading your name prompt…
-            </div>
-          ) : (
-            <>
-              <p style={{ margin: "0 0 12px", fontSize: 14, color: palette.ink, lineHeight: 1.6 }}>
-                If you've been donating via Stripe and want your homestead added to the supporter wall, enter the email you used at checkout.
-              </p>
-              <p style={{ margin: "0 0 14px", fontSize: 12, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.5 }}>
-                Doesn't have to match your Henalytics login email — Stripe and Henalytics tracked them separately before now. We'll verify your subscription before linking.
-              </p>
-
-              <label style={{ display: "block", marginBottom: 10 }}>
-                <div style={{
-                  fontSize: 11, color: palette.inkSoft, marginBottom: 6,
-                  textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
-                }}>
-                  Stripe receipt email
-                </div>
-                <input
-                  type="email"
-                  value={email}
-                  onChange={(e) => { setEmail(e.target.value); setError(""); }}
-                  placeholder="you@example.com"
-                  autoComplete="email"
-                  disabled={working}
-                  autoFocus
-                  style={{
-                    width: "100%", padding: "10px 12px", borderRadius: 8,
-                    border: `1.5px solid ${palette.line}`, background: palette.card,
-                    fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-                  }}
-                />
-              </label>
-
-              {error && (
-                <div style={{
-                  padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
-                  borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 12, lineHeight: 1.4,
-                }}>
-                  {error}
-                </div>
-              )}
-
-              <button
-                type="button"
-                onClick={submit}
-                disabled={working || !email.trim()}
-                style={{
-                  width: "100%", padding: "12px 16px", borderRadius: 10,
-                  border: `1.5px solid ${palette.ink}`, background: palette.ink,
-                  color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
-                  cursor: (working || !email.trim()) ? "wait" : "pointer",
-                  boxShadow: "2px 2px 0 " + palette.line,
-                  opacity: (working || !email.trim()) ? 0.6 : 1,
-                }}
-              >
-                {working ? "Verifying…" : "Verify and claim"}
               </button>
             </>
           )}
@@ -7108,6 +6565,9 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
                   else if (h.type === "farmstand") { setActiveHobby("farmstand"); setPage("farmstand"); }
                   else if (h.type === "baking") { setActiveHobby("baking"); setPage("baking"); }
                   else if (h.type === "canning") { setActiveHobby("canning"); setPage("canning"); }
+                  else if (h.type === "freeze_drying") { setActiveHobby("freeze_drying"); setPage("freeze_drying"); }
+                  else if (h.type === "dehydrating") { setActiveHobby("dehydrating"); setPage("dehydrating"); }
+                  else if (h.type === "fermentation") { setActiveHobby("fermentation"); setPage("fermentation"); }
                   else { setActiveHobby(h.id); if (page !== "analytics") setPage("home"); }
                   onClose();
                 }
@@ -9287,59 +8747,16 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false });
-
-  // Signup-step state (step 4). Local to the wizard — the actual auth
-  // call goes through the same `supabase.auth.signUp` that the AuthModal
-  // uses, so behavior matches the existing sign-up flow exactly. We never
-  // block onClose() if signup fails — the user can tap "I'll do this later"
-  // or close entirely, and their localStorage data is preserved either way.
-  const [signupEmail, setSignupEmail] = useState("");
-  const [signupPassword, setSignupPassword] = useState("");
-  const [signupWorking, setSignupWorking] = useState(false);
-  const [signupError, setSignupError] = useState("");
-  const [signupInfo, setSignupInfo] = useState(""); // for "check your email to confirm" message
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false, freeze_drying: false, dehydrating: false, fermentation: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
-  //
-  // Per-country quirks Zippopotam handles non-uniformly:
-  //   - US, MX: 5-digit zips, used as-is
-  //   - CA: Canadian postal codes are 6 chars like "K1A 0B1". Zippopotam only
-  //     indexes the first 3 chars (Forward Sortation Area). Send "K1A".
-  //   - GB: UK postcodes are "SW1A 1AA" style. Zippopotam indexes the
-  //     outward code (1-4 chars before the space). Send "SW1A".
-  //   - Most other supported countries use the postal code as-is.
-  //
-  // We normalize: strip whitespace, uppercase, then truncate for CA/GB.
-  const normalizeZipForApi = (rawZip, countryCode) => {
-    const trimmed = rawZip.trim().toUpperCase().replace(/\s+/g, " ");
-    if (countryCode === "ca") {
-      // First 3 chars, no space (works whether user typed "K1A 0B1" or "K1A0B1")
-      return trimmed.replace(/\s+/g, "").slice(0, 3);
-    }
-    if (countryCode === "gb") {
-      // Everything before the first space — that's the outward code
-      const idx = trimmed.indexOf(" ");
-      return idx === -1 ? trimmed : trimmed.slice(0, idx);
-    }
-    return trimmed;
-  };
-
   const lookupZip = async () => {
     if (!zip.trim()) return;
     setZipLookupStatus("loading");
     setZipError("");
     try {
-      const normalized = normalizeZipForApi(zip, country);
-      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(normalized)}`);
+      const res = await fetch(`https://api.zippopotam.us/${country}/${encodeURIComponent(zip.trim())}`);
       if (!res.ok) {
-        // Country-specific hint when format is the likely culprit
-        if (country === "ca") {
-          throw new Error("Couldn't find that postal code. Try the first 3 characters (e.g. K1A).");
-        }
-        if (country === "gb") {
-          throw new Error("Couldn't find that postcode. Try the outward portion (e.g. SW1A).");
-        }
         throw new Error("Zip code not found");
       }
       const json = await res.json();
@@ -9359,62 +8776,6 @@ function OnboardingWizard({ update, onClose }) {
       setZipError(e.message || "Couldn't find that zip code. Double-check it.");
       setZipLookupStatus("error");
       setZipResult(null);
-    }
-  };
-
-  // Sign up the user from the wizard. Same flow as AuthModal — calls
-  // supabase.auth.signUp, sends the signup_notify email, and advances to
-  // step 5 on success. If the user has unconfirmed-email flow on, we still
-  // advance (their localStorage data is preserved; signup confirmation
-  // happens out of band).
-  const handleSignup = async () => {
-    setSignupError("");
-    setSignupInfo("");
-
-    if (!isSupabaseConfigured) {
-      setSignupError("Sign-up isn't configured on this site yet. You can skip this step and add an account later.");
-      return;
-    }
-    if (!signupEmail.trim() || !signupPassword) {
-      setSignupError("Please enter both email and password.");
-      return;
-    }
-    if (signupPassword.length < 6) {
-      setSignupError("Password must be at least 6 characters.");
-      return;
-    }
-
-    setSignupWorking(true);
-    try {
-      const { data, error } = await supabase.auth.signUp({
-        email: signupEmail.trim(),
-        password: signupPassword,
-      });
-      if (error) throw error;
-      // Fire signup_notify email (same as AuthModal does). Fire-and-forget.
-      try {
-        await fetch('/api/send-email', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ kind: 'signup_notify', newUserEmail: signupEmail.trim() }),
-        });
-      } catch (e) {
-        console.warn('Signup notification failed', e);
-      }
-      // If Supabase is configured for email confirmation, data.session will
-      // be null and the user needs to check their inbox. Either way we
-      // advance to step 5 — their localStorage data is preserved and will
-      // sync to the cloud once they're actually signed in.
-      if (!data.session) {
-        setSignupInfo("Check your email to confirm your account. Your homestead data is saved on this device.");
-        setTimeout(() => setStep(5), 1800);
-      } else {
-        setStep(5);
-      }
-    } catch (err) {
-      setSignupError(err.message || "Couldn't create your account. You can try again or skip this step.");
-    } finally {
-      setSignupWorking(false);
     }
   };
 
@@ -9472,7 +8833,7 @@ function OnboardingWizard({ update, onClose }) {
       }}>
         {/* Step indicator */}
         <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
-          {[1, 2, 3, 4, 5].map((i) => (
+          {[1, 2, 3, 4].map((i) => (
             <div
               key={i}
               style={{
@@ -9551,12 +8912,7 @@ function OnboardingWizard({ update, onClose }) {
                   style={{ ...inputStyle, flex: 1 }}
                   value={zip}
                   onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
-                  placeholder={
-                    country === "ca" ? "e.g. K1A or K1A 0B1"
-                    : country === "gb" ? "e.g. SW1A or SW1A 1AA"
-                    : country === "us" ? "e.g. 66002"
-                    : "Postal code"
-                  }
+                  placeholder="e.g. 66002"
                   inputMode="text"
                   autoComplete="postal-code"
                 />
@@ -9697,12 +9053,44 @@ function OnboardingWizard({ update, onClose }) {
               label="Baking"
               sub="Recipes (with links), bake log, sales"
             />
+
+            {/* Preserving sub-types group — visually grouped under one heading,
+                but each is its own hobby under the hood (they share a unified
+                Preserving page with tabs once enabled). */}
+            <div style={{
+              marginTop: 14, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🥫 Preserving
+            </div>
             <HobbyCheckbox
               checked={hobbies.canning || false}
               onToggle={() => setHobbies((h) => ({ ...h, canning: !h.canning }))}
               icon="🫙"
               label="Canning"
               sub="Pantry inventory, eat-by dates, batch tracking"
+            />
+            <HobbyCheckbox
+              checked={hobbies.freeze_drying || false}
+              onToggle={() => setHobbies((h) => ({ ...h, freeze_drying: !h.freeze_drying }))}
+              icon="❄️"
+              label="Freeze drying"
+              sub="Batch runs, trays, output weight, storage"
+            />
+            <HobbyCheckbox
+              checked={hobbies.dehydrating || false}
+              onToggle={() => setHobbies((h) => ({ ...h, dehydrating: !h.dehydrating }))}
+              icon="🌬️"
+              label="Dehydrating"
+              sub="Batches, dryer hours, temperatures"
+            />
+            <HobbyCheckbox
+              checked={hobbies.fermentation || false}
+              onToggle={() => setHobbies((h) => ({ ...h, fermentation: !h.fermentation }))}
+              icon="🫧"
+              label="Fermentation"
+              sub="Day-by-day logs, recipes, reflection notes"
             />
 
             <div style={{
@@ -9732,111 +9120,6 @@ function OnboardingWizard({ update, onClose }) {
         )}
 
         {step === 4 && (
-          // Optional signup step. Header is intentionally framed as "back up
-          // your data" rather than "create an account" — users care about
-          // not losing entries, not about account creation as an end in itself.
-          // The "I'll do this later" link advances to step 5 without signup;
-          // their localStorage data is preserved either way.
-          <>
-            <div style={{ fontSize: 32, marginBottom: 6, textAlign: "center" }}>🔒</div>
-            <h2 style={{
-              fontFamily: FONT_DISPLAY, fontSize: 22, margin: "0 0 6px",
-              color: palette.ink, lineHeight: 1.2, textAlign: "center",
-            }}>
-              Sign up to back up your data
-            </h2>
-            <p style={{
-              fontSize: 13, color: palette.inkSoft, margin: "0 0 14px",
-              lineHeight: 1.5, textAlign: "center",
-            }}>
-              Free, no ads. Syncs across phone, tablet, and computer. Your email is used only for support and recovery — never sold or shared.
-            </p>
-
-            <div style={{ marginBottom: 10 }}>
-              <div style={{
-                fontSize: 11, color: palette.inkSoft, marginBottom: 6,
-                textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
-              }}>
-                Email
-              </div>
-              <input
-                type="email"
-                style={inputStyle}
-                value={signupEmail}
-                onChange={(e) => { setSignupEmail(e.target.value); setSignupError(""); }}
-                placeholder="you@example.com"
-                autoComplete="email"
-                disabled={signupWorking}
-                autoFocus
-              />
-            </div>
-
-            <div style={{ marginBottom: 12 }}>
-              <div style={{
-                fontSize: 11, color: palette.inkSoft, marginBottom: 6,
-                textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
-              }}>
-                Password <span style={{ textTransform: "none", letterSpacing: 0, color: palette.inkSoft, fontWeight: 400 }}>(min 6 characters)</span>
-              </div>
-              <input
-                type="password"
-                style={inputStyle}
-                value={signupPassword}
-                onChange={(e) => { setSignupPassword(e.target.value); setSignupError(""); }}
-                placeholder="••••••••"
-                autoComplete="new-password"
-                disabled={signupWorking}
-              />
-            </div>
-
-            {signupError && (
-              <div style={{
-                padding: 10, background: "#FBE5DE",
-                border: `1.5px solid ${palette.accent}`, borderRadius: 8,
-                fontSize: 13, color: palette.accent, marginBottom: 12,
-                lineHeight: 1.4,
-              }}>
-                {signupError}
-              </div>
-            )}
-
-            {signupInfo && (
-              <div style={{
-                padding: 10, background: palette.yolkSoft,
-                border: `1.5px solid ${palette.line}`, borderRadius: 8,
-                fontSize: 13, color: palette.ink, marginBottom: 12,
-                lineHeight: 1.4,
-              }}>
-                {signupInfo}
-              </div>
-            )}
-
-            <Btn
-              variant="primary"
-              onClick={handleSignup}
-              disabled={signupWorking}
-              style={{ width: "100%", marginBottom: 10 }}
-            >
-              {signupWorking ? "Working..." : "Create account"}
-            </Btn>
-
-            <div style={{ textAlign: "center" }}>
-              <button
-                onClick={() => setStep(5)}
-                disabled={signupWorking}
-                style={{
-                  background: "none", border: "none", padding: "8px 4px",
-                  color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12,
-                  textDecoration: "underline", cursor: signupWorking ? "wait" : "pointer",
-                }}
-              >
-                I'll do this later
-              </button>
-            </div>
-          </>
-        )}
-
-        {step === 5 && (
           // Internal flex layout so on small screens the content scrolls but
           // the "Got it" button stays visible at the bottom. Mirrors the
           // What's New modal pattern: outer flex column, scrollable middle,
