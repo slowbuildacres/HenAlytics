@@ -16,6 +16,36 @@
 const CACHE_KEY_PREFIX = 'henalytics_weather_';
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 
+// Prune expired weather cache keys. Runs once per session (called lazily on
+// first cache write below). localStorage is capped at ~5MB; without pruning,
+// a long-running user accumulates thousands of stale keys until writes fail
+// silently.
+let _prunedThisSession = false;
+function pruneWeatherCache() {
+  if (_prunedThisSession) return;
+  _prunedThisSession = true;
+  try {
+    const now = Date.now();
+    const toRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (!key || !key.startsWith(CACHE_KEY_PREFIX)) continue;
+      try {
+        const raw = localStorage.getItem(key);
+        if (!raw) continue;
+        const parsed = JSON.parse(raw);
+        if (!parsed.t || now - parsed.t > CACHE_TTL_MS) {
+          toRemove.push(key);
+        }
+      } catch (_) {
+        // Corrupt entry — just drop it
+        toRemove.push(key);
+      }
+    }
+    toRemove.forEach(k => { try { localStorage.removeItem(k); } catch (_) {} });
+  } catch (_) {}
+}
+
 function cacheKey(date, lat, lon) {
   return `${CACHE_KEY_PREFIX}${date}-${lat.toFixed(2)}-${lon.toFixed(2)}`;
 }
@@ -33,6 +63,7 @@ function readCache(date, lat, lon) {
 }
 
 function writeCache(date, lat, lon, data) {
+  pruneWeatherCache();
   try {
     localStorage.setItem(
       cacheKey(date, lat, lon),

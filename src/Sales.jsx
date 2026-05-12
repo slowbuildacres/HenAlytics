@@ -34,7 +34,20 @@ const inputStyle = {
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
 };
 
-const newId = () => Math.random().toString(36).slice(2, 10);
+// Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
+// browsers + iOS/Android WebViews); falls back to Math.random for ancient
+// runtimes.
+const newId = () => {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (_) {}
+  return (
+    Math.random().toString(36).slice(2, 10) +
+    Math.random().toString(36).slice(2, 6)
+  );
+};
 const parseLocalDate = (s) => { if (!s) return new Date(); const [y,m,d] = s.split("-").map(Number); return new Date(y,(m||1)-1,d||1); };
 const localDateStr = (date) => { const d = date instanceof Date ? date : new Date(date); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; };
 const todayStr = () => localDateStr(new Date());
@@ -71,8 +84,6 @@ function computeRevenue(sale) {
   const qty = Number(sale.qty) || 0;
   const price = Number(sale.pricePerUnit) || 0;
   if (sale.hobbyType === "farmstand") {
-    const qty = Number(sale.qty) || 0;
-    const price = Number(sale.pricePerUnit) || 0;
     return qty * price;
   }
   if (sale.hobbyType === "baking" || sale.hobbyType === "canning") {
@@ -221,7 +232,14 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       // Only persist the custom name when actually using "Other" — keeps
       // existing sales clean and prevents stale ghosts when users flip back
       // to a standard type.
-      if (eggType === "Other") sale.eggTypeCustom = eggTypeCustom.trim();
+      if (eggType === "Other") {
+        sale.eggTypeCustom = eggTypeCustom.trim();
+      } else if (existingSale?.eggTypeCustom) {
+        // Explicitly drop the field if the user just switched away from
+        // "Other" — otherwise the stale name would still be on the sale
+        // object and pre-fill the input the next time it was opened.
+        sale.eggTypeCustom = "";
+      }
     } else if (hobbyType === "honey") {
       sale = { ...sale, honeyForm, honeyContainer, pricePerUnit: Number(pricePerUnit) || 0 };
     } else if (hobbyType === "meat_chickens" || hobbyType === "rabbits") {
@@ -878,7 +896,9 @@ export default function SalesPage({ data, update }) {
     })).sort((a,b) => b.revenue - a.revenue);
   }, [allSales]);
 
-  // Revenue by month (last 12 months)
+  // Revenue by month — last 12 calendar months, with gaps filled as 0 so the
+  // chart shows an honest time axis (previously consecutive months with no
+  // sales were collapsed, making the chart misleading).
   const byMonth = useMemo(() => {
     const acc = {};
     allSales.forEach(sale => {
@@ -886,10 +906,18 @@ export default function SalesPage({ data, update }) {
       const key = sale.date.slice(0,7);
       acc[key] = (acc[key] || 0) + computeRevenue(sale);
     });
-    return Object.entries(acc).sort().slice(-12).map(([month, revenue]) => ({
-      month: month.slice(5),
-      revenue: parseFloat(revenue.toFixed(2)),
-    }));
+    // Generate the 12-month rolling window ending at the current month
+    const now = new Date();
+    const months = [];
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      const key = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+      months.push({
+        month: key.slice(5),
+        revenue: parseFloat((acc[key] || 0).toFixed(2)),
+      });
+    }
+    return months;
   }, [allSales]);
 
   // Top customers
@@ -971,7 +999,8 @@ export default function SalesPage({ data, update }) {
       </div>
 
       {/* Revenue by month chart */}
-      {byMonth.length > 1 && (
+      {/* Revenue by month chart — only when at least one month has revenue */}
+      {byMonth.some(m => m.revenue > 0) && (
         <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>Revenue over time</div>
           <ResponsiveContainer width="100%" height={180}>

@@ -14,7 +14,7 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 import {
   loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
-  sendFeedback, notifySignup, acceptInvite, deleteAccount,
+  sendFeedback, acceptInvite, deleteAccount,
 } from "./sync.js";
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
@@ -679,7 +679,22 @@ const fmtDate = (s) => {
 // ============================================================================
 import { fmtMoney, fmtTemp, setUserUnits, getCurrentHemisphere, currencySymbol } from "./units.js";
 
-const newId = () => Math.random().toString(36).slice(2, 10);
+// Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
+// browsers + iOS/Android WebViews); falls back to Math.random for ancient
+// runtimes. The fallback is a 12-char base36 string, much wider than the
+// old 8-char version it replaced, so the collision risk in legacy environments
+// also drops by ~16,000x.
+const newId = () => {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (_) {}
+  return (
+    Math.random().toString(36).slice(2, 10) +
+    Math.random().toString(36).slice(2, 6)
+  );
+};
 
 // What's New version — bump this with each notable release.
 // Convention: when adding a new release item, prepend it to the top of
@@ -846,6 +861,62 @@ const useNativeDeepLinks = (onUrl) => {
 };
 
 // ============================================================================
+// TOAST — tiny event-bus message system to replace window.alert
+// ----------------------------------------------------------------------------
+// window.alert() is unreliable in Capacitor/WKWebView and looks terrible
+// across platforms. The <ToastHost /> mounted at the App root listens for
+// "henalytics-toast" CustomEvents and renders them as a short-lived banner.
+// Call toast("message") from anywhere — no React context needed.
+// ============================================================================
+const toast = (message, opts = {}) => {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(new CustomEvent("henalytics-toast", {
+    detail: { message, kind: opts.kind || "info", ms: opts.ms || 4000 },
+  }));
+};
+
+function ToastHost() {
+  const [items, setItems] = React.useState([]);
+  React.useEffect(() => {
+    const onToast = (e) => {
+      const id = Math.random().toString(36).slice(2, 9);
+      const { message, kind, ms } = e.detail || {};
+      setItems((cur) => [...cur, { id, message, kind }]);
+      setTimeout(() => {
+        setItems((cur) => cur.filter((t) => t.id !== id));
+      }, ms || 4000);
+    };
+    window.addEventListener("henalytics-toast", onToast);
+    return () => window.removeEventListener("henalytics-toast", onToast);
+  }, []);
+  if (items.length === 0) return null;
+  return (
+    <div style={{
+      position: "fixed", top: 16, left: 0, right: 0,
+      display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+      zIndex: 9999, pointerEvents: "none", padding: "0 16px",
+    }}>
+      {items.map((t) => (
+        <div key={t.id} style={{
+          background: t.kind === "error" ? "#C84B31" : "#2C1810",
+          color: "#F4EDE0",
+          padding: "12px 16px",
+          borderRadius: 10,
+          fontFamily: `'Be Vietnam Pro', -apple-system, sans-serif`,
+          fontSize: 14, fontWeight: 500,
+          maxWidth: 420, width: "100%",
+          boxShadow: "0 4px 12px rgba(44,24,16,0.25)",
+          pointerEvents: "auto",
+          textAlign: "center",
+        }}>
+          {t.message}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+// ============================================================================
 // SUPPORTER CHECKOUT (Stripe via /api/create-checkout-session)
 // ----------------------------------------------------------------------------
 // Replaces the old Stripe Payment Link buttons. Calls our server, which
@@ -868,7 +939,7 @@ const startCheckout = async (tier) => {
     // Need the user's JWT to authenticate with our API.
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.access_token) {
-      alert("Please sign in first so we can connect this contribution to your account.");
+      toast("Please sign in first so we can connect this contribution to your account.");
       return;
     }
 
@@ -884,7 +955,7 @@ const startCheckout = async (tier) => {
     const json = await res.json().catch(() => ({}));
     if (!res.ok || !json.url) {
       const msg = json.error || `Checkout failed (${res.status}). Please try again in a moment.`;
-      alert(msg);
+      toast(msg, { kind: "error" });
       return;
     }
 
@@ -903,7 +974,7 @@ const startCheckout = async (tier) => {
     }
   } catch (e) {
     console.error("startCheckout error:", e);
-    alert("Couldn't start checkout. Check your connection and try again.");
+    toast("Couldn't start checkout. Check your connection and try again.", { kind: "error" });
   }
 };
 
@@ -1943,6 +2014,9 @@ export default function HomesteadApp() {
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
       <SeasonalDecorations />
+
+      {/* Toast host — listens for window "henalytics-toast" events */}
+      <ToastHost />
 
       {/* Onboarding wizard: shown only on first-ever load with no data */}
       {shouldShowWizard && (
@@ -3300,8 +3374,15 @@ function GardenSummary({ hobby, data, update, setModal }) {
   const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
   const plantings = seasonEntries.filter((e) => e.action === "planted").length;
   const days = Math.floor((Date.now() - new Date(season.startDate).getTime()) / (1000 * 60 * 60 * 24));
-  const hasMap = season.gardenMap && season.gardenMap.photoPath;
-  const pinCount = hasMap ? (season.gardenMap.pins || []).length : 0;
+  // Garden map shape changed from { photoPath, pins } to { areas: [{ photoPath, pins }] }.
+  // Read the new shape, but stay backwards-compatible for any unmigrated season.
+  const gmAreas = Array.isArray(season.gardenMap?.areas) ? season.gardenMap.areas : null;
+  const hasMap = gmAreas
+    ? gmAreas.some(a => a.photoPath)
+    : !!season.gardenMap?.photoPath;
+  const pinCount = gmAreas
+    ? gmAreas.reduce((n, a) => n + (Array.isArray(a.pins) ? a.pins.length : 0), 0)
+    : (season.gardenMap?.pins?.length || 0);
   return (
     <div>
       {/* Perennials section — split into Plants and Orchard */}
@@ -4349,7 +4430,7 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
         totalDeaths += n;
         deathCauses[e.cause || "unknown"] = (deathCauses[e.cause || "unknown"] || 0) + n;
         if (e.date && b.startDate) {
-          const days = (new Date(e.date) - new Date(b.startDate)) / (1000 * 60 * 60 * 24);
+          const days = (parseLocalDate(e.date) - parseLocalDate(b.startDate)) / (1000 * 60 * 60 * 24);
           // Push the age once per dead bird so the histogram and average reflect each death
           for (let i = 0; i < n; i++) deathAges.push(days / 7);
         }
@@ -10678,12 +10759,24 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     }
   };
 
+  // Web Share API capability check. Memoized: previously a `new File()` was
+  // allocated on every render just to feed navigator.canShare. Capability
+  // doesn't change at runtime, so one check per modal mount is plenty.
+  const canShareFiles = React.useMemo(() => {
+    try {
+      if (!navigator.canShare) return false;
+      const probe = new File([""], "t.png", { type: "image/png" });
+      return navigator.canShare({ files: [probe] });
+    } catch (e) {
+      return false;
+    }
+  }, []);
+
   const btnLabel = () => {
     if (shareStatus === "sharing") return "Preparing image...";
     if (shareStatus === "done") return "✓ Image saved!";
     if (shareStatus === "error") return "Something went wrong";
     // On mobile with Web Share API, show Share; otherwise Download
-    const canShareFiles = navigator.canShare && navigator.canShare({ files: [new File([""], "t.png", { type: "image/png" })] });
     return canShareFiles ? "Share image 📤" : "Download image 💾";
   };
 

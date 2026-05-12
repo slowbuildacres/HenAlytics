@@ -42,7 +42,20 @@ const todayStr = () => {
   return `${y}-${m}-${day}`;
 };
 
-const newId = () => Math.random().toString(36).substring(2, 11);
+// Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
+// browsers + iOS/Android WebViews); falls back to Math.random for ancient
+// runtimes.
+const newId = () => {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (_) {}
+  return (
+    Math.random().toString(36).slice(2, 10) +
+    Math.random().toString(36).slice(2, 6)
+  );
+};
 
 // Modal/Field/Btn imported from these prop-bag patterns; we mirror them here
 // to keep this file self-contained.
@@ -788,14 +801,24 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
 
 export function EditCalendarEventModal({ data, update, eventId, onClose }) {
   const event = (data.calendarEvents || []).find((e) => e.id === eventId);
-  if (!event) {
-    onClose();
-    return null;
-  }
-  const [title, setTitle] = useState(event.title);
-  const [date, setDate] = useState(event.date);
-  const [notes, setNotes] = useState(event.notes || "");
+  // IMPORTANT: hooks must run on every render. If we conditionally return
+  // before the useState calls, removing/deleting the event mid-session would
+  // cause "Rendered fewer hooks than expected" on the next render. So we
+  // call all hooks unconditionally with safe defaults, then handle the
+  // missing-event case in a useEffect.
+  const [title, setTitle] = useState(event?.title || "");
+  const [date, setDate] = useState(event?.date || "");
+  const [notes, setNotes] = useState(event?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // If the event disappears (e.g. deleted in another tab / by another user)
+  // close the modal cleanly. Doing this in useEffect avoids the hooks-order
+  // issue and gives React a moment to settle before unmount.
+  React.useEffect(() => {
+    if (!event) onClose();
+  }, [event, onClose]);
+
+  if (!event) return null;
 
   const save = () => {
     if (!title.trim()) return;

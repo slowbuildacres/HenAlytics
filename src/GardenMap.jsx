@@ -32,7 +32,17 @@ const palette = {
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const newId = () => Math.random().toString(36).substring(2, 11);
+const newId = () => {
+  try {
+    if (typeof crypto !== "undefined" && crypto.randomUUID) {
+      return crypto.randomUUID();
+    }
+  } catch (_) {}
+  return (
+    Math.random().toString(36).slice(2, 10) +
+    Math.random().toString(36).slice(2, 6)
+  );
+};
 const todayStr = () => {
   const d = new Date();
   const y = d.getFullYear();
@@ -98,6 +108,13 @@ export default function GardenMapModal({ data, update, user, onClose }) {
   const [activeIdx, setActiveIdx] = useState(0);
   const [showArchive, setShowArchive] = useState(false);
 
+  // Inline replacement for window.prompt / window.confirm — those don't work
+  // reliably in Capacitor / iOS WKWebView. State drives a small overlay.
+  // nameInput: { title, initial, placeholder, onSave } when open, else null
+  // confirmAsk: { message, onConfirm } when open, else null
+  const [nameInput, setNameInput] = useState(null);
+  const [confirmAsk, setConfirmAsk] = useState(null);
+
   // Reset active idx if it points past the end (e.g. after deleting an area)
   useEffect(() => {
     if (activeIdx >= map.areas.length && map.areas.length > 0) {
@@ -146,21 +163,26 @@ export default function GardenMapModal({ data, update, user, onClose }) {
             activeIdx={activeIdx}
             setActiveIdx={setActiveIdx}
             onAddArea={() => {
-              const name = prompt("Name this area (e.g. 'Back beds', 'Front yard'):", "New area");
-              if (!name?.trim()) return;
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === "garden");
-                if (!h?.currentSeason) return d;
-                h.currentSeason.gardenMap = migrateGardenMap(h.currentSeason.gardenMap);
-                h.currentSeason.gardenMap.areas.push({
-                  id: newId(),
-                  name: name.trim(),
-                  photoPath: null,
-                  pins: [],
-                });
-                return d;
+              setNameInput({
+                title: "Name this area",
+                initial: "New area",
+                placeholder: "e.g. Back beds, Front yard",
+                onSave: (name) => {
+                  update((d) => {
+                    const h = d.hobbies.find((x) => x.id === "garden");
+                    if (!h?.currentSeason) return d;
+                    h.currentSeason.gardenMap = migrateGardenMap(h.currentSeason.gardenMap);
+                    h.currentSeason.gardenMap.areas.push({
+                      id: newId(),
+                      name: name.trim(),
+                      photoPath: null,
+                      pins: [],
+                    });
+                    return d;
+                  });
+                  setActiveIdx(map.areas.length); // jump to the new tab
+                },
               });
-              setActiveIdx(map.areas.length); // jump to the new tab
             }}
           />
         )}
@@ -169,20 +191,25 @@ export default function GardenMapModal({ data, update, user, onClose }) {
         {!showArchive && map.areas.length === 0 && (
           <EmptyState
             onCreateFirst={() => {
-              const name = prompt("Name this area (e.g. 'Back beds', 'Front yard'):", "Garden");
-              if (!name?.trim()) return;
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === "garden");
-                if (!h?.currentSeason) return d;
-                h.currentSeason.gardenMap = { areas: [{
-                  id: newId(),
-                  name: name.trim(),
-                  photoPath: null,
-                  pins: [],
-                }]};
-                return d;
+              setNameInput({
+                title: "Name this area",
+                initial: "Garden",
+                placeholder: "e.g. Back beds, Front yard",
+                onSave: (name) => {
+                  update((d) => {
+                    const h = d.hobbies.find((x) => x.id === "garden");
+                    if (!h?.currentSeason) return d;
+                    h.currentSeason.gardenMap = { areas: [{
+                      id: newId(),
+                      name: name.trim(),
+                      photoPath: null,
+                      pins: [],
+                    }]};
+                    return d;
+                  });
+                  setActiveIdx(0);
+                },
               });
-              setActiveIdx(0);
             }}
             archivedSeasons={archivedSeasons}
             onShowArchive={() => setShowArchive(true)}
@@ -197,26 +224,35 @@ export default function GardenMapModal({ data, update, user, onClose }) {
             user={user}
             update={update}
             onRenameArea={() => {
-              const name = prompt("Rename area:", activeArea.name);
-              if (!name?.trim()) return;
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === "garden");
-                if (!h?.currentSeason?.gardenMap?.areas?.[activeIdx]) return d;
-                h.currentSeason.gardenMap.areas[activeIdx].name = name.trim();
-                return d;
+              setNameInput({
+                title: "Rename area",
+                initial: activeArea.name,
+                placeholder: "Area name",
+                onSave: (name) => {
+                  update((d) => {
+                    const h = d.hobbies.find((x) => x.id === "garden");
+                    if (!h?.currentSeason?.gardenMap?.areas?.[activeIdx]) return d;
+                    h.currentSeason.gardenMap.areas[activeIdx].name = name.trim();
+                    return d;
+                  });
+                },
               });
             }}
             onDeleteArea={() => {
-              if (!confirm(`Delete area "${activeArea.name}" and all its pins?`)) return;
-              const oldPath = activeArea.photoPath;
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === "garden");
-                if (!h?.currentSeason?.gardenMap?.areas) return d;
-                h.currentSeason.gardenMap.areas.splice(activeIdx, 1);
-                return d;
+              setConfirmAsk({
+                message: `Delete area "${activeArea.name}" and all its pins? This can't be undone.`,
+                onConfirm: () => {
+                  const oldPath = activeArea.photoPath;
+                  update((d) => {
+                    const h = d.hobbies.find((x) => x.id === "garden");
+                    if (!h?.currentSeason?.gardenMap?.areas) return d;
+                    h.currentSeason.gardenMap.areas.splice(activeIdx, 1);
+                    return d;
+                  });
+                  if (oldPath) deletePhoto(oldPath).catch(() => {});
+                  setActiveIdx(0);
+                },
               });
-              if (oldPath) deletePhoto(oldPath).catch(() => {});
-              setActiveIdx(0);
             }}
           />
         )}
@@ -236,6 +272,173 @@ export default function GardenMapModal({ data, update, user, onClose }) {
             <Archive size={14} /> View past years ({archivedSeasons.length})
           </button>
         )}
+      </div>
+
+      {/* Inline replacements for window.prompt / window.confirm.
+          Rendered LAST so they overlay everything else. They sit inside the
+          outer onClick-to-close wrapper but stop propagation themselves. */}
+      {nameInput && (
+        <NamePrompt
+          title={nameInput.title}
+          initial={nameInput.initial}
+          placeholder={nameInput.placeholder}
+          onCancel={() => setNameInput(null)}
+          onSave={(name) => {
+            const trimmed = (name || "").trim();
+            if (!trimmed) return;
+            nameInput.onSave(trimmed);
+            setNameInput(null);
+          }}
+        />
+      )}
+      {confirmAsk && (
+        <ConfirmInline
+          message={confirmAsk.message}
+          onCancel={() => setConfirmAsk(null)}
+          onConfirm={() => {
+            const cb = confirmAsk.onConfirm;
+            setConfirmAsk(null);
+            cb();
+          }}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// INLINE NAME PROMPT — replaces window.prompt
+// ============================================================================
+function NamePrompt({ title, initial, placeholder, onSave, onCancel }) {
+  const [value, setValue] = useState(initial || "");
+  const inputRef = useRef(null);
+  useEffect(() => {
+    // Focus + select on mount so the user can immediately type or overwrite.
+    if (inputRef.current) {
+      inputRef.current.focus();
+      inputRef.current.select();
+    }
+  }, []);
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(44,24,16,0.6)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 110, padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: palette.bg, padding: 20, borderRadius: 12,
+          maxWidth: 360, width: "100%",
+          border: `2px solid ${palette.ink}`,
+          boxShadow: "4px 4px 0 " + palette.line,
+          fontFamily: FONT_BODY, color: palette.ink,
+        }}
+      >
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 12 }}>{title}</div>
+        <input
+          ref={inputRef}
+          type="text"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") onSave(value);
+            if (e.key === "Escape") onCancel();
+          }}
+          placeholder={placeholder || ""}
+          style={{
+            width: "100%", padding: "10px 12px", borderRadius: 8,
+            border: `1.5px solid ${palette.line}`,
+            fontFamily: FONT_BODY, fontSize: 14, color: palette.ink,
+            background: palette.card, boxSizing: "border-box",
+            marginBottom: 14,
+          }}
+        />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "8px 14px", borderRadius: 8,
+              background: "transparent", color: palette.ink,
+              border: `1.5px solid ${palette.line}`, cursor: "pointer",
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={() => onSave(value)}
+            disabled={!value.trim()}
+            style={{
+              padding: "8px 14px", borderRadius: 8,
+              background: palette.ink, color: palette.bg,
+              border: `1.5px solid ${palette.ink}`,
+              cursor: value.trim() ? "pointer" : "not-allowed",
+              opacity: value.trim() ? 1 : 0.5,
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              boxShadow: "2px 2px 0 " + palette.line,
+            }}
+          >
+            Save
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// INLINE CONFIRM — replaces window.confirm
+// ============================================================================
+function ConfirmInline({ message, onConfirm, onCancel }) {
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(44,24,16,0.6)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 110, padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: palette.bg, padding: 20, borderRadius: 12,
+          maxWidth: 360, width: "100%",
+          border: `2px solid ${palette.ink}`,
+          boxShadow: "4px 4px 0 " + palette.line,
+          fontFamily: FONT_BODY, color: palette.ink,
+        }}
+      >
+        <div style={{ fontSize: 14, lineHeight: 1.5, marginBottom: 16 }}>{message}</div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            onClick={onCancel}
+            style={{
+              padding: "8px 14px", borderRadius: 8,
+              background: "transparent", color: palette.ink,
+              border: `1.5px solid ${palette.line}`, cursor: "pointer",
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={onConfirm}
+            style={{
+              padding: "8px 14px", borderRadius: 8,
+              background: palette.accent, color: palette.bg,
+              border: `1.5px solid ${palette.accent}`, cursor: "pointer",
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              boxShadow: "2px 2px 0 " + palette.line,
+            }}
+          >
+            Delete
+          </button>
+        </div>
       </div>
     </div>
   );
@@ -347,16 +550,30 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
   const fileInputRef = useRef(null);
 
   // ---- Resolve photo URL ----
+  // Signed URLs expire after 24h (see sync.js#getPhotoUrl). Refresh every
+  // 20h so a long planning session never sees a stale 403.
+  const [photoLoadError, setPhotoLoadError] = useState(false);
   useEffect(() => {
     if (!area.photoPath) {
       setPhotoUrl(null);
+      setPhotoLoadError(false);
       return;
     }
     let cancelled = false;
-    getPhotoUrl(area.photoPath).then((url) => {
-      if (!cancelled) setPhotoUrl(url);
-    });
-    return () => { cancelled = true; };
+    const fetchUrl = () => {
+      setPhotoLoadError(false);
+      getPhotoUrl(area.photoPath).then((url) => {
+        if (cancelled) return;
+        if (url) {
+          setPhotoUrl(url);
+        } else {
+          setPhotoLoadError(true);
+        }
+      });
+    };
+    fetchUrl();
+    const refreshId = setInterval(fetchUrl, 20 * 60 * 60 * 1000);
+    return () => { cancelled = true; clearInterval(refreshId); };
   }, [area.photoPath]);
 
   // ---- Upload photo ----

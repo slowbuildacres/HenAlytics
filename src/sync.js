@@ -556,9 +556,12 @@ export async function uploadPhoto(user, entryId, file) {
 
 export async function getPhotoUrl(path) {
   if (!path || !isSupabaseConfigured) return null;
+  // 24h lifetime so long planning sessions don't see broken images. The
+  // GardenMap and entry photo viewers also refresh the URL on mount, so
+  // anyone who opens a stale session naturally re-fetches a fresh URL.
   const { data, error } = await supabase.storage
     .from('photos')
-    .createSignedUrl(path, 3600);
+    .createSignedUrl(path, 24 * 60 * 60);
   if (error) {
     console.warn('Signed URL failed', error);
     return null;

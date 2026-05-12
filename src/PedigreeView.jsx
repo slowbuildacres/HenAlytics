@@ -546,8 +546,13 @@ function makeAncestorEntry(kind, parentId, parentName, byId) {
 // Returns { nodes, connectors, width, height, hasKids }.
 // ----------------------------------------------------------------------------
 function buildDescendantChart(focal, offspringOf) {
-  // Recursively measure: each node knows its subtree width and max depth.
-  const root = measureDescendant(focal, offspringOf, 0, true);
+  // Cycle protection: nothing in the data model prevents a user from saving
+  // a pedigree loop (A's sire = B, B's sire = A, for example), and a loop
+  // in offspring direction would cause measureDescendant to recurse until
+  // the stack overflows. Track every animal id we've already placed and
+  // refuse to revisit it — they're shown once and then capped.
+  const visited = new Set();
+  const root = measureDescendant(focal, offspringOf, 0, true, visited);
 
   const nodes = [];
   const connectors = [];
@@ -563,9 +568,12 @@ function buildDescendantChart(focal, offspringOf) {
 }
 
 // First pass: measure subtree widths and depths.
-function measureDescendant(animal, offspringOf, depth, isFocal) {
+function measureDescendant(animal, offspringOf, depth, isFocal, visited) {
+  visited.add(animal.id);
   const children = depth < MAX_GEN_DOWN
-    ? offspringOf(animal.id).map((kid) => measureDescendant(kid, offspringOf, depth + 1, false))
+    ? offspringOf(animal.id)
+        .filter((kid) => !visited.has(kid.id))
+        .map((kid) => measureDescendant(kid, offspringOf, depth + 1, false, visited))
     : [];
   const childrenW = children.length === 0
     ? 0
