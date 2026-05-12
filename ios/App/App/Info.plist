@@ -2,12 +2,12 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
-    <key>CAPACITOR_DEBUG</key>
+	<key>CAPACITOR_DEBUG</key>
 	<string>$(CAPACITOR_DEBUG)</string>
 	<key>CFBundleDevelopmentRegion</key>
 	<string>en</string>
 	<key>CFBundleDisplayName</key>
-        <string>Henalytics</string>
+	<string>Henalytics</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -45,6 +45,17 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<key>LSApplicationCategoryType</key>
+	<string></string>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Henalytics uses your location to look up weather, hardiness zone, and frost dates for your homestead. Your location is never shared with anyone.</string>
+	<key>NSCameraUsageDescription</key>
+	<string>Henalytics needs camera access so you can take photos of your garden, animals, or harvests.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Henalytics needs permission to save your stats share image to your photo library.
+</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>Henalytics needs photo library access so you can attach photos to your homestead entries.</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
 </dict>

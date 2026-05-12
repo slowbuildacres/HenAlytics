@@ -725,9 +725,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 22;
+const CURRENT_VERSION = 23;
 
 const WHATS_NEW = [
+  "🌱 Pin any plant to your garden map — added an \"Other\" option to the garden map's plant picker. Tap it, type any plant name (watermelon radish, marigold, yarrow, whatever you grow), and drop a pin. The custom name shows up on the pin and in its detail view.",
   "🌳 Orchard + plant action logs — perennials are now split into 🌿 Perennial Plants (berry bushes, asparagus, rhubarb, vines) and 🌳 Orchard (fruit and nut trees), each in its own expandable section. Tap any plant or tree to open its detail page where you can log actions like spray, prune, fertilize, mulch, or treat — each one dated and saved to that plant's history. Existing perennials with 'tree' in the name automatically moved to the Orchard; you can move any item between sections from its edit screen.",
   "💀 Death logs now archive the animal — when you report a death on a cow, goat, pig, or a named bird in a flock, that animal moves out of your active list (with the cause noted, if you added one). Old death entries on your account were tidied up too. Tap an archived animal to restore it if it was a misclick.",
   "🥧 Baking + 🫙 Canning hobbies — save your favorite recipes (with links and notes), log bakes with ratings, and track canning batches in a pantry view with eat-by date warnings. Both can sell into the Sales tab so you can track loaves sold and jars sold alongside everything else. Find them in Settings → Manage Hobbies.",

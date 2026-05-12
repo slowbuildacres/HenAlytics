@@ -11,6 +11,16 @@
       "style": "DARK",
       "backgroundColor": "#F4EDE0",
       "overlaysWebView": true
+    },
+    "SplashScreen": {
+      "launchShowDuration": 1200,
+      "launchAutoHide": true,
+      "launchFadeOutDuration": 300,
+      "backgroundColor": "#F4EDE0",
+      "iosSpinnerStyle": "small",
+      "showSpinner": false,
+      "splashFullScreen": true,
+      "splashImmersive": true
     }
   }
 }
