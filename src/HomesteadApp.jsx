@@ -1411,7 +1411,7 @@ export default function HomesteadApp() {
     if (passwordRecoveryPending) return; // don't stack on top of reset flow
     const now = new Date();
     const dayOfMonth = now.getDate();
-    if (dayOfMonth < 1 || dayOfMonth > 31) return; // TEMP TESTING: was 1..3
+    if (dayOfMonth < 1 || dayOfMonth > 3) return;
     const currentMonthKey = getMonthKey(now);
     if (data?.lastSeenSupporterWall === currentMonthKey) return;
     supporterWallShownRef.current = true;
