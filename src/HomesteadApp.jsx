@@ -2212,25 +2212,8 @@ export default function HomesteadApp() {
             <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "canning" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="canning")} entries={data.entries?.["canning"] || []} data={data}>
-            <CanningAnalytics hobby={data.hobbies.find(h=>h.id==="canning")} entries={data.entries?.["canning"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
-          </AnalyticsShareWrapper>
-        )}
-        {page === "analytics" && activeHobby === "freeze_drying" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="freeze_drying")} entries={data.entries?.["freeze_drying"] || []} data={data}>
-            <FreezeDryingAnalytics hobby={data.hobbies.find(h=>h.id==="freeze_drying")} spouseMode={data.spouseMode} />
-          </AnalyticsShareWrapper>
-        )}
-        {page === "analytics" && activeHobby === "dehydrating" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dehydrating")} entries={data.entries?.["dehydrating"] || []} data={data}>
-            <DehydratingAnalytics hobby={data.hobbies.find(h=>h.id==="dehydrating")} spouseMode={data.spouseMode} />
-          </AnalyticsShareWrapper>
-        )}
-        {page === "analytics" && activeHobby === "fermentation" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="fermentation")} entries={data.entries?.["fermentation"] || []} data={data}>
-            <FermentationAnalytics hobby={data.hobbies.find(h=>h.id==="fermentation")} />
-          </AnalyticsShareWrapper>
+        {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
+          <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
@@ -2390,6 +2373,77 @@ function PreservingPage({ data, update, setModal, initialSubType }) {
       )}
       {activeSub === "fermentation" && fermentationHobby && (
         <FermentationPage hobby={fermentationHobby} data={data} update={update} setModal={setModal} />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// PRESERVING ANALYTICS PAGE — wrapper analytics view for the four preserving
+// sub-types. Same tab pattern as PreservingPage so analytics feels unified.
+// Each tab renders that sub-type's existing Analytics component wrapped in
+// AnalyticsShareWrapper, identical to how the standalone blocks worked.
+// ============================================================================
+function PreservingAnalyticsPage({ data, initialSubType, spouseMode }) {
+  const [activeSub, setActiveSub] = useState(initialSubType || "canning");
+
+  const canningHobby = data.hobbies.find(h => h.type === "canning");
+  const freezeDryingHobby = data.hobbies.find(h => h.type === "freeze_drying");
+  const dehydratingHobby = data.hobbies.find(h => h.type === "dehydrating");
+  const fermentationHobby = data.hobbies.find(h => h.type === "fermentation");
+
+  const tabs = [
+    { key: "canning",       label: "Canning",       emoji: "🫙" },
+    { key: "freeze_drying", label: "Freeze drying", emoji: "❄️" },
+    { key: "dehydrating",   label: "Dehydrating",   emoji: "🌬️" },
+    { key: "fermentation",  label: "Fermentation",  emoji: "🫧" },
+  ];
+
+  return (
+    <div>
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16,
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        paddingBottom: 2,
+      }}>
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSub(t.key)}
+            style={{
+              flexShrink: 0,
+              padding: "8px 14px", borderRadius: 999,
+              border: `1.5px solid ${activeSub === t.key ? palette.ink : palette.line}`,
+              background: activeSub === t.key ? palette.ink : palette.card,
+              color: activeSub === t.key ? palette.bg : palette.ink,
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {activeSub === "canning" && canningHobby && (
+        <AnalyticsShareWrapper hobby={canningHobby} entries={data.entries?.["canning"] || []} data={data}>
+          <CanningAnalytics hobby={canningHobby} entries={data.entries?.["canning"] || []} sales={data.sales || []} spouseMode={spouseMode} />
+        </AnalyticsShareWrapper>
+      )}
+      {activeSub === "freeze_drying" && freezeDryingHobby && (
+        <AnalyticsShareWrapper hobby={freezeDryingHobby} entries={data.entries?.["freeze_drying"] || []} data={data}>
+          <FreezeDryingAnalytics hobby={freezeDryingHobby} spouseMode={spouseMode} />
+        </AnalyticsShareWrapper>
+      )}
+      {activeSub === "dehydrating" && dehydratingHobby && (
+        <AnalyticsShareWrapper hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} data={data}>
+          <DehydratingAnalytics hobby={dehydratingHobby} spouseMode={spouseMode} />
+        </AnalyticsShareWrapper>
+      )}
+      {activeSub === "fermentation" && fermentationHobby && (
+        <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data}>
+          <FermentationAnalytics hobby={fermentationHobby} />
+        </AnalyticsShareWrapper>
       )}
     </div>
   );
