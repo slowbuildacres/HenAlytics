@@ -2044,7 +2044,12 @@ export default function HomesteadApp() {
           >
             <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <HobbyIcon name={hobby.icon} size={20} strokeWidth={1.5} />
-              {hobby.name}
+              {/* Collapse the four preserving sub-types under one display
+                  label so the dropdown matches the picker UX. The active tab
+                  inside PreservingPage handles the sub-type distinction. */}
+              {(hobby.type === "canning" || hobby.type === "freeze_drying" || hobby.type === "dehydrating" || hobby.type === "fermentation")
+                ? "Preserving 🥫"
+                : hobby.name}
             </span>
             <ChevronDown size={18} style={{ transform: hobbyMenuOpen ? "rotate(180deg)" : "", transition: "transform 0.2s" }} />
           </button>
