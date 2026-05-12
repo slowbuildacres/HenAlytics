@@ -1323,10 +1323,6 @@ export default function HomesteadApp() {
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
-  // DEBUG: log every modal state transition to track down the supporter-return modal issue
-  useEffect(() => {
-    console.log('[modal] state changed:', modal);
-  }, [modal]);
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
@@ -1513,20 +1509,18 @@ export default function HomesteadApp() {
   // before we've stripped the URL. We also use sessionStorage so multiple
   // useEffect-mount cycles (StrictMode in dev) don't double-open the modal.
   const supportedReturnHandledRef = useRef(false);
+  const supportedReturnTimerRef = useRef(null);
   useEffect(() => {
-    console.log('[supported-return] effect fired', { user: !!user, marker: sessionStorage.getItem('henalytics-supported-handled') });
-    if (supportedReturnHandledRef.current) { console.log('[supported-return] bailed: ref already set'); return; }
-    if (!user) { console.log('[supported-return] bailed: no user yet'); return; }
+    if (supportedReturnHandledRef.current) return;
+    if (!user) return; // wait until auth resolves
     const params = new URLSearchParams(window.location.search);
     const tier = params.get("supported");
-    console.log('[supported-return] tier from URL:', tier);
-    if (!tier) { console.log('[supported-return] bailed: no tier param'); return; }
+    if (!tier) return;
     // Don't re-open if we've already handled this session
     const sessionMarker = "henalytics-supported-handled";
-    if (sessionStorage.getItem(sessionMarker)) { console.log('[supported-return] bailed: sessionStorage marker present'); return; }
+    if (sessionStorage.getItem(sessionMarker)) return;
     sessionStorage.setItem(sessionMarker, "1");
     supportedReturnHandledRef.current = true;
-    console.log('[supported-return] markers set, scheduling modal in 2500ms');
 
     // Clean the URL so a refresh doesn't re-trigger
     const url = new URL(window.location.href);
@@ -1536,11 +1530,15 @@ export default function HomesteadApp() {
 
     // Brief delay gives Stripe's webhook a chance to land. ~2.5s is enough
     // for Stripe → Vercel → Supabase round-trip in the common case.
-    const timer = setTimeout(() => {
-      console.log('[supported-return] timer fired, calling setModal');
+    //
+    // We deliberately do NOT return a cleanup that clears this timer.
+    // Other state changes (data load, supabase auth ticks) cause this
+    // component to re-render and this effect to re-run, which would
+    // cancel a freshly-scheduled timer mid-flight. Once we've committed
+    // to opening the modal, let it happen.
+    supportedReturnTimerRef.current = setTimeout(() => {
       setModal({ type: "supporterName" });
     }, 2500);
-    return () => clearTimeout(timer);
   }, [user]);
 
   // Refs let us detect transitions like "user just signed in"
