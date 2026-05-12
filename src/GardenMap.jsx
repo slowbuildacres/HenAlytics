@@ -739,8 +739,43 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
         </div>
       )}
 
+      {/* Photo path exists but URL fetch failed — surface it instead of
+          silently rendering nothing. Common causes: signed URL expired,
+          Supabase storage hiccup, or the underlying object was deleted. */}
+      {area.photoPath && photoLoadError && (
+        <div style={{
+          padding: 20, background: palette.bgAlt, border: `1.5px dashed ${palette.accent}`,
+          borderRadius: 10, textAlign: "center",
+        }}>
+          <div style={{ fontSize: 28, marginBottom: 6 }}>⚠️</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink, marginBottom: 6 }}>
+            Couldn't load this photo
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 14 }}>
+            The photo is still saved — this is usually a temporary connection issue.
+          </div>
+          <button
+            onClick={() => {
+              setPhotoLoadError(false);
+              getPhotoUrl(area.photoPath).then((url) => {
+                if (url) setPhotoUrl(url);
+                else setPhotoLoadError(true);
+              });
+            }}
+            style={{
+              padding: "8px 16px", background: palette.ink, color: palette.bg,
+              border: "none", borderRadius: 8, cursor: "pointer",
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              boxShadow: "2px 2px 0 " + palette.line,
+            }}
+          >
+            Try again
+          </button>
+        </div>
+      )}
+
       {/* Photo with pins */}
-      {area.photoPath && photoUrl && (
+      {area.photoPath && photoUrl && !photoLoadError && (
         <>
           <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
             {area.pins.length === 0

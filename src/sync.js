@@ -52,26 +52,11 @@ async function ensureHomestead(userId) {
   if (memberships && memberships.length > 0) {
     const scored = memberships.map((m) => {
       const data = (m.homesteads && m.homesteads.data) || {};
-      let score = 0;
-      if (typeof data.homesteadName === 'string' && data.homesteadName.trim()) score += 100;
-      if (data.entries && typeof data.entries === 'object') {
-        for (const arr of Object.values(data.entries)) {
-          if (Array.isArray(arr)) score += arr.length;
-        }
-      }
-      if (Array.isArray(data.plantings)) score += data.plantings.length;
-      if (Array.isArray(data.hobbies)) {
-        for (const h of data.hobbies) {
-          if (h && typeof h === 'object') {
-            if (h.flockSize > 0) score += 10;
-            if (Array.isArray(h.flockHistory)) score += h.flockHistory.length;
-            if (h.currentBatch) score += 10;
-            if (Array.isArray(h.archivedBatches)) score += h.archivedBatches.length;
-            if (h.currentSeason) score += 10;
-            if (Array.isArray(h.archivedSeasons)) score += h.archivedSeasons.length;
-          }
-        }
-      }
+      // Use the same scoring function as the safe-write check so picking a
+      // homestead from multiple memberships values the same kinds of data
+      // (sales, customers, calendar events, etc.) — not just entries and
+      // legacy flock counts.
+      const score = scoreData(data);
       return { membership: m, score };
     });
 
@@ -169,9 +154,43 @@ function scoreData(data) {
         if (Array.isArray(h.archivedBatches)) score += h.archivedBatches.length;
         if (h.currentSeason) score += 5;
         if (Array.isArray(h.archivedSeasons)) score += h.archivedSeasons.length;
+        // Perennials and their per-plant action/harvest history.
+        if (Array.isArray(h.perennials)) {
+          score += h.perennials.length;
+          for (const p of h.perennials) {
+            if (p && typeof p === 'object') {
+              if (Array.isArray(p.actions)) score += p.actions.length;
+              if (Array.isArray(p.harvests)) score += p.harvests.length;
+            }
+          }
+        }
+        // Animal lists for the per-animal hobbies (goats, cows, pigs, sheep,
+        // horses, rabbits) — these are core data and need to count toward the
+        // clobber-protection score too.
+        if (Array.isArray(h.animals)) score += h.animals.length;
+        if (Array.isArray(h.flocks)) score += h.flocks.length;
+        if (Array.isArray(h.hives)) score += h.hives.length;
+        if (Array.isArray(h.brooderBatches)) score += h.brooderBatches.length;
       }
     }
   }
+  // Top-level collections that previously weren't counted. Without these,
+  // a user could lose every sale, customer, variety, or calendar event
+  // without the safe-write check kicking in (both sides scored as 0 there).
+  if (Array.isArray(data.sales)) score += data.sales.length;
+  if (Array.isArray(data.customers)) score += data.customers.length;
+  if (Array.isArray(data.calendarEvents)) score += data.calendarEvents.length;
+  if (data.varieties && typeof data.varieties === 'object') {
+    for (const arr of Object.values(data.varieties)) {
+      if (Array.isArray(arr)) score += arr.length;
+    }
+  }
+  // Identity signals — location/zone setup is non-trivial user effort, so
+  // their presence is worth a few points to discourage clobbering them with
+  // a default-state save.
+  if (data.homesteadLocation?.lat != null) score += 5;
+  if (data.userZone) score += 2;
+  if (data.userZoneSystem) score += 2;
   return score;
 }
 

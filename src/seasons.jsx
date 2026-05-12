@@ -13,11 +13,24 @@
 // ============================================================================
 
 import React, { useEffect, useState, useMemo } from "react";
+import { getCurrentHemisphere } from "./units.js";
 
-// Get the current season based on month (Northern hemisphere).
+// Get the current season based on month. Defaults to Northern hemisphere
+// mapping when no hemisphere argument is provided (existing call sites that
+// pre-date hemisphere support continue working). For Southern hemisphere users,
+// pass "south" — the mapping is inverted (Jan = summer there, July = winter).
+//
 // Returns "spring" | "summer" | "fall" | "winter"
-export function getSeason(now = new Date()) {
+export function getSeason(now = new Date(), hemisphere) {
   const m = now.getMonth(); // 0 = Jan
+  const h = hemisphere || "north";
+  if (h === "south") {
+    // Invert: their March is autumn, their July is winter, etc.
+    if (m >= 2 && m <= 4) return "fall";
+    if (m >= 5 && m <= 7) return "winter";
+    if (m >= 8 && m <= 10) return "spring";
+    return "summer";
+  }
   if (m >= 2 && m <= 4) return "spring";
   if (m >= 5 && m <= 7) return "summer";
   if (m >= 8 && m <= 10) return "fall";
@@ -25,7 +38,9 @@ export function getSeason(now = new Date()) {
 }
 
 export function SeasonalDecorations() {
-  const season = getSeason();
+  // Read the user's hemisphere from the units module so Australia/NZ users
+  // see flowers in November, not July.
+  const season = getSeason(new Date(), getCurrentHemisphere());
   if (season === "summer") return null;
   if (season === "spring") return <SpringFlowers />;
   if (season === "fall") return <FallLeaves />;

@@ -659,10 +659,24 @@ const todayStr = () => {
 // Parse a "YYYY-MM-DD" string as local-time midnight (avoids the UTC drift
 // issue with `new Date("2026-05-06")` which interprets as UTC midnight and
 // shifts to the previous day for Western timezones at display time).
+//
+// Returns today's Date for unparseable input. Previously the helper coerced
+// missing components — `2024-0-0` would silently become Dec 1, 2023, which
+// was much worse than treating the input as junk. Now we validate strictly
+// and fall back to "now" only when the input is clearly empty/malformed.
 const parseLocalDate = (s) => {
   if (!s || typeof s !== "string") return new Date();
-  const [y, m, d] = s.split("-").map(Number);
-  return new Date(y, (m || 1) - 1, d || 1);
+  const parts = s.split("-");
+  if (parts.length < 3) return new Date();
+  const y = Number(parts[0]);
+  const m = Number(parts[1]);
+  const d = Number(parts[2]);
+  // Validate: year reasonable, month 1-12, day 1-31. Anything outside =>
+  // return today rather than producing a sneaky wrong date.
+  if (!Number.isFinite(y) || y < 1900 || y > 2200) return new Date();
+  if (!Number.isFinite(m) || m < 1 || m > 12) return new Date();
+  if (!Number.isFinite(d) || d < 1 || d > 31) return new Date();
+  return new Date(y, m - 1, d);
 };
 const fmtDate = (s) => {
   if (!s) return "";
@@ -3342,9 +3356,6 @@ function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, set
 
 // ============ HOBBY SUMMARIES ============
 function GardenSummary({ hobby, data, update, setModal }) {
-  // Track which perennial is currently in "confirm delete?" state, so we can
-  // replace the native window.confirm() dialog with inline UI (mobile-friendly).
-  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
   // Perennials section shown at bottom of garden home regardless of season
   const perennials = hobby.perennials || [];
 

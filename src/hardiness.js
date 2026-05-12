@@ -130,9 +130,11 @@ const NZ_ZONES = {
 // ----------------------------------------------------------------------------
 // EU — uses RHS H1a-H7 system, same data, but separate metadata so users
 // in (say) Germany see "European hardiness" rather than "UK hardiness".
-// Internally an alias for RHS to keep the data identical.
+// Shallow-copied (rather than aliased) so future divergence — e.g. a Germany-
+// specific tweak — doesn't accidentally mutate RHS_ZONES too. The zone values
+// themselves are shared but the top-level container is independent.
 // ----------------------------------------------------------------------------
-const EU_ZONES = RHS_ZONES;
+const EU_ZONES = { ...RHS_ZONES };
 
 // ============================================================================
 // SYSTEM METADATA — what each one is called, which zones it contains, default
