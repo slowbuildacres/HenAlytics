@@ -90,6 +90,7 @@ const defaultData = () => ({
   tutorialDismissed: false, // true after user completes or skips tutorial (web)
   nativeTutorialDismissed: false, // true after user completes or skips the native iOS/Android tutorial — tracked separately so web-completed users still see the native walkthrough on first app launch
   lastSeenSupporterWall: null, // ISO date string of the most recent month-end the supporter wall was shown/dismissed. null = never seen. Used to fire the wall only once per month on the last day.
+  defaultHobby: null, // null = open to "garden" (legacy default). Set to a hobby ID (e.g. "egg_layers") to open that hobby's home page on app launch.
   lastSeenVersion: 0,        // tracks what's new popup
   salesHidden: false,        // true if user hides the Sales tab
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
@@ -1356,6 +1357,41 @@ export default function HomesteadApp() {
     return /[?&#]type=recovery\b/.test(hash) || /[?&#]type=recovery\b/.test(search);
   });
 
+  // Detect auth errors in the URL on initial load — most commonly an expired
+  // password-recovery link ("otp_expired") or a token that was already used.
+  // Supabase puts these as `#error=...&error_code=...&error_description=...`
+  // in the hash, then leaves the user sitting on the signed-out home page
+  // with no indication why their reset link didn't work. We surface a clear
+  // message so they know to request a fresh link.
+  const [authErrorFromUrl, setAuthErrorFromUrl] = useState(() => {
+    if (typeof window === "undefined") return null;
+    const hash = window.location.hash || "";
+    if (!/[#&]error=/.test(hash)) return null;
+    const params = new URLSearchParams(hash.startsWith("#") ? hash.slice(1) : hash);
+    const code = params.get("error_code");
+    const description = params.get("error_description");
+    // Map known error codes to friendlier messages
+    if (code === "otp_expired") {
+      return "Your password reset link has expired. Reset links are good for one hour and can only be used once. Please request a new one.";
+    }
+    if (code === "access_denied") {
+      return "Your reset link couldn't be verified. Please request a new one.";
+    }
+    // Generic fallback — use the description Supabase provided
+    if (description) {
+      return description.replace(/\+/g, " ");
+    }
+    return "Something went wrong with your reset link. Please request a new one.";
+  });
+
+  // Once we've captured the error, clean the URL so refresh doesn't keep
+  // re-showing it.
+  useEffect(() => {
+    if (authErrorFromUrl && window.location.hash.includes("error=")) {
+      window.history.replaceState({}, "", window.location.pathname + window.location.search);
+    }
+  }, [authErrorFromUrl]);
+
   // Show what's new popup once after Supabase data loads.
   // Triggers when (a) onboarding is complete and (b) the user's saved
   // lastSeenVersion is below CURRENT_VERSION. The ref guards against
@@ -1477,6 +1513,25 @@ export default function HomesteadApp() {
       }
     }
   }, [data?.hobbies, activeHobby, page]);
+
+  // ---- Apply user's preferred default hobby on initial load ----
+  // Runs once when data first becomes available. If the user has set a
+  // defaultHobby preference and that hobby exists + is visible, switch to it.
+  // The defaultHobbyAppliedRef gate ensures we only do this on the first
+  // data load — if the user then picks a different hobby during their
+  // session, we don't bounce them back when data resyncs.
+  const defaultHobbyAppliedRef = useRef(false);
+  useEffect(() => {
+    if (defaultHobbyAppliedRef.current) return;
+    if (!data?.hobbies) return;
+    defaultHobbyAppliedRef.current = true;
+    const pref = data?.defaultHobby;
+    if (!pref || pref === "garden") return; // garden is already the init default
+    const target = data.hobbies.find(h => h.id === pref && !h.hidden);
+    if (target) {
+      setActiveHobby(pref);
+    }
+  }, [data?.hobbies, data?.defaultHobby]);
 
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
@@ -1816,6 +1871,50 @@ export default function HomesteadApp() {
           }}
         >
           ⚠️ You were signed out on this device — tap to sign back in
+        </div>
+      )}
+
+      {/* Auth error banner — surfaces expired/invalid reset links, etc.
+          User-dismissable since it's one-time info. */}
+      {authErrorFromUrl && (
+        <div
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 201,
+            background: "#C84B31", color: "#FAF5EA",
+            padding: "12px 20px",
+            paddingTop: "calc(12px + env(safe-area-inset-top))",
+            display: "flex", alignItems: "center", justifyContent: "space-between",
+            gap: 10,
+            fontFamily: "'Be Vietnam Pro', sans-serif",
+            fontWeight: 600, fontSize: 13, lineHeight: 1.4,
+          }}
+        >
+          <div style={{ flex: 1, textAlign: "center" }}>
+            ⚠️ {authErrorFromUrl}{" "}
+            <button
+              onClick={() => { setAuthErrorFromUrl(null); setModal({ type: "signin", initialMode: "reset" }); }}
+              style={{
+                background: "transparent", color: "#FAF5EA",
+                border: "1.5px solid #FAF5EA", borderRadius: 6,
+                padding: "4px 10px", marginLeft: 8,
+                fontFamily: "inherit", fontWeight: 700, fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Request new link
+            </button>
+          </div>
+          <button
+            onClick={() => setAuthErrorFromUrl(null)}
+            aria-label="Dismiss"
+            style={{
+              background: "transparent", color: "#FAF5EA",
+              border: "none", padding: 4, marginLeft: 4,
+              cursor: "pointer", fontSize: 18, lineHeight: 1, flexShrink: 0,
+            }}
+          >
+            ×
+          </button>
         </div>
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
@@ -4558,7 +4657,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "supporterClaim") return <SupporterClaimModal onClose={() => { close(); setTimeout(() => setModal({ type: "supporterName" }), 100); }} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
-  if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
+  if (modal.type === "signin") return <AuthModal onClose={close} initialMode={modal.initialMode || "signin"} />;
   if (modal.type === "signup") return <AuthModal onClose={close} initialMode="signup" />;
   if (modal.type === "setNewPassword") return <AuthModal onClose={close} initialMode="setNewPassword" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} onFreshStart={onFreshStart} />;
@@ -5267,6 +5366,38 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           exportAllAsCsv(data);
         }}
       />
+
+      {/* Default Hobby — controls which hobby's home page opens on app launch */}
+      <div style={{
+        marginBottom: 12, padding: "12px 14px",
+        background: palette.card, border: `1.5px solid ${palette.line}`,
+        borderRadius: 12,
+      }}>
+        <div style={{ fontWeight: 700, fontSize: 14, color: palette.ink, marginBottom: 4 }}>
+          🌾 Default hobby
+        </div>
+        <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 10 }}>
+          When you open Henalytics, which hobby's home page should appear first?
+        </div>
+        <select
+          value={data.defaultHobby || "garden"}
+          onChange={(e) => update(d => { d.defaultHobby = e.target.value; return d; })}
+          style={{
+            width: "100%", padding: "10px 12px", borderRadius: 8,
+            border: `1.5px solid ${palette.line}`, background: palette.bg,
+            fontFamily: FONT_BODY, fontSize: 14, color: palette.ink,
+            cursor: "pointer", appearance: "auto",
+          }}
+        >
+          {(data.hobbies || [])
+            .filter(h => !h.hidden)
+            .map(h => (
+              <option key={h.id} value={h.id}>
+                {h.name || h.id}
+              </option>
+            ))}
+        </select>
+      </div>
 
       <SectionBtn
         icon={Lightbulb}
