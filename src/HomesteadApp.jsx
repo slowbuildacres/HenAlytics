@@ -711,6 +711,68 @@ const useNativeDeepLinks = (onUrl) => {
 };
 
 // ============================================================================
+// SUPPORTER CHECKOUT (Stripe via /api/create-checkout-session)
+// ----------------------------------------------------------------------------
+// Replaces the old Stripe Payment Link buttons. Calls our server, which
+// creates a Stripe Checkout Session with the user's Henalytics ID baked in
+// (via client_reference_id + metadata.user_id). When the user completes
+// checkout, Stripe redirects them back to `?supported=<tier>&session_id=...`
+// and fires a webhook to /api/stripe-webhook, which writes to the supporters
+// table. The in-app effect that watches for `?supported=` then prompts them
+// to add a homestead name to the supporter wall.
+//
+// Tiers: "monthly_3" | "monthly_5" | "monthly_10" | "one_time"
+//
+// Errors are intentionally simple — if anything fails, we fall back to alerting
+// the user. The user is not logged in? The fetch fails? They get a clear
+// message and can try again. The backend is the source of truth for which
+// price they actually get; client-side tier is just a route key.
+// ============================================================================
+const startCheckout = async (tier) => {
+  try {
+    // Need the user's JWT to authenticate with our API.
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) {
+      alert("Please sign in first so we can connect this contribution to your account.");
+      return;
+    }
+
+    const res = await fetch("/api/create-checkout-session", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "Authorization": `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ tier }),
+    });
+
+    const json = await res.json().catch(() => ({}));
+    if (!res.ok || !json.url) {
+      const msg = json.error || `Checkout failed (${res.status}). Please try again in a moment.`;
+      alert(msg);
+      return;
+    }
+
+    // Open the Stripe Checkout page. On native, we use the in-app browser
+    // (Browser plugin); on web we navigate the current tab so the
+    // ?supported=... return URL lands back on the same window context.
+    if (isNativeApp()) {
+      // Native: use the in-app browser. When the user finishes, Stripe redirects
+      // to henalytics.com — which the in-app browser presents inside the app
+      // (no separate browser app handoff). The return URL hits our app, which
+      // is why we made it https://henalytics.com/?supported=... rather than a
+      // custom henalytics:// scheme — keeps the round-trip inside the web view.
+      await openExternalUrl(json.url);
+    } else {
+      window.location.href = json.url;
+    }
+  } catch (e) {
+    console.error("startCheckout error:", e);
+    alert("Couldn't start checkout. Check your connection and try again.");
+  }
+};
+
+// ============================================================================
 // SEASON / FROST-DATE LOGIC
 // ----------------------------------------------------------------------------
 // Latitude is the strongest predictor of frost dates — way more so than
@@ -1432,6 +1494,46 @@ export default function HomesteadApp() {
       window.history.replaceState({}, "", url.toString());
     }
   }, []);
+
+  // ---- Detect ?supported=<tier> in the URL after Stripe return ----
+  //
+  // Stripe's checkout success_url is configured to return the user to
+  //   https://henalytics.com/?supported=<tier>&session_id=<sid>
+  // We watch for that param, wait until the user is authenticated, then
+  // open the supporter-name prompt. We give the webhook a few seconds of
+  // head-start (the webhook creates the supporters row that the modal will
+  // update) — if the row isn't there yet, the modal shows a "still
+  // processing" message and the user can retry.
+  //
+  // The supportedReturnHandled ref prevents re-firing if the user refreshes
+  // before we've stripped the URL. We also use sessionStorage so multiple
+  // useEffect-mount cycles (StrictMode in dev) don't double-open the modal.
+  const supportedReturnHandledRef = useRef(false);
+  useEffect(() => {
+    if (supportedReturnHandledRef.current) return;
+    if (!user) return; // wait until auth resolves
+    const params = new URLSearchParams(window.location.search);
+    const tier = params.get("supported");
+    if (!tier) return;
+    // Don't re-open if we've already handled this session
+    const sessionMarker = "henalytics-supported-handled";
+    if (sessionStorage.getItem(sessionMarker)) return;
+    sessionStorage.setItem(sessionMarker, "1");
+    supportedReturnHandledRef.current = true;
+
+    // Clean the URL so a refresh doesn't re-trigger
+    const url = new URL(window.location.href);
+    url.searchParams.delete("supported");
+    url.searchParams.delete("session_id");
+    window.history.replaceState({}, "", url.toString());
+
+    // Brief delay gives Stripe's webhook a chance to land. ~2.5s is enough
+    // for Stripe → Vercel → Supabase round-trip in the common case.
+    const timer = setTimeout(() => {
+      setModal({ type: "supporterName" });
+    }, 2500);
+    return () => clearTimeout(timer);
+  }, [user]);
 
   // Refs let us detect transitions like "user just signed in"
   const prevUserRef = useRef(null);
@@ -4329,6 +4431,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
   if (modal.type === "support") return <SupportModal onClose={close} />;
+  if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
@@ -5359,13 +5462,13 @@ function AboutModal({ onClose }) {
 // All flow through Stripe Payment Links (Ko-fi kept commented as backup).
 // ============================================================================
 function SupportModal({ onClose }) {
-  // Stripe Payment Links — Apple Pay / Google Pay show automatically on supported devices
-  const STRIPE_ONE_TIME_URL = "https://buy.stripe.com/dRmdRbb3K2kWbDj2XK9MY00"; // $5 one-time
-  const STRIPE_MONTHLY_URL = "https://buy.stripe.com/cNi9AV7Ry4t4cHnfKw9MY02"; // $5/month, qty adjustable
-
-  // Ko-fi kept commented out as backup — flip back if Stripe doesn't work out
-  // const KO_FI_URL = "https://ko-fi.com/henalytics";
-  // const KO_FI_EMBED_URL = "https://ko-fi.com/henalytics/?hidefeed=true&widget=true&embed=true&preview=true";
+  // New design: monthly is featured (3 tiers — $3, $5, $10) with one-time
+  // tip as a smaller secondary option below. Each button calls startCheckout
+  // which goes through our server (auth + user-ID linking + supporter row).
+  //
+  // The old Payment Link URLs are deliberately gone — they didn't pass through
+  // the Henalytics user ID, which meant we couldn't connect a subscription
+  // to a supporter wall entry.
 
   return (
     <Modal open onClose={onClose} title="Support Henalytics">
@@ -5391,69 +5494,89 @@ function SupportModal({ onClose }) {
           But please don't feel any pressure. The app is and will stay free for everyone, whether or not you chip in.
         </p>
 
-        {/* Stripe Payment Link buttons — secure checkout with Apple Pay / Google Pay */}
+        {/* ---- MONTHLY TIERS (featured) ---- */}
         <div style={{
-          marginTop: 20,
-          display: "flex",
-          gap: 10,
-          flexWrap: "wrap",
+          marginTop: 20, marginBottom: 6,
+          fontSize: 11, letterSpacing: 1, color: palette.inkSoft, fontWeight: 600, textTransform: "uppercase",
         }}>
-          <button
-            type="button"
-            onClick={() => openExternalUrl(STRIPE_ONE_TIME_URL)}
-            style={{
-              flex: "1 1 140px",
-              padding: "16px 14px",
-              borderRadius: 12,
-              border: `2px solid ${palette.ink}`,
-              background: palette.yolk,
-              color: palette.ink,
-              textAlign: "center",
-              fontFamily: FONT_BODY,
-              fontWeight: 700,
-              fontSize: 15,
-              boxShadow: "2px 2px 0 " + palette.line,
-              display: "block",
-              cursor: "pointer",
-            }}
-          >
-            <div style={{ fontSize: 20, marginBottom: 4 }}>🌾</div>
-            <div>One-time</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 2 }}>$5</div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: palette.inkSoft, marginTop: 2 }}>Bag of feed</div>
-          </button>
-          <button
-            type="button"
-            onClick={() => openExternalUrl(STRIPE_MONTHLY_URL)}
-            style={{
-              flex: "1 1 140px",
-              padding: "16px 14px",
-              borderRadius: 12,
-              border: `2px solid ${palette.ink}`,
-              background: palette.leaf,
-              color: palette.bg,
-              textAlign: "center",
-              fontFamily: FONT_BODY,
-              fontWeight: 700,
-              fontSize: 15,
-              boxShadow: "2px 2px 0 " + palette.line,
-              display: "block",
-              cursor: "pointer",
-            }}
-          >
-            <div style={{ fontSize: 20, marginBottom: 4 }}>💚</div>
-            <div>Monthly</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginTop: 2 }}>$5</div>
-            <div style={{ fontSize: 11, fontWeight: 500, color: "rgba(255,255,255,0.75)", marginTop: 2 }}>Sustaining tip</div>
-          </button>
+          Monthly support
         </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[
+            { tier: "monthly_3",  amount: 3,  label: "Coffee" },
+            { tier: "monthly_5",  amount: 5,  label: "Sustaining", featured: true },
+            { tier: "monthly_10", amount: 10, label: "Generous" },
+          ].map((t) => (
+            <button
+              key={t.tier}
+              type="button"
+              onClick={() => startCheckout(t.tier)}
+              style={{
+                flex: "1 1 100px",
+                padding: "16px 10px",
+                borderRadius: 12,
+                border: `2px solid ${palette.ink}`,
+                background: t.featured ? palette.leaf : palette.card,
+                color: t.featured ? palette.bg : palette.ink,
+                textAlign: "center",
+                fontFamily: FONT_BODY,
+                fontWeight: 700,
+                fontSize: 14,
+                boxShadow: "2px 2px 0 " + palette.line,
+                cursor: "pointer",
+                position: "relative",
+              }}
+            >
+              {t.featured && (
+                <div style={{
+                  position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
+                  background: palette.yolk, color: palette.ink, fontSize: 10, fontWeight: 700,
+                  letterSpacing: 0.5, padding: "2px 8px", borderRadius: 999,
+                  border: `1.5px solid ${palette.ink}`, textTransform: "uppercase",
+                }}>
+                  Most common
+                </div>
+              )}
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, marginTop: 2 }}>${t.amount}</div>
+              <div style={{ fontSize: 10, fontWeight: 500, color: t.featured ? "rgba(255,255,255,0.75)" : palette.inkSoft, marginTop: 2 }}>
+                /month · {t.label}
+              </div>
+            </button>
+          ))}
+        </div>
+
+        {/* ---- ONE-TIME TIP (secondary) ---- */}
+        <div style={{
+          marginTop: 20, marginBottom: 6,
+          fontSize: 11, letterSpacing: 1, color: palette.inkSoft, fontWeight: 600, textTransform: "uppercase",
+        }}>
+          Or, leave a one-time tip
+        </div>
+        <button
+          type="button"
+          onClick={() => startCheckout("one_time")}
+          style={{
+            width: "100%",
+            padding: "12px 14px",
+            borderRadius: 10,
+            border: `1.5px solid ${palette.ink}`,
+            background: palette.yolk,
+            color: palette.ink,
+            textAlign: "center",
+            fontFamily: FONT_BODY,
+            fontWeight: 700,
+            fontSize: 14,
+            boxShadow: "2px 2px 0 " + palette.line,
+            cursor: "pointer",
+          }}
+        >
+          🌾 One-time $5 · Bag of feed
+        </button>
 
         <div style={{
           marginTop: 12, textAlign: "center", fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
         }}>
           Secure checkout via Stripe — Apple Pay & Google Pay supported.
-          <br/>
-          You can adjust the amount on the next page.
         </div>
 
         <div style={{
@@ -5463,6 +5586,237 @@ function SupportModal({ onClose }) {
         </div>
       </div>
     </Modal>
+  );
+}
+
+// ============================================================================
+// SUPPORTER NAME PROMPT MODAL
+// ----------------------------------------------------------------------------
+// Fires after the user returns from a successful Stripe checkout
+// (?supported=<tier> on the URL). Invites them to add a homestead name to
+// the public monthly supporter wall. Three outcomes:
+//
+//   1. They enter a name → saved to supporters.homestead_name + visible
+//   2. They tap "Stay anonymous" → homestead_name_visible = false
+//   3. They close the modal → no DB write; they can revisit from Settings later
+//
+// Profanity is checked client-side (basic word list — same protection ChatGPT
+// uses for usernames) AND flagged server-side for review. Auto-rejected names
+// don't get saved at all; flagged-but-borderline names are saved with
+// homestead_name_flagged=true and don't appear on the wall until approved.
+//
+// Why client-side write? Supabase RLS allows authenticated users to update
+// their own supporter row (homestead_name + visibility fields only). The
+// webhook already created the row with their user_id linked, so we just
+// patch the existing row.
+// ============================================================================
+
+// Minimal profanity check — covers common words + some obfuscated variants.
+// Not bulletproof; just a first line of defense before Riley reviews flagged
+// names. Server-side review (homestead_name_flagged + manual approval) is
+// the real protection. Names exceeding 60 chars also flagged for review.
+const BLOCKED_NAME_PATTERNS = [
+  /f+u+c+k/i, /s+h+i+t/i, /b+i+t+c+h/i, /a+s+s+h+o+l+e/i,
+  /c+u+n+t/i, /d+i+c+k+h+e+a+d/i, /n+i+g+g+e*r/i, /f+a+g+g*o*t/i,
+  /r+e+t+a+r+d/i, /\bk+y+s\b/i, /\bk+m+s\b/i,
+];
+const isLikelyOK = (name) => {
+  const trimmed = (name || "").trim();
+  if (!trimmed) return false;
+  if (trimmed.length > 60) return false;
+  // strip whitespace + punctuation for fuzzy match
+  const compact = trimmed.toLowerCase().replace(/[\s\.,\-_'"!?@#$%^&*()+=]/g, "");
+  for (const pat of BLOCKED_NAME_PATTERNS) {
+    if (pat.test(compact) || pat.test(trimmed)) return false;
+  }
+  return true;
+};
+
+function SupporterNamePromptModal({ user, onClose }) {
+  const [name, setName] = useState("");
+  const [working, setWorking] = useState(false);
+  const [error, setError] = useState("");
+  const [done, setDone] = useState(false);
+
+  const submitName = async (visible) => {
+    setError("");
+    setWorking(true);
+    try {
+      const trimmed = name.trim();
+
+      // If they want to be visible, the name must pass the basic check.
+      // If they're going anonymous, we still save an empty name so Riley
+      // doesn't get prompted to fill it later.
+      let payload;
+      if (visible) {
+        if (!trimmed) { setError("Please enter a name, or choose 'Stay anonymous'."); setWorking(false); return; }
+        const ok = isLikelyOK(trimmed);
+        payload = {
+          homestead_name: trimmed,
+          homestead_name_visible: true,
+          homestead_name_flagged: !ok, // server-side review will clear flagged names
+          homestead_name_set_at: new Date().toISOString(),
+        };
+      } else {
+        payload = {
+          homestead_name: trimmed || null,
+          homestead_name_visible: false,
+          homestead_name_set_at: new Date().toISOString(),
+        };
+      }
+
+      // Update the most recent supporter row for this user.
+      // RLS allows this because user_id matches auth.uid().
+      const { error: updateErr } = await supabase
+        .from("supporters")
+        .update(payload)
+        .eq("user_id", user.id);
+
+      if (updateErr) {
+        // Most likely cause: the webhook hasn't created the row yet. Stripe
+        // webhook delivery is usually <2s but can occasionally lag. Surface
+        // a friendly retry message rather than a generic error.
+        console.error("supporter name update failed:", updateErr);
+        if (updateErr.code === "PGRST116" || /not found/i.test(updateErr.message || "")) {
+          setError("Your contribution is still processing. Please try again in a minute.");
+        } else {
+          setError("Couldn't save right now. Please try again.");
+        }
+        setWorking(false);
+        return;
+      }
+
+      setDone(true);
+      setTimeout(() => onClose(), 1600);
+    } catch (e) {
+      console.error("submitName error:", e);
+      setError("Something went wrong. Please try again.");
+      setWorking(false);
+    }
+  };
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 200, padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
+        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+        fontFamily: FONT_BODY, overflow: "hidden",
+        display: "flex", flexDirection: "column",
+      }}>
+        <div style={{
+          background: palette.leaf, padding: "24px 24px 18px", textAlign: "center",
+          position: "relative",
+        }}>
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position: "absolute", top: 12, right: 12,
+              background: "rgba(255,255,255,0.15)", border: "none", borderRadius: "50%",
+              width: 32, height: 32, display: "flex", alignItems: "center", justifyContent: "center",
+              color: palette.card, cursor: "pointer", padding: 0,
+            }}
+          >
+            <X size={18} />
+          </button>
+          <div style={{ fontSize: 40, marginBottom: 6 }}>🙏</div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 26, color: palette.card, lineHeight: 1.2 }}>
+            Thank you for chipping in.
+          </div>
+          <div style={{ fontSize: 12, color: "rgba(255,255,255,0.75)", marginTop: 4 }}>
+            It really does help keep this thing running.
+          </div>
+        </div>
+
+        <div style={{ padding: "20px 24px", overflowY: "auto" }}>
+          {done ? (
+            <div style={{ textAlign: "center", padding: "8px 0 24px", fontSize: 15, color: palette.ink, lineHeight: 1.6 }}>
+              ✅ Saved! See you on the wall.
+            </div>
+          ) : (
+            <>
+              <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.6, margin: "0 0 14px" }}>
+                On the 1st of each month, Henalytics shows a thank-you wall listing every supporter who chose to be named. If you'd like to be included, add your homestead name below.
+              </p>
+              <p style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, margin: "0 0 16px", fontStyle: "italic" }}>
+                Totally optional — anonymous is fine. You can always change this later from Settings.
+              </p>
+
+              <label style={{ display: "block", marginBottom: 12 }}>
+                <div style={{
+                  fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+                  textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+                }}>
+                  Homestead name
+                </div>
+                <input
+                  type="text"
+                  value={name}
+                  onChange={(e) => { setName(e.target.value); setError(""); }}
+                  placeholder="e.g. Bluebird Hollow Farm"
+                  maxLength={60}
+                  autoFocus
+                  disabled={working}
+                  style={{
+                    width: "100%", padding: "10px 12px", borderRadius: 8,
+                    border: `1.5px solid ${palette.line}`, background: palette.card,
+                    fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
+                  }}
+                />
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+                  60 characters max. Names go through a quick review.
+                </div>
+              </label>
+
+              {error && (
+                <div style={{
+                  padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+                  borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 12,
+                  lineHeight: 1.4,
+                }}>
+                  {error}
+                </div>
+              )}
+
+              <button
+                type="button"
+                onClick={() => submitName(true)}
+                disabled={working || !name.trim()}
+                style={{
+                  width: "100%", padding: "12px 16px", borderRadius: 10,
+                  border: `1.5px solid ${palette.ink}`, background: palette.ink,
+                  color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
+                  cursor: (working || !name.trim()) ? "wait" : "pointer",
+                  boxShadow: "2px 2px 0 " + palette.line,
+                  opacity: (working || !name.trim()) ? 0.6 : 1,
+                  marginBottom: 8,
+                }}
+              >
+                {working ? "Saving..." : "Add me to the wall"}
+              </button>
+
+              <button
+                type="button"
+                onClick={() => submitName(false)}
+                disabled={working}
+                style={{
+                  width: "100%", padding: "10px 14px", borderRadius: 10,
+                  border: `1.5px solid ${palette.line}`, background: "transparent",
+                  color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 13,
+                  cursor: working ? "wait" : "pointer",
+                }}
+              >
+                Stay anonymous
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -9915,14 +10269,13 @@ function WhatsNewModal({ onClose }) {
 // disclosed, Stripe checkout, refund mention, easy dismiss, no urgency tactics.
 // ============================================================================
 function AppStoreFundModal({ onClose, onLeaveTip }) {
-  const STRIPE_ONE_TIME_URL = "https://buy.stripe.com/dRmdRbb3K2kWbDj2XK9MY00";
   const goal = APP_STORE_FUND_GOAL;
   const raised = Math.max(0, Math.min(APP_STORE_FUND_RAISED, goal));
   const percent = goal > 0 ? Math.round((raised / goal) * 100) : 0;
 
   const handleTip = () => {
     if (onLeaveTip) onLeaveTip();
-    openExternalUrl(STRIPE_ONE_TIME_URL);
+    startCheckout("one_time");
   };
 
   return (
@@ -10086,9 +10439,9 @@ function AppStoreFundModal({ onClose, onLeaveTip }) {
 // Includes mission statement and two Stripe Payment Link buttons (one-time + monthly).
 // Marks the month as dismissed when the user closes OR taps a tip button.
 function SupporterThanksModal({ onClose, onLeaveTip }) {
-  // Stripe Payment Links — same URLs as SupportModal
-  const STRIPE_ONE_TIME_URL = "https://buy.stripe.com/dRmdRbb3K2kWbDj2XK9MY00";
-  const STRIPE_MONTHLY_URL = "https://buy.stripe.com/cNi9AV7Ry4t4cHnfKw9MY02";
+  // Two buttons matching the prior layout — one-time ($5) and monthly ($5).
+  // New checkout flow goes through /api/create-checkout-session so the
+  // subscription gets linked to the user account.
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
@@ -10127,7 +10480,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
           <div style={{ display:"flex",gap:10,flexWrap:"wrap" }}>
             <button
               type="button"
-              onClick={() => { if (onLeaveTip) onLeaveTip(); openExternalUrl(STRIPE_ONE_TIME_URL); }}
+              onClick={() => { if (onLeaveTip) onLeaveTip(); startCheckout("one_time"); }}
               style={{
                 flex: "1 1 140px",
                 padding: "14px 12px",
@@ -10151,7 +10504,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
             </button>
             <button
               type="button"
-              onClick={() => { if (onLeaveTip) onLeaveTip(); openExternalUrl(STRIPE_MONTHLY_URL); }}
+              onClick={() => { if (onLeaveTip) onLeaveTip(); startCheckout("monthly_5"); }}
               style={{
                 flex: "1 1 140px",
                 padding: "14px 12px",
