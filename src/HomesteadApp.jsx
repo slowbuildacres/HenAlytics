@@ -339,14 +339,28 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
     }
   });
   data.hobbies.forEach((h) => {
-    if (h.type === "freeze_drying" || h.type === "dehydrating") {
+    if (h.type === "freeze_drying") {
       if (!Array.isArray(h.batches)) h.batches = [];
       if (typeof h.hidden === "undefined") h.hidden = true;
+      // Heal name in case it was missing or got corrupted to the id
+      if (!h.name || h.name === "freeze_drying" || h.name === "Freeze_drying") {
+        h.name = "Freeze Drying ❄️";
+      }
+    }
+    if (h.type === "dehydrating") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "dehydrating" || h.name === "Dehydrating") {
+        h.name = "Dehydrating 🌬️";
+      }
     }
     if (h.type === "fermentation") {
       if (!Array.isArray(h.ferments)) h.ferments = [];
       if (!Array.isArray(h.recipes)) h.recipes = [];
       if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "fermentation" || h.name === "Fermentation") {
+        h.name = "Fermentation 🫧";
+      }
     }
   });
   // ---- Sheep hobby ----
@@ -2041,7 +2055,14 @@ export default function HomesteadApp() {
               borderRadius: 10, zIndex: 60, overflow: "hidden",
               boxShadow: "3px 4px 0 " + palette.line,
             }}>
-              {data.hobbies.filter((h) => !h.hidden).map((h) => (
+              {(() => {
+                const preservingTypes = ["canning", "freeze_drying", "dehydrating", "fermentation"];
+                const visiblePreserving = data.hobbies.filter(h => preservingTypes.includes(h.type) && !h.hidden);
+                const isPreservingActive = preservingTypes.includes(activeHobby);
+                const nonPreservingVisible = data.hobbies.filter(h => !h.hidden && !preservingTypes.includes(h.type));
+                return (
+                  <>
+                    {nonPreservingVisible.map((h) => (
                 <button
                   key={h.id}
                   onClick={() => {
@@ -2064,10 +2085,6 @@ export default function HomesteadApp() {
                         sourdough: "sourdough",
                         farmstand: "farmstand",
                         baking: "baking",
-                        canning: "canning",
-                        freeze_drying: "freeze_drying",
-                        dehydrating: "dehydrating",
-                        fermentation: "fermentation",
                       };
                       // Garden, egg_layers, meat_chickens all share the
                       // generic "home" page (which keys off activeHobby).
@@ -2085,6 +2102,39 @@ export default function HomesteadApp() {
                   {h.name}
                 </button>
               ))}
+                    {visiblePreserving.length > 0 && (
+                      <button
+                        key="preserving-group"
+                        onClick={() => {
+                          // Route to whichever preserving sub-type the user
+                          // has enabled first (canning preferred since it's
+                          // the original). PreservingPage's tab bar will then
+                          // let them switch between visible sub-types.
+                          const preferredOrder = ["canning", "freeze_drying", "dehydrating", "fermentation"];
+                          const target = preferredOrder.find(t =>
+                            visiblePreserving.some(h => h.type === t)
+                          ) || visiblePreserving[0].type;
+                          setActiveHobby(target);
+                          setSeasonFilter("all");
+                          setHobbyMenuOpen(false);
+                          if (page !== "analytics") setPage(target);
+                        }}
+                        style={{
+                          width: "100%", padding: "12px 16px",
+                          background: isPreservingActive ? palette.bgAlt : "transparent",
+                          border: "none", borderBottom: `1px solid ${palette.line}`,
+                          cursor: "pointer", textAlign: "left",
+                          display: "flex", alignItems: "center", gap: 10,
+                          color: palette.ink, fontWeight: 500,
+                        }}
+                      >
+                        <HobbyIcon name="sprout" size={18} strokeWidth={1.5} />
+                        Preserving 🥫
+                      </button>
+                    )}
+                  </>
+                );
+              })()}
               <button
                 onClick={() => { setHobbyMenuOpen(false); setModal({ type: "manageHobbies" }); }}
                 style={{
