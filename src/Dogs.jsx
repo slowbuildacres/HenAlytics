@@ -659,6 +659,8 @@ function AttackModal({ dogs, attack, onSave, onDelete, onClose }) {
   const [predatorType, setPredatorType] = useState(attack?.predatorType || "Coyote");
   const [livestockSpecies, setLivestockSpecies] = useState(attack?.livestockSpecies || "Chickens");
   const [attackResult, setAttackResult] = useState(attack?.attackResult || "deterred");
+  const [livestockLost, setLivestockLost] = useState(attack?.livestockLost ? String(attack.livestockLost) : "");
+  const [predatorsKilled, setPredatorsKilled] = useState(attack?.predatorsKilled ? String(attack.predatorsKilled) : "");
   const [notes, setNotes] = useState(attack?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -667,6 +669,10 @@ function AttackModal({ dogs, attack, onSave, onDelete, onClose }) {
     onSave({
       id: attack?.id || newId(),
       date, dogId, predatorType, livestockSpecies, attackResult,
+      // Only persist the relevant count field; clear the other so we don't
+      // carry stale data if the user toggled between outcomes.
+      livestockLost: attackResult === "partial" ? (parseInt(livestockLost, 10) || 0) : null,
+      predatorsKilled: attackResult === "killed_predator" ? (parseInt(predatorsKilled, 10) || 1) : null,
       notes: notes.trim(),
     });
     onClose();
@@ -711,6 +717,33 @@ function AttackModal({ dogs, attack, onSave, onDelete, onClose }) {
               <option value="killed_predator">Dog killed the predator</option>
             </select>
           </Field>
+
+          {/* Conditional fields based on outcome */}
+          {attackResult === "partial" && (
+            <Field label={`${livestockSpecies} lost`}>
+              <input
+                type="number" min={0} inputMode="numeric"
+                style={inputStyle}
+                value={livestockLost}
+                onChange={(e) => setLivestockLost(e.target.value)}
+                placeholder="How many were lost?"
+                autoFocus
+              />
+            </Field>
+          )}
+          {attackResult === "killed_predator" && (
+            <Field label={`${predatorType === "Other" || predatorType === "Unknown" ? "Predators" : `${predatorType.toLowerCase()}${predatorType.endsWith("s") ? "" : "s"}`} killed`}>
+              <input
+                type="number" min={1} inputMode="numeric"
+                style={inputStyle}
+                value={predatorsKilled}
+                onChange={(e) => setPredatorsKilled(e.target.value)}
+                placeholder="Usually 1, but track multiples"
+                autoFocus
+              />
+            </Field>
+          )}
+
           <Field label="Notes">
             <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Time of day, observation, etc." />
           </Field>
@@ -1118,6 +1151,14 @@ export default function DogsPage({ hobby, data, update, setModal }) {
           <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 20, margin: "20px 0 10px", color: palette.ink }}>🛡️ Attacks deterred</h2>
           {attacks.slice(0, 10).map(a => {
             const dog = dogs.find(d => d.id === a.dogId) || archived.find(d => d.id === a.dogId);
+            // Build outcome detail string based on what we tracked
+            let outcomeDetail = "";
+            if (a.attackResult === "partial" && a.livestockLost) {
+              outcomeDetail = ` · ${a.livestockLost} lost`;
+            } else if (a.attackResult === "killed_predator") {
+              const n = a.predatorsKilled || 1;
+              outcomeDetail = ` · ${n} predator${n === 1 ? "" : "s"} killed`;
+            }
             return (
               <div key={a.id} onClick={() => setAttackModal({ open: true, attack: a })} style={{
                 padding: "10px 12px", background: palette.card,
@@ -1127,7 +1168,7 @@ export default function DogsPage({ hobby, data, update, setModal }) {
                 <div style={{ fontSize: 13, color: palette.ink }}>
                   <strong>{dog?.name || "Dog"}</strong> vs {a.predatorType.toLowerCase()} — protecting {a.livestockSpecies.toLowerCase()}
                 </div>
-                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{fmtDate(a.date)}</div>
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{fmtDate(a.date)}{outcomeDetail}</div>
                 {a.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{a.notes}</div>}
               </div>
             );
@@ -1226,6 +1267,13 @@ export function DogsAnalytics({ hobby }) {
   const died = allPuppies.filter(p => p.status === "died").length;
   const revenue = sold.reduce((s, p) => s + (p.placePrice || 0), 0);
 
+  // LGD efficacy stats — separate from raw "attacks logged" count so the
+  // user can see (a) how often they intervened, (b) how successful those
+  // interventions were, (c) the harder truth: how many losses still happened.
+  const totalPredatorsKilled = attacks.reduce((s, a) => s + (a.predatorsKilled || 0), 0);
+  const totalLivestockLost = attacks.reduce((s, a) => s + (a.livestockLost || 0), 0);
+  const cleanDeters = attacks.filter(a => a.attackResult === "deterred").length;
+
   // Attacks per dog
   const attacksByDog = useMemo(() => {
     const map = {};
@@ -1259,6 +1307,18 @@ export function DogsAnalytics({ hobby }) {
         {lgds.length > 0 && <StatCard label="Attacks deterred" value={attacks.length} accent={palette.accent} />}
         {litters.length > 0 && <StatCard label="Litters" value={litters.length} accent={palette.yolk} />}
       </div>
+
+      {/* LGD protection summary — only shows when LGDs are tracking attacks */}
+      {lgds.length > 0 && attacks.length > 0 && (
+        <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 10 }}>🛡️ Protection summary</div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+            <StatCard label="Clean deters" value={cleanDeters} sub="no losses" accent={palette.leaf} />
+            {totalPredatorsKilled > 0 && <StatCard label="Predators killed" value={totalPredatorsKilled} accent={palette.feather} />}
+            {totalLivestockLost > 0 && <StatCard label="Losses despite" value={totalLivestockLost} sub="livestock lost" accent={palette.accent} />}
+          </div>
+        </div>
+      )}
 
       {/* LGD chart */}
       {lgds.length > 0 && attacks.length > 0 && (
