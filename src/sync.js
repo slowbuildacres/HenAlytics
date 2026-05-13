@@ -303,7 +303,7 @@ export async function listMembers(user) {
 
   const { data, error } = await supabase
     .from('homestead_members')
-    .select('user_id, role, joined_at')
+    .select('user_id, role, joined_at, chore_emails_opt_in')
     .eq('homestead_id', homesteadId);
 
   if (error) {
@@ -412,6 +412,23 @@ export async function removeMember(homesteadId, userId) {
     .eq('homestead_id', homesteadId)
     .eq('user_id', userId);
   if (error) throw error;
+}
+
+export async function updateMemberChoreEmails(memberUserId, optIn) {
+  if (!isSupabaseConfigured) return;
+  const homesteadId = readActiveHomesteadId();
+  if (!homesteadId) throw new Error('No active homestead');
+
+  const { error } = await supabase
+    .from('homestead_members')
+    .update({ chore_emails_opt_in: optIn })
+    .eq('homestead_id', homesteadId)
+    .eq('user_id', memberUserId);
+
+  if (error) {
+    console.error('Update chore email pref failed', error);
+    throw new Error(error.message || 'Could not update preference');
+  }
 }
 
 export function getActiveHomesteadId() {

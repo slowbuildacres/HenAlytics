@@ -109,6 +109,7 @@ const defaultData = () => ({
   freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
   appStoreFundDismissedMonth: null, // "YYYY-MM" of last dismissed app-store-fundraiser popup
+  weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   units: {
     temperature: "F",      // "F" or "C"
@@ -131,6 +132,9 @@ function migrateData(data) {
   }
   if (typeof data.appStoreFundDismissedMonth !== "string" && data.appStoreFundDismissedMonth !== null) {
     data.appStoreFundDismissedMonth = null;
+  }
+  if (typeof data.weeklyChoreEmailOptIn !== "boolean") {
+    data.weeklyChoreEmailOptIn = false;
   }
   if (typeof data.userHasTipped !== "boolean") {
     data.userHasTipped = false;
@@ -917,9 +921,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 32;
+const CURRENT_VERSION = 33;
 
 const WHATS_NEW = [
+  "📧 Weekly chore email — turn it on in Settings and we'll email what's on your calendar every Sunday evening. Quiet weeks get a warm hello; busy weeks get a tidy checklist sorted by day. Farmhands can each independently opt in or out from the Farmhands menu.",
   "🌱 New $1/month Seedling tier — added a $1 option alongside $3, $5, and $10 in the support menu, for anyone who'd like to chip in but doesn't want to commit to more. Every little bit helps keep Henalytics running ad-free.",
   "📦 Past batches on the meat birds page — when you finalize a batch, it now shows up in a collapsible \"Past batches\" section at the bottom of the meat birds home page. Each row shows the batch name, dates, total started, butchered count, and total weight. Full per-batch records still live in the Analytics tab.",
   "🍖 Feed logging for dogs — Dogs now have a Fed button alongside Weight, Vet/meds, etc. Log how much food the pack went through (or per-dog if you want), with the lbs/cups toggle.",
@@ -6220,6 +6225,23 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           onClick={() => {
             update((d) => {
               d.weeklyDigestOptIn = !d.weeklyDigestOptIn;
+              return d;
+            });
+          }}
+        />
+      )}
+
+      {user && (
+        <SectionBtn
+          icon={Mail}
+          label={data.weeklyChoreEmailOptIn ? "Weekly chore email: ON" : "Weekly chore email: off"}
+          sub={data.weeklyChoreEmailOptIn
+            ? "We'll email this week's chores every Sunday evening — you and any opted-in farmhands"
+            : "Get this week's chores by email every Sunday evening"}
+          accent={data.weeklyChoreEmailOptIn ? palette.leaf : palette.inkSoft}
+          onClick={() => {
+            update((d) => {
+              d.weeklyChoreEmailOptIn = !d.weeklyChoreEmailOptIn;
               return d;
             });
           }}

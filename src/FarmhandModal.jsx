@@ -1,8 +1,9 @@
 import React, { useState, useEffect } from 'react';
-import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle } from 'lucide-react';
+import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle, MailCheck, MailX } from 'lucide-react';
 import {
   listMembers, listPendingInvites, createInvite, cancelInvite,
   removeMember, sendFarmhandInvite, getActiveHomesteadId,
+  updateMemberChoreEmails,
 } from './sync.js';
 
 const palette = {
@@ -50,7 +51,6 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
     setBusy(true);
     try {
       const invite = await createInvite(user, inviteEmail);
-      // Send the invite email via the serverless function
       try {
         await sendFarmhandInvite({
           inviteEmail: inviteEmail.trim().toLowerCase(),
@@ -61,7 +61,6 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
         });
         setSuccess(`Invitation sent to ${inviteEmail}`);
       } catch (emailErr) {
-        // Invite was created but email failed — let user copy the link manually
         const link = `${window.location.origin}/?invite=${invite.invite_code}`;
         setError(`Invite created but email failed to send. Share this link: ${link}`);
       }
@@ -94,6 +93,30 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       refresh();
     } catch (e) {
       setError(e.message || 'Could not cancel invite');
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  // ---- Toggle chore-email opt-in for a member ----
+  // Permissions:
+  //   - Owner can toggle anyone's
+  //   - Farmhand can toggle only their own
+  const toggleChoreEmails = async (member) => {
+    setBusy(true);
+    setError(''); setSuccess('');
+    try {
+      const newValue = !member.chore_emails_opt_in;
+      await updateMemberChoreEmails(member.user_id, newValue);
+      // Optimistically update local state
+      setMembers(prev => prev.map(m =>
+        m.user_id === member.user_id ? { ...m, chore_emails_opt_in: newValue } : m
+      ));
+      setSuccess(newValue
+        ? "Chore emails turned ON for this member"
+        : "Chore emails turned OFF for this member");
+    } catch (e) {
+      setError(e.message || 'Could not update preference');
     } finally {
       setBusy(false);
     }
@@ -218,33 +241,76 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
             <div style={{ padding: 12, color: palette.inkSoft, fontSize: 13 }}>No members yet.</div>
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 16 }}>
-              {members.map((m) => (
-                <div key={m.user_id} style={{
-                  display: 'flex', alignItems: 'center', gap: 10,
-                  padding: '10px 12px', background: palette.card,
-                  border: `1.5px solid ${palette.line}`, borderRadius: 8,
-                }}>
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {m.email || (m.isYou ? 'You' : 'Farmhand')}{m.isYou && m.email ? ' (you)' : ''}
+              {members.map((m) => {
+                // Show the chore-emails toggle for:
+                //   - Owner can toggle anyone
+                //   - Non-owner can only toggle themselves
+                const canToggleChores = isOwner || m.isYou;
+                const choresOn = !!m.chore_emails_opt_in;
+                return (
+                  <div key={m.user_id} style={{
+                    display: 'flex', alignItems: 'center', gap: 10,
+                    padding: '10px 12px', background: palette.card,
+                    border: `1.5px solid ${palette.line}`, borderRadius: 8,
+                  }}>
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {m.email || (m.isYou ? 'You' : 'Farmhand')}{m.isYou && m.email ? ' (you)' : ''}
+                      </div>
+                      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: 'capitalize' }}>
+                        {m.role}
+                      </div>
                     </div>
-                    <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: 'capitalize' }}>
-                      {m.role}
-                    </div>
+
+                    {/* Chore email toggle — clickable for owner or self */}
+                    {canToggleChores && (
+                      <button
+                        onClick={() => toggleChoreEmails(m)}
+                        disabled={busy}
+                        title={choresOn ? "Chore emails ON — click to turn off" : "Chore emails off — click to turn on"}
+                        style={{
+                          background: choresOn ? palette.leafSoft : 'transparent',
+                          border: `1.5px solid ${choresOn ? palette.leaf : palette.line}`,
+                          borderRadius: 6, padding: '4px 8px',
+                          cursor: busy ? 'wait' : 'pointer',
+                          color: choresOn ? palette.ink : palette.inkSoft,
+                          fontSize: 11, fontFamily: FONT_BODY, fontWeight: 600,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                          flexShrink: 0,
+                        }}
+                      >
+                        {choresOn ? <MailCheck size={12} /> : <MailX size={12} />}
+                        {choresOn ? 'On' : 'Off'}
+                      </button>
+                    )}
+
+                    {/* Show non-clickable indicator if not toggleable (farmhand viewing other farmhands) */}
+                    {!canToggleChores && (
+                      <div
+                        title={choresOn ? "Chore emails on" : "Chore emails off"}
+                        style={{
+                          fontSize: 11, color: palette.inkSoft, flexShrink: 0,
+                          display: 'flex', alignItems: 'center', gap: 4,
+                        }}
+                      >
+                        {choresOn ? <MailCheck size={12} /> : <MailX size={12} />}
+                      </div>
+                    )}
+
+                    {/* Allow removing (owner can remove anyone but themselves; non-owner can leave themselves) */}
+                    {((isOwner && !m.isYou) || (!isOwner && m.isYou)) && (
+                      <button
+                        onClick={() => removeFarmhand(m)}
+                        disabled={busy}
+                        title={m.isYou ? 'Leave homestead' : 'Remove farmhand'}
+                        style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.accent, padding: 4 }}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    )}
                   </div>
-                  {/* Allow removing (owner can remove anyone but themselves; non-owner can leave themselves) */}
-                  {((isOwner && !m.isYou) || (!isOwner && m.isYou)) && (
-                    <button
-                      onClick={() => removeFarmhand(m)}
-                      disabled={busy}
-                      title={m.isYou ? 'Leave homestead' : 'Remove farmhand'}
-                      style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.accent, padding: 4 }}
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  )}
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
