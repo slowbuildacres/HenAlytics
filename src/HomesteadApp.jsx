@@ -11688,15 +11688,21 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 const TUTORIAL_SLIDES = [
   {
     emoji: "🌾",
-    title: "Welcome to HenAlytics",
-    body: "HenAlytics helps you track eggs, harvests, costs, and sales across everything on your homestead — chickens, garden, bees, rabbits, and more. This quick tour covers the essentials.",
+    title: "Welcome to Henalytics",
+    body: "Henalytics is the homestead notebook you actually want to use. Track eggs, harvests, livestock, costs, sales — anything you log on your homestead — without spreadsheets or forms. This quick tour covers the essentials.",
     tip: null,
   },
   {
     emoji: "🔧",
     title: "Enable the hobbies you do",
-    body: "You only see what's relevant to you. Hide meat birds if you don't raise them. Enable Ducks, Rabbits, or Bees when you're ready.",
+    body: "You only see what's relevant to you. Hide meat birds if you don't raise them. Enable Goats, Pigs, Rabbits, Horses, Bees, Canning, and more when you're ready — there are 18+ hobbies to pick from.",
     tip: "Tap 'More hobbies?' on the home screen, or go to ⚙️ Settings. You can also hide the Sales tab there if you don't sell anything.",
+  },
+  {
+    emoji: "👆",
+    title: "Logging is one tap",
+    body: "Every hobby has a grid of quick-log tiles. Watered the garden? Tap 💧. Fed the meat birds? Tap 🍖 and pick lbs or cups. Sold eggs? Tap 💵. Most actions take 2-3 seconds, weather and date auto-attach.",
+    tip: "Logs are time-stamped from your phone. Attach photos to any note, harvest, or issue entry for visual history.",
   },
   {
     emoji: "🥚",
@@ -11706,21 +11712,45 @@ const TUTORIAL_SLIDES = [
   },
   {
     emoji: "🐔",
-    title: "Multiple flocks",
-    body: "Chickens are the default, but you can add Duck, Turkey, Quail, Goose, or Guinea flocks too. Each flock tracks separately with its own basket and stats.",
-    tip: "Tap 'Add Flock' on the Egg Layers home tab to get started.",
+    title: "Name your birds",
+    body: "Track favorites by name and band color in any flock. Optionally pick the breed — chicken, duck, turkey, quail, goose, guinea, and peafowl breeds are all in the picker. Great for breeding stock, broody hens, or birds with quirks worth remembering.",
+    tip: "Tap '+ Name a bird' on any flock to start. Multiple flock types: chickens, ducks, turkeys, quail, geese, guineas, peafowl all run separately with their own baskets and stats.",
   },
   {
     emoji: "💵",
     title: "Track what your birds cost",
-    body: "When you add a flock, log the cost and where you bought them — hatchery name, feed store, or a neighbor. Pairs with feed costs to give you real cost-per-egg numbers later.",
+    body: "When you add a flock, log the cost and where you bought them — hatchery name, feed store, or a neighbor. Pairs with feed costs (lbs OR cups) to give you real cost-per-egg numbers later.",
     tip: "Already added a flock? Tap it on the home screen to edit and add the cost + source.",
+  },
+  {
+    emoji: "🍗",
+    title: "Meat birds: multiple batches at once",
+    body: "Running broilers and turkeys side by side? Each batch is independent — its own feed logs, mortality, butcher records, even feed conversion ratio (FCR). When you're done with a batch, hit 'Finalize' and it moves to your Past batches archive.",
+    tip: "Past batches are tucked at the bottom of the Meat Birds home page. Full per-batch records always live in the Stats tab.",
   },
   {
     emoji: "❄️",
     title: "Butcher any bird",
     body: "It's not just for meat birds. Process a few quail, an extra rooster, a duck — any bird from any flock can go to the freezer log with date, count, and average weight.",
     tip: "Tap a flock on the Egg Layers home tab and choose 'Butcher' to send some birds to the freezer log.",
+  },
+  {
+    emoji: "🐐",
+    title: "Animals: pedigree & history",
+    body: "Goats, cows, pigs, sheep, rabbits, dogs, horses — each animal has its own profile, pedigree tree (sire/dam linkage), breeding records, and chronological 📜 History view of everything ever logged for them.",
+    tip: "Adding a calf, kid, lamb, or kit through the breeding flow auto-links them to the dam so the pedigree builds itself.",
+  },
+  {
+    emoji: "🐎",
+    title: "Horses: rides + apply care to many",
+    body: "Log rides with duration, type (trail, arena, lesson), and notes. Track farrier, vet, and dewormer visits — and when one visit applies to multiple horses (the whole barn got their shots), tap each horse it covers or 'Select all' to log once.",
+    tip: "Each horse's 📜 History combines rides, vet, farrier, dewormer, breeding, and sales — everything in one timeline.",
+  },
+  {
+    emoji: "🚜",
+    title: "Move the chicken tractor",
+    body: "Egg layers and meat birds have a Move Tractor tile. First move asks roughly how far you move it each time; after that it's one tap. Year-in-review tells you fun facts about your total distance moved — about football fields, marathons, even how many Rhode Islands.",
+    tip: "Your chickens have moved more than you'd think.",
   },
   {
     emoji: "🗺️",
@@ -11731,32 +11761,26 @@ const TUTORIAL_SLIDES = [
   {
     emoji: "📅",
     title: "Calendar & planting dates",
-    body: "Tap the Calendar tab and plan a crop. HenAlytics calculates suggested planting dates based on your hardiness zone and last frost date.",
-    tip: "All dates are editable — adjust any of them before adding to your calendar.",
+    body: "Tap the Calendar tab and plan a crop. Henalytics calculates suggested planting dates based on your hardiness zone and last frost date.",
+    tip: "All dates are editable — adjust any of them before adding to your calendar. Add custom calendar events for vet visits, hatch days, anything.",
   },
   {
     emoji: "💰",
-    title: "Sales tab",
-    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat birds, rabbits, or garden produce. Track repeat customers and see revenue over time.",
+    title: "Sales + customer directory",
+    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat birds, rabbits, garden produce. Build a customer directory and see which buyers come back. Track revenue over time with full breakdowns.",
     tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically. Don't sell anything? Hide this tab in ⚙️ Settings.",
   },
   {
+    emoji: "📊",
+    title: "Stats tab + share cards",
+    body: "Every hobby has a Stats tab with charts, cost breakdowns, and trends. Filter by time range — today, week, 30/60/90 days, custom, or all-time. Hit 'Share Stats' to generate a shareable image with your homestead's numbers.",
+    tip: "Active batches and seasons show up in time-windowed views even if they started earlier — so feed you logged this week shows up under 'Past 7 days' even on a 35-day-old batch.",
+  },
+  {
     emoji: "🏚",
-    title: "The Barn icon",
-    body: "Tap the barn in the top-right corner to access: invite a farmhand (share with your partner or family), set your location for weather, and manage your photos. Right next to it is a ❤️ heart icon — tap that to leave a tip and keep the app free.",
-    tip: "Farmhands see the same data in real time — great for couples running the homestead together.",
-  },
-  {
-    emoji: "✨",
-    title: "Year in Review",
-    body: "Tap the ✨ tab at any time to see a summary of your year — total eggs, harvests, costs, sales, and highlights across every hobby.",
-    tip: "It updates live as you log, so you can check it any time of year.",
-  },
-  {
-    emoji: "📬",
-    title: "Weekly digest email",
-    body: "Opt in to get a Sunday morning email recap of your week — eggs laid, feed costs, harvests, and more. A nice way to stay on top of your homestead.",
-    tip: "Enable it in ⚙️ Settings after signing in. You can turn it off anytime.",
+    title: "Barn, farmhands, Year in Review",
+    body: "Tap the 🏚 barn in the top-right to invite a farmhand (share with your partner or family in real time), set your location, and manage photos. Tap ✨ Year in Review any time to see a live summary of your year. The ❤️ next to the barn is a tip jar — leave a tip if Henalytics has saved you time.",
+    tip: "Farmhands see the same data live — great for couples running the homestead together. Want a weekly Sunday recap by email? Turn it on in ⚙️ Settings.",
   },
 ];
 
