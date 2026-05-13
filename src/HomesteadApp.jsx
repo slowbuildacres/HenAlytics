@@ -917,9 +917,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 31;
+const CURRENT_VERSION = 32;
 
 const WHATS_NEW = [
+  "🌱 New $1/month Seedling tier — added a $1 option alongside $3, $5, and $10 in the support menu, for anyone who'd like to chip in but doesn't want to commit to more. Every little bit helps keep Henalytics running ad-free.",
   "📦 Past batches on the meat birds page — when you finalize a batch, it now shows up in a collapsible \"Past batches\" section at the bottom of the meat birds home page. Each row shows the batch name, dates, total started, butchered count, and total weight. Full per-batch records still live in the Analytics tab.",
   "🍖 Feed logging for dogs — Dogs now have a Fed button alongside Weight, Vet/meds, etc. Log how much food the pack went through (or per-dog if you want), with the lbs/cups toggle.",
   "🥣 Cups or lbs for feed — egg layers, meat birds, rabbits, and dogs can now log feed in cups instead of pounds. Tap the unit toggle in the feed log to switch. Stats show whichever unit you logged in. Feed Conversion Ratio still needs lbs since it's defined that way, but everything else just shows the amount.",
@@ -1201,7 +1202,7 @@ function ToastHost() {
 // table. The in-app effect that watches for `?supported=` then prompts them
 // to add a homestead name to the supporter wall.
 //
-// Tiers: "monthly_3" | "monthly_5" | "monthly_10" | "one_time"
+// Tiers: "monthly_1" | "monthly_3" | "monthly_5" | "monthly_10" | "one_time"
 //
 // Errors are intentionally simple — if anything fails, we fall back to alerting
 // the user. The user is not logged in? The fetch fails? They get a clear
@@ -6631,6 +6632,7 @@ function SupportModal({ onClose }) {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {[
+            { tier: "monthly_1",  amount: 1,  label: "Seedling" },
             { tier: "monthly_3",  amount: 3,  label: "Coffee" },
             { tier: "monthly_5",  amount: 5,  label: "Sustaining", featured: true },
             { tier: "monthly_10", amount: 10, label: "Generous" },

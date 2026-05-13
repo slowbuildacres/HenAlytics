@@ -11,6 +11,7 @@
 //
 // Required environment variables (set in Vercel dashboard):
 //   STRIPE_SECRET_KEY            — Stripe API secret key (sk_live_...)
+//   STRIPE_PRICE_MONTHLY_1       — Stripe price ID for the $1/mo tier
 //   STRIPE_PRICE_MONTHLY_3       — Stripe price ID for the $3/mo tier
 //   STRIPE_PRICE_MONTHLY_5       — Stripe price ID for the $5/mo tier
 //   STRIPE_PRICE_MONTHLY_10      — Stripe price ID for the $10/mo tier
@@ -22,7 +23,7 @@
 //   SUCCESS_URL_BASE (optional)  — defaults to https://henalytics.com
 //
 // Request body:
-//   { tier: "monthly_3" | "monthly_5" | "monthly_10" | "one_time" }
+//   { tier: "monthly_1" | "monthly_3" | "monthly_5" | "monthly_10" | "one_time" }
 
 import { createClient } from '@supabase/supabase-js';
 
@@ -40,6 +41,7 @@ const RATE_LIMIT_WINDOW_SECONDS = 600;
 
 // Map our tier IDs → env var names. Adding a new tier = new env var + new key here.
 const TIER_TO_PRICE_ENV = {
+  monthly_1:  'STRIPE_PRICE_MONTHLY_1',
   monthly_3:  'STRIPE_PRICE_MONTHLY_3',
   monthly_5:  'STRIPE_PRICE_MONTHLY_5',
   monthly_10: 'STRIPE_PRICE_MONTHLY_10',
@@ -48,6 +50,7 @@ const TIER_TO_PRICE_ENV = {
 
 // Map tier → checkout mode (subscription vs one-time payment)
 const TIER_TO_MODE = {
+  monthly_1:  'subscription',
   monthly_3:  'subscription',
   monthly_5:  'subscription',
   monthly_10: 'subscription',

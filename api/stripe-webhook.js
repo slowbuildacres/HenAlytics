@@ -52,6 +52,7 @@ const TENURE_GRACE_MS = TENURE_GRACE_DAYS * 24 * 60 * 60 * 1000;
 // subscription and uses this to fill in our amount_dollars column. The env
 // vars are the same ones create-checkout-session uses.
 function getTierFromPriceId(priceId) {
+  if (priceId === process.env.STRIPE_PRICE_MONTHLY_1)  return { amount: 1,  type: 'monthly' };
   if (priceId === process.env.STRIPE_PRICE_MONTHLY_3)  return { amount: 3,  type: 'monthly' };
   if (priceId === process.env.STRIPE_PRICE_MONTHLY_5)  return { amount: 5,  type: 'monthly' };
   if (priceId === process.env.STRIPE_PRICE_MONTHLY_10) return { amount: 10, type: 'monthly' };

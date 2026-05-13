@@ -43,6 +43,7 @@ const RATE_LIMIT_WINDOW_SECONDS = 600;
 
 // Map Stripe price IDs back to tier info (same as stripe-webhook)
 function getTierFromPriceId(priceId) {
+  if (priceId === process.env.STRIPE_PRICE_MONTHLY_1)  return { amount: 1,  type: 'monthly' };
   if (priceId === process.env.STRIPE_PRICE_MONTHLY_3)  return { amount: 3,  type: 'monthly' };
   if (priceId === process.env.STRIPE_PRICE_MONTHLY_5)  return { amount: 5,  type: 'monthly' };
   if (priceId === process.env.STRIPE_PRICE_MONTHLY_10) return { amount: 10, type: 'monthly' };
