@@ -150,10 +150,38 @@ function scoreData(data) {
       if (h && typeof h === 'object') {
         if (h.flockSize > 0) score += 5;
         if (Array.isArray(h.flockHistory)) score += h.flockHistory.length;
+        // Legacy single-batch field (pre-multi-batch support) — counts 5
+        // for backward compat with old data shapes still in the wild.
         if (h.currentBatch) score += 5;
-        if (Array.isArray(h.archivedBatches)) score += h.archivedBatches.length;
+        // Multi-batch field (added in Push 4b). Each active batch counts the
+        // same as the legacy single-batch did, so a finalize that moves a
+        // batch from currentBatches[] to archivedBatches[] doesn't change
+        // the net score and won't trip the clobber guard.
+        if (Array.isArray(h.currentBatches)) score += h.currentBatches.length * 5;
+        if (Array.isArray(h.archivedBatches)) {
+          // Each archived batch counts the same as the active batch did (5)
+          // AND the entries that moved into the archive's finalEntries[] count
+          // the same as they did when they lived in data.entries. Without
+          // this, finalizing a batch with N entries drops the score by N
+          // and trips the clobber guard.
+          for (const ab of h.archivedBatches) {
+            score += 5;
+            if (ab && Array.isArray(ab.finalEntries)) {
+              score += ab.finalEntries.length;
+            }
+          }
+        }
         if (h.currentSeason) score += 5;
-        if (Array.isArray(h.archivedSeasons)) score += h.archivedSeasons.length;
+        if (Array.isArray(h.archivedSeasons)) {
+          // Same treatment as archived batches: each archived season counts
+          // 5 (like the active one did), plus its absorbed finalEntries[].
+          for (const as of h.archivedSeasons) {
+            score += 5;
+            if (as && Array.isArray(as.finalEntries)) {
+              score += as.finalEntries.length;
+            }
+          }
+        }
         // Perennials and their per-plant action/harvest history.
         if (Array.isArray(h.perennials)) {
           score += h.perennials.length;
