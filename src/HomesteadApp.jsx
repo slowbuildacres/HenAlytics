@@ -725,9 +725,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 27;
+const CURRENT_VERSION = 28;
 
 const WHATS_NEW = [
+  "🌾 Monthly supporter shout-out — on the 1st-3rd of each month, the thank-you popup now lists out the homestead names of everyone who chipped in the prior month. (If you donated and want your homestead featured, you'll get a chance to add your name after your next tip.) Anonymous donors stay anonymous.",
   "🍼 Track calves as their own animals — when you log a calf born, you can now name it, set its sex, and add a tag number. Named calves show up in your cow list alongside their mother, with the same milk/feed/health/sale/death buttons and a 📜 history of their own. The pedigree automatically links the calf to its dam. Leave the name blank to just record the birth count like before.",
   "🐴 Tidier horse rows — each horse now shows just 🧬 Pedigree and 📜 History on its card, matching the other livestock pages. 🏷️ Sale and 🪦 Died moved up into the top action buttons; tap one and pick which horse from the dropdown.",
   "📜 Animal history view — tap the new 📜 History button on any horse, cow, goat, sheep, pig, rabbit, or dog to see a full timeline of everything ever logged for that animal: weight, milk, vet visits, farrier, deworming, rides, breedings, shearings, sales, and death. Sorted newest-first so the latest event is at the top.",
@@ -1616,16 +1617,18 @@ export default function HomesteadApp() {
   }, [data?.onboardedAt, data?.nativeTutorialDismissed, passwordRecoveryPending]);
 
   // ---- Monthly supporter thank-you ----
-  // Shows once on the 9th-11th of each month if the user hasn't dismissed it yet
+  // Shows once on the 1st-3rd of each month if the user hasn't dismissed it yet
   // for this calendar month. Tracked in data.supportersDismissedMonth ("YYYY-MM").
-  // 3-day window so users who don't open the app on the 9th still see it.
+  // 3-day window so users who don't open the app on the 1st still see it.
+  // Lists out the homestead names of supporters who were active during the
+  // PRIOR month, fetched from /api/list-supporters at modal-open time.
   const supporterThanksShownRef = React.useRef(false);
   useEffect(() => {
     if (supporterThanksShownRef.current) return;
     if (!data?.onboardedAt) return;
     const now = new Date();
     const dayOfMonth = now.getDate();
-    if (dayOfMonth < 9 || dayOfMonth > 11) return; // only show 9th-11th of the month
+    if (dayOfMonth < 1 || dayOfMonth > 3) return; // only show 1st-3rd of the month
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     if (data?.supportersDismissedMonth === monthKey) return;
     supporterThanksShownRef.current = true;
@@ -1638,7 +1641,7 @@ export default function HomesteadApp() {
   // dismissed it for the current month. Shows on a 4s delay to let the page
   // settle in. Tracked in data.appStoreFundDismissedMonth ("YYYY-MM") and
   // data.userHasTipped (boolean). We don't fire on the same days as the monthly
-  // supporter thank-you (9th-11th) so users don't get hit with two popups.
+  // supporter thank-you (1st-3rd) so users don't get hit with two popups.
   const [showAppStoreFund, setShowAppStoreFund] = useState(false);
   const appStoreFundShownRef = React.useRef(false);
   useEffect(() => {
@@ -1647,7 +1650,7 @@ export default function HomesteadApp() {
     if (data?.userHasTipped) return;
     const now = new Date();
     const dayOfMonth = now.getDate();
-    // Fire 21st-23rd of each month — separate from monthly thank-you (9th-11th)
+    // Fire 21st-23rd of each month — separate from monthly thank-you (1st-3rd)
     // so users never get hit with two donation popups in the same week.
     if (dayOfMonth < 21 || dayOfMonth > 23) return;
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
@@ -11747,6 +11750,42 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
   // Two buttons matching the prior layout — one-time ($5) and monthly ($5).
   // New checkout flow goes through /api/create-checkout-session so the
   // subscription gets linked to the user account.
+  //
+  // Names fetched from /api/list-supporters for the PRIOR calendar month.
+  // We compute the month key here (not at modal-open) using local time so
+  // a user opening the modal on the 1st sees December's supporters, etc.
+  // Edge cases handled:
+  //   - Network error / endpoint down → silently show the generic thank-you
+  //     without a name list (no error UI in a celebratory popup)
+  //   - No supporters last month → also fall back to generic thank-you
+  //   - Loading → show a small "loading…" line while the fetch runs
+  const [supporterNames, setSupporterNames] = React.useState(null); // null = loading, [] = none, [...] = list
+  const [priorMonthLabel, setPriorMonthLabel] = React.useState("");
+
+  React.useEffect(() => {
+    const now = new Date();
+    // Subtract one month from the current calendar month
+    const prior = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+    const monthKey = `${prior.getFullYear()}-${String(prior.getMonth() + 1).padStart(2, "0")}`;
+    setPriorMonthLabel(prior.toLocaleDateString("en-US", { month: "long", year: "numeric" }));
+    let cancelled = false;
+    (async () => {
+      try {
+        const r = await fetch(`/api/list-supporters?month=${monthKey}`);
+        if (!r.ok) {
+          if (!cancelled) setSupporterNames([]);
+          return;
+        }
+        const j = await r.json();
+        if (cancelled) return;
+        const list = Array.isArray(j.supporters) ? j.supporters.map(s => s.name).filter(Boolean) : [];
+        setSupporterNames(list);
+      } catch (_) {
+        if (!cancelled) setSupporterNames([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
@@ -11772,6 +11811,50 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
           <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 12px" }}>
             A huge thank-you to every supporter who chipped in this past month. Your tips are what keep Henalytics running and free for every homestead — no ads, no paywalls, no upsells.
           </p>
+
+          {/* Named supporter shout-out — only renders when we have at least one
+              visible supporter. Loading state is silent (no spinner) so the
+              modal feels celebratory rather than busy. */}
+          {supporterNames === null && (
+            <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",margin:"0 0 14px" }}>
+              Loading this month's supporter list…
+            </div>
+          )}
+          {Array.isArray(supporterNames) && supporterNames.length > 0 && (
+            <div style={{
+              margin:"4px 0 16px",
+              padding:"14px 16px",
+              background:palette.bgAlt || "#EBE0CC",
+              border:`1.5px solid ${palette.line}`,
+              borderRadius:12,
+            }}>
+              <div style={{
+                fontFamily:FONT_DISPLAY,fontSize:14,color:palette.ink,
+                marginBottom:8,textAlign:"center",
+              }}>
+                🌾 {priorMonthLabel} supporters
+              </div>
+              <div style={{
+                display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",
+              }}>
+                {supporterNames.map((n, i) => (
+                  <span key={i} style={{
+                    fontSize:12,fontWeight:600,color:palette.ink,
+                    background:palette.bg,
+                    border:`1.5px solid ${palette.line}`,
+                    borderRadius:999,padding:"4px 10px",
+                  }}>{n}</span>
+                ))}
+              </div>
+              <div style={{
+                fontSize:11,color:palette.inkSoft,textAlign:"center",
+                marginTop:10,fontStyle:"italic",
+              }}>
+                Thank you for keeping the lights on 💛
+              </div>
+            </div>
+          )}
+
           <p style={{ fontSize:14,color:palette.ink,lineHeight:1.6,margin:"0 0 12px" }}>
             My goal is to let as many homesteaders as possible benefit from this app without ever needing a paid subscription. Honestly, that wouldn't be possible without your feedback and the tips you leave — they're what let me keep working on it and making it better.
           </p>
