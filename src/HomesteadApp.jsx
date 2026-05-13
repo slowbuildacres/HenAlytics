@@ -221,14 +221,22 @@ function migrateData(data) {
       // batch into the array, then null out the legacy field so we can
       // detect un-migrated data later if a bug ever rolls back the shape.
       if (!Array.isArray(h.currentBatches)) h.currentBatches = [];
+      if (!Array.isArray(h.archivedBatches)) h.archivedBatches = [];
       if (h.currentBatch) {
-        // Only push if not already present (guard against double-migration)
-        if (!h.currentBatches.some((b) => b.id === h.currentBatch.id)) {
+        // CRITICAL: only rehydrate if the legacy batch isn't already
+        // archived. Without this check, a batch that the user finalized
+        // would get pushed back into currentBatches on every load — the
+        // long-standing "finalize doesn't stick" bug. We check archivedBatches
+        // by id; if the user already archived this batch (via the new
+        // EditBatchModal or ButcherModal "also finalize" paths), leave the
+        // legacy field cleared and don't re-push.
+        const alreadyArchived = h.archivedBatches.some(b => b.id === h.currentBatch.id);
+        const alreadyInCurrent = h.currentBatches.some(b => b.id === h.currentBatch.id);
+        if (!alreadyArchived && !alreadyInCurrent) {
           h.currentBatches.push(h.currentBatch);
         }
         h.currentBatch = null;
       }
-      if (!Array.isArray(h.archivedBatches)) h.archivedBatches = [];
       // Rename old "Meat Chickens" to "Meat Birds" — the hobby now supports
       // any bird type (turkey, duck, goose, etc.) at batch creation time.
       // Only auto-rename if user hasn't customized the name to something else.
@@ -841,9 +849,11 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 30;
+const CURRENT_VERSION = 31;
 
 const WHATS_NEW = [
+  "🥣 Cups or lbs for feed — egg layers and meat birds can now log feed in cups instead of pounds. Tap the unit toggle in the feed log to switch. Stats show whichever unit you logged in (or both, if you mixed). Feed Conversion Ratio still needs lbs since it's defined that way, but everything else just shows the amount.",
+  "📊 Stats filter shows your active batches — if you filter by \"Past 7 days\" or \"Past 30 days\" and a batch was active during that window (even if it started before), it now shows up with the entries logged in that window. Same fix for incubator runs. Previously a 35-day-old active batch would silently drop out of \"This week\" stats even though you'd been feeding it all week.",
   "🐔 Pick a breed when you name a bird — egg layers and meat birds now have a breed dropdown in the Name a bird form, with the right breed list based on whether your flock is chickens, ducks, turkeys, quail, geese, guineas, or peafowl. Already-named birds can have a breed added/changed too. Totally optional. Dogs and rabbits already had breed pickers from the start.",
   "🚜 Move chicken tractor — egg layers and meat birds now have a Move Tractor tile. First time you log it, Henalytics asks roughly how far you move it; after that it's a one-tap log. Your total tractor distance shows up on the share card and adds up over time. (Year-in-review is going to be fun.)",
   "🐎 Apply vet/farrier/dewormer to multiple horses at once — when you log a visit, tap each horse it applied to (or tap \"Select all\" if the whole barn got the same treatment). The visit shows up in every selected horse's history. Saves you from logging the same thing 8 times.",
@@ -4047,7 +4057,20 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     }
     case "planted": detail = `${entry.plant || ""} ${entry.quantity ? "× " + entry.quantity : ""}`.trim(); break;
     case "harvested": detail = `${entry.plant || ""} · ${entry.quantity || 0} ${entry.unit || "lbs"}`; break;
-    case "fed": detail = `${entry.lbs || 0} lbs · ${fmtMoney(entry.cost)}`; break;
+    case "fed": {
+      // Display in whichever unit was logged. Legacy entries have just
+      // `lbs`; newer entries with cups have feedUnit="cups" + feedAmount.
+      let amt, unit;
+      if (entry.feedUnit === "cups") {
+        amt = entry.feedAmount || 0;
+        unit = "cups";
+      } else {
+        amt = entry.lbs || entry.feedAmount || 0;
+        unit = "lbs";
+      }
+      detail = `${amt} ${unit} · ${fmtMoney(entry.cost)}`;
+      break;
+    }
     case "eggs": detail = `${entry.count || 0} eggs`; break;
     case "eggs_laid": detail = `${entry.count || 0} eggs`; break;
     case "sold_eggs": {
@@ -4664,8 +4687,12 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
   const activeBatches = hobby.currentBatches || [];
   const archived = hobby.archivedBatches || [];
 
-  // Build a unified batch list, then filter by the date range applied to the
-  // batch's startDate. Active batches always pass when no range is set.
+  // Build a unified batch list, then filter by date-range OVERLAP rather
+  // than by startDate. The previous logic compared startDate against the
+  // window, which would silently drop an active batch from "Past 7 days"
+  // just because it was started 35 days ago — even though that batch's
+  // recent feed/death entries were squarely inside the window. Now: a batch
+  // is included if any part of its lifetime overlaps the window.
   let batches = [...archived];
   activeBatches.forEach((b) => {
     batches.push({
@@ -4676,7 +4703,20 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
     });
   });
 
-  batches = filterByDateRange(batches, dateRange, (b) => b.startDate);
+  // Overlap filter: keep a batch if its [startDate, endDate-or-today] range
+  // intersects the requested [range.start, range.end] window. Active batches
+  // (no endDate) extend to today. No-range filters (all-time) include
+  // everything.
+  if (dateRange && (dateRange.start || dateRange.end)) {
+    const todayIso = todayStr();
+    batches = batches.filter(b => {
+      const bStart = b.startDate || todayIso;
+      const bEnd = b.endDate || todayIso; // active batches extend to today
+      if (dateRange.start && bEnd < dateRange.start) return false; // batch ended before window
+      if (dateRange.end && bStart > dateRange.end) return false;   // batch started after window
+      return true;
+    });
+  }
 
   if (batches.length === 0) {
     return <EmptyState text="No meat chicken batches in this view." />;
@@ -4721,11 +4761,24 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
   const avgWeight = totalButchered > 0 ? (totalWeight / totalButchered).toFixed(2) : 0;
   const costPerBird = adjButchered > 0 ? (totalCost / adjButchered).toFixed(2) : "—";
 
-  // Feed Conversion Ratio: lbs feed consumed / lbs meat produced
+  // Feed Conversion Ratio: lbs feed consumed / lbs meat produced.
+  // FCR is defined in pounds, so cup-logged entries are excluded — when
+  // someone logs in cups, FCR shows "—" (correct since the calculation
+  // is unit-specific).
   let totalFeedLbs = 0;
+  let totalFeedCups = 0;
   batches.forEach(b => {
     const bEntries = entries.filter(e => e.batchId === b.id && e.action === "fed");
-    totalFeedLbs += bEntries.reduce((s, e) => s + (Number(e.lbs)||0), 0);
+    bEntries.forEach(e => {
+      // Per-entry feedUnit was added when we introduced the cups option.
+      // Legacy entries don't have feedUnit and store amount in `lbs` —
+      // treat those as lbs by default.
+      if (e.feedUnit === "cups") {
+        totalFeedCups += Number(e.feedAmount) || 0;
+      } else {
+        totalFeedLbs += Number(e.lbs) || Number(e.feedAmount) || 0;
+      }
+    });
   });
   const totalMeatLbs = totalWeight;
   const fcr = totalFeedLbs > 0 && totalMeatLbs > 0 ? (totalFeedLbs / totalMeatLbs).toFixed(2) : "—";
@@ -4787,6 +4840,19 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
         <StatCard label="Mortality Rate" value={`${mortalityRate}%`} sub={`${totalDeaths} deaths`} accent={palette.accent} />
         <StatCard label="Avg Final Weight" value={`${avgWeight} lbs`} accent={palette.leaf} />
         {fcr !== "—" && <StatCard label="Feed Conversion (FCR)" value={fcr} sub="lbs feed per lb meat" accent={palette.feather} />}
+        {(totalFeedLbs > 0 || totalFeedCups > 0) && (
+          <StatCard
+            label="Total Feed"
+            value={
+              totalFeedLbs > 0 && totalFeedCups > 0
+                ? `${totalFeedLbs.toFixed(1)} lbs + ${totalFeedCups.toFixed(1)} cups`
+                : totalFeedLbs > 0
+                  ? `${totalFeedLbs.toFixed(1)} lbs`
+                  : `${totalFeedCups.toFixed(1)} cups`
+            }
+            accent={palette.feather}
+          />
+        )}
         <StatCard label="Cost / Bird" value={typeof costPerBird === "string" ? costPerBird : fmtMoney(costPerBird)} sub="all-in" accent={palette.yolk} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} sub={`feed ${fmtMoney(adjFeedCost)}${adjInfraCost > 0 ? " + infra " + fmtMoney(adjInfraCost) : ""}`} accent={palette.feather} />
         {tractorFeet > 0 && (
@@ -9393,7 +9459,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     setValidationError("");
 
     // Coerce numeric fields from string inputs to actual numbers
-    const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen", "unitQty", "pricePerUnit", "customEggsPerUnit", "distanceFeet"];
+    const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen", "unitQty", "pricePerUnit", "customEggsPerUnit", "distanceFeet", "feedAmount"];
     const cleanFields = { ...fields };
     numericKeys.forEach((k) => {
       if (cleanFields[k] !== undefined && cleanFields[k] !== "") {
@@ -9739,9 +9805,58 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
       {action === "fed" && (
         <>
-          <Field label="Pounds of feed">
-            <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.lbs || ""} onChange={(e) => set("lbs", e.target.value)} />
-          </Field>
+          {/* Unit toggle — defaults to lbs (matches existing logs and the
+              most common case: buying feed by the bag). Switching to cups
+              writes feedUnit=cups + feedAmount; the legacy `lbs` field stays
+              empty for cup-logged entries so analytics can sum the two units
+              separately rather than incorrectly mixing them. */}
+          {(() => {
+            const currentUnit = fields.feedUnit || (fields.lbs ? "lbs" : (isEdit ? "lbs" : "lbs"));
+            const setUnit = (u) => {
+              setFields(f => {
+                const next = { ...f, feedUnit: u };
+                // Moving amount between fields based on unit so the visible
+                // input stays populated when the user toggles.
+                if (u === "cups") {
+                  // Keep what they typed but stop labeling it as lbs
+                  next.feedAmount = next.feedAmount || next.lbs || "";
+                  delete next.lbs;
+                } else {
+                  // Switching back to lbs
+                  next.lbs = next.lbs || next.feedAmount || "";
+                  delete next.feedAmount;
+                }
+                return next;
+              });
+            };
+            return (
+              <Field label="How much feed?">
+                <div style={{ display:"flex",gap:8,marginBottom:8 }}>
+                  {["lbs","cups"].map(u => (
+                    <button
+                      key={u}
+                      type="button"
+                      onClick={() => setUnit(u)}
+                      style={{
+                        flex:1,padding:"8px 10px",borderRadius:8,
+                        border:`1.5px solid ${currentUnit===u?palette.ink:palette.line}`,
+                        background: currentUnit===u?palette.ink:palette.card,
+                        color: currentUnit===u?palette.bg:palette.ink,
+                        fontFamily:FONT_BODY,fontSize:13,fontWeight:600,cursor:"pointer",
+                      }}
+                    >{u}</button>
+                  ))}
+                </div>
+                <input
+                  type="number" inputMode="decimal" step="0.1"
+                  style={inputStyle}
+                  value={currentUnit === "cups" ? (fields.feedAmount || "") : (fields.lbs || "")}
+                  onChange={(e) => set(currentUnit === "cups" ? "feedAmount" : "lbs", e.target.value)}
+                  placeholder={currentUnit === "cups" ? "Cups of feed" : "Pounds of feed"}
+                />
+              </Field>
+            );
+          })()}
           <Field label="Cost of bag (or this feeding)">
             <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
@@ -10964,22 +11079,33 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       };
     }
     if (hobby.type === "incubator") {
-      // Incubator data lives on hobby.runs[], not entries — but entries are
-      // the date-filterable thing. We filter runs by dateSet falling in window.
+      // Incubator data lives on hobby.runs[], not entries. We want to include
+      // a run if any part of its lifetime overlaps the filter window — not
+      // just its start date. A run set 35 days ago but still hatching now
+      // is squarely active in "this week", and a run set in December that
+      // hatched in January should appear in BOTH year filters.
       //
-      // IMPORTANT: the run record uses dateSet and eggsHatched (see
-      // Incubator.jsx — RunModal writes dateSet, FinalizeRunModal writes
-      // eggsHatched). Earlier versions of this code read r.setDate and
-      // r.hatched which don't exist, which is why incubator share stats
-      // always came back empty.
+      // Run lifetime: [dateSet → hatchedDate || today]. We check overlap
+      // against the [windowStart, today] window for each filter tier.
+      //
+      // Field-name note: the run record uses dateSet (not setDate) and
+      // eggsHatched (not hatched) — see Incubator.jsx. Earlier versions of
+      // this code read the wrong field names, which is why share stats
+      // always looked empty.
       const allRuns = hobby.runs || [];
       const runsInRange = allRuns.filter(r => {
         if (!r.dateSet) return filter === "all";
         if (filter === "all") return true;
-        const d = new Date(r.dateSet + "T12:00");
-        if (filter === "today") return r.dateSet === todayStr;
-        if (filter === "week")  return d >= oneWeekAgo;
-        if (filter === "year")  return d >= oneYearAgo;
+        const runStart = r.dateSet;
+        const runEnd = r.hatchedDate || todayStr; // still incubating → extend to today
+        if (filter === "today") {
+          // Run was active any time today
+          return runStart <= todayStr && runEnd >= todayStr;
+        }
+        // For week/year, window is [oneWeekAgo/oneYearAgo, today]
+        const windowStartIso = (filter === "week" ? oneWeekAgo : oneYearAgo).toISOString().slice(0, 10);
+        if (runEnd < windowStartIso) return false; // ended before window
+        if (runStart > todayStr) return false;     // started after window (future-dated)
         return true;
       });
       const eggsSet = runsInRange.reduce((s,r) => s + (Number(r.eggsSet)||0), 0);
