@@ -31,6 +31,7 @@ import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fmtMoney } from "./units.js";
+import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -917,6 +918,7 @@ export default function DogsPage({ hobby, data, update, setModal }) {
   const [litterModal, setLitterModal] = useState({ open: false, litter: null });
   const [attackModal, setAttackModal] = useState({ open: false, attack: null });
   const [logEntryAction, setLogEntryAction] = useState(null);
+  const [historyAnimal, setHistoryAnimal] = useState(null);
 
   const dogs = (hobby?.animals || []).filter(a => !a.archived);
   const archived = (hobby?.animals || []).filter(a => a.archived);
@@ -1131,6 +1133,15 @@ export default function DogsPage({ hobby, data, update, setModal }) {
                     </div>
                   )}
                 </div>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setHistoryAnimal(d); }}
+                  aria-label={`View history for ${d.name}`}
+                  style={{
+                    padding: "4px 8px", borderRadius: 6, fontSize: 11, fontWeight: 600, fontFamily: FONT_BODY,
+                    border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", color: palette.ink,
+                    flexShrink: 0,
+                  }}
+                >📜 History</button>
               </div>
             </div>
           );
@@ -1274,6 +1285,16 @@ export default function DogsPage({ hobby, data, update, setModal }) {
           onSave={saveAttack}
           onDelete={attackModal.attack ? deleteAttack : null}
           onClose={() => setAttackModal({ open: false, attack: null })}
+        />
+      )}
+      {historyAnimal && (
+        <AnimalHistoryView
+          animal={historyAnimal}
+          hobby={hobby}
+          entries={(data?.entries?.[hobby.id]) || []}
+          sales={data?.sales || []}
+          species="dog"
+          onClose={() => setHistoryAnimal(null)}
         />
       )}
       {logEntryAction && (

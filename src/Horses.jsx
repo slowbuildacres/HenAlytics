@@ -22,6 +22,7 @@ import React, { useState } from "react";
 import { X, Edit3 } from "lucide-react";
 import { fmtMoney } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
+import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -680,6 +681,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
   // jumping to an ancestor/descendant from the tree swaps the horse in here
   // without ever opening the edit modal.
   const [pedigreeHorse, setPedigreeHorse] = useState(null);
+  const [historyHorse, setHistoryHorse] = useState(null);
 
   const horses = (hobby?.animals || []);
   const liveHorses = horses.filter(h => !h.archived);
@@ -882,6 +884,16 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
           }}
         />
       )}
+      {historyHorse && (
+        <AnimalHistoryView
+          animal={historyHorse}
+          hobby={hobby}
+          entries={(data?.entries?.[hobby.id]) || []}
+          sales={data?.sales || []}
+          species="horse"
+          onClose={() => setHistoryHorse(null)}
+        />
+      )}
 
       {/* Top stats */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
@@ -981,6 +993,15 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
                       flexShrink:0,
                     }}
                   >🧬 Pedigree</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setHistoryHorse(h); }}
+                    aria-label={`View history for ${h.name}`}
+                    style={{
+                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                      flexShrink:0,
+                    }}
+                  >📜 History</button>
                   <button
                     onClick={(e) => { e.stopPropagation(); setSaleModal({ open: true, horse: h }); }}
                     aria-label={`Log sale of ${h.name}`}

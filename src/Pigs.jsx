@@ -5,6 +5,7 @@ import React, { useState } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
+import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -264,9 +265,10 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   );
 }
 
-function AnimalCard({animal,hobbyId,animals,entries,update,setModal}){
+function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}){
   const[logAction,setLogAction]=useState(null);
   const[showPedigree,setShowPedigree]=useState(false);
+  const[showHistory,setShowHistory]=useState(false);
   const animalEntries=entries.filter(e=>e.animalId===animal.id);
   const weightEntries=animalEntries.filter(e=>e.action==="weight").sort((a,b)=>b.date.localeCompare(a.date));
   const latestWeight=weightEntries[0]?.weight||null;
@@ -284,6 +286,16 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal}){
           animals={animals||[]}
           onClose={()=>setShowPedigree(false)}
           onJumpTo={(id)=>{setShowPedigree(false);setTimeout(()=>setModal({type:"editAnimal",hobbyId,animalId:id}),0);}}
+        />
+      )}
+      {showHistory && (
+        <AnimalHistoryView
+          animal={animal}
+          hobby={hobby}
+          entries={entries}
+          sales={sales||[]}
+          species="pig"
+          onClose={()=>setShowHistory(false)}
         />
       )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
@@ -308,6 +320,7 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal}){
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
         {LOG_ACTIONS.map(a=><button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>)}
         <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
+        <button onClick={()=>setShowHistory(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>📜 History</button>
       </div>
       {recentEntries.length>0&&(
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -403,7 +416,7 @@ export default function PigsPage({hobby,data,update}){
           <div style={{fontSize:13,marginBottom:14}}>Add your first pig to track growth, feed, and butcher stats.</div>
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first pig</button>
         </div>
-      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} update={update} setModal={setLocalModal}/>)}
+      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal}/>)}
 
       {archived.length>0 && (
         <details style={{marginTop:18}}>

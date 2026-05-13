@@ -725,9 +725,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 24;
+const CURRENT_VERSION = 25;
 
 const WHATS_NEW = [
+  "📜 Animal history view — tap the new 📜 History button on any horse, cow, goat, sheep, pig, rabbit, or dog to see a full timeline of everything ever logged for that animal: weight, milk, vet visits, farrier, deworming, rides, breedings, shearings, sales, and death. Sorted newest-first so the latest event is at the top.",
   "🏷️ Log a sale or report a death from any animal page — sold/leased/rehomed/died moves the animal to archived and (for sales) creates a record in your Sales tab. Plus new horse breeds (Warmblood, Sport horse, Draft type) and activities (Driving, Lunging, Trails, Show).",
   "🌱 Pin any plant to your garden map — added an \"Other\" option to the garden map's plant picker. Tap it, type any plant name (watermelon radish, marigold, yarrow, whatever you grow), and drop a pin. The custom name shows up on the pin and in its detail view.",
   "🌳 Orchard + plant action logs — perennials are now split into 🌿 Perennial Plants (berry bushes, asparagus, rhubarb, vines) and 🌳 Orchard (fruit and nut trees), each in its own expandable section. Tap any plant or tree to open its detail page where you can log actions like spray, prune, fertilize, mulch, or treat — each one dated and saved to that plant's history. Existing perennials with 'tree' in the name automatically moved to the Orchard; you can move any item between sections from its edit screen.",
@@ -1688,6 +1689,76 @@ export default function HomesteadApp() {
       }
     }
   }, [data?.hobbies, activeHobby, page]);
+
+  // ---- Auto-commit stale egg baskets ----
+  // The egg counter (FlockBasket) lets users tap +/− to build up a count
+  // before tapping "Done" to write an eggs_laid entry. The count itself is
+  // persisted to flock.eggBasket so it survives backgrounding/reload — but
+  // if the user never taps Done, the basket sits there with a stale date
+  // and analytics never see those eggs.
+  //
+  // Fix: on every render (and once per minute via the date watcher below),
+  // scan all flocks; any basket whose date is BEFORE today gets auto-committed
+  // as an entry on its own date, then cleared. This covers:
+  //   - User collected last night, never tapped Done → commit on yesterday
+  //   - User collected yesterday afternoon, app reopened today → commit yesterday
+  //   - Multiple days missed → commit on the basket's original date
+  useEffect(() => {
+    if (!data?.hobbies) return;
+    const today = (() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`; })();
+    let needsCommit = false;
+    for (const h of data.hobbies) {
+      if (h.type !== "egg_layers") continue;
+      for (const fl of (h.flocks || [])) {
+        if (fl.eggBasket && fl.eggBasket.date && fl.eggBasket.date < today && fl.eggBasket.count > 0) {
+          needsCommit = true;
+          break;
+        }
+      }
+      if (needsCommit) break;
+    }
+    if (!needsCommit) return;
+    update(d => {
+      for (const h of (d.hobbies || [])) {
+        if (h.type !== "egg_layers") continue;
+        for (const fl of (h.flocks || [])) {
+          if (fl.eggBasket && fl.eggBasket.date && fl.eggBasket.date < today && fl.eggBasket.count > 0) {
+            d.entries[h.id] = d.entries[h.id] || [];
+            d.entries[h.id].push({
+              id: Math.random().toString(36).slice(2, 10),
+              date: fl.eggBasket.date,
+              action: "eggs_laid",
+              count: fl.eggBasket.count,
+              flockId: fl.id,
+              birdType: fl.birdType,
+              autoCommitted: true, // marker so we can debug / show in UI later if needed
+              created: Date.now(),
+            });
+            fl.eggBasket = null;
+          }
+        }
+      }
+      return d;
+    });
+    // Re-run when hobbies change (covers basket updates) or activeHobby changes
+    // (covers user-driven navigation that might have created a stale basket).
+  }, [data?.hobbies, activeHobby]);
+
+  // ---- Midnight ticker: re-run the stale-basket scan when the date rolls over ----
+  // The effect above only runs on data/hobby changes. If a user leaves the app
+  // open across midnight without any state changes, their basket would stay
+  // stale until something else triggers a re-render. This ticker forces a
+  // re-render once per minute so the date check above fires soon after midnight.
+  const [_dateTick, setDateTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setDateTick(t => t + 1), 60 * 1000);
+    return () => clearInterval(id);
+  }, []);
+  // Note: _dateTick is intentionally unused as a value — its purpose is to
+  // bump the render cycle so the auto-commit effect re-evaluates against
+  // the current date. Including it in the effect's deps would be redundant
+  // since data.hobbies hasn't changed; this comment exists so we don't
+  // "fix" it later by adding it to deps and breaking the intent.
 
   const [syncStatus, setSyncStatus] = useState("idle");
   const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error

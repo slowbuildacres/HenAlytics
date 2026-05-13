@@ -22,6 +22,7 @@ import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fmtMoney } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
+import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -758,6 +759,7 @@ export default function SheepPage({ hobby, data, update, setModal }) {
   // this; jumping to an ancestor/descendant from the tree swaps the
   // animal in here without ever opening the edit modal.
   const [pedigreeAnimal, setPedigreeAnimal] = useState(null);
+  const [historyAnimal, setHistoryAnimal] = useState(null);
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [shearingModal, setShearingModal] = useState({ open: false, shearing: null });
   const [milkOpen, setMilkOpen] = useState(false);
@@ -886,6 +888,16 @@ export default function SheepPage({ hobby, data, update, setModal }) {
             const next = (hobby?.animals || []).find(a => a.id === id);
             if (next) setPedigreeAnimal(next);
           }}
+        />
+      )}
+      {historyAnimal && (
+        <AnimalHistoryView
+          animal={historyAnimal}
+          hobby={hobby}
+          entries={(data?.entries?.[hobby.id]) || []}
+          sales={data?.sales || []}
+          species="sheep"
+          onClose={() => setHistoryAnimal(null)}
         />
       )}
       {breedingModal.open && (
@@ -1048,6 +1060,15 @@ export default function SheepPage({ hobby, data, update, setModal }) {
                       flexShrink:0,
                     }}
                   >🧬 Pedigree</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setHistoryAnimal(a); }}
+                    aria-label={`View history for ${a.name}`}
+                    style={{
+                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                      flexShrink:0,
+                    }}
+                  >📜 History</button>
                   <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
                 </div>
               );

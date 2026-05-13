@@ -37,6 +37,7 @@ import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
+import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -515,9 +516,10 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
 // ANIMAL CARD — single rabbit row with action buttons, recent activity,
 // and pedigree button. Matches Pigs/Goats/Cows pattern.
 // ============================================================================
-function AnimalCard({animal,hobbyId,animals,entries,update,setModal,hideHutchChip}){
+function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,hideHutchChip}){
   const[logAction,setLogAction]=useState(null);
   const[showPedigree,setShowPedigree]=useState(false);
+  const[showHistory,setShowHistory]=useState(false);
   const animalEntries=entries.filter(e=>e.animalId===animal.id);
   const weightEntries=animalEntries.filter(e=>e.action==="weight").sort((a,b)=>(b.date||"").localeCompare(a.date||""));
   const latestWeight=weightEntries[0]?.weight||null;
@@ -552,6 +554,16 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal,hideHutchChi
           onJumpTo={(id)=>{setShowPedigree(false);setTimeout(()=>setModal({type:"editAnimal",hobbyId,animalId:id}),0);}}
         />
       )}
+      {showHistory && (
+        <AnimalHistoryView
+          animal={animal}
+          hobby={hobby}
+          entries={entries}
+          sales={sales||[]}
+          species="rabbit"
+          onClose={()=>setShowHistory(false)}
+        />
+      )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
@@ -577,6 +589,7 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal,hideHutchChi
           <button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>
         ))}
         <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
+        <button onClick={()=>setShowHistory(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>📜 History</button>
       </div>
       {recentEntries.length>0 && (
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -746,6 +759,8 @@ export default function RabbitsPage({hobby,data,update}){
                 hobbyId={hobby.id}
                 animals={allAnimals}
                 entries={entries}
+                sales={data.sales||[]}
+                hobby={hobby}
                 update={update}
                 setModal={setLocalModal}
               />
@@ -785,6 +800,8 @@ export default function RabbitsPage({hobby,data,update}){
                         hobbyId={hobby.id}
                         animals={allAnimals}
                         entries={entries}
+                        sales={data.sales||[]}
+                        hobby={hobby}
                         update={update}
                         setModal={setLocalModal}
                         hideHutchChip
@@ -814,6 +831,8 @@ export default function RabbitsPage({hobby,data,update}){
                       hobbyId={hobby.id}
                       animals={allAnimals}
                       entries={entries}
+                      sales={data.sales||[]}
+                      hobby={hobby}
                       update={update}
                       setModal={setLocalModal}
                       hideHutchChip
