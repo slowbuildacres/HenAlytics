@@ -2275,7 +2275,7 @@ export default function HomesteadApp() {
     saveImmediateRef.current = false; // one-shot
     const fire = async () => {
       const result = await saveHomestead(user, data);
-      console.log("[SAVE] result:", result);
+      console.log("[SAVE] result:", result, "user:", user ? user.email || user.id : "null");
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
