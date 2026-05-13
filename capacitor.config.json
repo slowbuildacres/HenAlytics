@@ -22,5 +22,9 @@
       "splashFullScreen": true,
       "splashImmersive": true
     }
+  },
+  "server": {
+    "iosScheme": "https",
+    "androidScheme": "https"
   }
 }

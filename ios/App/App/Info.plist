@@ -60,5 +60,16 @@
 	<string>Henalytics needs photo library access so you can attach photos to your homestead entries.</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>
 	<true/>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.henalytics.app</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>henalytics</string>
+			</array>
+		</dict>
+	</array>
 </dict>
 </plist>
