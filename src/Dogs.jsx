@@ -778,6 +778,13 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
   const [animalId, setAnimalId] = useState(live[0]?.id || "");
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
+  // Feed action fields. Stored on entry as feedAmount + feedUnit; the legacy
+  // `lbs` field also gets written when unit=lbs for back-compat with shared
+  // analytics that scan for it. Default unit is lbs (matches buying kibble
+  // by the bag); cups for users who measure by scoop.
+  const [feedAmount, setFeedAmount] = useState("");
+  const [feedUnit, setFeedUnit] = useState("lbs");
+  const [feedCost, setFeedCost] = useState("");
   // Sale-only fields
   const [saleBuyer, setSaleBuyer] = useState("");
   const [salePrice, setSalePrice] = useState("");
@@ -787,6 +794,7 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
 
   const titles = {
     weight: "⚖️ Log weight",
+    fed:    "🍖 Log feeding",
     health: "💊 Vet / meds",
     death:  "🪦 Log death",
     sale:   "🏷️ Log sale",
@@ -794,6 +802,7 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
   };
   const subtexts = {
     weight: "Weight check — useful for growth tracking and dosage calculations.",
+    fed:    "Log how much food you went through — for the whole pack or a specific dog. Picking a dog is optional.",
     health: "Vaccines, dewormer, heartworm, vet visits — anything health-related.",
     death:  "This will archive the dog. Cause of death goes in notes.",
     sale:   "This will archive the dog and create a sale record in your Sales tab.",
@@ -804,6 +813,7 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
   const canSave = (() => {
     if (animalRequired && !animalId) return false;
     if (action === "weight" && !parseFloat(weight)) return false;
+    if (action === "fed" && !parseFloat(feedAmount)) return false;
     if (noteRequired && !notes.trim()) return false;
     return true;
   })();
@@ -817,6 +827,15 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
       created: Date.now(),
     };
     if (action === "weight") entry.weight = parseFloat(weight) || 0;
+    if (action === "fed") {
+      // Write unit-aware fields; also fill legacy `lbs` when unit=lbs so any
+      // shared "sum total feed bought" code that scans across hobbies keeps
+      // working without needing per-species awareness.
+      entry.feedAmount = parseFloat(feedAmount) || 0;
+      entry.feedUnit = feedUnit;
+      entry.lbs = feedUnit === "lbs" ? (parseFloat(feedAmount) || 0) : 0;
+      entry.cost = parseFloat(feedCost) || 0;
+    }
     if (action === "sale") {
       entry.buyer = saleBuyer.trim();
       entry.price = Number(salePrice) || 0;
@@ -864,6 +883,45 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
           <input type="number" step="0.1" min={0} style={inputStyle} value={weight} onChange={e => setWeight(e.target.value)} placeholder="0" autoFocus inputMode="decimal" />
         </Field>
       )}
+      {action === "fed" && (
+        <>
+          <Field label="How much feed?">
+            <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
+              {["lbs", "cups"].map(u => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setFeedUnit(u)}
+                  style={{
+                    flex: 1, padding: "8px 10px", borderRadius: 8,
+                    border: `1.5px solid ${feedUnit === u ? palette.ink : palette.line}`,
+                    background: feedUnit === u ? palette.ink : palette.card,
+                    color: feedUnit === u ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{u}</button>
+              ))}
+            </div>
+            <input
+              type="number" inputMode="decimal" step="0.1" min={0}
+              style={inputStyle}
+              value={feedAmount}
+              onChange={e => setFeedAmount(e.target.value)}
+              placeholder={feedUnit === "cups" ? "Cups of feed" : "Pounds of feed"}
+              autoFocus
+            />
+          </Field>
+          <Field label="Cost ($, optional)">
+            <input
+              type="number" inputMode="decimal" step="0.01" min={0}
+              style={inputStyle}
+              value={feedCost}
+              onChange={e => setFeedCost(e.target.value)}
+              placeholder="$0.00"
+            />
+          </Field>
+        </>
+      )}
       {action === "sale" && (
         <>
           <Field label="Type">
@@ -890,9 +948,10 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
             action === "health" ? "e.g. Rabies vaccine, heartworm prevention" :
             action === "death" ? "Cause / circumstances" :
             action === "sale" ? "Additional notes" :
+            action === "fed" ? "e.g. bag of Purina Pro Plan, brand of food" :
             action === "note" ? "What happened" : ""
           }
-          autoFocus={action !== "weight"}
+          autoFocus={action !== "weight" && action !== "fed"}
         />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
@@ -1094,6 +1153,7 @@ export default function DogsPage({ hobby, data, update, setModal }) {
         <Btn small variant="leaf" onClick={() => setBreedingModal({ open: true, breeding: null })} style={{ width: "100%" }}>🐕 Breeding</Btn>
         <Btn small variant="leaf" onClick={() => setLitterModal({ open: true, litter: null })} style={{ width: "100%" }}>👶 Litter</Btn>
         <Btn small onClick={() => setLogEntryAction("weight")} style={{ width: "100%" }}>⚖️ Weight</Btn>
+        <Btn small onClick={() => setLogEntryAction("fed")} style={{ width: "100%" }}>🍖 Fed</Btn>
         <Btn small onClick={() => setLogEntryAction("health")} style={{ width: "100%" }}>💊 Vet / meds</Btn>
         <Btn small onClick={() => setLogEntryAction("note")} style={{ width: "100%" }}>📝 Note</Btn>
         <Btn small variant="danger" onClick={() => setLogEntryAction("death")} style={{ width: "100%" }}>🪦 Died</Btn>

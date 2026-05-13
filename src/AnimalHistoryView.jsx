@@ -84,7 +84,15 @@ const detailForEntry = (e) => {
   const bits = [];
   if (e.action === "milk" && e.gallons != null) bits.push(`${e.gallons} gal`);
   if (e.action === "fed") {
-    if (e.lbs != null) bits.push(`${e.lbs} lbs`);
+    // Newer entries store feedAmount + feedUnit; legacy entries only have lbs.
+    if (e.feedUnit === "cups" && e.feedAmount != null) {
+      bits.push(`${e.feedAmount} cups`);
+    } else if (e.lbs != null && Number(e.lbs) > 0) {
+      bits.push(`${e.lbs} lbs`);
+    } else if (e.feedAmount != null && Number(e.feedAmount) > 0) {
+      // Defensive fallback: feedAmount present but feedUnit missing — default to lbs
+      bits.push(`${e.feedAmount} lbs`);
+    }
     if (e.cost > 0) bits.push(fmtMoney(e.cost));
   }
   if (e.action === "weight" && e.weight != null) bits.push(`${e.weight} lbs`);
