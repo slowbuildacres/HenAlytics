@@ -237,6 +237,36 @@ function migrateData(data) {
         }
         h.currentBatch = null;
       }
+      // BRUTE-FORCE DEFENSIVE: if a batch ID appears in BOTH currentBatches
+      // and archivedBatches, the archived version wins and we remove it from
+      // currentBatches. This catches cases where past code paths (or stale
+      // cloud data overwriting fresh local) ended up with the same batch in
+      // both arrays. Without this, a finalized batch can stick around in
+      // currentBatches forever if the cloud version happens to include it.
+      // We also de-dupe currentBatches by id (keep first occurrence) to
+      // guard against any historical bug that double-pushed.
+      const archivedIds = new Set(h.archivedBatches.map(b => b.id));
+      const seenCurrentIds = new Set();
+      h.currentBatches = h.currentBatches.filter(b => {
+        if (archivedIds.has(b.id)) return false; // archived wins
+        if (seenCurrentIds.has(b.id)) return false; // duplicate
+        seenCurrentIds.add(b.id);
+        return true;
+      });
+      // Also: if any batch in currentBatches has an endDate set (which is
+      // only written by the finalize flows), it means the batch was finalized
+      // but never made it to archivedBatches due to some past bug. Promote
+      // it to archived now.
+      const orphanedFinalized = h.currentBatches.filter(b => b.endDate);
+      if (orphanedFinalized.length > 0) {
+        orphanedFinalized.forEach(b => {
+          if (!archivedIds.has(b.id)) {
+            h.archivedBatches.push(b);
+            archivedIds.add(b.id);
+          }
+        });
+        h.currentBatches = h.currentBatches.filter(b => !b.endDate);
+      }
       // Rename old "Meat Chickens" to "Meat Birds" — the hobby now supports
       // any bird type (turkey, duck, goose, etc.) at batch creation time.
       // Only auto-rename if user hasn't customized the name to something else.
@@ -879,6 +909,7 @@ const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep
 const CURRENT_VERSION = 31;
 
 const WHATS_NEW = [
+  "📦 Past batches on the meat birds page — when you finalize a batch, it now shows up in a collapsible \"Past batches\" section at the bottom of the meat birds home page. Each row shows the batch name, dates, total started, butchered count, and total weight. Full per-batch records still live in the Analytics tab.",
   "🍖 Feed logging for dogs — Dogs now have a Fed button alongside Weight, Vet/meds, etc. Log how much food the pack went through (or per-dog if you want), with the lbs/cups toggle.",
   "🥣 Cups or lbs for feed — egg layers, meat birds, rabbits, and dogs can now log feed in cups instead of pounds. Tap the unit toggle in the feed log to switch. Stats show whichever unit you logged in. Feed Conversion Ratio still needs lbs since it's defined that way, but everything else just shows the amount.",
   "📊 Stats filter shows your active batches — if you filter by \"Past 7 days\" or \"Past 30 days\" and a batch was active during that window (even if it started before), it now shows up with the entries logged in that window. Same fix for incubator runs. Previously a 35-day-old active batch would silently drop out of \"This week\" stats even though you'd been feeding it all week.",
@@ -2152,6 +2183,9 @@ export default function HomesteadApp() {
 
   // ---- Save with debouncing whenever data changes ----
   // We don't save on every keystroke — wait 500ms after the last change to coalesce edits.
+  // EXCEPT when saveImmediateRef is true, which is a one-shot bypass set by
+  // critical actions (e.g. batch finalize) that need to persist NOW because
+  // the user is likely to close the app right after.
   useEffect(() => {
     if (!data) return;
     if (skipNextSaveRef.current) {
@@ -2160,14 +2194,23 @@ export default function HomesteadApp() {
     }
     if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     setSyncStatus("saving");
-    saveTimerRef.current = setTimeout(async () => {
+    const immediate = saveImmediateRef.current;
+    saveImmediateRef.current = false; // one-shot
+    const fire = async () => {
       const result = await saveHomestead(user, data);
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
-      // After "saved" briefly shows, fade back to "idle"
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
       }
-    }, 500);
+    };
+    if (immediate) {
+      // Fire-and-forget but kicked off synchronously now, not 500ms from now.
+      // This is the same "no await" pattern as the visibilitychange flush —
+      // we can't reliably await on iOS during a backgrounding event.
+      fire();
+    } else {
+      saveTimerRef.current = setTimeout(fire, 500);
+    }
     return () => clearTimeout(saveTimerRef.current);
   }, [data, user]);
 
@@ -2227,7 +2270,14 @@ export default function HomesteadApp() {
     };
   }, []);
 
-  const update = (mutator) => {
+  // Ref-based one-shot bypass for the debounce. When set to true, the next
+  // data-change cycle saves immediately instead of waiting the 500ms debounce.
+  // Used by critical actions (e.g. batch finalize) where the user may close
+  // the app right after clicking — debounce isn't safe there.
+  const saveImmediateRef = useRef(false);
+
+  const update = (mutator, opts) => {
+    if (opts && opts.immediate) saveImmediateRef.current = true;
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
 
@@ -3982,21 +4032,82 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   // at once (e.g. broilers + turkeys + ducks). Render one card per batch
   // plus a button to hatch another. Empty state retained for fresh hobbies.
   const activeBatches = hobby.currentBatches || [];
+  const archivedBatches = hobby.archivedBatches || [];
+
+  // Past batches section — extracted so we can render it in both the
+  // "has active batches" path AND the "no active batches" empty-state path.
+  // Without this, users who finalize their only batch would see "No active
+  // batch" with no way to access their history.
+  const pastBatchesSection = archivedBatches.length > 0 && (
+    <details style={{ marginTop: 16 }}>
+      <summary style={{
+        cursor: "pointer", color: palette.inkSoft, fontSize: 13,
+        padding: 8, background: palette.bgAlt, borderRadius: 8,
+        userSelect: "none", fontWeight: 600,
+      }}>
+        📦 Past batches ({archivedBatches.length})
+      </summary>
+      <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+        {archivedBatches
+          .slice()
+          .sort((a, b) => (b.endDate || b.startDate || "").localeCompare(a.endDate || a.startDate || ""))
+          .map((b) => {
+            const startedCount = Number(b.startCount) || 0;
+            const butchered = (b.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
+            const totalWeight = (b.butchered || []).reduce((s, x) => s + (Number(x.count) || 0) * (Number(x.avgWeight) || 0), 0);
+            const deaths = (b.finalEntries || [])
+              .filter(e => e.action === "death")
+              .reduce((s, e) => s + (Number(e.count) || 1), 0);
+            return (
+              <div key={b.id} style={{
+                padding: "10px 12px",
+                background: palette.bgAlt,
+                borderRadius: 8,
+                fontSize: 13,
+                color: palette.ink,
+                lineHeight: 1.5,
+              }}>
+                <div style={{ fontWeight: 600, marginBottom: 2 }}>
+                  {b.name}{b.birdType && b.birdType !== "Chicken" ? ` · ${b.birdType}` : ""}
+                </div>
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 4 }}>
+                  {fmtDate(b.startDate)}{b.endDate ? ` → ${fmtDate(b.endDate)}` : ""}
+                </div>
+                <div style={{ fontSize: 12, color: palette.inkSoft }}>
+                  {startedCount > 0 && <>Started <strong style={{ color: palette.ink }}>{startedCount}</strong></>}
+                  {butchered > 0 && <> · Butchered <strong style={{ color: palette.ink }}>{butchered}</strong></>}
+                  {totalWeight > 0 && <> · <strong style={{ color: palette.ink }}>{totalWeight.toFixed(1)} lbs</strong></>}
+                  {deaths > 0 && <> · {deaths} lost</>}
+                </div>
+              </div>
+            );
+          })}
+        <div style={{ fontSize: 11, color: palette.inkSoft, fontStyle: "italic", padding: "6px 4px", lineHeight: 1.5 }}>
+          Full records for past batches show up in the Analytics tab (filter to "All-time" to see everything).
+        </div>
+      </div>
+    </details>
+  );
 
   if (activeBatches.length === 0) {
     return (
-      <div style={{
-        background: palette.card, border: `2px dashed ${palette.ink}`, borderRadius: 12,
-        padding: 24, textAlign: "center",
-      }}>
-        <Bird size={32} color={palette.ink} strokeWidth={1.5} style={{ marginBottom: 10 }} />
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginBottom: 6 }}>No active batch</div>
-        <div style={{ color: palette.inkSoft, marginBottom: 14, fontSize: 14 }}>
-          Start a new batch when your chicks arrive.
+      <div>
+        <div style={{
+          background: palette.card, border: `2px dashed ${palette.ink}`, borderRadius: 12,
+          padding: 24, textAlign: "center",
+        }}>
+          <Bird size={32} color={palette.ink} strokeWidth={1.5} style={{ marginBottom: 10 }} />
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginBottom: 6 }}>No active batch</div>
+          <div style={{ color: palette.inkSoft, marginBottom: 14, fontSize: 14 }}>
+            {archivedBatches.length > 0
+              ? "All your batches have been finalized. Start a new one when chicks arrive — or peek at past batches below."
+              : "Start a new batch when your chicks arrive."}
+          </div>
+          <Btn variant="accent" onClick={() => setModal({ type: "hatchBatch" })}>
+            🐣 Hatch new batch
+          </Btn>
         </div>
-        <Btn variant="accent" onClick={() => setModal({ type: "hatchBatch" })}>
-          🐣 Hatch new batch
-        </Btn>
+        {pastBatchesSection}
       </div>
     );
   }
@@ -4045,6 +4156,8 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
           🐣 Hatch another batch
         </Btn>
       </div>
+
+      {pastBatchesSection}
     </div>
   );
 }
@@ -8137,7 +8250,7 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
         h.currentBatch = null;
       }
       return d;
-    });
+    }, { immediate: true });
     onClose();
   };
 
@@ -8614,6 +8727,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
               const n = parseInt(count);
               const w = parseFloat(avgWeight);
               const entryId = newId();
+              const wantImmediate = alsoFinalize && willEmptyBatch;
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === hobby.id);
                 if (!h || !Array.isArray(h.currentBatches)) return d;
@@ -8690,7 +8804,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                   }
                 }
                 return d;
-              });
+              }, wantImmediate ? { immediate: true } : undefined);
               onClose();
             }}>
               {confirmByReason()}
