@@ -559,41 +559,67 @@ function RideModal({ horses, ride, onSave, onDelete, onClose }) {
 // ============ HORSE SALE MODAL ============
 // Logs a sale of a specific horse — sold / leased / rehomed. The parent
 // component (HorsesPage) handles archiving + Sales row insertion.
-function HorseSaleModal({ horse, onClose, onSave }) {
+function HorseSaleModal({ horse, horses, onClose, onSave }) {
+  // When called from the row, `horse` is preselected. When called from the
+  // page-level "🏷️ Sale" quick action, `horse` is null and the user picks
+  // from `horses` (defaults to first live horse). Mirrors how CareLogModal
+  // handles its horse selection inline.
+  const liveHorses = (horses || []).filter(h => !h.archived);
+  const [horseId, setHorseId] = useState(horse?.id || liveHorses[0]?.id || "");
+  const selectedHorse = horse || liveHorses.find(h => h.id === horseId) || null;
   const [date, setDate] = useState(todayStr());
   const [saleType, setSaleType] = useState("sold");
   const [buyer, setBuyer] = useState("");
   const [price, setPrice] = useState("");
   const [notes, setNotes] = useState("");
-  if (!horse) return null;
+  if (!selectedHorse && liveHorses.length === 0) {
+    return (
+      <ModalShell title="🏷️ Sell a horse" onClose={onClose}>
+        <div style={{ fontSize: 13, color: palette.inkSoft, padding: "10px 0" }}>
+          No live horses to sell. Add a horse first.
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Btn variant="ghost" onClick={onClose}>Close</Btn>
+        </div>
+      </ModalShell>
+    );
+  }
+  if (!selectedHorse) return null;
   const handleSave = () => {
     const id = newId();
     const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
     const priceStr = Number(price) > 0 ? ` for $${Number(price).toFixed(2)}` : "";
     const buyerStr = buyer.trim() ? ` to ${buyer.trim()}` : "";
     onSave({
-      horseId: horse.id,
+      horseId: selectedHorse.id,
       saleId: id,
       date,
       archiveReason: `${verb}${buyerStr}${priceStr}`,
       saleData: {
         id, date,
         hobbyType: "horse",
-        crop: horse.name,
+        crop: selectedHorse.name,
         saleType,
         pricePerUnit: Number(price) || 0,
         totalRevenue: Number(price) || 0,
         qty: 1,
-        animalId: horse.id,
+        animalId: selectedHorse.id,
         buyer: buyer.trim(),
         notes: notes.trim() || "",
       },
     });
   };
   return (
-    <ModalShell title={`🏷️ Sell — ${horse.name}`} onClose={onClose}>
+    <ModalShell title={horse ? `🏷️ Sell — ${selectedHorse.name}` : "🏷️ Sell a horse"} onClose={onClose}>
+      {!horse && (
+        <Field label="Which horse?">
+          <select style={inputStyle} value={horseId} onChange={e => setHorseId(e.target.value)}>
+            {liveHorses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+        </Field>
+      )}
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-        {horse.name} will move to your Archived horses list. A sale record will appear in your Sales tab.
+        {selectedHorse.name} will move to your Archived horses list. A sale record will appear in your Sales tab.
       </div>
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
@@ -626,29 +652,54 @@ function HorseSaleModal({ horse, onClose, onSave }) {
 
 // ============ HORSE DEATH MODAL ============
 // Logs the death of a specific horse. Parent handles archive + entry insertion.
-function HorseDeathModal({ horse, onClose, onSave }) {
+function HorseDeathModal({ horse, horses, onClose, onSave }) {
+  // When called from the row, `horse` is preselected. When called from the
+  // page-level "🪦 Died" quick action, `horse` is null and the user picks
+  // from `horses` (defaults to first live horse).
+  const liveHorses = (horses || []).filter(h => !h.archived);
+  const [horseId, setHorseId] = useState(horse?.id || liveHorses[0]?.id || "");
+  const selectedHorse = horse || liveHorses.find(h => h.id === horseId) || null;
   const [date, setDate] = useState(todayStr());
   const [cause, setCause] = useState("");
   const [notes, setNotes] = useState("");
-  if (!horse) return null;
+  if (!selectedHorse && liveHorses.length === 0) {
+    return (
+      <ModalShell title="🪦 Log a horse death" onClose={onClose}>
+        <div style={{ fontSize: 13, color: palette.inkSoft, padding: "10px 0" }}>
+          No live horses to log a death for.
+        </div>
+        <div style={{ display: "flex", justifyContent: "flex-end" }}>
+          <Btn variant="ghost" onClick={onClose}>Close</Btn>
+        </div>
+      </ModalShell>
+    );
+  }
+  if (!selectedHorse) return null;
   const handleSave = () => {
     const entry = {
       id: newId(),
       date,
       action: "death",
-      animalId: horse.id,
-      animalName: horse.name,
+      animalId: selectedHorse.id,
+      animalName: selectedHorse.name,
       cause: cause.trim(),
       notes: notes.trim(),
       created: Date.now(),
     };
     const archiveReason = cause.trim() ? `Died: ${cause.trim()}` : "Died";
-    onSave({ horseId: horse.id, date, archiveReason, entry });
+    onSave({ horseId: selectedHorse.id, date, archiveReason, entry });
   };
   return (
-    <ModalShell title={`🪦 Log death — ${horse.name}`} onClose={onClose}>
+    <ModalShell title={horse ? `🪦 Log death — ${selectedHorse.name}` : "🪦 Log a horse death"} onClose={onClose}>
+      {!horse && (
+        <Field label="Which horse?">
+          <select style={inputStyle} value={horseId} onChange={e => setHorseId(e.target.value)}>
+            {liveHorses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
+          </select>
+        </Field>
+      )}
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-        {horse.name} will move to your Archived horses list. You can restore from there if this was a mistake.
+        {selectedHorse.name} will move to your Archived horses list. You can restore from there if this was a mistake.
       </div>
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
@@ -825,6 +876,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
       {saleModal.open && (
         <HorseSaleModal
           horse={saleModal.horse}
+          horses={horses}
           onClose={() => setSaleModal({ open: false, horse: null })}
           onSave={(payload) => {
             update(d => {
@@ -848,6 +900,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
       {deathModal.open && (
         <HorseDeathModal
           horse={deathModal.horse}
+          horses={horses}
           onClose={() => setDeathModal({ open: false, horse: null })}
           onSave={(payload) => {
             update(d => {
@@ -910,6 +963,8 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
         <Btn small variant="ghost" onClick={() => setCareModal({ open: true, kind: "vet", log: null })} style={{ width:"100%" }}>🩺 Vet</Btn>
         <Btn small variant="ghost" onClick={() => setCareModal({ open: true, kind: "deworming", log: null })} style={{ width:"100%" }}>💊 Dewormer</Btn>
         <Btn small variant="leaf" onClick={() => setBreedingModal({ open: true, breeding: null })} style={{ width:"100%" }}>💕 Log breeding</Btn>
+        <Btn small variant="ghost" onClick={() => setSaleModal({ open: true, horse: null })} style={{ width:"100%" }}>🏷️ Sale</Btn>
+        <Btn small variant="ghost" onClick={() => setDeathModal({ open: true, horse: null })} style={{ width:"100%" }}>🪦 Died</Btn>
         <Btn small variant="ghost" onClick={() => setHorseModal({ open: true, horse: null })} style={{ width:"100%" }}>+ Add horse</Btn>
       </div>
 
@@ -1002,24 +1057,6 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
                       flexShrink:0,
                     }}
                   >📜 History</button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setSaleModal({ open: true, horse: h }); }}
-                    aria-label={`Log sale of ${h.name}`}
-                    style={{
-                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
-                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
-                      flexShrink:0,
-                    }}
-                  >🏷️ Sale</button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setDeathModal({ open: true, horse: h }); }}
-                    aria-label={`Log death of ${h.name}`}
-                    style={{
-                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
-                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
-                      flexShrink:0,
-                    }}
-                  >🪦 Died</button>
                   <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
                 </div>
               );

@@ -725,9 +725,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 25;
+const CURRENT_VERSION = 26;
 
 const WHATS_NEW = [
+  "🐴 Tidier horse rows — each horse now shows just 🧬 Pedigree and 📜 History on its card, matching the other livestock pages. 🏷️ Sale and 🪦 Died moved up into the top action buttons; tap one and pick which horse from the dropdown.",
   "📜 Animal history view — tap the new 📜 History button on any horse, cow, goat, sheep, pig, rabbit, or dog to see a full timeline of everything ever logged for that animal: weight, milk, vet visits, farrier, deworming, rides, breedings, shearings, sales, and death. Sorted newest-first so the latest event is at the top.",
   "🏷️ Log a sale or report a death from any animal page — sold/leased/rehomed/died moves the animal to archived and (for sales) creates a record in your Sales tab. Plus new horse breeds (Warmblood, Sport horse, Draft type) and activities (Driving, Lunging, Trails, Show).",
   "🌱 Pin any plant to your garden map — added an \"Other\" option to the garden map's plant picker. Tap it, type any plant name (watermelon radish, marigold, yarrow, whatever you grow), and drop a pin. The custom name shows up on the pin and in its detail view.",
