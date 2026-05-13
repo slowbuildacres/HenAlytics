@@ -548,7 +548,7 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
             : <Btn variant="danger" onClick={() => { onDelete(kind, log.id); onClose(); }}>Confirm delete</Btn>
         )}
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={handleSave} disabled={!horseId || !date}>Save</Btn>
+        <Btn onClick={handleSave} disabled={selectedIds.length === 0 || !date}>Save</Btn>
       </div>
     </ModalShell>
   );
