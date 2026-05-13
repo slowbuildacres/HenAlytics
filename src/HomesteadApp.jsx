@@ -7941,9 +7941,10 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
   const [validationError, setValidationError] = useState("");
   // Two-step flow: form → confirm.
   const [confirming, setConfirming] = useState(false);
-  // Only ask about finalizing if the action would empty the batch. Defaults
-  // OFF so the user has to opt in.
+  // Auto-tick: see useEffect below `willEmptyBatch` declaration for the logic.
   const [alsoFinalize, setAlsoFinalize] = useState(false);
+  const userUncheckedRef = useRef(false);
+  const prevWillEmptyRef = useRef(false);
 
   // Push 4b — multi-batch support. The caller may pass batchId (e.g.
   // from a nudge that already knows which batch); otherwise we show an
@@ -7995,6 +7996,32 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
   const plannedCount = parseInt(count) || 0;
   const remainingAfter = Math.max(0, remaining - plannedCount);
   const willEmptyBatch = plannedCount > 0 && remainingAfter === 0;
+
+  // Auto-tick "Also finalize this batch" whenever the planned count would
+  // empty the batch — saves users from forgetting the tick and then wondering
+  // why the batch is still active on next app open. Only flips on the RISING
+  // edge (false → true) so we don't fight the user if they deliberately
+  // unticked the box. userUncheckedRef remembers an explicit user untick so
+  // we stay out of their way until the count changes back to non-emptying
+  // and then back to emptying again.
+  useEffect(() => {
+    if (willEmptyBatch && !prevWillEmptyRef.current && !userUncheckedRef.current) {
+      setAlsoFinalize(true);
+    }
+    if (!willEmptyBatch) {
+      // Reset the "user explicitly unticked" memory whenever the action no
+      // longer empties the batch, so a fresh empty-batch attempt gets the
+      // auto-tick again.
+      userUncheckedRef.current = false;
+    }
+    prevWillEmptyRef.current = willEmptyBatch;
+  }, [willEmptyBatch]);
+  const handleAlsoFinalizeChange = (checked) => {
+    setAlsoFinalize(checked);
+    if (!checked && willEmptyBatch) {
+      userUncheckedRef.current = true;
+    }
+  };
 
   const validate = () => {
     if (!batch) {
@@ -8200,7 +8227,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
               <input
                 type="checkbox"
                 checked={alsoFinalize}
-                onChange={(e) => setAlsoFinalize(e.target.checked)}
+                onChange={(e) => handleAlsoFinalizeChange(e.target.checked)}
                 style={{ marginTop: 3 }}
               />
               <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.5 }}>
@@ -9055,6 +9082,24 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
   const set = (k, v) => setFields((f) => ({ ...f, [k]: v }));
 
+  // Prefill the chicken-tractor distance from the flock/batch default exactly
+  // once when the modal mounts for a move_tractor log. We can't just use the
+  // default as the input's value fallback — that would lock the field, making
+  // it impossible to clear and replace (the input snaps back to the default
+  // any time the user types an empty string). Doing it as a one-shot effect
+  // means the user can freely delete and re-type after the prefill lands.
+  useEffect(() => {
+    if (action !== "move_tractor" || isEdit) return;
+    const flocks = hobby.flocks || hobby.currentBatches || [];
+    const defaultDist = flocks.find(f => Number(f.tractorDistanceFeet) > 0)?.tractorDistanceFeet;
+    if (defaultDist && !fields.distanceFeet) {
+      set("distanceFeet", String(defaultDist));
+    }
+    // Intentionally empty deps — fire once when the modal opens for a new
+    // move_tractor entry. We don't re-prefill if the user clears the field.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   // Which actions support attaching photos
   const supportsPhoto = ["note", "harvested", "planted", "issue"].includes(action);
   const MAX_PHOTOS = 5;
@@ -9468,7 +9513,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
                   <input
                     type="number" inputMode="numeric"
                     style={inputStyle}
-                    value={fields.distanceFeet || String(defaultDist)}
+                    value={fields.distanceFeet ?? ""}
                     onChange={(e) => set("distanceFeet", e.target.value)}
                     placeholder={String(defaultDist)}
                   />
