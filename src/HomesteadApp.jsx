@@ -2275,6 +2275,7 @@ export default function HomesteadApp() {
     saveImmediateRef.current = false; // one-shot
     const fire = async () => {
       const result = await saveHomestead(user, data);
+      console.log("[SAVE] result:", result);
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
@@ -8320,26 +8321,30 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
   // line 224. This was the long-standing "meat birds finalize doesn't stick"
   // bug. Same fix applied to the ButcherModal "also finalize" path below.
   const finalize = () => {
+    console.log("[FINALIZE] starting for batch:", batch.id, "hobby:", hobby.id);
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
-      if (!h || !Array.isArray(h.currentBatches)) return d;
+      if (!h || !Array.isArray(h.currentBatches)) {
+        console.warn("[FINALIZE] aborted - hobby not found or no currentBatches");
+        return d;
+      }
       const idx = h.currentBatches.findIndex((b) => b.id === batch.id);
-      if (idx === -1) return d;
+      if (idx === -1) {
+        console.warn("[FINALIZE] aborted - batch not in currentBatches");
+        return d;
+      }
       const target = h.currentBatches[idx];
       const finalBatch = JSON.parse(JSON.stringify(target));
       finalBatch.endDate = todayStr();
       finalBatch.finalEntries = (d.entries[hobby.id] || []).filter((e) => e.batchId === target.id);
       h.archivedBatches = h.archivedBatches || [];
       h.archivedBatches.push(finalBatch);
-      // Keep the entries tagged with this batchId out of the active log
-      // (they'll live on under archived.finalEntries for analytics).
       d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== target.id);
       h.currentBatches.splice(idx, 1);
-      // Clear legacy single-batch field if it still references this batch —
-      // otherwise migrateData re-pushes it back into currentBatches on reload.
       if (h.currentBatch && h.currentBatch.id === target.id) {
         h.currentBatch = null;
       }
+      console.log("[FINALIZE] complete - currentBatches:", h.currentBatches.length, "archivedBatches:", h.archivedBatches.length);
       return d;
     }, { immediate: true });
     onClose();
