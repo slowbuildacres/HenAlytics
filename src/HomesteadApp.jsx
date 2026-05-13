@@ -225,6 +225,11 @@ function migrateData(data) {
       if (h.name === "Rabbits 🐇 (Beta)" || h.name === "Rabbits (Beta)") h.name = "Rabbits 🐇";
     }
     if (h.type === "meat_chickens") {
+      // DIAGNOSTIC: log incoming state
+      console.log("[migrateData] meat birds IN — currentBatches:",
+        (h.currentBatches || []).map(b => b.id),
+        "archivedBatches:", (h.archivedBatches || []).map(b => b.id),
+        "legacy currentBatch:", h.currentBatch ? h.currentBatch.id : null);
       // Push 4b — multi-batch support. Old shape: hobby.currentBatch (single
       // object or null). New shape: hobby.currentBatches (array, can have
       // 0+ active batches at once — e.g. running broilers and turkeys side
@@ -282,6 +287,9 @@ function migrateData(data) {
       // any bird type (turkey, duck, goose, etc.) at batch creation time.
       // Only auto-rename if user hasn't customized the name to something else.
       if (h.name === "Meat Chickens") h.name = "Meat Birds";
+      console.log("[migrateData] meat birds OUT — currentBatches:",
+        (h.currentBatches || []).map(b => b.id),
+        "archivedBatches:", (h.archivedBatches || []).map(b => b.id));
     }
     // Backfill move_tractor entries that pre-date the prefill-effect fix.
     // Early versions of the move-tractor flow displayed the flock default in
@@ -2214,8 +2222,18 @@ export default function HomesteadApp() {
     setSyncStatus("saving");
     const immediate = saveImmediateRef.current;
     saveImmediateRef.current = false; // one-shot
+    if (immediate) console.log("[save] IMMEDIATE save fired");
     const fire = async () => {
+      // Diagnostic: snapshot meat birds state at save time
+      const mb = (data.hobbies || []).find(h => h.type === "meat_chickens");
+      if (mb) {
+        console.log("[save] meat birds state going to cloud — currentBatches:",
+          (mb.currentBatches || []).map(b => b.id),
+          "archivedBatches:", (mb.archivedBatches || []).map(b => b.id),
+          "legacy currentBatch:", mb.currentBatch ? mb.currentBatch.id : null);
+      }
       const result = await saveHomestead(user, data);
+      console.log("[save] result:", result.ok ? "ok" : "err", result);
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
@@ -8247,11 +8265,19 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
   // line 224. This was the long-standing "meat birds finalize doesn't stick"
   // bug. Same fix applied to the ButcherModal "also finalize" path below.
   const finalize = () => {
+    console.log("[finalize] start — batch.id:", batch.id, "batch.name:", batch.name);
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
-      if (!h || !Array.isArray(h.currentBatches)) return d;
+      if (!h || !Array.isArray(h.currentBatches)) {
+        console.log("[finalize] ABORT — no hobby or no currentBatches array");
+        return d;
+      }
       const idx = h.currentBatches.findIndex((b) => b.id === batch.id);
-      if (idx === -1) return d;
+      console.log("[finalize] batch index in currentBatches:", idx, "of", h.currentBatches.length);
+      if (idx === -1) {
+        console.log("[finalize] ABORT — batch not found in currentBatches; ids:", h.currentBatches.map(b => b.id));
+        return d;
+      }
       const target = h.currentBatches[idx];
       const finalBatch = JSON.parse(JSON.stringify(target));
       finalBatch.endDate = todayStr();
@@ -8267,6 +8293,7 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
       if (h.currentBatch && h.currentBatch.id === target.id) {
         h.currentBatch = null;
       }
+      console.log("[finalize] DONE — currentBatches now:", h.currentBatches.length, "archivedBatches:", h.archivedBatches.length, "legacy currentBatch:", h.currentBatch);
       return d;
     }, { immediate: true });
     onClose();
