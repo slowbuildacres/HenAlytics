@@ -205,6 +205,16 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   const[saleBuyer,setSaleBuyer]=useState("");
   const[salePrice,setSalePrice]=useState("");
   const[saleType,setSaleType]=useState("sold");
+  // Calf-only: when the user logs a calf-born entry, they can optionally
+  // name the calf and give it a sex/tag. If a name is provided, we create
+  // a new animal with sex="Calf" (so existing filters keep working), the
+  // birth date as dob, and damId pointing at the current cow. The animal
+  // becomes fully trackable — milk/feed/health/sale/death buttons and a
+  // pedigree row to its mother all work automatically. If no name, the
+  // entry stays a simple counter like before.
+  const[calfName,setCalfName]=useState("");
+  const[calfSex,setCalfSex]=useState("Calf");
+  const[calfTagId,setCalfTagId]=useState("");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
     if(action==="milk")entry.gallons=Number(gallons)||0;
@@ -217,6 +227,35 @@ function LogModal({animal,hobbyId,action,update,onClose}){
     update(d=>{
       d.entries[hobbyId]=d.entries[hobbyId]||[];
       d.entries[hobbyId].push(entry);
+      // Calf-born with a name → also create a tracked animal so the calf
+      // can be milked/weighed/etc. just like the dam. The dam's breed is
+      // inherited as a default (most herds are single-breed). The calf is
+      // linked to the dam via damId, so the pedigree view shows the lineage.
+      if(action==="calf" && calfName.trim()){
+        const h=d.hobbies.find(x=>x.id===hobbyId);
+        const dam=(h?.animals||[]).find(x=>x.id===animal.id);
+        if(h){
+          if(!Array.isArray(h.animals))h.animals=[];
+          h.animals.push({
+            id:newId(),
+            name:calfName.trim(),
+            breed:dam?.breed||"",
+            purpose:dam?.purpose||"Beef",
+            sex:calfSex||"Calf",
+            dob:date,
+            tagId:calfTagId.trim(),
+            notes:"",
+            sireId:dam?.sireId?null:null, // calf's sire is the dam's mate — unknown unless user sets it later
+            sire:"",
+            damId:animal.id,
+            dam:animal.name,
+            registryNumber:"",
+            registryName:"",
+            created:Date.now(),
+            archived:false,
+          });
+        }
+      }
       // Death also archives the animal so it drops out of the active list and
       // shows up under "Archived cattle". Mirrors Sheep/Dogs behavior.
       if(action==="death"){
@@ -271,7 +310,27 @@ function LogModal({animal,hobbyId,action,update,onClose}){
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
       {action==="milk"&&<Field label="Milk (gallons)"><input type="number" min={0} step="0.1" style={inputStyle} value={gallons} onChange={e=>setGallons(e.target.value)} placeholder="0" autoFocus/>{gallons&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{(Number(gallons)*3.785).toFixed(1)} liters · {(Number(gallons)*128).toFixed(0)} oz</div>}</Field>}
       {action==="fed"&&<div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Feed (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>}
-      {action==="calf"&&<Field label="Calves born"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
+      {action==="calf"&&<>
+        <Field label="Calves born"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>
+        <div style={{fontSize:11,color:palette.inkSoft,marginBottom:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
+          Optional: name the calf below to track it as its own animal. You'll be able to log milk, feed, health, and more for it, and the pedigree will link it back to {animal.name}. Leave blank to just record the birth count.
+        </div>
+        <Field label="Calf name (optional)"><input style={inputStyle} value={calfName} onChange={e=>setCalfName(e.target.value)} placeholder="e.g. Bluebell"/></Field>
+        {calfName.trim() && (
+          <div style={{display:"flex",gap:12}}>
+            <div style={{flex:1}}>
+              <Field label="Sex (optional)">
+                <select style={inputStyle} value={calfSex} onChange={e=>setCalfSex(e.target.value)}>
+                  {COW_SEXES.map(s=><option key={s} value={s}>{s}</option>)}
+                </select>
+              </Field>
+            </div>
+            <div style={{flex:1}}>
+              <Field label="Tag # (optional)"><input style={inputStyle} value={calfTagId} onChange={e=>setCalfTagId(e.target.value)} placeholder="123"/></Field>
+            </div>
+          </div>
+        )}
+      </>}
       {(action==="weight"||action==="butcher")&&<Field label="Weight (lbs)"><input type="number" min={0} step="1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>}
       {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}

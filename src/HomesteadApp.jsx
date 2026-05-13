@@ -725,9 +725,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 26;
+const CURRENT_VERSION = 27;
 
 const WHATS_NEW = [
+  "🍼 Track calves as their own animals — when you log a calf born, you can now name it, set its sex, and add a tag number. Named calves show up in your cow list alongside their mother, with the same milk/feed/health/sale/death buttons and a 📜 history of their own. The pedigree automatically links the calf to its dam. Leave the name blank to just record the birth count like before.",
   "🐴 Tidier horse rows — each horse now shows just 🧬 Pedigree and 📜 History on its card, matching the other livestock pages. 🏷️ Sale and 🪦 Died moved up into the top action buttons; tap one and pick which horse from the dropdown.",
   "📜 Animal history view — tap the new 📜 History button on any horse, cow, goat, sheep, pig, rabbit, or dog to see a full timeline of everything ever logged for that animal: weight, milk, vet visits, farrier, deworming, rides, breedings, shearings, sales, and death. Sorted newest-first so the latest event is at the top.",
   "🏷️ Log a sale or report a death from any animal page — sold/leased/rehomed/died moves the animal to archived and (for sales) creates a record in your Sales tab. Plus new horse breeds (Warmblood, Sport horse, Draft type) and activities (Driving, Lunging, Trails, Show).",
