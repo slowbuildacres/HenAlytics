@@ -85,17 +85,32 @@ export default async function handler(req, res) {
     });
 
     // ---- Fetch all users (for email lookup) ----
-    const usersRes = await fetch(`${SUPABASE}/auth/v1/admin/users?per_page=1000`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (!usersRes.ok) {
-      const errText = await usersRes.text();
-      return res.status(502).json({ error: 'Failed to fetch users', detail: errText });
-    }
-    const usersJson = await usersRes.json();
-    const userList = Array.isArray(usersJson) ? usersJson : (usersJson.users || []);
+    //
+    // Supabase's admin endpoint paginates. Loop until we've collected every
+    // user — capping at 50 pages (50,000 users) as a safety brake. If you
+    // ever exceed that, the cron logs a warning and continues with what it
+    // got; better to send to most users than to fail entirely.
     const emailByUser = {};
-    userList.forEach((u) => { if (u.id && u.email) emailByUser[u.id] = u.email.toLowerCase(); });
+    const USERS_PER_PAGE = 1000;
+    const MAX_PAGES = 50;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const r = await fetch(
+        `${SUPABASE}/auth/v1/admin/users?page=${page}&per_page=${USERS_PER_PAGE}`,
+        { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+      );
+      if (!r.ok) {
+        const errText = await r.text();
+        return res.status(502).json({ error: 'Failed to fetch users', detail: errText, page });
+      }
+      const j = await r.json();
+      const list = Array.isArray(j) ? j : (j.users || []);
+      list.forEach((u) => { if (u.id && u.email) emailByUser[u.id] = u.email.toLowerCase(); });
+      // Stop when we get a short page — that means we've reached the end.
+      if (list.length < USERS_PER_PAGE) break;
+      if (page === MAX_PAGES) {
+        console.warn('[chore-email] hit MAX_PAGES users cap; some users may be missing');
+      }
+    }
 
     // ---- Fetch the unsubscribe blocklist ----
     const unsubRes = await fetch(`${SUPABASE}/rest/v1/chore_email_unsubscribes?select=email`, {
