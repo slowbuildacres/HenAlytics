@@ -4746,20 +4746,37 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
     pct: totalDeaths > 0 ? ((count / totalDeaths) * 100).toFixed(0) : "0",
   })).sort((a, b) => parseInt(a.week) - parseInt(b.week));
 
-  // Chicken tractor: sum distanceFeet across all move_tractor entries from
-  // every batch in the filtered date range. Active batches use entries
-  // tagged by batchId; archived batches store their entries inline in
-  // batch.finalEntries. We walk both surfaces to get the full picture.
+  // Chicken tractor: sum distanceFeet across all move_tractor entries.
+  // We pull from TWO sources to avoid silently dropping entries:
+  //   1. Entries tagged with a batchId — found on each batch's finalEntries
+  //      (active batches' entries are date-filtered; archived batches keep
+  //      their entries snapshotted from finalize time)
+  //   2. Untagged move_tractor entries — if the user logged a move while
+  //      they had 0 batches active (or 2+ and the picker wasn't shown), the
+  //      entry exists but has no batchId. Counting these from the raw
+  //      `entries` list ensures they still show in stats.
   let tractorFeet = 0;
   let tractorMoveCount = 0;
+  const countedEntryIds = new Set();
   batches.forEach(b => {
     const bEntries = b.finalEntries || entries.filter(e => e.batchId === b.id);
     bEntries.forEach(e => {
-      if (e.action === "move_tractor") {
+      if (e.action === "move_tractor" && !countedEntryIds.has(e.id)) {
         tractorFeet += Number(e.distanceFeet) || 0;
         tractorMoveCount++;
+        countedEntryIds.add(e.id);
       }
     });
+  });
+  // Second pass: any move_tractor entries from the date-filtered list that
+  // didn't get counted via a batch (no batchId, or batchId pointing at a
+  // batch that was filtered out of the date range).
+  entries.forEach(e => {
+    if (e.action === "move_tractor" && !countedEntryIds.has(e.id)) {
+      tractorFeet += Number(e.distanceFeet) || 0;
+      tractorMoveCount++;
+      countedEntryIds.add(e.id);
+    }
   });
 
   return (
@@ -7998,6 +8015,12 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
   // currentBatches[]. Matches the ButcherModal "also finalize" behavior so
   // users with no remaining birds (or who just want to close out an active
   // batch without going through a butcher entry) have a direct path.
+  //
+  // Also clears the legacy `h.currentBatch` (singular) field if it points at
+  // the same batch. Without this, migrateData re-hydrates the finalized
+  // batch on the next load — see the migration block in migrateData around
+  // line 224. This was the long-standing "meat birds finalize doesn't stick"
+  // bug. Same fix applied to the ButcherModal "also finalize" path below.
   const finalize = () => {
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
@@ -8014,6 +8037,11 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
       // (they'll live on under archived.finalEntries for analytics).
       d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== target.id);
       h.currentBatches.splice(idx, 1);
+      // Clear legacy single-batch field if it still references this batch —
+      // otherwise migrateData re-pushes it back into currentBatches on reload.
+      if (h.currentBatch && h.currentBatch.id === target.id) {
+        h.currentBatch = null;
+      }
       return d;
     });
     onClose();
@@ -8551,6 +8579,10 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                 // Optional finalize if batch is now empty and user opted in.
                 // Push 4b — splice the target out of currentBatches[] rather
                 // than nulling a single slot. The other active batches stay.
+                // Also clears the legacy h.currentBatch field if it points
+                // at the same batch — otherwise migrateData rehydrates the
+                // finalized batch on next load. See EditBatchModal.finalize
+                // for the original analysis.
                 if (alsoFinalize && willEmptyBatch) {
                   const finalBatch = JSON.parse(JSON.stringify(target));
                   finalBatch.endDate = todayStr();
@@ -8559,6 +8591,9 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                   h.archivedBatches.push(finalBatch);
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.batchId !== target.id);
                   h.currentBatches.splice(targetIdx, 1);
+                  if (h.currentBatch && h.currentBatch.id === target.id) {
+                    h.currentBatch = null;
+                  }
                 }
                 return d;
               });
