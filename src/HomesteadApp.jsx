@@ -2333,7 +2333,7 @@ export default function HomesteadApp() {
       fontFamily: FONT_BODY,
       color: sp.ink,
       paddingBottom: 100,
-      paddingTop: "env(safe-area-inset-top)",
+      paddingTop: signedOutRemotely ? "calc(env(safe-area-inset-top) + 56px)" : "env(safe-area-inset-top)",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
