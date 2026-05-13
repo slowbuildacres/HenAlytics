@@ -683,6 +683,122 @@ const fmtDate = (s) => {
   const d = parseLocalDate(s);
   return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
 };
+
+// ============================================================================
+// CHICKEN TRACTOR DISTANCE — fun-fact comparisons
+// ----------------------------------------------------------------------------
+// Given a number of feet, returns a one-line "this is like..." comparison
+// that's relatable at the given scale. Picks the most relatable equivalent
+// based on magnitude (no point saying "1/4 of a football field" for someone
+// who's logged 75 feet). The seed argument makes selection deterministic per
+// surface so the same stat doesn't keep flipping on every re-render — pass
+// the same seed value (e.g. the stat label) everywhere this is computed.
+//
+// Returns null when the distance is too small to be fun (under 25 ft).
+// ============================================================================
+const FEET_PER_MILE = 5280;
+const tractorFunFact = (totalFeet, seed = "") => {
+  const ft = Number(totalFeet) || 0;
+  if (ft < 25) return null;
+  // Hash the seed to a stable index into the equivalents list for that tier.
+  // Same seed always picks the same equivalent, but different seeds vary
+  // (so Stats tab can show one and Year in Review another).
+  const seedHash = String(seed).split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+
+  // Tiered equivalents. Each item: { test, formula }. test=function(ft)->bool;
+  // formula=function(ft, seedHash)->string. Picked in order — first matching
+  // tier wins, then within that tier seedHash chooses among the variants.
+  const tiers = [
+    {
+      // 25 ft - 1 football field (300 ft)
+      test: (f) => f < 300,
+      variants: [
+        (f) => `That's about ${Math.round(f / 6)} of your own steps 👣`,
+        (f) => `Roughly the height of ${(f / 152).toFixed(1)} blue whales 🐋`,
+        (f) => `${Math.round(f / 60)} school buses end-to-end 🚌`,
+      ],
+    },
+    {
+      // 1-10 football fields (300-3000 ft)
+      test: (f) => f < 3000,
+      variants: [
+        (f) => `That's ${(f / 300).toFixed(1)} football fields end-to-end 🏈`,
+        (f) => `${Math.round(f / 305)} Statues of Liberty laid end-to-end 🗽`,
+        (f) => `${Math.round(f / 555)} Washington Monuments stacked 🏛️`,
+      ],
+    },
+    {
+      // half-mile to a mile (3000-5280 ft)
+      test: (f) => f < FEET_PER_MILE,
+      variants: [
+        (f) => `That's ${(f / 300).toFixed(0)} football fields end-to-end 🏈`,
+        (f) => `Almost a mile — you've moved ${(f / FEET_PER_MILE).toFixed(2)} miles 🚜`,
+        (f) => `${Math.round(f / 264)} city blocks 🏙️`,
+      ],
+    },
+    {
+      // 1-5 miles
+      test: (f) => f < 5 * FEET_PER_MILE,
+      variants: [
+        (f) => `That's ${(f / FEET_PER_MILE).toFixed(1)} miles — a solid walk 🚶`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(1)} miles, or ${Math.round(f / 300)} football fields 🏈`,
+        (f) => `${(f / FEET_PER_MILE / 0.8).toFixed(1)} laps around Central Park 🌳`,
+      ],
+    },
+    {
+      // 5-30 miles (marathon territory)
+      test: (f) => f < 30 * FEET_PER_MILE,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toFixed(1)} miles — ${(f / FEET_PER_MILE / 26.2 * 100).toFixed(0)}% of a marathon 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(1)} miles — about the width of Manhattan ${Math.round(f / FEET_PER_MILE / 2.3)} times over 🗽`,
+        (f) => `That's ${(f / FEET_PER_MILE).toFixed(1)} miles, or roughly ${Math.round(f / FEET_PER_MILE / 3.1)} 5Ks 👟`,
+      ],
+    },
+    {
+      // 30-50 miles (Rhode Island scale)
+      test: (f) => f < 50 * FEET_PER_MILE,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — about the length of Rhode Island 🌊`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles, or ${(f / FEET_PER_MILE / 26.2).toFixed(1)} marathons 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — like walking from one coast of Rhode Island to the other 🦞`,
+      ],
+    },
+    {
+      // 50-200 miles
+      test: (f) => f < 200 * FEET_PER_MILE,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — that's like crossing Connecticut end-to-end 🍃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles, or ${(f / FEET_PER_MILE / 26.2).toFixed(1)} marathons 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — ${(f / FEET_PER_MILE / 50).toFixed(1)}× the length of Rhode Island 🌊`,
+      ],
+    },
+    {
+      // 200+ miles (epic territory)
+      test: () => true,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toLocaleString(undefined, {maximumFractionDigits:0})} miles — that's a road trip distance 🛻`,
+        (f) => `${(f / FEET_PER_MILE).toLocaleString(undefined, {maximumFractionDigits:0})} miles, or ${(f / FEET_PER_MILE / 26.2).toFixed(0)} marathons 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toLocaleString(undefined, {maximumFractionDigits:0})} miles — your chickens have seen things 👀`,
+      ],
+    },
+  ];
+
+  const tier = tiers.find(t => t.test(ft));
+  const idx = Math.abs(seedHash) % tier.variants.length;
+  return tier.variants[idx](ft);
+};
+
+// Format raw feet for display. Switches to miles once over 1000 ft so the
+// number stays digestible. Kept compact since this is used in tight cards.
+const fmtTractorDistance = (totalFeet) => {
+  const ft = Number(totalFeet) || 0;
+  if (ft < 1000) return `${ft.toLocaleString()} ft`;
+  const miles = ft / FEET_PER_MILE;
+  return miles < 10
+    ? `${miles.toFixed(2)} mi`
+    : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
+};
+
 // ============================================================================
 // INTERNATIONAL FORMATTING — currency, temperature, hemisphere
 // ----------------------------------------------------------------------------
@@ -725,9 +841,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 29;
+const CURRENT_VERSION = 30;
 
 const WHATS_NEW = [
+  "🐔 Pick a breed when you name a bird — egg layers and meat birds now have a breed dropdown in the Name a bird form, with the right breed list based on whether your flock is chickens, ducks, turkeys, quail, geese, guineas, or peafowl. Already-named birds can have a breed added/changed too. Totally optional. Dogs and rabbits already had breed pickers from the start.",
   "🚜 Move chicken tractor — egg layers and meat birds now have a Move Tractor tile. First time you log it, Henalytics asks roughly how far you move it; after that it's a one-tap log. Your total tractor distance shows up on the share card and adds up over time. (Year-in-review is going to be fun.)",
   "🐎 Apply vet/farrier/dewormer to multiple horses at once — when you log a visit, tap each horse it applied to (or tap \"Select all\" if the whole barn got the same treatment). The visit shows up in every selected horse's history. Saves you from logging the same thing 8 times.",
   "🥚 Incubator share stats fixed — the share card now correctly shows eggs set, hatched, hatch rate, and run count across today/week/year/all-time filters. (It was reading the wrong fields, so everything looked empty.)",
@@ -4408,6 +4525,14 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
   const totalBirds = flocks.reduce((s, f) => s + (f.birdCount || 0), 0);
   const eggsPerHen = totalBirds > 0 ? (totalEggs / totalBirds).toFixed(1) : "—";
 
+  // Chicken tractor: total feet moved across all logged moves. Per-entry
+  // distanceFeet preserves history (changes to the default don't retroactively
+  // recompute). Only surface the stat once the user has logged at least one
+  // move, so the analytics page stays clean for non-tractor flocks.
+  const tractorMoves = entries.filter(e => e.action === "move_tractor");
+  const tractorFeet = tractorMoves.reduce((s, e) => s + (Number(e.distanceFeet) || 0), 0);
+  const tractorMoveCount = tractorMoves.length;
+
   // egg trend
   const byDate = {};
   eggs.forEach((e) => { byDate[e.date] = (byDate[e.date] || 0) + (Number(e.count) || 0); });
@@ -4420,6 +4545,14 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
         <StatCard label="Cost / Egg" value={fmtMoney(costPerEgg)} sub={`${fmtMoney(costPerDozen)}/dozen`} accent={palette.accent} />
         <StatCard label="Eggs / Hen" value={eggsPerHen} sub="lifetime" accent={palette.leaf} />
         {totalDeathCount > 0 && <StatCard label="Deaths" value={totalDeathCount} accent={palette.ink} />}
+        {tractorFeet > 0 && (
+          <StatCard
+            label="🚜 Tractor moved"
+            value={fmtTractorDistance(tractorFeet)}
+            sub={tractorFunFact(tractorFeet, "eggLayersStats") || `${tractorMoveCount} move${tractorMoveCount === 1 ? "" : "s"}`}
+            accent={palette.feather}
+          />
+        )}
       </div>
 
       <ChartCard title="📊 Cost breakdown">
@@ -4613,6 +4746,22 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
     pct: totalDeaths > 0 ? ((count / totalDeaths) * 100).toFixed(0) : "0",
   })).sort((a, b) => parseInt(a.week) - parseInt(b.week));
 
+  // Chicken tractor: sum distanceFeet across all move_tractor entries from
+  // every batch in the filtered date range. Active batches use entries
+  // tagged by batchId; archived batches store their entries inline in
+  // batch.finalEntries. We walk both surfaces to get the full picture.
+  let tractorFeet = 0;
+  let tractorMoveCount = 0;
+  batches.forEach(b => {
+    const bEntries = b.finalEntries || entries.filter(e => e.batchId === b.id);
+    bEntries.forEach(e => {
+      if (e.action === "move_tractor") {
+        tractorFeet += Number(e.distanceFeet) || 0;
+        tractorMoveCount++;
+      }
+    });
+  });
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -4623,6 +4772,14 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
         {fcr !== "—" && <StatCard label="Feed Conversion (FCR)" value={fcr} sub="lbs feed per lb meat" accent={palette.feather} />}
         <StatCard label="Cost / Bird" value={typeof costPerBird === "string" ? costPerBird : fmtMoney(costPerBird)} sub="all-in" accent={palette.yolk} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} sub={`feed ${fmtMoney(adjFeedCost)}${adjInfraCost > 0 ? " + infra " + fmtMoney(adjInfraCost) : ""}`} accent={palette.feather} />
+        {tractorFeet > 0 && (
+          <StatCard
+            label="🚜 Tractor moved"
+            value={fmtTractorDistance(tractorFeet)}
+            sub={tractorFunFact(tractorFeet, "meatChickensStats") || `${tractorMoveCount} move${tractorMoveCount === 1 ? "" : "s"}`}
+            accent={palette.feather}
+          />
+        )}
       </div>
 
       {(totalChickCost > 0 || totalInfraCost > 0) && (
@@ -7265,6 +7422,12 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
   );
   const [newName, setNewName] = useState("");
   const [newBandColor, setNewBandColor] = useState("");
+  // Breed picker — optional, defaults to none. The list is keyed off the
+  // flock's birdType so chicken-keepers see chicken breeds, duck-keepers
+  // see duck breeds, etc. "Other" surfaces a free-text input for breeds
+  // not in our preset list.
+  const [newBreed, setNewBreed] = useState("");
+  const [newBreedOther, setNewBreedOther] = useState("");
   // Per-bird death confirm state. When set, that bird's row expands to ask
   // for date + cause and commit immediately (death isn't undoable via Cancel).
   const [dyingBirdId, setDyingBirdId] = useState(null);
@@ -7286,16 +7449,39 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
     { hex: "#1A1A1A", label: "Black" },
   ];
 
+  // Breed lists per bird type. Curated to the most common breeds homesteaders
+  // raise — covering the 90% case while keeping the dropdown short enough to
+  // scan. Users with rare/uncommon breeds pick "Other" and type the name.
+  const BREEDS_BY_TYPE = {
+    Chicken: ["Rhode Island Red", "Plymouth Rock", "Barred Rock", "Buff Orpington", "Australorp", "Leghorn", "Wyandotte", "Easter Egger", "Ameraucana", "Marans", "Brahma", "Cochin", "Silkie", "Sussex", "Welsummer", "Speckled Sussex", "ISA Brown", "Cornish Cross", "Polish", "Sebright", "Mixed", "Other"],
+    Duck: ["Pekin", "Khaki Campbell", "Runner", "Welsh Harlequin", "Cayuga", "Rouen", "Muscovy", "Saxony", "Magpie", "Buff", "Mixed", "Other"],
+    Turkey: ["Broad Breasted White", "Broad Breasted Bronze", "Bourbon Red", "Narragansett", "Royal Palm", "Heritage", "Midget White", "Mixed", "Other"],
+    Quail: ["Coturnix", "Bobwhite", "Button", "California", "Gambel's", "Mixed", "Other"],
+    Goose: ["Embden", "Toulouse", "African", "Chinese", "Pilgrim", "American Buff", "Sebastopol", "Mixed", "Other"],
+    Guinea: ["Pearl", "White", "Lavender", "Royal Purple", "Buff", "Mixed", "Other"],
+    Peafowl: ["Indian Blue", "White", "Black-Shouldered", "Pied", "Spalding", "Mixed", "Other"],
+    Other: ["Mixed", "Other"],
+  };
+  const breedOptions = BREEDS_BY_TYPE[flock.birdType] || BREEDS_BY_TYPE.Other;
+
   const addBird = () => {
     if (!newName.trim()) return;
+    // Resolve breed: "Other" surfaces the free-text input; everything else
+    // uses the dropdown value directly. Empty is fine — breed is optional.
+    const resolvedBreed = newBreed === "Other"
+      ? newBreedOther.trim()
+      : newBreed;
     setBirds(prev => [...prev, {
       id: Math.random().toString(36).slice(2, 10),
       name: newName.trim(),
       bandColor: newBandColor,
+      breed: resolvedBreed,
       notes: "",
     }]);
     setNewName("");
     setNewBandColor("");
+    setNewBreed("");
+    setNewBreedOther("");
   };
 
   const updateBird = (id, patch) => {
@@ -7382,6 +7568,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
       if (fl) fl.namedBirds = birds.map(b => ({
         ...b,
         name: (b.name || "").trim(),
+        breed: (b.breed || "").trim(),
         notes: (b.notes || "").trim(),
       })).filter(b => b.name);
       return d;
@@ -7434,6 +7621,45 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
                   <option key={c.hex || "none"} value={c.hex}>{c.label}</option>
                 ))}
               </select>
+              {/* Breed editor — pre-populated for existing birds. We use the
+                  same "Other" surface pattern as the add form: when the bird's
+                  saved breed isn't in our preset list, show "Other" + a text
+                  field so users can keep their custom value. */}
+              {(() => {
+                const savedBreed = b.breed || "";
+                const inList = breedOptions.includes(savedBreed);
+                const selectVal = !savedBreed ? "" : (inList ? savedBreed : "Other");
+                return (
+                  <>
+                    <select
+                      style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                      value={selectVal}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        if (v === "Other") {
+                          // Keep any prior custom value if there was one
+                          if (inList || !savedBreed) updateBird(b.id, { breed: "" });
+                        } else {
+                          updateBird(b.id, { breed: v });
+                        }
+                      }}
+                    >
+                      <option value="">— breed (optional) —</option>
+                      {breedOptions.map(opt => (
+                        <option key={opt} value={opt}>{opt}</option>
+                      ))}
+                    </select>
+                    {selectVal === "Other" && (
+                      <input
+                        style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                        value={!inList ? savedBreed : ""}
+                        onChange={(e) => updateBird(b.id, { breed: e.target.value })}
+                        placeholder="Breed name"
+                      />
+                    )}
+                  </>
+                );
+              })()}
               <input
                 style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                 value={b.notes || ""}
@@ -7502,6 +7728,24 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
             <option key={c.hex || "none"} value={c.hex}>{c.label}</option>
           ))}
         </select>
+        <select
+          style={{ ...inputStyle, marginTop: 8 }}
+          value={newBreed}
+          onChange={(e) => setNewBreed(e.target.value)}
+        >
+          <option value="">— breed (optional) —</option>
+          {breedOptions.map(b => (
+            <option key={b} value={b}>{b}</option>
+          ))}
+        </select>
+        {newBreed === "Other" && (
+          <input
+            style={{ ...inputStyle, marginTop: 8 }}
+            value={newBreedOther}
+            onChange={(e) => setNewBreedOther(e.target.value)}
+            placeholder="Breed name"
+          />
+        )}
         <Btn small variant="leaf" onClick={addBird} disabled={!newName.trim()} style={{ marginTop: 8, width: "100%" }}>
           + Add bird
         </Btn>
@@ -10611,7 +10855,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
         { label: "Cost / dozen", value: costPerDozen > 0 ? fmtMoney(costPerDozen) : "—" },
         { label: "Feed cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
       ];
-      if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: `${tractorFeet.toLocaleString()} ft` });
+      if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: fmtTractorDistance(tractorFeet) });
       return { emoji: "🥚", label: "Egg Layers", stats };
     }
     if (hobby.type === "meat_chickens") {
@@ -10633,7 +10877,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
         { label: "Avg weight", value: `${avgWeight} lbs` },
         { label: "Deaths", value: deaths },
       ];
-      if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: `${tractorFeet.toLocaleString()} ft` });
+      if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: fmtTractorDistance(tractorFeet) });
       return { emoji: "🍗", label: "Meat Birds", stats };
     }
     if (hobby.type === "garden") {
