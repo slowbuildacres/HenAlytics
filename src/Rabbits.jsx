@@ -360,6 +360,11 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
 function LogModal({animal,hobbyId,animals,action,update,onClose}){
   const[date,setDate]=useState(todayStr());
   const[lbs,setLbs]=useState("");
+  // Feed unit picker. Default lbs (matches legacy behavior + rabbit pellet
+  // bag norm); cups for users who measure by scoop. Stored on entry as
+  // feedUnit + feedAmount. Legacy `lbs` field still written when unit=lbs
+  // for back-compat with old analytics.
+  const[feedUnit,setFeedUnit]=useState("lbs");
   const[cost,setCost]=useState("");
   const[weight,setWeight]=useState("");
   const[kitsAlive,setKitsAlive]=useState("");
@@ -378,7 +383,14 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
 
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
-    if(action==="fed"){entry.lbs=Number(lbs)||0;entry.cost=Number(cost)||0;}
+    if(action==="fed"){
+      // Write unit-aware fields; keep legacy `lbs` populated when unit=lbs
+      // so existing analytics (totals in lbs) keep working unchanged.
+      entry.feedAmount=Number(lbs)||0;
+      entry.feedUnit=feedUnit;
+      entry.lbs=feedUnit==="lbs"?(Number(lbs)||0):0;
+      entry.cost=Number(cost)||0;
+    }
     if(action==="weight")entry.weight=Number(weight)||0;
     if(action==="bred"){
       const buck=availableBucks.find(b=>b.id===buckId);
@@ -449,10 +461,28 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
       {action==="fed" && (
-        <div style={{display:"flex",gap:12}}>
-          <div style={{flex:1}}><Field label="Feed (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder="0" autoFocus/></Field></div>
-          <div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div>
-        </div>
+        <>
+          <Field label="How much feed?">
+            <div style={{display:"flex",gap:8,marginBottom:8}}>
+              {["lbs","cups"].map(u => (
+                <button
+                  key={u}
+                  type="button"
+                  onClick={() => setFeedUnit(u)}
+                  style={{
+                    flex:1,padding:"8px 10px",borderRadius:8,
+                    border:`1.5px solid ${feedUnit===u?palette.ink:palette.line}`,
+                    background: feedUnit===u?palette.ink:palette.card,
+                    color: feedUnit===u?palette.bg:palette.ink,
+                    fontFamily:FONT_BODY,fontSize:13,fontWeight:600,cursor:"pointer",
+                  }}
+                >{u}</button>
+              ))}
+            </div>
+            <input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder={feedUnit==="cups"?"Cups of feed":"Pounds of feed"} autoFocus/>
+          </Field>
+          <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+        </>
       )}
       {action==="weight" && (
         <Field label="Current weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>
@@ -595,7 +625,11 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {recentEntries.map(e=>{
             let detail="";
-            if(e.action==="fed")detail=`${e.lbs||0} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+            if(e.action==="fed"){
+              const u=e.feedUnit||"lbs";
+              const a=u==="cups"?(Number(e.feedAmount)||0):(Number(e.lbs)||Number(e.feedAmount)||0);
+              detail=`${a} ${u}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+            }
             else if(e.action==="weight")detail=`${e.weight||0} lbs`;
             else if(e.action==="bred")detail=`${e.buckName?"sire: "+e.buckName+" · ":""}kindle ${fmtDate(e.kindleDate)}`;
             else if(e.action==="litter")detail=`${e.kitsAlive||0} alive${e.kitsStillborn>0?` · ${e.kitsStillborn} stillborn`:""}`;
@@ -664,7 +698,11 @@ function LegacyLogSection({hutches, entries, hobbyId, update}){
                 let detail = "";
                 if(e.action==="bred") detail = `kindle ${fmtDate(e.kindleDate)}${e.doeName?" · "+e.doeName:""}`;
                 else if(e.action==="litter") detail = `${e.kitsAlive||0} alive${e.kitsStillborn>0?` · ${e.kitsStillborn} stillborn`:""}`;
-                else if(e.action==="fed") detail = `${e.lbs||0} lbs · ${fmtMoney(e.cost)}`;
+                else if(e.action==="fed") {
+                  const u=e.feedUnit||"lbs";
+                  const a=u==="cups"?(Number(e.feedAmount)||0):(Number(e.lbs)||Number(e.feedAmount)||0);
+                  detail = `${a} ${u} · ${fmtMoney(e.cost)}`;
+                }
                 else if(e.action==="butcher") detail = `${e.count||0} · avg ${e.avgWeight||0} lbs`;
                 else if(e.action==="death") detail = `${e.count||1} · ${e.cause||"unknown"}`;
                 else if(e.action==="infrastructure") detail = `${e.item||""} · ${fmtMoney(e.cost)}`;
