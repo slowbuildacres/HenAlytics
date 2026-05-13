@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from "react";
 import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
-  Skull, Bird, Home, BarChart3, X, ChevronDown, Calendar, DollarSign, Sparkles,
+  Skull, Bird, Home, BarChart3, X, ChevronDown, ChevronUp, Calendar, DollarSign, Sparkles,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
@@ -921,9 +921,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 33;
+const CURRENT_VERSION = 34;
 
 const WHATS_NEW = [
+  "↕️ Reorder your hobbies — open Manage Hobbies in Settings and tap \"Reorder hobbies\" to set the order they appear in the picker dropdown. Whichever one you put at the top becomes the default tab that opens when you reload the app.",
   "📧 Weekly chore email — turn it on in Settings and we'll email what's on your calendar every Sunday evening. Quiet weeks get a warm hello; busy weeks get a tidy checklist sorted by day. Farmhands can each independently opt in or out from the Farmhands menu.",
   "🌱 New $1/month Seedling tier — added a $1 option alongside $3, $5, and $10 in the support menu, for anyone who'd like to chip in but doesn't want to commit to more. Every little bit helps keep Henalytics running ad-free.",
   "📦 Past batches on the meat birds page — when you finalize a batch, it now shows up in a collapsible \"Past batches\" section at the bottom of the meat birds home page. Each row shows the batch name, dates, total started, butchered count, and total weight. Full per-batch records still live in the Analytics tab.",
@@ -1927,6 +1928,24 @@ export default function HomesteadApp() {
   useEffect(() => {
     setUserUnits(data?.units, data?.homesteadLocation);
   }, [data?.units?.currency, data?.units?.temperature, data?.units?.hemisphere, data?.homesteadLocation?.lat]);
+
+  // ---- Default active hobby to user's first visible hobby on first load ----
+  // The activeHobby state starts as "garden", but the user might have
+  // reordered their hobbies so garden is no longer first (or might have
+  // hidden it). On the first render where we have data, snap activeHobby to
+  // the first visible hobby in the user's preferred order. We use a ref so
+  // this runs exactly once per data load — after that, the user is in
+  // control of their selection.
+  const initialActiveHobbySetRef = useRef(false);
+  useEffect(() => {
+    if (!data?.hobbies) return;
+    if (initialActiveHobbySetRef.current) return;
+    initialActiveHobbySetRef.current = true;
+    const firstVisible = data.hobbies.find(h => !h.hidden);
+    if (firstVisible && firstVisible.id !== activeHobby) {
+      setActiveHobby(firstVisible.id);
+    }
+  }, [data?.hobbies]);
 
   // ---- Auto-redirect when the active hobby becomes hidden ----
   // If the user hides their currently-active hobby in Settings, we need to
@@ -5555,6 +5574,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} onFreshStart={onFreshStart} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
   if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} />
+  if (modal.type === "reorderHobbies") return <ReorderHobbiesModal data={data} update={update} onClose={close} />
   if (modal.type === "addFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
@@ -7692,11 +7712,189 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
       <div style={{ marginTop: 8, paddingTop: 12, borderTop: `1.5px solid ${palette.line}`, display: "flex", flexDirection: "column", gap: 8 }}>
         <div style={{ fontSize: 11, color: palette.inkSoft, textAlign: "center" }}>Go to Settings to toggle visibility anytime.</div>
         <button
+          onClick={() => { onClose(); setTimeout(() => setModal({ type: "reorderHobbies" }), 100); }}
+          style={{ width: "100%", padding: "10px", background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink }}
+        >
+          ↕ Reorder hobbies
+        </button>
+        <button
           onClick={() => { onClose(); setTimeout(() => setModal({ type: "feedback", presetCategory: "hobby" }), 100); }}
           style={{ width: "100%", padding: "10px", background: palette.yolkSoft, border: `1.5px solid ${palette.line}`, borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink }}
         >
           💡 Suggest a new hobby
         </button>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// REORDER HOBBIES MODAL
+// ----------------------------------------------------------------------------
+// Lets the user change the order their visible hobbies appear in the picker
+// dropdown. The first hobby in the list becomes the default tab when the app
+// loads. Up/down arrows are used instead of drag-and-drop for accessibility
+// and to keep mobile interactions predictable.
+//
+// Preserving sub-types (canning, freeze_drying, dehydrating, fermentation)
+// render in the picker as a single "Preserving 🥫" entry, so we treat all
+// four as one unit here too — moving "Preserving" moves the whole block.
+// ============================================================================
+function ReorderHobbiesModal({ data, update, onClose }) {
+  const PRESERVING_TYPES = ["canning", "freeze_drying", "dehydrating", "fermentation"];
+
+  // Build the "display rows" — same set of items the picker shows. Each row
+  // is either a single hobby or the preserving-as-one block.
+  // We compute this on every render rather than caching so the modal reflects
+  // the latest order as soon as a move lands.
+  const buildRows = () => {
+    const visible = data.hobbies.filter(h => !h.hidden);
+    const rows = [];
+    let preservingPlaced = false;
+    visible.forEach(h => {
+      if (PRESERVING_TYPES.includes(h.type)) {
+        // Only push one synthetic row for the whole preserving block,
+        // keyed on the FIRST visible preserving hobby's position. We track
+        // all the member ids so the move logic can shift them together.
+        if (!preservingPlaced) {
+          const members = visible.filter(x => PRESERVING_TYPES.includes(x.type));
+          rows.push({
+            key: "preserving",
+            label: "Preserving 🥫",
+            icon: "sprout",
+            isPreserving: true,
+            memberIds: members.map(m => m.id),
+          });
+          preservingPlaced = true;
+        }
+      } else {
+        rows.push({
+          key: h.id,
+          label: h.name,
+          icon: h.icon,
+          isPreserving: false,
+          memberIds: [h.id],
+        });
+      }
+    });
+    return rows;
+  };
+
+  const rows = buildRows();
+
+  // Move a row up or down by one position. "Position" here is logical (the
+  // row's index in the rendered list); we translate it into actual moves on
+  // data.hobbies, which may involve moving multiple ids (the preserving block).
+  const moveRow = (rowIndex, direction) => {
+    if (direction === "up" && rowIndex === 0) return;
+    if (direction === "down" && rowIndex === rows.length - 1) return;
+
+    const targetIndex = direction === "up" ? rowIndex - 1 : rowIndex + 1;
+    const movingRow = rows[rowIndex];
+    const swappingRow = rows[targetIndex];
+
+    update(d => {
+      // Strategy: rebuild data.hobbies in the new order.
+      // 1. Pull out the moving row's members and the swapping row's members
+      //    (keeping their original objects)
+      // 2. Build a new list: original order, but with the two rows' members
+      //    swapped at their respective slots.
+      //
+      // Because hidden hobbies don't appear in `rows`, we need to interleave
+      // them carefully — they stay at the end of the array since they don't
+      // affect picker ordering.
+      // Map of id → object so we can reconstruct hobbies in any order
+      const byId = {};
+      d.hobbies.forEach(h => { byId[h.id] = h; });
+
+      // Compute the new order of visible hobby ids.
+      // Walk through `rows` in the new order (with rowIndex and targetIndex
+      // swapped) and flatten each row's memberIds.
+      const newRowOrder = [...rows];
+      newRowOrder[rowIndex] = swappingRow;
+      newRowOrder[targetIndex] = movingRow;
+      const newVisibleIds = newRowOrder.flatMap(r => r.memberIds);
+
+      // Hidden hobbies stay at the end in their existing relative order.
+      const hiddenHobbies = d.hobbies.filter(h => h.hidden);
+      d.hobbies = [
+        ...newVisibleIds.map(id => byId[id]),
+        ...hiddenHobbies,
+      ];
+      return d;
+    });
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Reorder Hobbies">
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        Set the order your hobbies appear in the picker dropdown. The first one in this list opens by default when you reload the app.
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((row, i) => (
+          <div
+            key={row.key}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "10px 12px",
+              background: palette.card,
+              border: `1.5px solid ${palette.line}`,
+              borderRadius: 10,
+            }}
+          >
+            <HobbyIcon name={row.icon} size={20} strokeWidth={1.5} />
+            <div style={{
+              flex: 1, minWidth: 0,
+              fontFamily: FONT_BODY, fontSize: 14, fontWeight: 600, color: palette.ink,
+              overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            }}>
+              {row.label}
+            </div>
+            <button
+              onClick={() => moveRow(i, "up")}
+              disabled={i === 0}
+              aria-label="Move up"
+              style={{
+                padding: 8, borderRadius: 6,
+                border: `1.5px solid ${palette.line}`,
+                background: i === 0 ? palette.bgAlt : palette.bg,
+                cursor: i === 0 ? "not-allowed" : "pointer",
+                opacity: i === 0 ? 0.4 : 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: palette.ink,
+              }}
+            >
+              <ChevronUp size={16} />
+            </button>
+            <button
+              onClick={() => moveRow(i, "down")}
+              disabled={i === rows.length - 1}
+              aria-label="Move down"
+              style={{
+                padding: 8, borderRadius: 6,
+                border: `1.5px solid ${palette.line}`,
+                background: i === rows.length - 1 ? palette.bgAlt : palette.bg,
+                cursor: i === rows.length - 1 ? "not-allowed" : "pointer",
+                opacity: i === rows.length - 1 ? 0.4 : 1,
+                display: "flex", alignItems: "center", justifyContent: "center",
+                color: palette.ink,
+              }}
+            >
+              <ChevronDown size={16} />
+            </button>
+          </div>
+        ))}
+      </div>
+
+      {rows.length === 0 && (
+        <div style={{ padding: 24, textAlign: "center", color: palette.inkSoft, fontSize: 13 }}>
+          No visible hobbies to reorder. Enable a hobby from the Manage Hobbies menu first.
+        </div>
+      )}
+
+      <div style={{ marginTop: 16, paddingTop: 12, borderTop: `1.5px solid ${palette.line}`, fontSize: 11, color: palette.inkSoft, textAlign: "center", lineHeight: 1.5 }}>
+        Preserving sub-types (canning, fermentation, etc.) move as a group since they share one tab in the picker.
       </div>
     </Modal>
   );
