@@ -4,7 +4,7 @@
   "webDir": "dist",
   "plugins": {
     "Keyboard": {
-      "resize": "body",
+      "resize": "native",
       "resizeOnFullScreen": true
     },
     "StatusBar": {

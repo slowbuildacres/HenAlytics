@@ -1033,6 +1033,60 @@ const openExternalUrl = async (url) => {
   }
 };
 
+// Soft keyboard listener for native iOS/Android. When the keyboard appears,
+// sets a CSS variable --keyboard-height with the keyboard's pixel height and
+// adds a `keyboard-open` class to the body. This lets CSS shift fixed-position
+// modals up so the focused input stays visible above the keyboard. On web
+// this is a no-op (the browser handles keyboard reflow itself).
+const useNativeKeyboardInset = () => {
+  React.useEffect(() => {
+    if (!isNativeApp()) return;
+    let currentHeight = 0;
+
+    // Scroll the focused input/textarea into view above the keyboard. Uses
+    // requestAnimationFrame so layout has settled after the keyboard appears.
+    const ensureFocusedVisible = () => {
+      const el = document.activeElement;
+      if (!el || el === document.body) return;
+      const tag = (el.tagName || "").toLowerCase();
+      if (tag !== "input" && tag !== "textarea" && tag !== "select" && !el.isContentEditable) return;
+      requestAnimationFrame(() => {
+        try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (_) {}
+      });
+    };
+
+    // NOTE: On Android, Keyboard.addListener from @capacitor/keyboard does not
+    // fire reliably (the events go to window instead). The plugin docs explicitly
+    // mention this fallback: events are dispatched on window for compatibility
+    // with cordova-plugin-ionic-keyboard. Listening on window works on both
+    // platforms and avoids the plugin-listener bug.
+    const onShow = (e) => {
+      currentHeight = (e && e.keyboardHeight) || 0;
+      document.documentElement.style.setProperty("--keyboard-height", currentHeight + "px");
+      document.body.classList.add("keyboard-open");
+      ensureFocusedVisible();
+    };
+    const onHide = () => {
+      currentHeight = 0;
+      document.documentElement.style.setProperty("--keyboard-height", "0px");
+      document.body.classList.remove("keyboard-open");
+    };
+    const onFocusIn = () => {
+      if (currentHeight > 0) ensureFocusedVisible();
+    };
+
+    window.addEventListener("keyboardDidShow", onShow);
+    window.addEventListener("keyboardDidHide", onHide);
+    document.addEventListener("focusin", onFocusIn);
+
+    return () => {
+      window.removeEventListener("keyboardDidShow", onShow);
+      window.removeEventListener("keyboardDidHide", onHide);
+      document.removeEventListener("focusin", onFocusIn);
+    };
+  }, []);
+};
+
 // Hardware back-button handler for Android. iOS doesn't have one. On the web
 // this is a no-op. Pass a function that returns true if it handled the press
 // (e.g. closed a modal), false to let the default Capacitor behavior run
@@ -2056,6 +2110,7 @@ export default function HomesteadApp() {
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") setSignedOutRemotely(true);
+      if (event === "SIGNED_IN") setSignedOutRemotely(false);
       if (event === "PASSWORD_RECOVERY") {
         setPasswordRecoveryPending(true);
         setModal({ type: "setNewPassword" });
@@ -2100,6 +2155,9 @@ export default function HomesteadApp() {
       }
     } catch (_) { /* malformed URL — ignore */ }
   }, []));
+
+  // ---- Native keyboard inset tracking ----
+  useNativeKeyboardInset();
 
   // ---- Android hardware back button ----
   // Priority order, most-specific first:
@@ -2344,6 +2402,20 @@ export default function HomesteadApp() {
         .tile:hover { background: ${palette.bgAlt} !important; }
         /* Suppress iOS Safari/WKWebView blue tap-flash on interactive elements */
         * { -webkit-tap-highlight-color: transparent; }
+        /* Soft-keyboard handling: --keyboard-height is set by useNativeKeyboardInset.
+           When the keyboard is open, fixed-position modal overlays get a bottom
+           padding equal to the keyboard height so centered content shifts up
+           enough to keep the focused input visible. */
+        :root { --keyboard-height: 0px; }
+        /* Modal overlays: any fixed-position element with flex centering.
+           Uses align-items as the anchor since every modal overlay in this
+           app structures itself that way. Targets both common spacings React
+           may use when serializing inline styles. */
+        body.keyboard-open div[style*="position: fixed"][style*="align-items: center"] {
+          padding-bottom: var(--keyboard-height) !important;
+          box-sizing: border-box;
+          transition: padding-bottom 0.2s ease;
+        }
       `}</style>
 
       {signedOutRemotely && (
