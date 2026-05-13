@@ -8887,6 +8887,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                 // at the same batch — otherwise migrateData rehydrates the
                 // finalized batch on next load. See EditBatchModal.finalize
                 // for the original analysis.
+                console.log("[BUTCHER-FINALIZE] alsoFinalize:", alsoFinalize, "willEmptyBatch:", willEmptyBatch, "batchId:", target?.id);
                 if (alsoFinalize && willEmptyBatch) {
                   const finalBatch = JSON.parse(JSON.stringify(target));
                   finalBatch.endDate = todayStr();
@@ -8898,6 +8899,9 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                   if (h.currentBatch && h.currentBatch.id === target.id) {
                     h.currentBatch = null;
                   }
+                  console.log("[BUTCHER-FINALIZE] archived - currentBatches:", h.currentBatches.length, "archivedBatches:", h.archivedBatches.length);
+                } else {
+                  console.warn("[BUTCHER-FINALIZE] SKIPPED archive step - alsoFinalize:", alsoFinalize, "willEmptyBatch:", willEmptyBatch);
                 }
                 return d;
               }, wantImmediate ? { immediate: true } : undefined);
