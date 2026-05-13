@@ -1783,10 +1783,11 @@ function SyncIndicator({ status, signedIn }) {
     <div
       title={signedIn ? "Synced to your cloud account" : "Saving locally to this browser"}
       style={{
-        display: "flex", alignItems: "center", gap: 4,
+        display: "flex", alignItems: "center", justifyContent: "center", gap: 4,
         padding: "4px 8px", borderRadius: 6,
         background: palette.bgAlt, color,
         fontSize: 11, fontWeight: 600,
+        minWidth: 76, boxSizing: "border-box",
       }}
     >
       <style>{`@keyframes spin { to { transform: rotate(360deg); } }`}</style>
