@@ -60,12 +60,18 @@ const HOBBY_META = {
   honey:         { label: "Honey",         emoji: "🍯", color: palette.honey },
   meat_chickens: { label: "Meat Birds", emoji: "🍗", color: palette.feather },
   rabbits:       { label: "Rabbits",       emoji: "🐇", color: palette.leaf },
+  rabbit:        { label: "Rabbits",       emoji: "🐇", color: palette.leaf },
   garden:        { label: "Garden",        emoji: "🌱", color: palette.leaf },
   farmstand:     { label: "Farm Stand",    emoji: "🧾", color: palette.leaf },
   sourdough:     { label: "Sourdough",     emoji: "🍞", color: palette.yolk },
   baking:        { label: "Baking",        emoji: "🥧", color: palette.yolk },
   canning:       { label: "Canning",       emoji: "🫙", color: palette.leafSoft },
   horse:         { label: "Horses",        emoji: "🐴", color: palette.feather },
+  cow:           { label: "Cattle",        emoji: "🐄", color: palette.feather },
+  goat:          { label: "Goats",         emoji: "🐐", color: palette.leaf },
+  sheep:         { label: "Sheep",         emoji: "🐑", color: palette.yolk },
+  pig:           { label: "Pigs",          emoji: "🐷", color: palette.accent },
+  dog:           { label: "Dogs",          emoji: "🐕", color: palette.feather },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 };
 
@@ -178,6 +184,11 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
   const [otherItem, setOtherItem] = useState(existingSale?.otherItem || "");
   const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : "");
 
+  // Horse-sale: if user picks an existing horse from the dropdown, this
+  // holds its id. On save, the matching horse is archived in the Horses
+  // hobby so the user doesn't have to do that step manually.
+  const [selectedAnimalId, setSelectedAnimalId] = useState(existingSale?.animalId || "");
+
   // Compute preview revenue
   const previewRevenue = useMemo(() => {
     const q = Number(qty) || 0;
@@ -275,8 +286,11 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       // Horse sales: one transaction = one horse (or a lease). pricePerUnit is
       // the sale/lease price, qty is always 1, crop holds the horse's name.
       const saleRev = Number(pricePerUnit) || 0;
-      // saleType (sold vs leased) goes in the otherItem field for now
+      // saleType (sold vs leased) goes in the otherItem field for now.
+      // If the user picked an existing horse from the dropdown, animalId
+      // travels with the sale so we can archive that horse on save.
       sale = { ...sale, crop, saleType: otherItem || "sold", pricePerUnit: saleRev, totalRevenue: saleRev };
+      if (selectedAnimalId) sale.animalId = selectedAnimalId;
     } else if (hobbyType === "garden") {
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit) || 0 };
     } else {
@@ -314,6 +328,24 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
         d.entries["egg_layers"] = d.entries["egg_layers"].filter(
           e => !(e.action === "sold_eggs" && e.id === sale.id)
         );
+      }
+      // If the user picked an existing animal (horse) from the dropdown,
+      // archive that animal so it disappears from the active herd list.
+      // Skip on edits — we don't want to archive an animal that was already
+      // archived by a prior save.
+      if (!isEdit && hobbyType === "horse" && selectedAnimalId) {
+        const horsesHobby = (d.hobbies || []).find(h => h.id === "horses");
+        if (horsesHobby) {
+          const a = (horsesHobby.animals || []).find(x => x.id === selectedAnimalId);
+          if (a && !a.archived) {
+            a.archived = true;
+            const verb = (otherItem || "sold") === "leased" ? "Leased" : "Sold";
+            const priceStr = Number(pricePerUnit) > 0 ? ` for $${Number(pricePerUnit).toFixed(2)}` : "";
+            a.archivedReason = `${verb}${priceStr}`;
+            a.archivedDate = date;
+            a.saleId = sale.id;
+          }
+        }
       }
       return d;
     });
@@ -669,8 +701,37 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
 
               {/* Horse */}
               {hobbyType === "horse" && <>
+                {/* If the user has live horses tracked, offer to pick one. Picking
+                    will pre-fill the name AND archive the horse on save so the
+                    Sales tab can move it out of the active herd in one tap. */}
+                {(() => {
+                  const horsesHobby = (data.hobbies || []).find(h => h.id === "horses");
+                  const liveHorses = (horsesHobby?.animals || []).filter(a => !a.archived);
+                  if (liveHorses.length === 0) return null;
+                  return (
+                    <Field label="Sell an existing horse? (optional)">
+                      <select
+                        style={inputStyle}
+                        value={selectedAnimalId}
+                        onChange={e => {
+                          const id = e.target.value;
+                          setSelectedAnimalId(id);
+                          if (id) {
+                            const h = liveHorses.find(x => x.id === id);
+                            if (h) setCrop(h.name);
+                          }
+                        }}
+                      >
+                        <option value="">— Type a name below instead —</option>
+                        {liveHorses.map(h => (
+                          <option key={h.id} value={h.id}>{h.name}</option>
+                        ))}
+                      </select>
+                    </Field>
+                  );
+                })()}
                 <Field label="Horse name">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="e.g. Thunder, Buttercup" />
+                  <input style={inputStyle} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Thunder, Buttercup" />
                 </Field>
                 <Field label="Type of transaction">
                   <select style={inputStyle} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
@@ -681,6 +742,11 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <Field label="Sale / lease price">
                   <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                 </Field>
+                {selectedAnimalId && (
+                  <div style={{ fontSize:12, color:palette.inkSoft, marginBottom:10, padding:"8px 10px", background:palette.bgAlt, borderRadius:6, lineHeight:1.5 }}>
+                    Saving will also archive this horse so it disappears from your active Horses tab.
+                  </div>
+                )}
               </>}
 
               {/* Other */}

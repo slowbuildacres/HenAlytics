@@ -770,26 +770,32 @@ function AttackModal({ dogs, attack, onSave, onDelete, onClose }) {
   );
 }
 
-// ============ LOG ENTRY MODAL (weight / health / note / death) ============
+// ============ LOG ENTRY MODAL (weight / health / note / death / sale) ============
 function LogEntryModal({ animals, action, onSave, onClose }) {
   const live = animals.filter(a => !a.archived);
   const [date, setDate] = useState(todayStr());
   const [animalId, setAnimalId] = useState(live[0]?.id || "");
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
+  // Sale-only fields
+  const [saleBuyer, setSaleBuyer] = useState("");
+  const [salePrice, setSalePrice] = useState("");
+  const [saleType, setSaleType] = useState("sold");
 
-  const animalRequired = action === "weight" || action === "health" || action === "death";
+  const animalRequired = action === "weight" || action === "health" || action === "death" || action === "sale";
 
   const titles = {
     weight: "⚖️ Log weight",
     health: "💊 Vet / meds",
     death:  "🪦 Log death",
+    sale:   "🏷️ Log sale",
     note:   "📝 Add note",
   };
   const subtexts = {
     weight: "Weight check — useful for growth tracking and dosage calculations.",
     health: "Vaccines, dewormer, heartworm, vet visits — anything health-related.",
     death:  "This will archive the dog. Cause of death goes in notes.",
+    sale:   "This will archive the dog and create a sale record in your Sales tab.",
     note:   "General observation about a specific dog or the pack overall.",
   };
   const noteRequired = action === "note" || action === "health" || action === "death";
@@ -810,8 +816,30 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
       created: Date.now(),
     };
     if (action === "weight") entry.weight = parseFloat(weight) || 0;
+    if (action === "sale") {
+      entry.buyer = saleBuyer.trim();
+      entry.price = Number(salePrice) || 0;
+      entry.saleType = saleType;
+    }
     if (action === "death") {
       onSave({ entry, animalId, archiveReason: "died" });
+    } else if (action === "sale") {
+      const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
+      const priceStr = Number(salePrice) > 0 ? ` for $${Number(salePrice).toFixed(2)}` : "";
+      const buyerStr = saleBuyer.trim() ? ` to ${saleBuyer.trim()}` : "";
+      onSave({
+        entry, animalId,
+        archiveReason: `${verb}${buyerStr}${priceStr}`,
+        saleData: {
+          id: entry.id, date, hobbyType: "dog",
+          crop: (live.find(a => a.id === animalId) || {}).name || "",
+          saleType,
+          pricePerUnit: Number(salePrice) || 0,
+          totalRevenue: Number(salePrice) || 0,
+          qty: 1, animalId, buyer: saleBuyer.trim(),
+          notes: notes.trim() || "",
+        },
+      });
     } else {
       onSave(entry);
     }
@@ -835,6 +863,24 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
           <input type="number" step="0.1" min={0} style={inputStyle} value={weight} onChange={e => setWeight(e.target.value)} placeholder="0" autoFocus inputMode="decimal" />
         </Field>
       )}
+      {action === "sale" && (
+        <>
+          <Field label="Type">
+            <select style={inputStyle} value={saleType} onChange={e => setSaleType(e.target.value)}>
+              <option value="sold">Sold</option>
+              <option value="rehomed">Rehomed (no payment)</option>
+            </select>
+          </Field>
+          <Field label="Buyer / new home (optional)">
+            <input style={inputStyle} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="Name of buyer" />
+          </Field>
+          {saleType !== "rehomed" && (
+            <Field label="Price ($)">
+              <input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder="$0.00" />
+            </Field>
+          )}
+        </>
+      )}
       <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
         <input
           style={inputStyle} value={notes}
@@ -842,6 +888,7 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
           placeholder={
             action === "health" ? "e.g. Rabies vaccine, heartworm prevention" :
             action === "death" ? "Cause / circumstances" :
+            action === "sale" ? "Additional notes" :
             action === "note" ? "What happened" : ""
           }
           autoFocus={action !== "weight"}
@@ -854,7 +901,7 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
           onClick={handleSave}
           disabled={!canSave}
         >
-          {action === "death" ? "Save & archive" : "Save"}
+          {(action === "death" || action === "sale") ? "Save & archive" : "Save"}
         </Btn>
       </div>
     </ModalShell>
@@ -1048,6 +1095,7 @@ export default function DogsPage({ hobby, data, update, setModal }) {
         <Btn small onClick={() => setLogEntryAction("health")} style={{ width: "100%" }}>💊 Vet / meds</Btn>
         <Btn small onClick={() => setLogEntryAction("note")} style={{ width: "100%" }}>📝 Note</Btn>
         <Btn small variant="danger" onClick={() => setLogEntryAction("death")} style={{ width: "100%" }}>🪦 Died</Btn>
+        <Btn small onClick={() => setLogEntryAction("sale")} style={{ width: "100%" }}>🏷️ Sale</Btn>
       </div>
 
       {/* DOGS LIST */}
@@ -1237,6 +1285,13 @@ export default function DogsPage({ hobby, data, update, setModal }) {
               addEntry(payload.entry);
               if (payload.archiveReason && payload.animalId) {
                 archiveDog(payload.animalId, payload.archiveReason);
+              }
+              if (payload.saleData) {
+                update(d => {
+                  d.sales = d.sales || [];
+                  d.sales.push(payload.saleData);
+                  return d;
+                });
               }
             } else {
               addEntry(payload);

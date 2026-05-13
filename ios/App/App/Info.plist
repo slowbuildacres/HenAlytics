@@ -54,6 +54,8 @@
 	<key>NSPhotoLibraryAddUsageDescription</key>
 	<string>Henalytics needs permission to save your stats share image to your photo library.
 </string>
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 	<key>NSPhotoLibraryUsageDescription</key>
 	<string>Henalytics needs photo library access so you can attach photos to your homestead entries.</string>
 	<key>UIViewControllerBasedStatusBarAppearance</key>

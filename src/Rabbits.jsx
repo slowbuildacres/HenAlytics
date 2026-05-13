@@ -366,6 +366,10 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
   const[cause,setCause]=useState("Unknown");
   const[buckId,setBuckId]=useState("");
   const[notes,setNotes]=useState("");
+  // Sale-only: buyer + price + sold-vs-rehomed.
+  const[saleBuyer,setSaleBuyer]=useState("");
+  const[salePrice,setSalePrice]=useState("");
+  const[saleType,setSaleType]=useState("sold");
 
   // For "bred": list of bucks from this hobby's animals.
   const availableBucks = (animals||[]).filter(a=>!a.archived && a.sex==="Buck" && a.id!==animal.id);
@@ -387,6 +391,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
     }
     if(action==="butcher"){entry.weight=Number(weight)||0;entry.cost=Number(cost)||0;}
     if(action==="death")entry.cause=cause;
+    if(action==="sale"){entry.buyer=saleBuyer.trim();entry.price=Number(salePrice)||0;entry.saleType=saleType;}
     update(d=>{
       d.entries[hobbyId]=d.entries[hobbyId]||[];
       d.entries[hobbyId].push(entry);
@@ -400,12 +405,44 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
           notes:`Bred ${fmtDate(date)}${entry.buckName?" · sire "+entry.buckName:""}`,
         });
       }
+      // Death archives the rabbit so it disappears from the active list.
+      if(action==="death"){
+        const h=d.hobbies.find(x=>x.id===hobbyId);
+        const a=(h?.animals||[]).find(x=>x.id===animal.id);
+        if(a&&!a.archived){
+          a.archived=true;
+          a.archivedReason=cause&&cause!=="Unknown"?`Died: ${cause}`:"Died";
+          a.archivedDate=date;
+        }
+      }
+      // Sale archives the rabbit and creates a Sales row.
+      if(action==="sale"){
+        const h=d.hobbies.find(x=>x.id===hobbyId);
+        const a=(h?.animals||[]).find(x=>x.id===animal.id);
+        if(a&&!a.archived){
+          a.archived=true;
+          const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
+          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
+          a.archivedReason=`${verb}${buyerStr}${priceStr}`;
+          a.archivedDate=date;
+          a.saleId=entry.id;
+        }
+        d.sales=d.sales||[];
+        d.sales.push({
+          id:entry.id,date,hobbyType:"rabbit",crop:animal.name,saleType,
+          pricePerUnit:Number(salePrice)||0,totalRevenue:Number(salePrice)||0,
+          qty:1,animalId:animal.id,buyer:saleBuyer.trim(),notes:notes||"",
+        });
+      }
       return d;
     });
     onClose();
   };
 
-  const titles={fed:"Log feed",weight:"Log weight",bred:"Log breeding",litter:"Log litter",butcher:"Log butcher",death:"Log death",note:"Add note"};
+  const titles={fed:"Log feed",weight:"Log weight",bred:"Log breeding",litter:"Log litter",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note"};
+  const isDeath=action==="death";
+  const isSale=action==="sale";
 
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
@@ -454,8 +491,22 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
           </select>
         </Field>
       )}
+      {isSale && (
+        <>
+          <Field label="Type">
+            <select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}>
+              <option value="sold">Sold</option>
+              <option value="leased">Leased</option>
+              <option value="rehomed">Rehomed (no payment)</option>
+            </select>
+          </Field>
+          <Field label="Buyer / new home (optional)"><input style={inputStyle} value={saleBuyer} onChange={e=>setSaleBuyer(e.target.value)} placeholder="Name of buyer" autoFocus/></Field>
+          {saleType!=="rehomed" && <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+        </>
+      )}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
-      <Btn onClick={save}>Save</Btn>
+      {(isDeath||isSale)&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived rabbits list{isSale&&saleType!=="rehomed"?" and a sale record will appear in your Sales tab":""}. You can restore from there if this was a mistake.</div>}
+      <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
     </Modal>
   );
 }
@@ -478,12 +529,12 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal,hideHutchChi
   const kindleStillUpcoming = lastBred?.kindleDate && lastBred.kindleDate >= todayStr();
 
   // Action set differs slightly by sex. Bred + litter only show for does.
-  const baseActions = ["fed","weight","butcher","death","note"];
+  const baseActions = ["fed","weight","butcher","death","sale","note"];
   const doeActions = ["bred","litter"];
   const LOG_ACTIONS = animal.sex==="Doe" ? [...baseActions.slice(0,2), ...doeActions, ...baseActions.slice(2)] : baseActions;
   const actionLabels = {
     fed:"🌾 Feed", weight:"⚖️ Weight", bred:"🐇 Bred", litter:"🍼 Litter",
-    butcher:"❄️ Butcher", death:"💀 Death", note:"📓 Note",
+    butcher:"❄️ Butcher", death:"💀 Death", sale:"🏷️ Sale", note:"📓 Note",
   };
   const recentEntries=animalEntries.sort((a,b)=>(b.date||"").localeCompare(a.date||"")).slice(0,3);
 

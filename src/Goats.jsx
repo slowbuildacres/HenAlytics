@@ -203,6 +203,11 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   // Death-only: optional cause. Stored on the entry AND folded into archivedReason
   // so the existing "Archived goats" section reads "Died: predator" etc.
   const[cause,setCause]=useState("");
+  // Sale-only: buyer name, sale price, sold-vs-rehomed. On save these archive
+  // the animal AND create a `data.sales[]` entry so it shows up in the Sales tab.
+  const[saleBuyer,setSaleBuyer]=useState("");
+  const[salePrice,setSalePrice]=useState("");
+  const[saleType,setSaleType]=useState("sold");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
     if(action==="milk")entry.oz=Number(oz)||0;
@@ -211,6 +216,7 @@ function LogModal({animal,hobbyId,action,update,onClose}){
     if(action==="weight"||action==="butcher")entry.weight=Number(weight)||0;
     if(action==="butcher")entry.cost=Number(cost)||0;
     if(action==="death")entry.cause=cause.trim();
+    if(action==="sale"){entry.buyer=saleBuyer.trim();entry.price=Number(salePrice)||0;entry.saleType=saleType;}
     update(d=>{
       d.entries[hobbyId]=d.entries[hobbyId]||[];
       d.entries[hobbyId].push(entry);
@@ -225,12 +231,41 @@ function LogModal({animal,hobbyId,action,update,onClose}){
           a.archivedDate=date;
         }
       }
+      // Sale also archives the animal and creates a Sales entry.
+      if(action==="sale"){
+        const h=d.hobbies.find(x=>x.id===hobbyId);
+        const a=(h?.animals||[]).find(x=>x.id===animal.id);
+        if(a&&!a.archived){
+          a.archived=true;
+          const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
+          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
+          a.archivedReason=`${verb}${buyerStr}${priceStr}`;
+          a.archivedDate=date;
+          a.saleId=entry.id;
+        }
+        d.sales=d.sales||[];
+        d.sales.push({
+          id:entry.id,
+          date,
+          hobbyType:"goat",
+          crop:animal.name,
+          saleType,
+          pricePerUnit:Number(salePrice)||0,
+          totalRevenue:Number(salePrice)||0,
+          qty:1,
+          animalId:animal.id,
+          buyer:saleBuyer.trim(),
+          notes:notes||"",
+        });
+      }
       return d;
     });
     onClose();
   };
-  const titles={milk:"Log milk",fed:"Log feed",kid:"Log kids born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",note:"Add note"};
+  const titles={milk:"Log milk",fed:"Log feed",kid:"Log kids born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note"};
   const isDeath=action==="death";
+  const isSale=action==="sale";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
@@ -240,9 +275,15 @@ function LogModal({animal,hobbyId,action,update,onClose}){
       {(action==="weight"||action==="butcher")&&<Field label="Weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>}
       {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
+      {isSale&&<>
+        <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
+        <Field label="Buyer / new home (optional)"><input style={inputStyle} value={saleBuyer} onChange={e=>setSaleBuyer(e.target.value)} placeholder="Name of buyer" autoFocus/></Field>
+        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+      </>}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list. You can restore from there if this was a mistake.</div>}
-      <Btn onClick={save} variant={isDeath?"danger":"primary"}>{isDeath?"Save & archive":"Save"}</Btn>
+      {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list and {saleType!=="rehomed"?"a sale record will appear in your Sales tab":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
+      <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
     </Modal>
   );
 }
@@ -259,8 +300,8 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal}){
   const lastMilk=milkEntries.sort((a,b)=>b.date.localeCompare(a.date))[0];
   const purposeColor={Dairy:palette.leaf,Meat:palette.accent,Both:palette.feather};
   const sexLabel={Doe:"♀",Buck:"♂",Wether:"⚧",Kid:"🐣"};
-  const LOG_ACTIONS=animal.purpose==="Meat"?["fed","weight","health","butcher","death","note"]:animal.purpose==="Dairy"?["milk","fed","kid","health","death","note"]:["milk","fed","kid","weight","health","butcher","death","note"];
-  const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",kid:"🍼 Kids",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",note:"📓 Note"};
+  const LOG_ACTIONS=animal.purpose==="Meat"?["fed","weight","health","butcher","death","sale","note"]:animal.purpose==="Dairy"?["milk","fed","kid","health","death","sale","note"]:["milk","fed","kid","weight","health","butcher","death","sale","note"];
+  const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",kid:"🍼 Kids",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note"};
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>

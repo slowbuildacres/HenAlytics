@@ -56,11 +56,12 @@ const ageYears = (birthdate) => {
   return age;
 };
 
-// Common horse breeds — picked the 8 most commonly tracked in US homestead contexts.
+// Common horse breeds — picked from frequently-tracked US homestead breeds.
 // "Other" lets users type in any breed not on the list (Friesian, Andalusian, etc.)
 const HORSE_BREEDS = [
   "Quarter Horse", "Thoroughbred", "Arabian", "Appaloosa",
-  "Paint", "Tennessee Walker", "Miniature", "Pony", "Other",
+  "Paint", "Tennessee Walker", "Warmblood", "Sport horse",
+  "Draft type", "Miniature", "Pony", "Other",
 ];
 
 // 11 months ≈ 340 days for horse gestation (340-345 is the typical range)
@@ -229,6 +230,8 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose }) {
               <option value="riding">Riding</option>
               <option value="breeding">Breeding</option>
               <option value="work">Work/draft</option>
+              <option value="driving">Driving</option>
+              <option value="show">Show</option>
               <option value="companion">Companion</option>
               <option value="retired">Retired</option>
             </select>
@@ -499,7 +502,7 @@ function RideModal({ horses, ride, onSave, onDelete, onClose }) {
   const [notes, setNotes] = useState(ride?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const RIDE_TYPES = ["Training", "Trail", "Arena work", "Lesson", "Show", "Conditioning", "Liberty/groundwork", "Other"];
+  const RIDE_TYPES = ["Training", "Trail", "Trails", "Arena work", "Lesson", "Show", "Conditioning", "Driving", "Lunging", "Liberty/groundwork", "Other"];
 
   const handleSave = () => {
     if (!horseId || !date) return;
@@ -552,12 +555,127 @@ function RideModal({ horses, ride, onSave, onDelete, onClose }) {
   );
 }
 
+// ============ HORSE SALE MODAL ============
+// Logs a sale of a specific horse — sold / leased / rehomed. The parent
+// component (HorsesPage) handles archiving + Sales row insertion.
+function HorseSaleModal({ horse, onClose, onSave }) {
+  const [date, setDate] = useState(todayStr());
+  const [saleType, setSaleType] = useState("sold");
+  const [buyer, setBuyer] = useState("");
+  const [price, setPrice] = useState("");
+  const [notes, setNotes] = useState("");
+  if (!horse) return null;
+  const handleSave = () => {
+    const id = newId();
+    const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
+    const priceStr = Number(price) > 0 ? ` for $${Number(price).toFixed(2)}` : "";
+    const buyerStr = buyer.trim() ? ` to ${buyer.trim()}` : "";
+    onSave({
+      horseId: horse.id,
+      saleId: id,
+      date,
+      archiveReason: `${verb}${buyerStr}${priceStr}`,
+      saleData: {
+        id, date,
+        hobbyType: "horse",
+        crop: horse.name,
+        saleType,
+        pricePerUnit: Number(price) || 0,
+        totalRevenue: Number(price) || 0,
+        qty: 1,
+        animalId: horse.id,
+        buyer: buyer.trim(),
+        notes: notes.trim() || "",
+      },
+    });
+  };
+  return (
+    <ModalShell title={`🏷️ Sell — ${horse.name}`} onClose={onClose}>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+        {horse.name} will move to your Archived horses list. A sale record will appear in your Sales tab.
+      </div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="Type">
+        <select style={inputStyle} value={saleType} onChange={e => setSaleType(e.target.value)}>
+          <option value="sold">Sold</option>
+          <option value="leased">Leased</option>
+          <option value="rehomed">Rehomed (no payment)</option>
+        </select>
+      </Field>
+      <Field label="Buyer / new home (optional)">
+        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+      </Field>
+      {saleType !== "rehomed" && (
+        <Field label="Price ($)">
+          <input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e => setPrice(e.target.value)} placeholder="$0.00" />
+        </Field>
+      )}
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave}>Save & archive</Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============ HORSE DEATH MODAL ============
+// Logs the death of a specific horse. Parent handles archive + entry insertion.
+function HorseDeathModal({ horse, onClose, onSave }) {
+  const [date, setDate] = useState(todayStr());
+  const [cause, setCause] = useState("");
+  const [notes, setNotes] = useState("");
+  if (!horse) return null;
+  const handleSave = () => {
+    const entry = {
+      id: newId(),
+      date,
+      action: "death",
+      animalId: horse.id,
+      animalName: horse.name,
+      cause: cause.trim(),
+      notes: notes.trim(),
+      created: Date.now(),
+    };
+    const archiveReason = cause.trim() ? `Died: ${cause.trim()}` : "Died";
+    onSave({ horseId: horse.id, date, archiveReason, entry });
+  };
+  return (
+    <ModalShell title={`🪦 Log death — ${horse.name}`} onClose={onClose}>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+        {horse.name} will move to your Archived horses list. You can restore from there if this was a mistake.
+      </div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="Cause (optional)">
+        <input style={inputStyle} value={cause} onChange={e => setCause(e.target.value)} placeholder="colic, age, accident, illness..." />
+      </Field>
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant="danger" onClick={handleSave}>Save & archive</Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
 // ============ HORSES HOME PAGE ============
 export default function HorsesPage({ hobby, data, update, setModal }) {
   const [horseModal, setHorseModal] = useState({ open: false, horse: null });
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [careModal, setCareModal] = useState({ open: false, kind: null, log: null });
   const [rideModal, setRideModal] = useState({ open: false, ride: null });
+  // Sale and death modals — both archive the horse and (for sale) push a row
+  // into data.sales[] so it shows up in the Sales tab next to other livestock.
+  const [saleModal, setSaleModal] = useState({ open: false, horse: null });
+  const [deathModal, setDeathModal] = useState({ open: false, horse: null });
   // Push 7a — pedigree view state. The 🧬 chip on each horse row opens this;
   // jumping to an ancestor/descendant from the tree swaps the horse in here
   // without ever opening the edit modal.
@@ -702,6 +820,54 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
           onDelete={deleteRide}
         />
       )}
+      {saleModal.open && (
+        <HorseSaleModal
+          horse={saleModal.horse}
+          onClose={() => setSaleModal({ open: false, horse: null })}
+          onSave={(payload) => {
+            update(d => {
+              const h = d.hobbies.find(x => x.id === hobby.id);
+              if (!h) return d;
+              const a = (h.animals || []).find(x => x.id === payload.horseId);
+              if (a) {
+                a.archived = true;
+                a.archivedReason = payload.archiveReason;
+                a.archivedDate = payload.date;
+                a.saleId = payload.saleId;
+              }
+              d.sales = d.sales || [];
+              d.sales.push(payload.saleData);
+              return d;
+            });
+            setSaleModal({ open: false, horse: null });
+          }}
+        />
+      )}
+      {deathModal.open && (
+        <HorseDeathModal
+          horse={deathModal.horse}
+          onClose={() => setDeathModal({ open: false, horse: null })}
+          onSave={(payload) => {
+            update(d => {
+              const h = d.hobbies.find(x => x.id === hobby.id);
+              if (!h) return d;
+              // Death entry lives on data.entries so it shows up in journals
+              // and analytics. Mirrors how cows/goats/etc. log deaths.
+              d.entries = d.entries || {};
+              d.entries[hobby.id] = d.entries[hobby.id] || [];
+              d.entries[hobby.id].push(payload.entry);
+              const a = (h.animals || []).find(x => x.id === payload.horseId);
+              if (a) {
+                a.archived = true;
+                a.archivedReason = payload.archiveReason;
+                a.archivedDate = payload.date;
+              }
+              return d;
+            });
+            setDeathModal({ open: false, horse: null });
+          }}
+        />
+      )}
       {/* Push 7a — Pedigree modal. onJumpTo swaps the focused horse rather
           than stacking — tapping an ancestor closes nothing, just re-targets
           the same view to the relative the user tapped. */}
@@ -815,6 +981,24 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
                       flexShrink:0,
                     }}
                   >🧬 Pedigree</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setSaleModal({ open: true, horse: h }); }}
+                    aria-label={`Log sale of ${h.name}`}
+                    style={{
+                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                      flexShrink:0,
+                    }}
+                  >🏷️ Sale</button>
+                  <button
+                    onClick={(e) => { e.stopPropagation(); setDeathModal({ open: true, horse: h }); }}
+                    aria-label={`Log death of ${h.name}`}
+                    style={{
+                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                      flexShrink:0,
+                    }}
+                  >🪦 Died</button>
                   <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
                 </div>
               );

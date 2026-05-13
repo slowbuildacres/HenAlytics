@@ -190,6 +190,10 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   // Death-only: optional cause. Stored on the entry AND folded into archivedReason
   // so the existing "Archived pigs" section reads "Died: predator" etc.
   const[cause,setCause]=useState("");
+  // Sale-only: buyer name, sale price, sold-vs-rehomed.
+  const[saleBuyer,setSaleBuyer]=useState("");
+  const[salePrice,setSalePrice]=useState("");
+  const[saleType,setSaleType]=useState("sold");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
     if(action==="fed"){entry.lbs=Number(lbs)||0;entry.cost=Number(cost)||0;}
@@ -197,6 +201,7 @@ function LogModal({animal,hobbyId,action,update,onClose}){
     if(action==="litter")entry.count=Number(count)||1;
     if(action==="butcher"){entry.weight=Number(weight)||0;entry.cost=Number(cost)||0;}
     if(action==="death")entry.cause=cause.trim();
+    if(action==="sale"){entry.buyer=saleBuyer.trim();entry.price=Number(salePrice)||0;entry.saleType=saleType;}
     update(d=>{
       d.entries[hobbyId]=d.entries[hobbyId]||[];
       d.entries[hobbyId].push(entry);
@@ -211,12 +216,33 @@ function LogModal({animal,hobbyId,action,update,onClose}){
           a.archivedDate=date;
         }
       }
+      // Sale archives the animal and creates a Sales entry.
+      if(action==="sale"){
+        const h=d.hobbies.find(x=>x.id===hobbyId);
+        const a=(h?.animals||[]).find(x=>x.id===animal.id);
+        if(a&&!a.archived){
+          a.archived=true;
+          const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
+          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
+          a.archivedReason=`${verb}${buyerStr}${priceStr}`;
+          a.archivedDate=date;
+          a.saleId=entry.id;
+        }
+        d.sales=d.sales||[];
+        d.sales.push({
+          id:entry.id,date,hobbyType:"pig",crop:animal.name,saleType,
+          pricePerUnit:Number(salePrice)||0,totalRevenue:Number(salePrice)||0,
+          qty:1,animalId:animal.id,buyer:saleBuyer.trim(),notes:notes||"",
+        });
+      }
       return d;
     });
     onClose();
   };
-  const titles={fed:"Log feed",weight:"Log weight",litter:"Log litter",health:"Health check",wean:"Log wean",butcher:"Log butcher",death:"Log death",note:"Add note"};
+  const titles={fed:"Log feed",weight:"Log weight",litter:"Log litter",health:"Health check",wean:"Log wean",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note"};
   const isDeath=action==="death";
+  const isSale=action==="sale";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
@@ -225,9 +251,15 @@ function LogModal({animal,hobbyId,action,update,onClose}){
       {action==="litter"&&<Field label="Piglets born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
       {action==="butcher"&&<><Field label="Hanging weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field><Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
+      {isSale&&<>
+        <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
+        <Field label="Buyer / new home (optional)"><input style={inputStyle} value={saleBuyer} onChange={e=>setSaleBuyer(e.target.value)} placeholder="Name of buyer" autoFocus/></Field>
+        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+      </>}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list. You can restore from there if this was a mistake.</div>}
-      <Btn onClick={save} variant={isDeath?"danger":"primary"}>{isDeath?"Save & archive":"Save"}</Btn>
+      {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list and {saleType!=="rehomed"?"a sale record will appear in your Sales tab":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
+      <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
     </Modal>
   );
 }
@@ -240,8 +272,8 @@ function AnimalCard({animal,hobbyId,animals,entries,update,setModal}){
   const latestWeight=weightEntries[0]?.weight||null;
   const startWeight=animal.startWeight||0;
   const gain=latestWeight&&startWeight?latestWeight-startWeight:null;
-  const LOG_ACTIONS=["fed","weight","litter","health","wean","butcher","death","note"];
-  const actionLabels={fed:"🌾 Feed",weight:"⚖️ Weight",litter:"🐷 Litter",health:"💊 Health",wean:"🍼 Wean",butcher:"🔪 Butcher",death:"💀 Death",note:"📓 Note"};
+  const LOG_ACTIONS=["fed","weight","litter","health","wean","butcher","death","sale","note"];
+  const actionLabels={fed:"🌾 Feed",weight:"⚖️ Weight",litter:"🐷 Litter",health:"💊 Health",wean:"🍼 Wean",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note"};
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
