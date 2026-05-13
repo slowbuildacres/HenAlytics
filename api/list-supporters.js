@@ -86,21 +86,27 @@ export default async function handler(req, res) {
   const monthStartIso = monthStart.toISOString();
   const monthEndIso = monthEnd.toISOString();
 
-  // Query: anyone whose supporter row was active at any point during this
-  // month. started_at must be before the end of the month, and either
-  // they haven't canceled or their cancellation was after the start.
+  // Query: anyone who donated during this calendar month.
+  //
+  //   - One-time tippers: started_at falls inside the month window
+  //   - Monthly subscribers: their subscription was active for any part of
+  //     the month (started_at before month end, AND either still active OR
+  //     canceled after month start)
+  //
+  // We OR these two conditions so both groups appear. A monthly subscriber
+  // who canceled mid-month still gets credit for that month — they paid for it.
   let names;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from('supporters')
-      .select('homestead_name, payment_type, started_at')
+      .select('homestead_name, payment_type, started_at, canceled_at')
       .eq('homestead_name_visible', true)
       .eq('homestead_name_flagged', false)
       .not('homestead_name', 'is', null)
       .neq('homestead_name', '')
       .lt('started_at', monthEndIso)
-      .or(`canceled_at.is.null,canceled_at.gte.${monthStartIso}`)
+      .or(`payment_type.eq.one_time,canceled_at.is.null,canceled_at.gte.${monthStartIso}`)
       .order('started_at', { ascending: true });
     if (error) {
       console.error('list-supporters query failed:', error);
@@ -111,6 +117,17 @@ export default async function handler(req, res) {
     console.error('list-supporters error:', e);
     return res.status(500).json({ error: 'Could not load supporters.' });
   }
+
+  // Extra filter for one-time tips: their started_at must fall WITHIN the
+  // requested month, not just before its end. (A one-time tip from January
+  // shouldn't appear in March's list.) This is a post-query filter because
+  // Postgres OR conditions don't compose cleanly with the date window above
+  // when one branch needs a different started_at constraint.
+  names = names.filter(row => {
+    if (row.payment_type !== 'one_time') return true; // monthly already filtered correctly above
+    const started = new Date(row.started_at);
+    return started >= monthStart && started < monthEnd;
+  });
 
   // Dedupe by homestead_name (case-insensitive). If someone has multiple
   // active subscriptions or a sub + one-time, they should only appear once.
