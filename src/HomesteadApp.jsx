@@ -65,6 +65,67 @@ const palette = {
   card: "#FAF5EA",
 };
 
+// ============================================================================
+// NATIVE BACK BUTTON (Android) — priority-ordered handler chain
+// ----------------------------------------------------------------------------
+// Without this, pressing the Android system back button quits the app outright,
+// even if a modal is open or the user is deep on a sub-page. Required for
+// Google Play submission and just generally expected behavior.
+//
+// Capacitor's @capacitor/app plugin lets us subscribe to backButton events.
+// We lazy-import it so the web build (no Capacitor runtime) doesn't break.
+//
+// Usage: pass an array of `{ when, handle }` entries in priority order.
+// On back press, the FIRST entry whose `when` returns true gets `handle`
+// called. If none match, the app exits (default behavior).
+// ============================================================================
+function useNativeBackButton(handlers) {
+  useEffect(() => {
+    // Web build: Capacitor isn't present. Skip entirely. Detection is via
+    // window.Capacitor — set up by Capacitor's bootstrap script at runtime
+    // on native, absent on plain web.
+    if (typeof window === "undefined" || !window.Capacitor) return;
+    let listenerHandle = null;
+    let cancelled = false;
+    (async () => {
+      try {
+        // Lazy import so bundlers that don't have @capacitor/app installed
+        // (e.g. web-only dev) don't fail at parse time. The native build
+        // includes the plugin so this resolves cleanly.
+        const { App } = await import("@capacitor/app");
+        if (cancelled) return;
+        listenerHandle = await App.addListener("backButton", () => {
+          // Walk handlers in order. First match wins. If none, exit the app
+          // (matches the default Android behavior so power users still get
+          // back-to-exit from the home page).
+          for (const h of handlers) {
+            try {
+              if (h && h.when && h.when()) {
+                h.handle();
+                return;
+              }
+            } catch (_) { /* keep walking on error */ }
+          }
+          // No handler claimed the press — exit. This mirrors Android's
+          // standard "back from home screen" behavior.
+          try { App.exitApp(); } catch (_) {}
+        });
+      } catch (_) {
+        // @capacitor/app not available — fail silently. Web build path or
+        // older Capacitor that doesn't have App plugin.
+      }
+    })();
+    return () => {
+      cancelled = true;
+      if (listenerHandle && typeof listenerHandle.remove === "function") {
+        listenerHandle.remove();
+      }
+    };
+    // handlers is rebuilt on every render (closes over current state), so
+    // re-subscribe each time. The cleanup removes the prior listener.
+  }, [handlers]);
+}
+
 // ============ STORAGE HELPERS ============
 const defaultData = () => ({
   homesteadName: "",
@@ -134,6 +195,17 @@ function migrateData(data) {
   }
   if (typeof data.userHasTipped !== "boolean") {
     data.userHasTipped = false;
+  }
+  // Tutorial dismissal flags. The web tutorial (`tutorialDismissed`) and
+  // the native iOS/Android tutorial (`nativeTutorialDismissed`) are tracked
+  // separately so a user who dismissed the tutorial on the web still gets
+  // a brief native walkthrough on their first app open. Both default to
+  // false so existing data accounts without these fields see the tutorial.
+  if (typeof data.tutorialDismissed !== "boolean") {
+    data.tutorialDismissed = false;
+  }
+  if (typeof data.nativeTutorialDismissed !== "boolean") {
+    data.nativeTutorialDismissed = false;
   }
 
   // Migrate legacy sold_eggs entries from egg_layers entries into data.sales
@@ -2280,6 +2352,22 @@ export default function HomesteadApp() {
     if (opts && opts.immediate) saveImmediateRef.current = true;
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
+
+  // ---- Android native back button handling ----
+  // Priority order: dismiss overlays first, then unwind navigation, then exit.
+  // Each entry's `when` is evaluated on press; the first match handles it.
+  // Listed top-to-bottom from most-specific (open modal) to least (page nav).
+  // Falling through all of them exits the app — matches expected Android UX.
+  useNativeBackButton([
+    { when: () => modal !== null, handle: () => setModal(null) },
+    { when: () => hobbyMenuOpen, handle: () => setHobbyMenuOpen(false) },
+    { when: () => showTutorial, handle: () => setShowTutorial(false) },
+    { when: () => showTutorialPrompt, handle: () => setShowTutorialPrompt(false) },
+    { when: () => showWhatsNew, handle: () => setShowWhatsNew(false) },
+    { when: () => showSupporterThanks, handle: () => setShowSupporterThanks(false) },
+    // Page navigation: any non-home page goes back to home before allowing exit.
+    { when: () => page !== "home", handle: () => setPage("home") },
+  ]);
 
   if (!authReady || !data) {
     return null;
