@@ -2008,6 +2008,62 @@ export default function HomesteadApp() {
     return () => clearTimeout(saveTimerRef.current);
   }, [data, user]);
 
+  // ---- Save-on-background flush ----
+  // The 500ms debounce above means recently-edited data can be lost if the
+  // user backgrounds the app inside that window. Classic example: tap
+  // "Finalize batch" on a meat-bird batch, immediately swipe up to close
+  // the app — the debounce hasn't fired so the cloud save never happened,
+  // and on next open the batch shows un-finalized.
+  //
+  // Fix: when the browser/WebView tells us the app is being hidden or torn
+  // down, force-fire the pending save synchronously. visibilitychange covers
+  // the "swipe up" / "switch app" cases on iOS+Android+desktop; pagehide
+  // covers the rarer "tab being unloaded" case on web; beforeunload covers
+  // the desktop "close window" case. All three call into the same flush.
+  //
+  // We use a ref to the latest data so the listener (attached once on mount)
+  // always sees the current snapshot, not the snapshot from when it was wired.
+  const latestDataRef = useRef(data);
+  const latestUserRef = useRef(user);
+  useEffect(() => { latestDataRef.current = data; }, [data]);
+  useEffect(() => { latestUserRef.current = user; }, [user]);
+
+  useEffect(() => {
+    const flush = () => {
+      // Cancel the pending debounce and fire immediately. We don't await
+      // here because visibilitychange handlers can't reliably await on iOS
+      // — the WebView may freeze before the promise resolves. saveHomestead
+      // is fire-and-forget; the cloud write will complete in the background
+      // (or, worst case, the local-storage write inside saveHomestead has
+      // already persisted synchronously before the WebView freezes).
+      if (saveTimerRef.current) {
+        clearTimeout(saveTimerRef.current);
+        saveTimerRef.current = null;
+      }
+      const d = latestDataRef.current;
+      const u = latestUserRef.current;
+      if (!d) return;
+      // Skip if we're in the "just loaded from cloud, don't save back" window.
+      // The debounced effect resets skipNextSaveRef itself on its first run;
+      // we honor the same flag here so a load-triggered flush doesn't echo.
+      if (skipNextSaveRef.current) return;
+      try {
+        saveHomestead(u, d);
+      } catch (_) { /* best-effort — nothing we can do if it throws */ }
+    };
+    const onVisibility = () => {
+      if (typeof document !== "undefined" && document.visibilityState === "hidden") flush();
+    };
+    document.addEventListener("visibilitychange", onVisibility);
+    window.addEventListener("pagehide", flush);
+    window.addEventListener("beforeunload", flush);
+    return () => {
+      document.removeEventListener("visibilitychange", onVisibility);
+      window.removeEventListener("pagehide", flush);
+      window.removeEventListener("beforeunload", flush);
+    };
+  }, []);
+
   const update = (mutator) => {
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
