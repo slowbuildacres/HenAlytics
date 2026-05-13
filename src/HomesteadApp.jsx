@@ -242,6 +242,33 @@ function migrateData(data) {
       // Only auto-rename if user hasn't customized the name to something else.
       if (h.name === "Meat Chickens") h.name = "Meat Birds";
     }
+    // Backfill move_tractor entries that pre-date the prefill-effect fix.
+    // Early versions of the move-tractor flow displayed the flock default in
+    // the input but never WROTE it to fields.distanceFeet — so users who
+    // tapped Save without retyping ended up with entries where distanceFeet
+    // is 0 or missing. We retroactively fill those from the current flock /
+    // batch default. This runs every load (idempotent — once an entry has a
+    // valid distanceFeet, it's skipped).
+    if (h.type === "egg_layers" || h.type === "meat_chickens") {
+      const flockArr = h.type === "meat_chickens" ? "currentBatches" : "flocks";
+      const flockList = Array.isArray(h[flockArr]) ? h[flockArr] : [];
+      const archived = h.type === "meat_chickens" ? (h.archivedBatches || []) : [];
+      // Use whichever flock/batch has a distance set as the default. Most
+      // homesteads have one tractor per coop so any non-zero value is fine.
+      const defaultDist =
+        flockList.find(f => Number(f.tractorDistanceFeet) > 0)?.tractorDistanceFeet ||
+        archived.find(b => Number(b.tractorDistanceFeet) > 0)?.tractorDistanceFeet ||
+        0;
+      if (defaultDist > 0) {
+        const entriesForHobby = data.entries[h.id] || [];
+        entriesForHobby.forEach(e => {
+          if (e.action === "move_tractor" && (!Number(e.distanceFeet) || Number(e.distanceFeet) <= 0)) {
+            e.distanceFeet = Number(defaultDist);
+            e._backfilledDistance = true; // marker for debugging
+          }
+        });
+      }
+    }
   });
 
   // Tag old egg_layers entries with flockId if missing
