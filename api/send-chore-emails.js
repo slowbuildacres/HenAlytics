@@ -233,15 +233,27 @@ export default async function handler(req, res) {
       sent: sent.length, skipped: skipped.length, failed: failed.length,
     });
 
-    return res.status(200).json({
+    // Detail arrays are big at scale (one entry per homestead). Only include
+    // them when explicitly requested via ?detail=1, OR include failures
+    // unconditionally since they're rare and important.
+    const includeDetail = req.query?.detail === '1';
+    const body = {
       week: weekStartIso,
       weekRange,
       dryRun,
       sent: sent.length,
       skipped: skipped.length,
       failed: failed.length,
-      detail: { sent, skipped, failed },
-    });
+    };
+    if (failed.length > 0) {
+      // Always surface failures — they're rare enough to fit comfortably and
+      // they're the thing we actually need to debug.
+      body.failures = failed;
+    }
+    if (includeDetail) {
+      body.detail = { sent, skipped, failed };
+    }
+    return res.status(200).json(body);
   } catch (e) {
     console.error('[chore-email] handler crashed', e);
     return res.status(500).json({ error: 'Cron crashed', message: e.message });
