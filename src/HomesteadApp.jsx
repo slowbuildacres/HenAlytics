@@ -5,7 +5,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
-  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen
+  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 import AuthModal from "./AuthModal.jsx";
@@ -725,9 +725,12 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 28;
+const CURRENT_VERSION = 29;
 
 const WHATS_NEW = [
+  "🚜 Move chicken tractor — egg layers and meat birds now have a Move Tractor tile. First time you log it, Henalytics asks roughly how far you move it; after that it's a one-tap log. Your total tractor distance shows up on the share card and adds up over time. (Year-in-review is going to be fun.)",
+  "🐎 Apply vet/farrier/dewormer to multiple horses at once — when you log a visit, tap each horse it applied to (or tap \"Select all\" if the whole barn got the same treatment). The visit shows up in every selected horse's history. Saves you from logging the same thing 8 times.",
+  "🥚 Incubator share stats fixed — the share card now correctly shows eggs set, hatched, hatch rate, and run count across today/week/year/all-time filters. (It was reading the wrong fields, so everything looked empty.)",
   "🌾 Monthly supporter shout-out — on the 1st-3rd of each month, the thank-you popup now lists out the homestead names of everyone who chipped in the prior month. (If you donated and want your homestead featured, you'll get a chance to add your name after your next tip.) Anonymous donors stay anonymous.",
   "🍼 Track calves as their own animals — when you log a calf born, you can now name it, set its sex, and add a tag number. Named calves show up in your cow list alongside their mother, with the same milk/feed/health/sale/death buttons and a 📜 history of their own. The pedigree automatically links the calf to its dam. Leave the name blank to just record the birth count like before.",
   "🐴 Tidier horse rows — each horse now shows just 🧬 Pedigree and 📜 History on its card, matching the other livestock pages. 🏷️ Sale and 🪦 Died moved up into the top action buttons; tap one and pick which horse from the dropdown.",
@@ -3184,6 +3187,7 @@ function QuickLogTiles({ hobby, setModal }) {
         <Tile icon={Sun} label="Fed" color={palette.feather} onClick={() => setModal({ type: "log", action: "fed" })} />
         <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
         <Tile icon={Bird} label="Free Range" color={palette.leaf} onClick={() => setModal({ type: "log", action: "free_range" })} />
+        <Tile icon={Truck} label="Move Tractor" color={palette.feather} onClick={() => setModal({ type: "log", action: "move_tractor" })} />
         <Tile icon={Egg} label="Eggs Laid" color={palette.yolk} onClick={() => setModal({ type: "log", action: "eggs" })} />
         <Tile icon={DollarSign} label="Sold Eggs" color={palette.accent} onClick={() => setModal({ type: "log", action: "sold_eggs" })} />
         <Tile icon={Archive} label="Bedding" color={palette.featherSoft} onClick={() => setModal({ type: "log", action: "bedding" })} />
@@ -3220,6 +3224,7 @@ function QuickLogTiles({ hobby, setModal }) {
       <div style={grid}>
         <Tile icon={Sun} label="Fed" color={palette.feather} onClick={() => setModal({ type: "log", action: "fed" })} />
         <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
+        <Tile icon={Truck} label="Move Tractor" color={palette.feather} onClick={() => setModal({ type: "log", action: "move_tractor" })} />
         <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
         <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
@@ -3897,11 +3902,13 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     bedding: "Bedding",
     death: "Death reported", note: "Note", butcher: "Butchered",
     sold_eggs: "Eggs sold", infrastructure: "Infrastructure",
+    move_tractor: "Moved chicken tractor",
   };
   const icons = {
     watered: Droplet, fertilized: Leaf, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
     fed: Sun, free_range: Bird, eggs: Egg, eggs_laid: Egg, bedding: Archive, death: Skull,
     butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, infrastructure: Hammer,
+    move_tractor: Truck,
   };
   const Icon = icons[entry.action] || Edit3;
   let detail = "";
@@ -3950,6 +3957,13 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     }
     case "issue": detail = `${entry.issueType}${entry.detail ? ": " + entry.detail : ""}${entry.plant ? " on " + entry.plant : ""}`; break;
     case "free_range": detail = entry.note || ""; break;
+    case "move_tractor": {
+      const parts = [];
+      if (entry.distanceFeet > 0) parts.push(`${entry.distanceFeet} ft`);
+      if (entry.note) parts.push(entry.note);
+      detail = parts.join(" · ");
+      break;
+    }
     case "butcher": detail = `${entry.count || 0} birds · avg ${entry.avgWeight || 0} lbs`; break;
     case "note": detail = entry.note ? (entry.note.length > 50 ? entry.note.slice(0, 50) + "…" : entry.note) : ""; break;
     default: detail = entry.note || "";
@@ -9007,7 +9021,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     : [];
   // Actions that belong to a specific batch. "infrastructure" is hobby-wide
   // (coop building, fencing, etc.) and stays un-batched.
-  const batchScopedActions = ["fed", "watered", "death", "note"];
+  const batchScopedActions = ["fed", "watered", "death", "note", "move_tractor"];
   const isBatchScoped = hobby.type === "meat_chickens" && batchScopedActions.includes(action);
   const needsBatchPicker = isBatchScoped && activeBatches.length > 1 && !isEdit;
 
@@ -9055,7 +9069,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     setValidationError("");
 
     // Coerce numeric fields from string inputs to actual numbers
-    const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen", "unitQty", "pricePerUnit", "customEggsPerUnit"];
+    const numericKeys = ["quantity", "cost", "lbs", "gallons", "count", "cuft", "avgWeight", "pricePerDozen", "unitQty", "pricePerUnit", "customEggsPerUnit", "distanceFeet"];
     const cleanFields = { ...fields };
     numericKeys.forEach((k) => {
       if (cleanFields[k] !== undefined && cleanFields[k] !== "") {
@@ -9168,10 +9182,31 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         // Picker UI sets flockId for multi-flock users; this fallback covers
         // single-flock users (no picker shown) AND any edge case where the
         // picker was missed.
-        const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue"];
+        const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue","move_tractor"];
         if (hobby.type === "egg_layers" && !entry.flockId && flockScopedActions.includes(action)) {
           const firstFlock = (hobby.flocks || [])[0];
           if (firstFlock) entry.flockId = firstFlock.id;
+        }
+
+        // ---- Chicken tractor: persist the per-move distance to the flock/batch ----
+        // First time the user logs move_tractor, the distance they entered
+        // becomes the default for future moves on the same flock/batch.
+        // We write to ALL flocks/batches in the hobby so multi-flock setups
+        // don't have to re-prompt for each one. The per-entry distanceFeet
+        // is the source of truth for analytics (preserves historical accuracy
+        // if the user later changes the default).
+        if (action === "move_tractor" && Number(entry.distanceFeet) > 0) {
+          const h = d.hobbies.find(x => x.id === hobby.id);
+          if (h) {
+            const flockArr = h.type === "meat_chickens" ? "currentBatches" : "flocks";
+            if (Array.isArray(h[flockArr])) {
+              for (const f of h[flockArr]) {
+                if (!Number(f.tractorDistanceFeet) || Number(f.tractorDistanceFeet) <= 0) {
+                  f.tractorDistanceFeet = Number(entry.distanceFeet);
+                }
+              }
+            }
+          }
         }
 
         // attach to current season for garden
@@ -9394,6 +9429,58 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. 4 hours in pasture" />
         </Field>
       )}
+
+      {action === "move_tractor" && (() => {
+        // First-time prompt: if NO flock (egg layers) or batch (meat birds) on
+        // this hobby has tractorDistanceFeet set yet, ask for the distance.
+        // Once set, subsequent moves auto-reuse the flock's default and just
+        // log the event. The user can edit the per-move distance any time
+        // by tapping into the note line — but the common case is one tap
+        // and done. The per-entry distanceFeet is the source of truth for
+        // analytics; the flock's value is just the default for new moves.
+        const flocks = hobby.flocks || hobby.currentBatches || [];
+        const anyHasDistance = flocks.some(f => Number(f.tractorDistanceFeet) > 0);
+        const defaultDist = flocks.find(f => Number(f.tractorDistanceFeet) > 0)?.tractorDistanceFeet || "";
+        return (
+          <>
+            {!anyHasDistance ? (
+              <>
+                <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"10px 12px",background:palette.bgAlt,borderRadius:8,lineHeight:1.5 }}>
+                  🚜 First move! Roughly how far do you move the chicken tractor each time? This lets Henalytics track your "distance covered" stat over time — a fun fact for your year in review.
+                </div>
+                <Field label="Distance per move (feet)">
+                  <input
+                    type="number" inputMode="numeric"
+                    style={inputStyle}
+                    value={fields.distanceFeet || ""}
+                    onChange={(e) => set("distanceFeet", e.target.value)}
+                    placeholder="e.g. 10"
+                    autoFocus
+                  />
+                </Field>
+              </>
+            ) : (
+              <>
+                <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:10,lineHeight:1.5 }}>
+                  Tracking {defaultDist} ft per move. Tap save to log it — or edit the distance below if today's move was different.
+                </div>
+                <Field label="Distance moved (feet)">
+                  <input
+                    type="number" inputMode="numeric"
+                    style={inputStyle}
+                    value={fields.distanceFeet || String(defaultDist)}
+                    onChange={(e) => set("distanceFeet", e.target.value)}
+                    placeholder={String(defaultDist)}
+                  />
+                </Field>
+              </>
+            )}
+            <Field label="Notes (optional)">
+              <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. moved to north pasture" />
+            </Field>
+          </>
+        );
+      })()}
 
       {(action === "eggs" || action === "eggs_laid") && (
         <Field label="Eggs collected">
@@ -10468,15 +10555,19 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const costPerDozen = totalEggs > 0 ? (totalCost / totalEggs * 12) : 0;
       const flocks = hobby.flocks || [];
       const totalBirds = flocks.reduce((s, f) => s + (f.birdCount||0), 0);
-      return {
-        emoji: "🥚", label: "Egg Layers",
-        stats: [
-          { label: "Eggs collected", value: totalEggs.toLocaleString() },
-          { label: "Birds in flock", value: totalBirds },
-          { label: "Cost / dozen", value: costPerDozen > 0 ? fmtMoney(costPerDozen) : "—" },
-          { label: "Feed cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
-        ],
-      };
+      // Tractor distance — sum of per-entry distanceFeet (preserves history
+      // if the user later changes the default). Only added to the share card
+      // when there's at least one logged move, so newcomers aren't confused.
+      const tractorMoves = entries.filter(e => e.action === "move_tractor");
+      const tractorFeet = tractorMoves.reduce((s, e) => s + (Number(e.distanceFeet)||0), 0);
+      const stats = [
+        { label: "Eggs collected", value: totalEggs.toLocaleString() },
+        { label: "Birds in flock", value: totalBirds },
+        { label: "Cost / dozen", value: costPerDozen > 0 ? fmtMoney(costPerDozen) : "—" },
+        { label: "Feed cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
+      ];
+      if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: `${tractorFeet.toLocaleString()} ft` });
+      return { emoji: "🥚", label: "Egg Layers", stats };
     }
     if (hobby.type === "meat_chickens") {
       const archived = hobby.archivedBatches || [];
@@ -10489,15 +10580,16 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const totalWeight = allBatches.reduce((s, b) => s + (b.butchered||[]).reduce((ss, bu) => ss + (bu.count||0)*(bu.avgWeight||0), 0), 0);
       const avgWeight = totalButchered > 0 ? (totalWeight/totalButchered).toFixed(1) : "—";
       const deaths = entries.filter(e => e.action === "death").reduce((s,e)=>s+(Number(e.count)||1),0);
-      return {
-        emoji: "🍗", label: "Meat Birds",
-        stats: [
-          { label: "Birds raised", value: totalBirds },
-          { label: "Butchered", value: totalButchered },
-          { label: "Avg weight", value: `${avgWeight} lbs` },
-          { label: "Deaths", value: deaths },
-        ],
-      };
+      const tractorMoves = entries.filter(e => e.action === "move_tractor");
+      const tractorFeet = tractorMoves.reduce((s, e) => s + (Number(e.distanceFeet)||0), 0);
+      const stats = [
+        { label: "Birds raised", value: totalBirds },
+        { label: "Butchered", value: totalButchered },
+        { label: "Avg weight", value: `${avgWeight} lbs` },
+        { label: "Deaths", value: deaths },
+      ];
+      if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: `${tractorFeet.toLocaleString()} ft` });
+      return { emoji: "🍗", label: "Meat Birds", stats };
     }
     if (hobby.type === "garden") {
       const harvests = entries.filter(e => e.action === "harvested");
@@ -10549,19 +10641,25 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     }
     if (hobby.type === "incubator") {
       // Incubator data lives on hobby.runs[], not entries — but entries are
-      // the date-filterable thing. We filter runs by setDate falling in window.
+      // the date-filterable thing. We filter runs by dateSet falling in window.
+      //
+      // IMPORTANT: the run record uses dateSet and eggsHatched (see
+      // Incubator.jsx — RunModal writes dateSet, FinalizeRunModal writes
+      // eggsHatched). Earlier versions of this code read r.setDate and
+      // r.hatched which don't exist, which is why incubator share stats
+      // always came back empty.
       const allRuns = hobby.runs || [];
       const runsInRange = allRuns.filter(r => {
-        if (!r.setDate) return filter === "all";
+        if (!r.dateSet) return filter === "all";
         if (filter === "all") return true;
-        const d = new Date(r.setDate + "T12:00");
-        if (filter === "today") return r.setDate === todayStr;
+        const d = new Date(r.dateSet + "T12:00");
+        if (filter === "today") return r.dateSet === todayStr;
         if (filter === "week")  return d >= oneWeekAgo;
         if (filter === "year")  return d >= oneYearAgo;
         return true;
       });
       const eggsSet = runsInRange.reduce((s,r) => s + (Number(r.eggsSet)||0), 0);
-      const eggsHatched = runsInRange.reduce((s,r) => s + (Number(r.hatched)||0), 0);
+      const eggsHatched = runsInRange.reduce((s,r) => s + (Number(r.eggsHatched)||0), 0);
       const hatchRate = eggsSet > 0 ? Math.round((eggsHatched/eggsSet)*100) : 0;
       return {
         emoji: "🥚", label: "Incubator",

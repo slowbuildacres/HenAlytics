@@ -416,7 +416,15 @@ function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEv
 // ============ CARE LOG MODAL (farrier / vet / deworming) ============
 function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
   const liveHorses = horses.filter(h => !h.archived);
-  const [horseId, setHorseId] = useState(log?.horseId || liveHorses[0]?.id || "");
+  // Multi-select: a single visit can apply to one horse or many.
+  // - When editing an old log, prefer log.horseIds (new shape); fall back to
+  //   [log.horseId] (legacy single-horse shape) so existing data still loads
+  // - When creating new, default to the first horse selected
+  const initialIds = log
+    ? (Array.isArray(log.horseIds) && log.horseIds.length ? log.horseIds
+       : log.horseId ? [log.horseId] : [])
+    : (liveHorses[0] ? [liveHorses[0].id] : []);
+  const [selectedIds, setSelectedIds] = useState(initialIds);
   const [date, setDate] = useState(log?.date || todayStr());
   const [type, setType] = useState(log?.type || (kind === "farrier" ? "Trim" : kind === "vet" ? "Routine checkup" : ""));
   const [product, setProduct] = useState(log?.product || "");
@@ -428,9 +436,28 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
   const FARRIER_TYPES = ["Trim", "Trim + reset shoes", "New shoes", "Pull shoes", "Therapeutic shoeing"];
   const VET_TYPES = ["Routine checkup", "Vaccinations", "Dental (float)", "Lameness exam", "Coggins test", "Emergency", "Other"];
 
+  const allSelected = selectedIds.length === liveHorses.length && liveHorses.length > 0;
+  const toggleHorse = (id) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleAll = () => {
+    setSelectedIds(allSelected ? [] : liveHorses.map(h => h.id));
+  };
+
   const handleSave = () => {
-    if (!horseId || !date) return;
-    const record = { id: log?.id || newId(), date, horseId, cost: parseFloat(cost) || 0, notes: notes.trim() };
+    if (selectedIds.length === 0 || !date) return;
+    // Save horseIds (array) as the canonical field. Also write horseId
+    // (singular = first id) so any legacy filter code that hasn't been
+    // updated yet still sees the visit on at least one animal's history.
+    // The history view checks both fields and de-duplicates.
+    const record = {
+      id: log?.id || newId(),
+      date,
+      horseIds: [...selectedIds],
+      horseId: selectedIds[0],
+      cost: parseFloat(cost) || 0,
+      notes: notes.trim(),
+    };
     if (kind === "farrier") record.type = type;
     if (kind === "vet") { record.type = type; record.vetName = vetName.trim(); }
     if (kind === "deworming") record.product = product.trim();
@@ -442,10 +469,44 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
 
   return (
     <ModalShell title={log ? `Edit ${title.toLowerCase()}` : `Log ${title.toLowerCase()}`} onClose={onClose}>
-      <Field label="Horse">
-        <select style={inputStyle} value={horseId} onChange={e=>setHorseId(e.target.value)}>
-          {liveHorses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
-        </select>
+      <Field label={`Horse${selectedIds.length > 1 ? "s" : ""} (${selectedIds.length} selected)`}>
+        <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:6 }}>
+          {liveHorses.length > 1 && (
+            <button
+              type="button"
+              onClick={toggleAll}
+              style={{
+                padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+                border:`1.5px solid ${palette.ink}`,
+                background: allSelected ? palette.ink : palette.bgAlt,
+                color: allSelected ? palette.bg : palette.ink,
+                cursor:"pointer",
+              }}
+            >{allSelected ? "✓ All horses" : "Select all"}</button>
+          )}
+          {liveHorses.map(h => {
+            const on = selectedIds.includes(h.id);
+            return (
+              <button
+                key={h.id}
+                type="button"
+                onClick={() => toggleHorse(h.id)}
+                style={{
+                  padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+                  border: on ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+                  background: on ? palette.ink : palette.card,
+                  color: on ? palette.bg : palette.ink,
+                  cursor:"pointer",
+                }}
+              >{on ? "✓ " : ""}{h.name}</button>
+            );
+          })}
+        </div>
+        <div style={{ fontSize:11,color:palette.inkSoft,lineHeight:1.4 }}>
+          {selectedIds.length > 1
+            ? `This visit will show in all ${selectedIds.length} selected horses' histories. The cost stays as one number — not split.`
+            : `Tap more horses to apply this visit to multiple at once.`}
+        </div>
       </Field>
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />

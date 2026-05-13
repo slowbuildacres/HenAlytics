@@ -148,25 +148,35 @@ function collectEvents({ animal, hobby, entries, sales, species }) {
 
   // 3. Species-specific extras
   if (species === "horse") {
-    (hobby.vet || []).filter(v => v.horseId === animalId).forEach(v => {
+    // Horse vet/farrier/deworming records may have horseId (singular, legacy)
+    // OR horseIds: [...] (new shape — supports apply-to-all where one visit
+    // applies to multiple horses). Match on either: the visit shows up in
+    // every selected horse's history.
+    const includesAnimal = (rec) =>
+      rec.horseId === animalId ||
+      (Array.isArray(rec.horseIds) && rec.horseIds.includes(animalId));
+    (hobby.vet || []).filter(includesAnimal).forEach(v => {
       const bits = [];
       if (v.type) bits.push(v.type);
       if (v.vetName) bits.push(v.vetName);
       if (v.cost > 0) bits.push(fmtMoney(v.cost));
+      if (Array.isArray(v.horseIds) && v.horseIds.length > 1) bits.push(`+ ${v.horseIds.length - 1} more`);
       if (v.notes) bits.push(v.notes);
       out.push({ date: v.date, emoji: "🩺", label: "Vet", detail: bits.join(" · "), kind: "vet" });
     });
-    (hobby.farrier || []).filter(f => f.horseId === animalId).forEach(f => {
+    (hobby.farrier || []).filter(includesAnimal).forEach(f => {
       const bits = [];
       if (f.type) bits.push(f.type);
       if (f.cost > 0) bits.push(fmtMoney(f.cost));
+      if (Array.isArray(f.horseIds) && f.horseIds.length > 1) bits.push(`+ ${f.horseIds.length - 1} more`);
       if (f.notes) bits.push(f.notes);
       out.push({ date: f.date, emoji: "🔨", label: "Farrier", detail: bits.join(" · "), kind: "farrier" });
     });
-    (hobby.deworming || []).filter(d => d.horseId === animalId).forEach(d => {
+    (hobby.deworming || []).filter(includesAnimal).forEach(d => {
       const bits = [];
       if (d.product) bits.push(d.product);
       if (d.cost > 0) bits.push(fmtMoney(d.cost));
+      if (Array.isArray(d.horseIds) && d.horseIds.length > 1) bits.push(`+ ${d.horseIds.length - 1} more`);
       if (d.notes) bits.push(d.notes);
       out.push({ date: d.date, emoji: "💊", label: "Dewormer", detail: bits.join(" · "), kind: "dewormer" });
     });
