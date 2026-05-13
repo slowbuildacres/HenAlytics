@@ -16,6 +16,99 @@ const palette = {
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
+// ============================================================================
+// CHICKEN TRACTOR DISTANCE — fun-fact comparisons (ported from HomesteadApp.jsx)
+// ----------------------------------------------------------------------------
+// Same tiered comparison logic as the Stats tab — but we pass a different
+// seed string here ("yearInReview") so Year in Review shows a different
+// equivalent than the Stats tab even for the same total distance. Keeps
+// the surfaces feeling distinct without duplicating data.
+// ============================================================================
+const FEET_PER_MILE = 5280;
+const tractorFunFact = (totalFeet, seed = "") => {
+  const ft = Number(totalFeet) || 0;
+  if (ft < 25) return null;
+  const seedHash = String(seed).split("").reduce((h, c) => ((h << 5) - h + c.charCodeAt(0)) | 0, 0);
+  const tiers = [
+    {
+      test: (f) => f < 300,
+      variants: [
+        (f) => `That's about ${Math.round(f / 6)} of your own steps 👣`,
+        (f) => `Roughly the height of ${(f / 152).toFixed(1)} blue whales 🐋`,
+        (f) => `${Math.round(f / 60)} school buses end-to-end 🚌`,
+      ],
+    },
+    {
+      test: (f) => f < 3000,
+      variants: [
+        (f) => `That's ${(f / 300).toFixed(1)} football fields end-to-end 🏈`,
+        (f) => `${Math.round(f / 305)} Statues of Liberty laid end-to-end 🗽`,
+        (f) => `${Math.round(f / 555)} Washington Monuments stacked 🏛️`,
+      ],
+    },
+    {
+      test: (f) => f < FEET_PER_MILE,
+      variants: [
+        (f) => `That's ${(f / 300).toFixed(0)} football fields end-to-end 🏈`,
+        (f) => `Almost a mile — you've moved ${(f / FEET_PER_MILE).toFixed(2)} miles 🚜`,
+        (f) => `${Math.round(f / 264)} city blocks 🏙️`,
+      ],
+    },
+    {
+      test: (f) => f < 5 * FEET_PER_MILE,
+      variants: [
+        (f) => `That's ${(f / FEET_PER_MILE).toFixed(1)} miles — a solid walk 🚶`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(1)} miles, or ${Math.round(f / 300)} football fields 🏈`,
+        (f) => `${(f / FEET_PER_MILE / 0.8).toFixed(1)} laps around Central Park 🌳`,
+      ],
+    },
+    {
+      test: (f) => f < 30 * FEET_PER_MILE,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toFixed(1)} miles — ${(f / FEET_PER_MILE / 26.2 * 100).toFixed(0)}% of a marathon 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(1)} miles — about the width of Manhattan ${Math.round(f / FEET_PER_MILE / 2.3)} times over 🗽`,
+        (f) => `That's ${(f / FEET_PER_MILE).toFixed(1)} miles, or roughly ${Math.round(f / FEET_PER_MILE / 3.1)} 5Ks 👟`,
+      ],
+    },
+    {
+      test: (f) => f < 50 * FEET_PER_MILE,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — about the length of Rhode Island 🌊`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles, or ${(f / FEET_PER_MILE / 26.2).toFixed(1)} marathons 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — like walking from one coast of Rhode Island to the other 🦞`,
+      ],
+    },
+    {
+      test: (f) => f < 200 * FEET_PER_MILE,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — that's like crossing Connecticut end-to-end 🍃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles, or ${(f / FEET_PER_MILE / 26.2).toFixed(1)} marathons 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toFixed(0)} miles — ${(f / FEET_PER_MILE / 50).toFixed(1)}× the length of Rhode Island 🌊`,
+      ],
+    },
+    {
+      test: () => true,
+      variants: [
+        (f) => `${(f / FEET_PER_MILE).toLocaleString(undefined, {maximumFractionDigits:0})} miles — that's a road trip distance 🛻`,
+        (f) => `${(f / FEET_PER_MILE).toLocaleString(undefined, {maximumFractionDigits:0})} miles, or ${(f / FEET_PER_MILE / 26.2).toFixed(0)} marathons 🏃`,
+        (f) => `${(f / FEET_PER_MILE).toLocaleString(undefined, {maximumFractionDigits:0})} miles — your chickens have seen things 👀`,
+      ],
+    },
+  ];
+  const tier = tiers.find(t => t.test(ft));
+  const idx = Math.abs(seedHash) % tier.variants.length;
+  return tier.variants[idx](ft);
+};
+
+const fmtTractorDistance = (totalFeet) => {
+  const ft = Number(totalFeet) || 0;
+  if (ft < 1000) return `${ft.toLocaleString()} ft`;
+  const miles = ft / FEET_PER_MILE;
+  return miles < 10
+    ? `${miles.toFixed(2)} mi`
+    : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
+};
+
 export default function YearInReviewPage({ data }) {
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
@@ -82,6 +175,7 @@ export default function YearInReviewPage({ data }) {
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
           {meatChickensEnabled && <MeatChickensCard stats={stats} />}
+          {stats.tractorFeet > 0 && <TractorCard stats={stats} />}
           {rabbitsEnabled && <RabbitsCard stats={stats} />}
           {beesEnabled && <BeesCard stats={stats} />}
           {incubatorEnabled && <IncubatorCard stats={stats} />}
@@ -390,6 +484,54 @@ function MeatChickensCard({ stats }) {
           <Heart size={12} style={{ verticalAlign: "middle", marginRight: 4 }} />
           You lost {birdDeaths} bird{birdDeaths === 1 ? "" : "s"} this year
           {mortalityRate > 0 && ` (${mortalityRate.toFixed(0)}% mortality)`}.
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ============ CHICKEN TRACTOR CARD ============
+// Only renders when the user has actually logged tractor moves (filtered
+// upstream by the parent — see `stats.tractorFeet > 0` gate). The fun-fact
+// equivalent uses the "yearInReview" seed so it picks a different equivalent
+// than the Stats tab (which seeds with "eggLayersStats" / "meatChickensStats").
+function TractorCard({ stats }) {
+  const { tractorFeet, tractorMoveCount } = stats;
+  const funFact = tractorFunFact(tractorFeet, "yearInReview");
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
+        🚜 Chicken tractor
+      </div>
+      <CountUp number={tractorFeet} suffix="feet moved" big />
+      <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 12 }}>
+        Across <strong style={{ color: palette.ink }}>{tractorMoveCount}</strong> move{tractorMoveCount === 1 ? "" : "s"}
+        {tractorMoveCount > 0 && tractorFeet > 0 && (
+          <> · about <strong style={{ color: palette.ink }}>{(tractorFeet / tractorMoveCount).toFixed(0)} ft</strong> per move</>
+        )}
+      </div>
+      {funFact && (
+        <div style={{
+          padding: "12px 14px",
+          background: palette.bgAlt,
+          borderRadius: 10,
+          border: `1px solid ${palette.line}`,
+          fontSize: 14,
+          color: palette.ink,
+          lineHeight: 1.5,
+        }}>
+          {funFact}
+        </div>
+      )}
+      {tractorFeet >= FEET_PER_MILE && (
+        <div style={{
+          marginTop: 10,
+          fontSize: 12,
+          color: palette.inkSoft,
+          fontStyle: "italic",
+          lineHeight: 1.5,
+        }}>
+          That's {fmtTractorDistance(tractorFeet)} of fresh pasture and bug-eating opportunities for your flock. 🐔
         </div>
       )}
     </Card>
@@ -1221,6 +1363,12 @@ function computeStats(data, year) {
   const gardenWaterCount = allEntries.filter((e) => e.action === "watered" && e.hobbyType === "garden").length;
   const freeRangeCount = allEntries.filter((e) => e.action === "free_range").length;
   const totalFeedLbs = allEntries.filter((e) => e.action === "fed").reduce((s, e) => s + (Number(e.lbs) || 0), 0);
+  // Chicken tractor: sum distanceFeet across all move_tractor entries in the
+  // year. Egg layers and meat birds both use the same action. The per-entry
+  // distanceFeet preserves history if the user later changes their default.
+  const tractorEntries = allEntries.filter((e) => e.action === "move_tractor");
+  const tractorFeet = tractorEntries.reduce((s, e) => s + (Number(e.distanceFeet) || 0), 0);
+  const tractorMoveCount = tractorEntries.length;
   const totalFeedCost = allEntries.filter((e) => e.action === "fed").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const photosCount = allEntries.filter((e) => e.photoPath).length;
   const issueCount = allEntries.filter((e) => e.action === "issue").length;
@@ -1287,5 +1435,7 @@ function computeStats(data, year) {
     busiestMonth, longestStreak, weatherStats, photos,
     firstEntryDate, lastEntryDate, entryCountByHobby, gardenWaterCount, freeRangeCount,
     totalFeedLbs, totalFeedCost, photosCount, issueCount, heaviestDay, heaviestDayCount,
+    // Chicken tractor
+    tractorFeet, tractorMoveCount,
   };
 }
