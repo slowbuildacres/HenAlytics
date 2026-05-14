@@ -307,29 +307,82 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, calendarE
   const ewes = animals.filter(a => !a.archived && (a.role === "ewe" || a.sex === "female"));
   const rams = animals.filter(a => !a.archived && (a.role === "ram" || a.sex === "male"));
 
-  const [eweId, setEweId] = useState(breeding?.eweId || ewes[0]?.id || "");
-  const [ramId, setRamId] = useState(breeding?.ramId || rams[0]?.id || "");
+  const [eweId, setEweId] = useState(breeding?.eweId || breeding?.damId || ewes[0]?.id || "");
+  // Sire can be a tracked ram OR an unknown/external sire entered as free text.
+  // useUnknownSire=true switches to a text input. Defaults to "use a tracked ram"
+  // if any rams exist.
+  const [ramId, setRamId] = useState(breeding?.ramId || breeding?.sireId || "");
+  const [externalSireName, setExternalSireName] = useState(breeding?.externalSireName || "");
+  const [useUnknownSire, setUseUnknownSire] = useState(
+    !!breeding?.externalSireName || (!breeding?.ramId && !breeding?.sireId && rams.length === 0)
+  );
+  const [method, setMethod] = useState(breeding?.method || "Natural");
   const [breedDate, setBreedDate] = useState(breeding?.breedDate || todayStr());
-  const [lambedDate, setLambedDate] = useState(breeding?.lambedDate || "");
-  const [lambsBorn, setLambsBorn] = useState(breeding?.lambsBorn ? String(breeding.lambsBorn) : "");
-  const [lambsAlive, setLambsAlive] = useState(breeding?.lambsAlive ? String(breeding.lambsAlive) : "");
+  // Expected lamb date is user-editable. Auto-recompute when breedDate changes
+  // UNLESS the user has manually overridden it (the "manually overridden" flag
+  // is just whether the current value differs from breedDate + gestation).
+  const [expectedLambDate, setExpectedLambDate] = useState(
+    breeding?.expectedLambDate || breeding?.expectedBirthDate ||
+    (breeding?.breedDate ? addDays(breeding.breedDate, SHEEP_GESTATION_DAYS) : addDays(todayStr(), SHEEP_GESTATION_DAYS))
+  );
+  const [lambedDate, setLambedDate] = useState(breeding?.lambedDate || breeding?.birthedDate || "");
+  const [lambsBorn, setLambsBorn] = useState(
+    breeding?.lambsBorn != null ? String(breeding.lambsBorn) :
+    breeding?.offspringBorn != null ? String(breeding.offspringBorn) : ""
+  );
+  const [lambsAlive, setLambsAlive] = useState(
+    breeding?.lambsAlive != null ? String(breeding.lambsAlive) :
+    breeding?.offspringAlive != null ? String(breeding.offspringAlive) : ""
+  );
   const [notes, setNotes] = useState(breeding?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const expectedLambDate = breedDate ? addDays(breedDate, SHEEP_GESTATION_DAYS) : "";
+  // Default-based expected (for the "reset to default" affordance and for
+  // tracking whether the user has overridden the auto-computed date).
+  const defaultExpected = breedDate ? addDays(breedDate, SHEEP_GESTATION_DAYS) : "";
+  const isOverridden = expectedLambDate !== defaultExpected;
+  const resetExpected = () => setExpectedLambDate(defaultExpected);
+  // When the user changes breedDate, auto-update expectedLambDate ONLY if they
+  // haven't manually edited it (i.e. it currently equals what the old default
+  // would have been). This is a one-way check on every render: if the current
+  // expected date matches the would-be default for the OLD breedDate, slide it
+  // along. We track that via a ref of the last seen breedDate.
+  const lastSeenBreedDate = React.useRef(breedDate);
+  React.useEffect(() => {
+    if (lastSeenBreedDate.current !== breedDate) {
+      const oldDefault = lastSeenBreedDate.current ? addDays(lastSeenBreedDate.current, SHEEP_GESTATION_DAYS) : "";
+      if (expectedLambDate === oldDefault) {
+        // Auto-tracking — slide it along.
+        setExpectedLambDate(addDays(breedDate, SHEEP_GESTATION_DAYS));
+      }
+      lastSeenBreedDate.current = breedDate;
+    }
+  }, [breedDate, expectedLambDate]);
 
   const handleSave = () => {
     if (!eweId || !breedDate) return;
     const id = breeding?.id || newId();
+    const finalSireId = useUnknownSire ? "" : ramId;
+    const finalExternalSire = useUnknownSire ? externalSireName.trim() : "";
     onSave({
       id,
+      // Old field names (back-compat with existing data):
       eweId,
-      ramId,
+      ramId: finalSireId,
       breedDate,
       expectedLambDate,
       lambedDate: lambedDate || null,
       lambsBorn: parseInt(lambsBorn) || null,
       lambsAlive: parseInt(lambsAlive) || null,
+      // New generic field names (shared with cows + goats):
+      damId: eweId,
+      sireId: finalSireId,
+      externalSireName: finalExternalSire,
+      method,
+      expectedBirthDate: expectedLambDate,
+      birthedDate: lambedDate || null,
+      offspringBorn: parseInt(lambsBorn) || null,
+      offspringAlive: parseInt(lambsAlive) || null,
       notes: notes.trim(),
     });
     // Add calendar event for expected lambing if user provided one and we have it
@@ -355,28 +408,74 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, calendarE
       )}
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
-          <Field label="Ewe">
+          <Field label="Ewe (dam)">
             <select style={inputStyle} value={eweId} onChange={e=>setEweId(e.target.value)}>
               {ewes.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
           </Field>
         </div>
         <div style={{ flex:1 }}>
-          <Field label="Ram (optional)">
-            <select style={inputStyle} value={ramId} onChange={e=>setRamId(e.target.value)}>
-              <option value="">— None / external —</option>
-              {rams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
-            </select>
+          <Field label="Ram (sire)">
+            {useUnknownSire ? (
+              <input
+                style={inputStyle}
+                value={externalSireName}
+                onChange={e => setExternalSireName(e.target.value)}
+                placeholder="External / unknown sire name"
+              />
+            ) : (
+              <select style={inputStyle} value={ramId} onChange={e=>setRamId(e.target.value)}>
+                <option value="">— Pick a ram —</option>
+                {rams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => setUseUnknownSire(v => !v)}
+              style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontSize:11,padding:"4px 0 0",textDecoration:"underline",fontFamily:FONT_BODY }}
+            >
+              {useUnknownSire ? "Use a tracked ram instead" : "External / unknown sire"}
+            </button>
           </Field>
         </div>
       </div>
+      <Field label="Breeding method">
+        <select style={inputStyle} value={method} onChange={e=>setMethod(e.target.value)}>
+          <option value="Natural">Natural / live cover</option>
+          <option value="AI">AI (artificial insemination)</option>
+          <option value="Embryo transfer">Embryo transfer</option>
+          <option value="Other">Other</option>
+        </select>
+      </Field>
       <Field label="Breed date">
         <input type="date" style={inputStyle} value={breedDate} onChange={e=>setBreedDate(e.target.value)} />
       </Field>
-      {breedDate && (
+      <Field label="Expected lambing date">
+        <div style={{ display:"flex",gap:8,alignItems:"center" }}>
+          <input
+            type="date"
+            style={{ ...inputStyle,flex:1 }}
+            value={expectedLambDate}
+            onChange={e => setExpectedLambDate(e.target.value)}
+          />
+          {isOverridden && (
+            <button
+              type="button"
+              onClick={resetExpected}
+              style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:8,cursor:"pointer",color:palette.inkSoft,fontSize:11,padding:"8px 10px",fontFamily:FONT_BODY,whiteSpace:"nowrap" }}
+              title="Reset to breed date + 147 days"
+            >
+              ↻ Default
+            </button>
+          )}
+        </div>
+        <div style={{ fontSize:11,color:palette.inkSoft,marginTop:4 }}>
+          Auto-filled at +147 days (sheep gestation). Edit if your breed runs shorter or longer.
+        </div>
+      </Field>
+      {!breeding && expectedLambDate && (
         <div style={{ padding:"10px 12px",background:palette.yolkSoft,borderRadius:8,fontSize:13,marginBottom:12,color:palette.ink }}>
-          🐑 Expected lambing: <strong>{fmtDate(expectedLambDate)}</strong> (~147 days)
-          {!breeding && <div style={{ fontSize:11,color:palette.inkSoft,marginTop:3 }}>This will be added to your calendar.</div>}
+          🐑 Expected lambing <strong>{fmtDate(expectedLambDate)}</strong> will be added to your calendar.
         </div>
       )}
       <hr style={{ border:"none",borderTop:`1px solid ${palette.line}`,margin:"14px 0" }} />

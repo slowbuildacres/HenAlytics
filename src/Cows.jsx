@@ -464,6 +464,202 @@ export function CowsAnalytics({hobby,entries}){
   );
 }
 
+// Cow gestation = ~283 days (varies 279–287 by breed; user can override).
+const COW_GESTATION_DAYS = 283;
+
+const addDays = (dateStr, days) => {
+  if (!dateStr) return "";
+  const d = parseLocalDate(dateStr);
+  d.setDate(d.getDate() + days);
+  return localDateStr(d);
+};
+
+// ============ BREEDING / CALVING MODAL ============
+function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent }) {
+  const dams = animals.filter(a => !a.archived && (a.sex === "Cow" || a.sex === "Heifer"));
+  const sires = animals.filter(a => !a.archived && a.sex === "Bull");
+
+  const [damId, setDamId] = useState(breeding?.damId || dams[0]?.id || "");
+  const [sireId, setSireId] = useState(breeding?.sireId || "");
+  const [externalSireName, setExternalSireName] = useState(breeding?.externalSireName || "");
+  const [useUnknownSire, setUseUnknownSire] = useState(
+    !!breeding?.externalSireName || (!breeding?.sireId && sires.length === 0)
+  );
+  const [method, setMethod] = useState(breeding?.method || "Natural");
+  const [breedDate, setBreedDate] = useState(breeding?.breedDate || todayStr());
+  const [expectedBirthDate, setExpectedBirthDate] = useState(
+    breeding?.expectedBirthDate ||
+    (breeding?.breedDate ? addDays(breeding.breedDate, COW_GESTATION_DAYS) : addDays(todayStr(), COW_GESTATION_DAYS))
+  );
+  const [birthedDate, setBirthedDate] = useState(breeding?.birthedDate || "");
+  const [offspringBorn, setOffspringBorn] = useState(breeding?.offspringBorn != null ? String(breeding.offspringBorn) : "");
+  const [offspringAlive, setOffspringAlive] = useState(breeding?.offspringAlive != null ? String(breeding.offspringAlive) : "");
+  const [notes, setNotes] = useState(breeding?.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const defaultExpected = breedDate ? addDays(breedDate, COW_GESTATION_DAYS) : "";
+  const isOverridden = expectedBirthDate !== defaultExpected;
+  const resetExpected = () => setExpectedBirthDate(defaultExpected);
+
+  // Slide expectedBirthDate along when user changes breedDate (unless they've
+  // manually edited it — detected by comparing against the prior default).
+  const lastSeenBreedDate = React.useRef(breedDate);
+  React.useEffect(() => {
+    if (lastSeenBreedDate.current !== breedDate) {
+      const oldDefault = lastSeenBreedDate.current ? addDays(lastSeenBreedDate.current, COW_GESTATION_DAYS) : "";
+      if (expectedBirthDate === oldDefault) {
+        setExpectedBirthDate(addDays(breedDate, COW_GESTATION_DAYS));
+      }
+      lastSeenBreedDate.current = breedDate;
+    }
+  }, [breedDate, expectedBirthDate]);
+
+  const handleSave = () => {
+    if (!damId || !breedDate) return;
+    const id = breeding?.id || newId();
+    const finalSireId = useUnknownSire ? "" : sireId;
+    const finalExternal = useUnknownSire ? externalSireName.trim() : "";
+    onSave({
+      id,
+      damId,
+      sireId: finalSireId,
+      externalSireName: finalExternal,
+      method,
+      breedDate,
+      expectedBirthDate,
+      birthedDate: birthedDate || null,
+      offspringBorn: parseInt(offspringBorn) || null,
+      offspringAlive: parseInt(offspringAlive) || null,
+      notes: notes.trim(),
+    });
+    if (!breeding && expectedBirthDate && addCalendarEvent) {
+      const damName = animals.find(a => a.id === damId)?.name || "cow";
+      addCalendarEvent({
+        id: newId(),
+        date: expectedBirthDate,
+        title: `🐄 Expected calving — ${damName}`,
+        kind: "cow_calving",
+        relatedId: id,
+      });
+    }
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={breeding ? "Edit breeding record" : "Log breeding"}>
+      {dams.length === 0 && (
+        <div style={{padding:12,background:palette.bgAlt,borderRadius:8,fontSize:13,color:palette.inkSoft,marginBottom:12}}>
+          You'll need at least one cow or heifer to log a breeding. Add one first.
+        </div>
+      )}
+      <div style={{display:"flex",gap:12}}>
+        <div style={{flex:1}}>
+          <Field label="Cow / heifer (dam)">
+            <select style={inputStyle} value={damId} onChange={e=>setDamId(e.target.value)}>
+              <option value="">— Pick one —</option>
+              {dams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+            </select>
+          </Field>
+        </div>
+        <div style={{flex:1}}>
+          <Field label="Bull (sire)">
+            {useUnknownSire ? (
+              <input
+                style={inputStyle}
+                value={externalSireName}
+                onChange={e => setExternalSireName(e.target.value)}
+                placeholder="External / unknown sire"
+              />
+            ) : (
+              <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+                <option value="">— Pick a bull —</option>
+                {sires.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
+              </select>
+            )}
+            <button
+              type="button"
+              onClick={() => setUseUnknownSire(v => !v)}
+              style={{background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontSize:11,padding:"4px 0 0",textDecoration:"underline",fontFamily:FONT_BODY}}
+            >
+              {useUnknownSire ? "Use a tracked bull instead" : "External / unknown sire"}
+            </button>
+          </Field>
+        </div>
+      </div>
+      <Field label="Breeding method">
+        <select style={inputStyle} value={method} onChange={e=>setMethod(e.target.value)}>
+          <option value="Natural">Natural / live cover</option>
+          <option value="AI">AI (artificial insemination)</option>
+          <option value="Embryo transfer">Embryo transfer</option>
+          <option value="Other">Other</option>
+        </select>
+      </Field>
+      <Field label="Breed date">
+        <input type="date" style={inputStyle} value={breedDate} onChange={e=>setBreedDate(e.target.value)}/>
+      </Field>
+      <Field label="Expected calving date">
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input
+            type="date"
+            style={{...inputStyle,flex:1}}
+            value={expectedBirthDate}
+            onChange={e=>setExpectedBirthDate(e.target.value)}
+          />
+          {isOverridden && (
+            <button
+              type="button"
+              onClick={resetExpected}
+              style={{background:"none",border:`1.5px solid ${palette.line}`,borderRadius:8,cursor:"pointer",color:palette.inkSoft,fontSize:11,padding:"8px 10px",fontFamily:FONT_BODY,whiteSpace:"nowrap"}}
+              title="Reset to breed date + 283 days"
+            >
+              ↻ Default
+            </button>
+          )}
+        </div>
+        <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>
+          Auto-filled at +283 days (cow gestation, ~9.5 months). Most breeds run 279–287 days. Edit if your herd runs different.
+        </div>
+      </Field>
+      {!breeding && expectedBirthDate && (
+        <div style={{padding:"10px 12px",background:palette.yolkSoft || palette.bgAlt,borderRadius:8,fontSize:13,marginBottom:12,color:palette.ink}}>
+          🐄 Expected calving <strong>{fmtDate(expectedBirthDate)}</strong> will be added to your calendar.
+        </div>
+      )}
+      <hr style={{border:"none",borderTop:`1px solid ${palette.line}`,margin:"14px 0"}}/>
+      <div style={{fontSize:11,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:8}}>
+        After calving (fill in when it happens)
+      </div>
+      <Field label="Calved date">
+        <input type="date" style={inputStyle} value={birthedDate} onChange={e=>setBirthedDate(e.target.value)}/>
+      </Field>
+      <div style={{display:"flex",gap:12}}>
+        <div style={{flex:1}}>
+          <Field label="Calves born">
+            <input type="number" min={0} style={inputStyle} value={offspringBorn} onChange={e=>setOffspringBorn(e.target.value)} placeholder="0"/>
+          </Field>
+        </div>
+        <div style={{flex:1}}>
+          <Field label="Alive at weaning">
+            <input type="number" min={0} style={inputStyle} value={offspringAlive} onChange={e=>setOffspringAlive(e.target.value)} placeholder="0"/>
+          </Field>
+        </div>
+      </div>
+      <Field label="Notes (optional)">
+        <textarea style={{...inputStyle,minHeight:60,resize:"vertical"}} value={notes} onChange={e=>setNotes(e.target.value)}/>
+      </Field>
+      <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
+        {breeding && onDelete && (
+          !confirmDelete
+            ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+            : <Btn variant="danger" onClick={() => { onDelete(breeding.id); onClose(); }}>Confirm delete</Btn>
+        )}
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!damId || !breedDate || dams.length === 0}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function CowModalRouter({modal,hobby,update,onClose}){
   if(!modal)return null;
   if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;
@@ -473,17 +669,74 @@ function CowModalRouter({modal,hobby,update,onClose}){
 
 export default function CowsPage({hobby,data,update}){
   const[localModal,setLocalModal]=useState(null);
+  const[breedingModal,setBreedingModal]=useState({open:false,breeding:null});
   const entries=data.entries[hobby.id]||[];
   const allAnimals=hobby.animals||[];
   const animals=allAnimals.filter(a=>!a.archived);
   const archived=allAnimals.filter(a=>a.archived);
+  const breedings=(hobby.breedings||[]).slice().sort((a,b)=>(b.breedDate||"").localeCompare(a.breedDate||""));
+  const upcomingCalvings=breedings.filter(b=>!b.birthedDate&&b.expectedBirthDate>=todayStr()).slice(0,3);
+
+  const saveBreeding=(breeding)=>{
+    update(d=>{
+      const h=d.hobbies.find(x=>x.id===hobby.id);
+      if(!h)return d;
+      if(!Array.isArray(h.breedings))h.breedings=[];
+      const idx=h.breedings.findIndex(x=>x.id===breeding.id);
+      if(idx>=0)h.breedings[idx]=breeding;else h.breedings.push(breeding);
+      return d;
+    });
+  };
+  const deleteBreeding=(id)=>{
+    update(d=>{
+      const h=d.hobbies.find(x=>x.id===hobby.id);
+      if(h)h.breedings=(h.breedings||[]).filter(b=>b.id!==id);
+      // Also remove the matching calendar event so the reminder disappears.
+      if(Array.isArray(d.calendarEvents)){
+        d.calendarEvents=d.calendarEvents.filter(e=>e.relatedId!==id);
+      }
+      return d;
+    });
+  };
+  const addCalendarEvent=(event)=>{
+    update(d=>{
+      if(!Array.isArray(d.calendarEvents))d.calendarEvents=[];
+      d.calendarEvents.push(event);
+      return d;
+    });
+  };
+
   return(
     <div>
       <CowModalRouter modal={localModal} hobby={hobby} update={update} onClose={()=>setLocalModal(null)}/>
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+      {breedingModal.open && (
+        <BreedingModal
+          animals={allAnimals}
+          breeding={breedingModal.breeding}
+          onClose={()=>setBreedingModal({open:false,breeding:null})}
+          onSave={saveBreeding}
+          onDelete={deleteBreeding}
+          addCalendarEvent={addCalendarEvent}
+        />
+      )}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:8,flexWrap:"wrap"}}>
         <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your cattle</div>
-        <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add cow</button>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {animals.length>0 && (
+            <button onClick={()=>setBreedingModal({open:true,breeding:null})} style={{padding:"7px 14px",borderRadius:8,background:palette.bgAlt,border:`1.5px solid ${palette.line}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink}}>💕 Breeding</button>
+          )}
+          <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add cow</button>
+        </div>
       </div>
+      {upcomingCalvings.length>0 && (
+        <div style={{padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,marginBottom:12,color:palette.ink}}>
+          <div style={{fontSize:11,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:6}}>Upcoming calvings</div>
+          {upcomingCalvings.map(b=>{
+            const dam=allAnimals.find(a=>a.id===b.damId);
+            return <div key={b.id} style={{padding:"4px 0",cursor:"pointer"}} onClick={()=>setBreedingModal({open:true,breeding:b})}>🐄 {dam?.name||"cow"} — {fmtDate(b.expectedBirthDate)}{b.method&&b.method!=="Natural"?` · ${b.method}`:""}</div>;
+          })}
+        </div>
+      )}
       {animals.length===0?(
         <div style={{padding:28,background:palette.card,border:`2px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft}}>
           <div style={{fontSize:36,marginBottom:10}}>🐄</div>
@@ -492,6 +745,31 @@ export default function CowsPage({hobby,data,update}){
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first cow</button>
         </div>
       ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal}/>)}
+
+      {breedings.length>0 && (
+        <details style={{marginTop:18}}>
+          <summary style={{cursor:"pointer",color:palette.inkSoft,fontSize:13,padding:8,background:palette.bgAlt,borderRadius:8,userSelect:"none"}}>
+            Recent breedings ({breedings.length}) — tap to view
+          </summary>
+          <div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
+            {breedings.slice(0,10).map(b=>{
+              const dam=allAnimals.find(a=>a.id===b.damId);
+              const sire=allAnimals.find(a=>a.id===b.sireId);
+              const sireName=sire?.name||b.externalSireName||"unknown sire";
+              return (
+                <div
+                  key={b.id}
+                  onClick={()=>setBreedingModal({open:true,breeding:b})}
+                  style={{padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,color:palette.inkSoft,cursor:"pointer"}}
+                >
+                  <strong style={{color:palette.ink}}>{dam?.name||"cow"}</strong> × {sireName} · {fmtDate(b.breedDate)} {b.method&&`· ${b.method}`}
+                  {b.birthedDate ? <span style={{color:palette.leaf}}> ✓ calved {fmtDate(b.birthedDate)} ({b.offspringBorn||0} born)</span> : <span> · expected {fmtDate(b.expectedBirthDate)}</span>}
+                </div>
+              );
+            })}
+          </div>
+        </details>
+      )}
 
       {archived.length>0 && (
         <details style={{marginTop:18}}>

@@ -921,9 +921,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 35;
+const CURRENT_VERSION = 36;
 
 const WHATS_NEW = [
+  "💕 Breeding for cows, goats, and sheep — log who bred with whom (or an external/unknown sire), method (Natural / AI / Embryo transfer / Other), and breed date. Expected calving / kidding / lambing date auto-fills based on species gestation (cows 283 days, goats 150, sheep 147) and gets added to your calendar. All editable in case your breed runs shorter or longer. Sheep breeding records also now show method in the history view.",
   "🐣 Chick sales fixed and editable — sales from the brooder now show up properly in the Sales tab with the right icon and details, and you can edit or delete them like any other sale. Edits sync back to the brooder so your remaining-chick count stays correct.",
   "🥚 Log eggs as \"Total\" across all flocks — multi-flock users can now pick \"Total — split evenly across all flocks\" when logging eggs collected. If the count doesn't divide evenly, the remainder spreads one egg at a time (e.g. 13 across 4 flocks → 4/3/3/3). Per-flock analytics still work because we create one entry per flock under the hood.",
   "↕️ Reorder your hobbies — open Manage Hobbies in Settings and tap \"Reorder hobbies\" to set the order they appear in the picker dropdown. Whichever one you put at the top becomes the default tab that opens when you reload the app.",

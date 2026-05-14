@@ -222,13 +222,45 @@ function collectEvents({ animal, hobby, entries, sales, species }) {
       if (s.notes) bits.push(s.notes);
       out.push({ date: s.date, emoji: "✂️", label: "Shearing", detail: bits.join(" · "), kind: "shearing" });
     });
-    // Sheep breedings use eweId/ramId
-    (hobby.breedings || []).filter(b => b.eweId === animalId || b.ramId === animalId).forEach(b => {
-      const role = b.eweId === animalId ? "as ewe" : "as ram";
-      const otherId = b.eweId === animalId ? b.ramId : b.eweId;
+    // Sheep breedings: legacy used eweId/ramId; new code also writes damId/sireId
+    // for parity with cows/goats/dogs. Match on either.
+    (hobby.breedings || []).filter(b =>
+      b.eweId === animalId || b.ramId === animalId ||
+      b.damId === animalId || b.sireId === animalId
+    ).forEach(b => {
+      const isDam = b.eweId === animalId || b.damId === animalId;
+      const role = isDam ? "as ewe" : "as ram";
+      const otherId = isDam ? (b.ramId || b.sireId) : (b.eweId || b.damId);
       const other = (hobby.animals || []).find(a => a.id === otherId);
       const bits = [role];
       if (other) bits.push(`with ${other.name}`);
+      else if (b.externalSireName) bits.push(`with ${b.externalSireName}`);
+      if (b.method) bits.push(b.method);
+      if (b.notes) bits.push(b.notes);
+      out.push({
+        date: b.breedDate || b.bredDate || b.date,
+        emoji: "💕",
+        label: "Breeding",
+        detail: bits.join(" · "),
+        kind: "breeding",
+      });
+    });
+  }
+
+  if (species === "cow" || species === "goat") {
+    // Cows + goats: use damId/sireId. The vocabulary differs (cow/bull → dam/sire,
+    // doe/buck → dam/sire) but the data shape is identical.
+    const damLabel = species === "cow" ? "as cow (dam)" : "as doe (dam)";
+    const sireLabel = species === "cow" ? "as bull (sire)" : "as buck (sire)";
+    (hobby.breedings || []).filter(b => b.damId === animalId || b.sireId === animalId).forEach(b => {
+      const isDam = b.damId === animalId;
+      const role = isDam ? damLabel : sireLabel;
+      const otherId = isDam ? b.sireId : b.damId;
+      const other = (hobby.animals || []).find(a => a.id === otherId);
+      const bits = [role];
+      if (other) bits.push(`with ${other.name}`);
+      else if (b.externalSireName) bits.push(`with ${b.externalSireName}`);
+      if (b.method) bits.push(b.method);
       if (b.notes) bits.push(b.notes);
       out.push({
         date: b.breedDate || b.bredDate || b.date,
