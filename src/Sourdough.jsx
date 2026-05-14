@@ -253,9 +253,75 @@ function BakeModal({ bake, starters, onSave, onDelete, onClose }) {
 }
 
 // ============ MAIN HOME PAGE ============
+function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
+  const [date, setDate] = useState(entry?.date || todayStr());
+  const [item, setItem] = useState(entry?.item || "");
+  const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
+  const [note, setNote] = useState(entry?.note || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleSave = () => {
+    if (!item.trim()) return;
+    onSave({
+      id: entry?.id || newId(),
+      action: "infrastructure",
+      date,
+      item: item.trim(),
+      cost: parseFloat(cost) || 0,
+      note: note.trim(),
+      created: entry?.created || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <ModalShell title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"} onClose={onClose}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="What was built / repaired / bought?">
+        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. proofing cabinet, new oven, banneton set" autoFocus />
+      </Field>
+      <Field label="Cost ($)">
+        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {entry && onDelete && (
+          !confirmDelete
+            ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+            : <Btn variant="danger" onClick={() => { onDelete(entry.id); onClose(); }}>Confirm delete</Btn>
+        )}
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!item.trim()}>Save</Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
 export default function SourdoughPage({ hobby, data, update, setModal }) {
   const [starterModal, setStarterModal] = useState({ open: false, starter: null });
   const [bakeModal, setBakeModal] = useState({ open: false, bake: null });
+  const [infraModal, setInfraModal] = useState({ open: false, entry: null });
+  const entries = data.entries[hobby.id] || [];
+  const infraEntries = entries.filter(e => e.action === "infrastructure");
+  const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
+
+  const saveInfra = (entry) => {
+    update(d => {
+      d.entries[hobby.id] = d.entries[hobby.id] || [];
+      const idx = d.entries[hobby.id].findIndex(e => e.id === entry.id);
+      if (idx >= 0) d.entries[hobby.id][idx] = entry;
+      else d.entries[hobby.id].push(entry);
+      return d;
+    });
+  };
+  const deleteInfra = (id) => {
+    update(d => {
+      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter(e => e.id !== id);
+      return d;
+    });
+  };
 
   const starters = (hobby?.starters || []);
   const liveStarters = starters.filter(s => !s.archived);
@@ -344,6 +410,14 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
           onDelete={deleteBake}
         />
       )}
+      {infraModal.open && (
+        <InfrastructureModal
+          entry={infraModal.entry}
+          onSave={saveInfra}
+          onDelete={deleteInfra}
+          onClose={() => setInfraModal({ open: false, entry: null })}
+        />
+      )}
 
       {/* Quick stats */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
@@ -356,6 +430,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8,marginBottom:18 }}>
         <Btn variant="accent" onClick={() => setBakeModal({ open: true, bake: null })} style={{ width:"100%" }}>🍞 Log a bake</Btn>
         <Btn variant="leaf" small onClick={() => setStarterModal({ open: true, starter: null })} style={{ width:"100%" }}>+ Add starter</Btn>
+        <Btn variant="ghost" small onClick={() => setInfraModal({ open: true, entry: null })} style={{ width:"100%" }}>🔨 Infrastructure</Btn>
       </div>
 
       {/* Starters */}
@@ -445,6 +520,32 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
           </div>
         )}
       </div>
+
+      {/* Recent infrastructure */}
+      {infraEntries.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>🔨 Infrastructure</h3>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            {recentInfra.map(e => (
+              <div key={e.id}
+                onClick={() => setInfraModal({ open: true, entry: e })}
+                style={{ padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer" }}
+              >
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>{e.item}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft,marginTop:2 }}>{fmtDate(e.date)}{e.cost > 0 ? ` · ${fmtMoney(e.cost)}` : ""}</div>
+                </div>
+                <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
+              </div>
+            ))}
+            {infraEntries.length > recentInfra.length && (
+              <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"center",marginTop:6,fontStyle:"italic" }}>
+                Showing {recentInfra.length} of {infraEntries.length} — totals in Stats.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -452,7 +553,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // SOURDOUGH ANALYTICS
 // ============================================================================
-export function SourdoughAnalytics({ hobby, sales = [] }) {
+export function SourdoughAnalytics({ hobby, sales = [], entries = [] }) {
   if (!hobby) {
     return <div style={{ padding:40,textAlign:"center",color:palette.inkSoft }}>Loading…</div>;
   }
@@ -523,6 +624,10 @@ export function SourdoughAnalytics({ hobby, sales = [] }) {
         {avgRating !== null && (
           <StatCard label="Avg crumb rating" value={`${avgRating.toFixed(1)} ⭐`} accent={palette.leaf} />
         )}
+        {(() => {
+          const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+          return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
+        })()}
       </div>
 
       {/* Monthly bake chart */}

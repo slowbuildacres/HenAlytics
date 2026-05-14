@@ -544,17 +544,94 @@ function ItemCard({ item, onSell, onEdit, onRestock }) {
 }
 
 // ============ MAIN HOME PAGE ============
+function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
+  const [date, setDate] = useState(entry?.date || todayStr());
+  const [item, setItem] = useState(entry?.item || "");
+  const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
+  const [note, setNote] = useState(entry?.note || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleSave = () => {
+    if (!item.trim()) return;
+    onSave({
+      id: entry?.id || newId(),
+      action: "infrastructure",
+      date,
+      item: item.trim(),
+      cost: parseFloat(cost) || 0,
+      note: note.trim(),
+      created: entry?.created || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{entry ? "Edit infrastructure" : "🔨 Log infrastructure"}</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20 }}>
+          <Field label="Date">
+            <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+          </Field>
+          <Field label="What was built / repaired / bought?">
+            <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. roadside stand, signage, payment box" autoFocus />
+          </Field>
+          <Field label="Cost ($)">
+            <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+          </Field>
+          <Field label="Notes (optional)">
+            <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+          </Field>
+          <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+            {entry && onDelete && (
+              !confirmDelete
+                ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+                : <Btn variant="danger" onClick={() => { onDelete(entry.id); onClose(); }}>Confirm delete</Btn>
+            )}
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={handleSave} disabled={!item.trim()}>Save</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function FarmstandPage({ hobby, data, update, setModal }) {
   const [editingItem, setEditingItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [sellingItem, setSellingItem] = useState(null);
   const [restockingItem, setRestockingItem] = useState(null);
+  const [infraModal, setInfraModal] = useState({ open: false, entry: null });
 
   const items = (hobby?.items || []).filter(i => !i.archived);
   const farmstandSales = useMemo(
     () => (data.sales || []).filter(s => s.hobbyType === "farmstand"),
     [data.sales]
   );
+  const farmstandEntries = data.entries?.["farmstand"] || [];
+  const infraEntries = farmstandEntries.filter(e => e.action === "infrastructure");
+  const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
+
+  const saveInfra = (entry) => {
+    update(d => {
+      if (!d.entries) d.entries = {};
+      d.entries["farmstand"] = d.entries["farmstand"] || [];
+      const idx = d.entries["farmstand"].findIndex(e => e.id === entry.id);
+      if (idx >= 0) d.entries["farmstand"][idx] = entry;
+      else d.entries["farmstand"].push(entry);
+      return d;
+    });
+  };
+  const deleteInfra = (id) => {
+    update(d => {
+      if (d.entries?.["farmstand"]) {
+        d.entries["farmstand"] = d.entries["farmstand"].filter(e => e.id !== id);
+      }
+      return d;
+    });
+  };
 
   // Stock warnings — anything tracked that's out or at-or-below its low-stock
   // threshold. Surfaced as a banner above the revenue stats so it's the first
@@ -728,10 +805,21 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
 
       {/* Items section */}
       <div style={{ marginBottom: 24 }}>
-        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12 }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap" }}>
           <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:0,color:palette.ink }}>Items at the stand</h3>
-          <Btn small onClick={() => { setEditingItem(null); setShowItemModal(true); }}>+ Add item</Btn>
+          <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+            <Btn small variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })}>🔨 Infrastructure</Btn>
+            <Btn small onClick={() => { setEditingItem(null); setShowItemModal(true); }}>+ Add item</Btn>
+          </div>
         </div>
+        {infraModal.open && (
+          <InfrastructureModal
+            entry={infraModal.entry}
+            onSave={saveInfra}
+            onDelete={deleteInfra}
+            onClose={() => setInfraModal({ open: false, entry: null })}
+          />
+        )}
 
         {items.length === 0 ? (
           <div style={{
@@ -983,6 +1071,10 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
         {customers.size > 0 && (
           <StatCard label="Customers" value={customers.size} sub="repeat buyers" accent={palette.yolk} />
         )}
+        {(() => {
+          const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+          return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
+        })()}
       </div>
 
       {/* Supplies & restocks — separate section so it doesn't crowd the headline

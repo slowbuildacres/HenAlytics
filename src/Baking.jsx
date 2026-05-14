@@ -406,18 +406,86 @@ function SellBakeModal({ bake, onSell, onClose }) {
 // PAGE
 // ============================================================================
 
+function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
+  const [date, setDate] = useState(entry?.date || todayStr());
+  const [item, setItem] = useState(entry?.item || "");
+  const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
+  const [note, setNote] = useState(entry?.note || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleSave = () => {
+    if (!item.trim()) return;
+    onSave({
+      id: entry?.id || newId(),
+      action: "infrastructure",
+      date,
+      item: item.trim(),
+      cost: parseFloat(cost) || 0,
+      note: note.trim(),
+      created: entry?.created || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="What was built / repaired / bought?">
+        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. stand mixer, new oven, baking sheets" autoFocus />
+      </Field>
+      <Field label="Cost ($)">
+        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {entry && onDelete && (
+          !confirmDelete
+            ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+            : <Btn variant="danger" onClick={() => { onDelete(entry.id); onClose(); }}>Confirm delete</Btn>
+        )}
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!item.trim()}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 export default function BakingPage({ hobby, data, update, setModal }) {
   const [editRecipe, setEditRecipe] = useState(null); // recipe obj or "new"
   const [logBake, setLogBake] = useState(false);
   const [logBakeRecipeId, setLogBakeRecipeId] = useState("");
   const [sellingBake, setSellingBake] = useState(null);
+  const [infraModal, setInfraModal] = useState({ open: false, entry: null });
 
   if (!hobby) return null;
   const recipes = Array.isArray(hobby.recipes) ? hobby.recipes : [];
   const bakes = data.entries?.["baking"] || [];
+  const infraEntries = bakes.filter(e => e.action === "infrastructure");
+  const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
   const activeRecipes = recipes.filter(r => !r.archived);
 
   const recentBakes = [...bakes].sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.created || 0) - (a.created || 0)).slice(0, 12);
+
+  const saveInfra = (entry) => {
+    update(d => {
+      if (!d.entries) d.entries = {};
+      d.entries["baking"] = d.entries["baking"] || [];
+      const idx = d.entries["baking"].findIndex(e => e.id === entry.id);
+      if (idx >= 0) d.entries["baking"][idx] = entry;
+      else d.entries["baking"].push(entry);
+      return d;
+    });
+  };
+  const deleteInfra = (id) => {
+    update(d => {
+      if (d.entries?.["baking"]) {
+        d.entries["baking"] = d.entries["baking"].filter(e => e.id !== id);
+      }
+      return d;
+    });
+  };
 
   const saveRecipe = (rec) => {
     update(d => {
@@ -490,7 +558,18 @@ export default function BakingPage({ hobby, data, update, setModal }) {
         <Btn variant="ghost" onClick={() => setEditRecipe("new")} style={{ flex: "1 1 140px" }}>
           + Add recipe
         </Btn>
+        <Btn variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })} style={{ flex: "1 1 140px" }}>
+          🔨 Infrastructure
+        </Btn>
       </div>
+      {infraModal.open && (
+        <InfrastructureModal
+          entry={infraModal.entry}
+          onSave={saveInfra}
+          onDelete={deleteInfra}
+          onClose={() => setInfraModal({ open: false, entry: null })}
+        />
+      )}
 
       {/* Recipes section */}
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "12px 0 10px", color: palette.ink }}>Recipes</h2>
@@ -670,6 +749,10 @@ export function BakingAnalytics({ hobby, entries = [], sales = [], spouseMode = 
         <StatCard label="Total cost" value={fmtMoney(totalCost)} accent={palette.feather} />
         {totalSalesCount > 0 && <StatCard label="Sales" value={`${totalSalesCount}`} sub={fmtMoney(totalRevenue)} accent={palette.yolk} />}
         {avgRating && <StatCard label="Avg rating" value={`${avgRating}/5`} accent={palette.accent} />}
+        {(() => {
+          const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+          return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
+        })()}
       </div>
 
       {topData.length > 0 && (

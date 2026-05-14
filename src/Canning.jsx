@@ -420,13 +420,82 @@ function UseJarsModal({ batch, onUse, onClose }) {
 // PAGE
 // ============================================================================
 
+function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
+  const [date, setDate] = useState(entry?.date || todayStr());
+  const [item, setItem] = useState(entry?.item || "");
+  const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
+  const [note, setNote] = useState(entry?.note || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleSave = () => {
+    if (!item.trim()) return;
+    onSave({
+      id: entry?.id || newId(),
+      action: "infrastructure",
+      date,
+      item: item.trim(),
+      cost: parseFloat(cost) || 0,
+      note: note.trim(),
+      created: entry?.created || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="What was built / repaired / bought?">
+        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. pressure canner, jar storage shelves" autoFocus />
+      </Field>
+      <Field label="Cost ($)">
+        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {entry && onDelete && (
+          !confirmDelete
+            ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+            : <Btn variant="danger" onClick={() => { onDelete(entry.id); onClose(); }}>Confirm delete</Btn>
+        )}
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!item.trim()}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 export default function CanningPage({ hobby, data, update, setModal }) {
   const [editBatch, setEditBatch] = useState(null); // batch obj | "new" | null
   const [usingBatch, setUsingBatch] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
+  const [infraModal, setInfraModal] = useState({ open: false, entry: null });
 
   if (!hobby) return null;
   const batches = Array.isArray(hobby.batches) ? hobby.batches : [];
+  const canningEntries = data.entries?.["canning"] || [];
+  const infraEntries = canningEntries.filter(e => e.action === "infrastructure");
+  const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
+
+  const saveInfra = (entry) => {
+    update(d => {
+      if (!d.entries) d.entries = {};
+      d.entries["canning"] = d.entries["canning"] || [];
+      const idx = d.entries["canning"].findIndex(e => e.id === entry.id);
+      if (idx >= 0) d.entries["canning"][idx] = entry;
+      else d.entries["canning"].push(entry);
+      return d;
+    });
+  };
+  const deleteInfra = (id) => {
+    update(d => {
+      if (d.entries?.["canning"]) {
+        d.entries["canning"] = d.entries["canning"].filter(e => e.id !== id);
+      }
+      return d;
+    });
+  };
 
   // Active batches = not archived AND (has jars remaining OR not auto-archived)
   // We show empty batches in the pantry until the user manually archives them.
@@ -547,7 +616,18 @@ export default function CanningPage({ hobby, data, update, setModal }) {
         <Btn variant="primary" onClick={() => setEditBatch("new")} style={{ flex: "1 1 140px" }}>
           + New batch
         </Btn>
+        <Btn variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })} style={{ flex: "1 1 140px" }}>
+          🔨 Infrastructure
+        </Btn>
       </div>
+      {infraModal.open && (
+        <InfrastructureModal
+          entry={infraModal.entry}
+          onSave={saveInfra}
+          onDelete={deleteInfra}
+          onClose={() => setInfraModal({ open: false, entry: null })}
+        />
+      )}
 
       {/* Summary stats */}
       {activeBatches.length > 0 && (
@@ -737,6 +817,10 @@ export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode =
         <StatCard label="Total jars made" value={totalJarsMade} accent={palette.feather} />
         <StatCard label="Total cost" value={fmtMoney(totalCost)} accent={palette.ink} />
         {canningSales.length > 0 && <StatCard label="Sales" value={canningSales.length} sub={fmtMoney(totalRevenue)} accent={palette.yolk} />}
+        {(() => {
+          const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+          return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
+        })()}
       </div>
 
       {topData.length > 0 && (

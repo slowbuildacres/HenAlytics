@@ -961,9 +961,11 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 37;
+const CURRENT_VERSION = 38;
 
 const WHATS_NEW = [
+  "📊 Year in Review now covers every hobby — Dogs, Cats, Maple Syrup, Dehydrating, Fermentation, and Freeze Drying all get their own card on the Year in Review page if you have the hobby enabled. New stats include puppies/kittens born, vet visits, kills/pests caught for working cats, syrup made and boil ratio for maple, batches and output ounces for the preserving hobbies. Stats only show for hobbies you actually use, so the page stays focused.",
+  "🔨 Infrastructure tracking in every hobby — Sourdough, Baking, Canning, Farmstand, Dehydrating, and Fermentation now have a 🔨 Infrastructure button to log one-time costs like a new oven, pressure canner, dehydrator, fermentation crocks, or a roadside stand build. Each hobby's stats page now totals what you've spent on infrastructure separately from ongoing costs, so you can see the real investment side by side with what you're producing. (Cats inherited this from Dogs, and Maple Syrup already had it.)",
   "🐈 New hobby: Cats — track cats like dogs, with vet/feed/weight logs, breeding records, litters with named kittens, and full pedigree. Plus a Barn cat toggle that unlocks pest-catch tracking: log every mouse, rat, vole, or other pest your working cat catches, by date and what they were protecting. Stats show kills per cat and pest type.",
   "🍁 New hobby: Maple Syrup — track each sugaring season with total taps, sap collected, syrup yielded, and supplies/infrastructure costs. Includes the 40:1 industry rule of thumb so you can see your boil efficiency, plus year-over-year syrup yield charts when you've got multiple seasons logged.",
   "💕 Breeding for cows, goats, and sheep — log who bred with whom (or an external/unknown sire), method (Natural / AI / Embryo transfer / Other), and breed date. Expected calving / kidding / lambing date auto-fills based on species gestation (cows 283 days, goats 150, sheep 147) and gets added to your calendar. All editable in case your breed runs shorter or longer. Sheep breeding records also now show method in the history view.",
@@ -2875,7 +2877,7 @@ export default function HomesteadApp() {
         )}
         {page === "analytics" && activeHobby === "sourdough" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data}>
-            <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} />
+            <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} entries={data.entries?.["sourdough"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "farmstand" && (
@@ -3122,12 +3124,12 @@ function PreservingAnalyticsPage({ data, initialSubType, spouseMode }) {
       )}
       {activeSub === "dehydrating" && dehydratingHobby && (
         <AnalyticsShareWrapper hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} data={data}>
-          <DehydratingAnalytics hobby={dehydratingHobby} spouseMode={spouseMode} />
+          <DehydratingAnalytics hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "fermentation" && fermentationHobby && (
         <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data}>
-          <FermentationAnalytics hobby={fermentationHobby} />
+          <FermentationAnalytics hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} />
         </AnalyticsShareWrapper>
       )}
     </div>

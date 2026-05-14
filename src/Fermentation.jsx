@@ -25,6 +25,7 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
+import { fmtMoney } from "./units.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -391,15 +392,83 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
 // ============================================================================
 // FERMENTATION PAGE
 // ============================================================================
+function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
+  const [date, setDate] = useState(entry?.date || todayIso());
+  const [item, setItem] = useState(entry?.item || "");
+  const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
+  const [note, setNote] = useState(entry?.note || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleSave = () => {
+    if (!item.trim()) return;
+    onSave({
+      id: entry?.id || newId(),
+      action: "infrastructure",
+      date,
+      item: item.trim(),
+      cost: parseFloat(cost) || 0,
+      note: note.trim(),
+      created: entry?.created || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="What was built / repaired / bought?">
+        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. fermentation crocks, airlocks, weights" autoFocus />
+      </Field>
+      <Field label="Cost ($)">
+        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {entry && onDelete && (
+          !confirmDelete
+            ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+            : <Btn variant="danger" onClick={() => { onDelete(entry.id); onClose(); }}>Confirm delete</Btn>
+        )}
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!item.trim()}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 export default function FermentationPage({ hobby, data, update, setModal }) {
   const [fermentModal, setFermentModal] = useState({ open: false, ferment: null });
   const [stageModal, setStageModal] = useState({ open: false, ferment: null });
   const [finishModal, setFinishModal] = useState({ open: false, ferment: null });
   const [recipeModal, setRecipeModal] = useState({ open: false, recipe: null });
+  const [infraModal, setInfraModal] = useState({ open: false, entry: null });
   const [view, setView] = useState("active"); // active | recipes | archive
 
   const ferments = hobby?.ferments || [];
   const recipes = hobby?.recipes || [];
+  const fermEntries = data.entries?.["fermentation"] || [];
+  const infraEntries = fermEntries.filter(e => e.action === "infrastructure");
+
+  const saveInfra = (entry) => {
+    update(d => {
+      if (!d.entries) d.entries = {};
+      d.entries["fermentation"] = d.entries["fermentation"] || [];
+      const idx = d.entries["fermentation"].findIndex(e => e.id === entry.id);
+      if (idx >= 0) d.entries["fermentation"][idx] = entry;
+      else d.entries["fermentation"].push(entry);
+      return d;
+    });
+  };
+  const deleteInfra = (id) => {
+    update(d => {
+      if (d.entries?.["fermentation"]) {
+        d.entries["fermentation"] = d.entries["fermentation"].filter(e => e.id !== id);
+      }
+      return d;
+    });
+  };
   const active = ferments.filter(f => !f.archived);
   const archived = ferments.filter(f => f.archived);
 
@@ -481,13 +550,24 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
     <div style={{ paddingBottom: 100 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 28, margin: 0, color: palette.ink }}>🫧 Fermentation</h1>
-        {view === "active" && (
-          <Btn variant="primary" small onClick={() => setFermentModal({ open: true, ferment: null })}>+ New ferment</Btn>
-        )}
-        {view === "recipes" && (
-          <Btn variant="primary" small onClick={() => setRecipeModal({ open: true, recipe: null })}>+ New recipe</Btn>
-        )}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Btn variant="ghost" small onClick={() => setInfraModal({ open: true, entry: null })}>🔨 Infrastructure</Btn>
+          {view === "active" && (
+            <Btn variant="primary" small onClick={() => setFermentModal({ open: true, ferment: null })}>+ New ferment</Btn>
+          )}
+          {view === "recipes" && (
+            <Btn variant="primary" small onClick={() => setRecipeModal({ open: true, recipe: null })}>+ New recipe</Btn>
+          )}
+        </div>
       </div>
+      {infraModal.open && (
+        <InfrastructureModal
+          entry={infraModal.entry}
+          onSave={saveInfra}
+          onDelete={deleteInfra}
+          onClose={() => setInfraModal({ open: false, entry: null })}
+        />
+      )}
 
       {/* View toggle */}
       <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
@@ -666,12 +746,13 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function FermentationAnalytics({ hobby }) {
+export function FermentationAnalytics({ hobby, entries = [] }) {
   const ferments = hobby?.ferments || [];
   const recipes = hobby?.recipes || [];
   const active = ferments.filter(f => !f.archived);
   const completed = ferments.filter(f => f.archived);
   const totalLogs = ferments.reduce((s, f) => s + (f.stages?.length || 0), 0);
+  const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
 
   return (
     <div style={{ paddingBottom: 80 }}>
@@ -681,6 +762,7 @@ export function FermentationAnalytics({ hobby }) {
         <StatCard label="Completed" value={completed.length} accent={palette.feather} />
         <StatCard label="Stage logs" value={totalLogs} accent={palette.yolk} />
         <StatCard label="Recipes" value={recipes.length} accent={palette.accent} />
+        {infraTotal > 0 && <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} />}
       </div>
       {completed.length > 0 && (
         <div style={{

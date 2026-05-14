@@ -211,11 +211,79 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
   );
 }
 
+function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
+  const [date, setDate] = useState(entry?.date || todayIso());
+  const [item, setItem] = useState(entry?.item || "");
+  const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
+  const [note, setNote] = useState(entry?.note || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const handleSave = () => {
+    if (!item.trim()) return;
+    onSave({
+      id: entry?.id || newId(),
+      action: "infrastructure",
+      date,
+      item: item.trim(),
+      cost: parseFloat(cost) || 0,
+      note: note.trim(),
+      created: entry?.created || Date.now(),
+    });
+    onClose();
+  };
+  return (
+    <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label="What was built / repaired / bought?">
+        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. dehydrator, extra trays, mesh sheets" autoFocus />
+      </Field>
+      <Field label="Cost ($)">
+        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
+        {entry && onDelete && (
+          !confirmDelete
+            ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
+            : <Btn variant="danger" onClick={() => { onDelete(entry.id); onClose(); }}>Confirm delete</Btn>
+        )}
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={handleSave} disabled={!item.trim()}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 export default function DehydratingPage({ hobby, data, update, setModal }) {
   const [batchModal, setBatchModal] = useState({ open: false, batch: null });
+  const [infraModal, setInfraModal] = useState({ open: false, entry: null });
   const batches = (hobby?.batches || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const active = batches.filter(b => !b.archived);
   const archived = batches.filter(b => b.archived);
+  const dehyEntries = data.entries?.["dehydrating"] || [];
+  const infraEntries = dehyEntries.filter(e => e.action === "infrastructure");
+
+  const saveInfra = (entry) => {
+    update(d => {
+      if (!d.entries) d.entries = {};
+      d.entries["dehydrating"] = d.entries["dehydrating"] || [];
+      const idx = d.entries["dehydrating"].findIndex(e => e.id === entry.id);
+      if (idx >= 0) d.entries["dehydrating"][idx] = entry;
+      else d.entries["dehydrating"].push(entry);
+      return d;
+    });
+  };
+  const deleteInfra = (id) => {
+    update(d => {
+      if (d.entries?.["dehydrating"]) {
+        d.entries["dehydrating"] = d.entries["dehydrating"].filter(e => e.id !== id);
+      }
+      return d;
+    });
+  };
 
   const saveBatch = (batch) => {
     update(d => {
@@ -251,16 +319,31 @@ export default function DehydratingPage({ hobby, data, update, setModal }) {
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 28, margin: 0, color: palette.ink }}>🌬️ Dehydrating</h1>
-        <Btn variant="primary" small onClick={() => setBatchModal({ open: true, batch: null })}>+ New batch</Btn>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          <Btn variant="ghost" small onClick={() => setInfraModal({ open: true, entry: null })}>🔨 Infrastructure</Btn>
+          <Btn variant="primary" small onClick={() => setBatchModal({ open: true, batch: null })}>+ New batch</Btn>
+        </div>
       </div>
+      {infraModal.open && (
+        <InfrastructureModal
+          entry={infraModal.entry}
+          onSave={saveInfra}
+          onDelete={deleteInfra}
+          onClose={() => setInfraModal({ open: false, entry: null })}
+        />
+      )}
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Active batches" value={active.length} accent={palette.leaf} />
         <StatCard label="Total output" value={`${totalOz.toFixed(1)} oz`} accent={palette.feather} />
         <StatCard label="Avg run" value={`${avgRun.toFixed(1)} hr`} accent={palette.yolk} />
         <StatCard label="Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
+        {(() => {
+          const infraTotal = infraEntries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+          return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
+        })()}
       </div>
 
       {active.length === 0 ? (
@@ -320,11 +403,12 @@ export default function DehydratingPage({ hobby, data, update, setModal }) {
   );
 }
 
-export function DehydratingAnalytics({ hobby, spouseMode = false }) {
+export function DehydratingAnalytics({ hobby, entries = [], spouseMode = false }) {
   const batches = (hobby?.batches || []).filter(b => !b.archived);
   const totalOz = batches.reduce((s, b) => s + (b.outputOz || 0), 0);
   const totalCost = batches.reduce((s, b) => s + (b.ingredientsCost || 0), 0);
   const totalHours = batches.reduce((s, b) => s + (b.dryerHours || 0), 0);
+  const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
 
   const byMonth = useMemo(() => {
     const map = {};
@@ -346,6 +430,7 @@ export function DehydratingAnalytics({ hobby, spouseMode = false }) {
         <StatCard label="Total output" value={`${totalOz.toFixed(1)} oz`} accent={palette.feather} />
         <StatCard label="Dryer hours" value={totalHours.toFixed(1)} accent={palette.yolk} />
         {!spouseMode && <StatCard label="Cost" value={fmtMoney(totalCost)} accent={palette.accent} />}
+        {infraTotal > 0 && <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} />}
       </div>
 
       {byMonth.length > 0 && (

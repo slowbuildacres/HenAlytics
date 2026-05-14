@@ -138,6 +138,12 @@ export default function YearInReviewPage({ data }) {
   const farmstandEnabled = hobbies.some(h => h.type === "farmstand" && !h.hidden);
   const bakingEnabled = hobbies.some(h => h.type === "baking" && !h.hidden);
   const canningEnabled = hobbies.some(h => h.type === "canning" && !h.hidden);
+  const dogsEnabled = hobbies.some(h => h.type === "dogs" && !h.hidden);
+  const catsEnabled = hobbies.some(h => h.type === "cats" && !h.hidden);
+  const mapleSyrupEnabled = hobbies.some(h => h.type === "maple_syrup" && !h.hidden);
+  const dehydratingEnabled = hobbies.some(h => h.type === "dehydrating" && !h.hidden);
+  const fermentationEnabled = hobbies.some(h => h.type === "fermentation" && !h.hidden);
+  const freezeDryingEnabled = hobbies.some(h => h.type === "freeze_drying" && !h.hidden);
 
   return (
     <div>
@@ -188,6 +194,12 @@ export default function YearInReviewPage({ data }) {
           {farmstandEnabled && <FarmstandCard stats={stats} />}
           {bakingEnabled && <BakingCard stats={stats} />}
           {canningEnabled && <CanningCard stats={stats} />}
+          {dehydratingEnabled && <DehydratingCard stats={stats} />}
+          {fermentationEnabled && <FermentationCard stats={stats} />}
+          {freezeDryingEnabled && <FreezeDryingCard stats={stats} />}
+          {dogsEnabled && <DogsCard stats={stats} />}
+          {catsEnabled && <CatsCard stats={stats} />}
+          {mapleSyrupEnabled && <MapleSyrupCard stats={stats} />}
           {stats.freezerBirds > 0 && <FreezerCard stats={stats} />}
           <ActivityCard stats={stats} />
           {stats.weatherStats && <WeatherCard stats={stats} />}
@@ -820,6 +832,105 @@ function FreezerCard({ stats }) {
   );
 }
 
+function DogsCard({ stats }) {
+  const { dogCount, dogVetVisits, dogLitters, dogPuppiesBorn, dogAttacks } = stats;
+  if (!dogCount && !dogVetVisits && !dogLitters && !dogAttacks) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐕 Dogs</div>
+      {dogCount > 0 && <CountUp number={dogCount} suffix={`dog${dogCount===1?"":"s"} in the pack`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {dogLitters > 0 && <Stat big={dogLitters} label={`litter${dogLitters===1?"":"s"}`} accent={palette.yolk}/>}
+        {dogPuppiesBorn > 0 && <Stat big={dogPuppiesBorn} label="puppies born" accent={palette.leaf}/>}
+        {dogVetVisits > 0 && <Stat big={dogVetVisits} label="vet/health visits" accent={palette.feather}/>}
+        {dogAttacks > 0 && <Stat big={dogAttacks} label="attacks deterred" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
+function CatsCard({ stats }) {
+  const { catCount, catVetVisits, catLitters, catKittensBorn, catKills } = stats;
+  if (!catCount && !catVetVisits && !catLitters && !catKills) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐈 Cats</div>
+      {catCount > 0 && <CountUp number={catCount} suffix={`cat${catCount===1?"":"s"} on the homestead`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {catLitters > 0 && <Stat big={catLitters} label={`litter${catLitters===1?"":"s"}`} accent={palette.yolk}/>}
+        {catKittensBorn > 0 && <Stat big={catKittensBorn} label="kittens born" accent={palette.leaf}/>}
+        {catVetVisits > 0 && <Stat big={catVetVisits} label="vet/health visits" accent={palette.feather}/>}
+        {catKills > 0 && <Stat big={catKills} label="pests caught" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
+function MapleSyrupCard({ stats }) {
+  const { mapleSapGal, mapleSyrupGal, mapleTapsSet, mapleTotalCost } = stats;
+  if (!mapleSapGal && !mapleSyrupGal && !mapleTapsSet) return null;
+  const ratio = mapleSyrupGal > 0 && mapleSapGal > 0 ? (mapleSapGal / mapleSyrupGal).toFixed(1) : null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🍁 Maple Syrup</div>
+      {mapleSyrupGal > 0 && <CountUp number={Number(mapleSyrupGal.toFixed(2))} suffix="gallons of syrup made" big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {mapleTapsSet > 0 && <Stat big={mapleTapsSet} label="taps set" accent={palette.feather}/>}
+        {mapleSapGal > 0 && <Stat big={`${mapleSapGal.toFixed(0)} gal`} label="sap collected" accent={palette.leaf}/>}
+        {ratio && <Stat big={`${ratio}:1`} label="sap to syrup" accent={palette.yolk}/>}
+        {mapleTotalCost > 0 && <Stat big={fmtMoney(mapleTotalCost)} label="invested" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
+function DehydratingCard({ stats }) {
+  const { dehyBatches, dehyOutputOz, dehyHours, dehyCost } = stats;
+  if (!dehyBatches && !dehyOutputOz) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🌬️ Dehydrating</div>
+      {dehyBatches > 0 && <CountUp number={dehyBatches} suffix={`batch${dehyBatches===1?"":"es"} dried`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {dehyOutputOz > 0 && <Stat big={`${dehyOutputOz.toFixed(0)} oz`} label="output total" accent={palette.leaf}/>}
+        {dehyHours > 0 && <Stat big={`${dehyHours.toFixed(0)} hrs`} label="dryer running" accent={palette.feather}/>}
+        {dehyCost > 0 && <Stat big={fmtMoney(dehyCost)} label="ingredients" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
+function FermentationCard({ stats }) {
+  const { fermStartedCount, fermFinishedCount, fermStageLogs } = stats;
+  if (!fermStartedCount && !fermStageLogs) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🫧 Fermentation</div>
+      {fermStartedCount > 0 && <CountUp number={fermStartedCount} suffix={`ferment${fermStartedCount===1?"":"s"} started`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {fermFinishedCount > 0 && <Stat big={fermFinishedCount} label="finished" accent={palette.leaf}/>}
+        {fermStageLogs > 0 && <Stat big={fermStageLogs} label="stage logs" accent={palette.feather}/>}
+      </div>
+    </Card>
+  );
+}
+
+function FreezeDryingCard({ stats }) {
+  const { fdBatches, fdOutputOz, fdCycleHours, fdCost } = stats;
+  if (!fdBatches && !fdOutputOz) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>❄️ Freeze Drying</div>
+      {fdBatches > 0 && <CountUp number={fdBatches} suffix={`batch${fdBatches===1?"":"es"} freeze-dried`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {fdOutputOz > 0 && <Stat big={`${fdOutputOz.toFixed(0)} oz`} label="output total" accent={palette.leaf}/>}
+        {fdCycleHours > 0 && <Stat big={`${fdCycleHours.toFixed(0)} hrs`} label="cycle time" accent={palette.feather}/>}
+        {fdCost > 0 && <Stat big={fmtMoney(fdCost)} label="ingredients" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
 function ActivityCard({ stats }) {
   const { totalEntries, busiestMonth, longestStreak, activeDays } = stats;
   return (
@@ -1394,6 +1505,62 @@ function computeStats(data, year) {
 
   const photos = allEntries.filter((e) => e.photoPath).sort((a, b) => (b.date || "").localeCompare(a.date || "")).map((e) => e.photoPath);
 
+  // ---- Dogs ----
+  const dogsHobby = (data.hobbies || []).find(h => h.type === "dogs");
+  const dogEntries = allEntries.filter(e => e.hobbyType === "dogs");
+  const dogCount = (dogsHobby?.animals || []).filter(a => !a.archived).length;
+  const dogVetVisits = dogEntries.filter(e => e.action === "health").length;
+  const dogLitters = (dogsHobby?.litters || []).filter(l => (l.whelpDate || "").startsWith(String(year))).length;
+  const dogPuppiesBorn = (dogsHobby?.litters || []).filter(l => (l.whelpDate || "").startsWith(String(year))).reduce((s, l) => s + (Number(l.totalBorn) || (l.puppies || []).length), 0);
+  // LGD attacks-prevented count this year
+  const dogAttacks = (dogsHobby?.attacks || []).filter(a => (a.date || "").startsWith(String(year))).length;
+
+  // ---- Cats ----
+  const catsHobby = (data.hobbies || []).find(h => h.type === "cats");
+  const catEntries = allEntries.filter(e => e.hobbyType === "cats");
+  const catCount = (catsHobby?.animals || []).filter(a => !a.archived).length;
+  const catVetVisits = catEntries.filter(e => e.action === "health").length;
+  const catLitters = (catsHobby?.litters || []).filter(l => (l.whelpDate || l.birthDate || "").startsWith(String(year))).length;
+  const catKittensBorn = (catsHobby?.litters || []).filter(l => (l.whelpDate || l.birthDate || "").startsWith(String(year))).reduce((s, l) => s + (Number(l.totalBorn) || (l.puppies || l.kittens || []).length), 0);
+  // Barn cat pest catches this year (Cats reuses the attacks shape)
+  const catKills = (catsHobby?.attacks || []).filter(a => (a.date || "").startsWith(String(year))).length;
+
+  // ---- Maple Syrup ----
+  // MapleSyrup is season-based; entries carry seasonId. For year-in-review we
+  // sum across all entries that fall in this calendar year regardless of season.
+  const mapleEntries = allEntries.filter(e => e.hobbyType === "maple_syrup");
+  const mapleSapGal = mapleEntries.filter(e => e.action === "sap_collected").reduce((s, e) => s + (Number(e.gallons) || 0), 0);
+  const mapleSyrupGal = mapleEntries.filter(e => e.action === "boil").reduce((s, e) => s + (Number(e.syrupGal) || 0), 0);
+  const mapleTapsSet = mapleEntries.filter(e => e.action === "tap_set").reduce((s, e) => s + (Number(e.count) || 0), 0);
+  const mapleSuppliesCost = mapleEntries.filter(e => e.action === "supplies").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const mapleInfraCost = mapleEntries.filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const mapleTotalCost = mapleSuppliesCost + mapleInfraCost;
+
+  // ---- Dehydrating ----
+  const dehyHobby = (data.hobbies || []).find(h => h.type === "dehydrating");
+  const dehyBatches = (dehyHobby?.batches || []).filter(b => (b.date || "").startsWith(String(year)));
+  const dehyOutputOz = dehyBatches.reduce((s, b) => s + (Number(b.outputOz) || 0), 0);
+  const dehyHours = dehyBatches.reduce((s, b) => s + (Number(b.dryerHours) || 0), 0);
+  const dehyCost = dehyBatches.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+
+  // ---- Fermentation ----
+  const fermHobby = (data.hobbies || []).find(h => h.type === "fermentation");
+  const fermStarted = (fermHobby?.ferments || []).filter(f => (f.startDate || "").startsWith(String(year)));
+  const fermFinished = (fermHobby?.ferments || []).filter(f => (f.finishDate || "").startsWith(String(year)));
+  const fermStartedCount = fermStarted.length;
+  const fermFinishedCount = fermFinished.length;
+  // Sum daily stage logs to give a "days of activity" feel
+  const fermStageLogs = (fermHobby?.ferments || []).reduce((s, f) => {
+    return s + ((f.stages || []).filter(st => (st.date || "").startsWith(String(year))).length);
+  }, 0);
+
+  // ---- Freeze Drying ----
+  const fdHobby = (data.hobbies || []).find(h => h.type === "freeze_drying");
+  const fdBatches = (fdHobby?.batches || []).filter(b => (b.date || "").startsWith(String(year)));
+  const fdOutputOz = fdBatches.reduce((s, b) => s + (Number(b.outputOz) || 0), 0);
+  const fdCycleHours = fdBatches.reduce((s, b) => s + (Number(b.cycleHours) || 0), 0);
+  const fdCost = fdBatches.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+
   return {
     totalEntries, activeDays, eggsCollected, dozensCollected, eggsSold, eggRevenue,
     eggLayerFeedCost, eggLayerInfraCost, eggLayerBirdCost, eggLayerTotalCost,
@@ -1437,5 +1604,17 @@ function computeStats(data, year) {
     totalFeedLbs, totalFeedCost, photosCount, issueCount, heaviestDay, heaviestDayCount,
     // Chicken tractor
     tractorFeet, tractorMoveCount,
+    // Dogs
+    dogCount, dogVetVisits, dogLitters, dogPuppiesBorn, dogAttacks,
+    // Cats
+    catCount, catVetVisits, catLitters, catKittensBorn, catKills,
+    // Maple Syrup
+    mapleSapGal, mapleSyrupGal, mapleTapsSet, mapleSuppliesCost, mapleInfraCost, mapleTotalCost,
+    // Dehydrating
+    dehyBatches: dehyBatches.length, dehyOutputOz, dehyHours, dehyCost,
+    // Fermentation
+    fermStartedCount, fermFinishedCount, fermStageLogs,
+    // Freeze Drying
+    fdBatches: fdBatches.length, fdOutputOz, fdCycleHours, fdCost,
   };
 }
