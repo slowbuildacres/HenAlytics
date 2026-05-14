@@ -164,9 +164,44 @@ function migrateData(data) {
   const existingSaleIds = new Set((data.sales || []).map(s => s.id));
   eggLayerEntries.forEach(e => {
     if (e.action === "sold_eggs" && !existingSaleIds.has(e.id)) {
+      // Robust revenue derivation. Different versions of the sold_eggs form
+      // have written different field combinations over the months, and a few
+      // user reports surfaced sales landing in the Sales tab at $0 because the
+      // migration only looked at e.pricePerDozen — which can be missing on
+      // entries created before the unit-based selling form was introduced, or
+      // when the form's derivation guard didn't fire (e.g. unitQty empty).
+      // Try every known shape before giving up at 0.
       const qty = Number(e.count) || 0;
-      const pricePerDozen = Number(e.pricePerDozen) || 0;
-      const revenue = (qty / 12) * pricePerDozen;
+      let pricePerDozen = Number(e.pricePerDozen) || 0;
+      let revenue = 0;
+
+      if (pricePerDozen > 0 && qty > 0) {
+        // Canonical path — current form writes both fields.
+        revenue = (qty / 12) * pricePerDozen;
+      } else if (Number(e.unitQty) > 0 && Number(e.pricePerUnit) > 0) {
+        // Form-fields path — derivation guard didn't run (e.g. older code or
+        // empty unitQty at save time), but the raw inputs are still there.
+        const unitToCount = {
+          single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+          custom: Number(e.customEggsPerUnit) || 0,
+        };
+        const eggsPerUnit = unitToCount[e.unit] || 12;
+        const totalEggs = Number(e.unitQty) * eggsPerUnit;
+        revenue = Number(e.unitQty) * Number(e.pricePerUnit);
+        if (totalEggs > 0) pricePerDozen = revenue / (totalEggs / 12);
+      } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
+        // Old-old shape — some pre-unit-based entries stored pricePerUnit as
+        // "$/dozen" and put total eggs in count. Treat pricePerUnit as $/dozen.
+        pricePerDozen = Number(e.pricePerUnit);
+        revenue = (qty / 12) * pricePerDozen;
+      } else if (Number(e.totalRevenue) > 0) {
+        // Last-ditch — entry has a stashed totalRevenue from some other path.
+        revenue = Number(e.totalRevenue);
+        if (qty > 0) pricePerDozen = revenue / (qty / 12);
+      }
+      // If all four paths fail, revenue stays 0 — the entry genuinely has no
+      // price info and the user will need to edit it. At least now we've tried.
+
       data.sales.push({
         id: e.id,
         date: e.date,
@@ -965,9 +1000,10 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 38;
+const CURRENT_VERSION = 39;
 
 const WHATS_NEW = [
+  "🍎 Supporting Henalytics on iOS now uses Apple's In-App Purchase system — same tip tiers, same gratitude, but Apple handles the checkout natively. You can also restore prior purchases and manage your subscription right from the Support menu. (Web continues to use the existing checkout flow.)",
   "📊 Year in Review now covers every hobby — Dogs, Cats, Maple Syrup, Dehydrating, Fermentation, and Freeze Drying all get their own card on the Year in Review page if you have the hobby enabled. New stats include puppies/kittens born, vet visits, kills/pests caught for working cats, syrup made and boil ratio for maple, batches and output ounces for the preserving hobbies. Stats only show for hobbies you actually use, so the page stays focused.",
   "🔨 Infrastructure tracking in every hobby — Sourdough, Baking, Canning, Farmstand, Dehydrating, and Fermentation now have a 🔨 Infrastructure button to log one-time costs like a new oven, pressure canner, dehydrator, fermentation crocks, or a roadside stand build. Each hobby's stats page now totals what you've spent on infrastructure separately from ongoing costs, so you can see the real investment side by side with what you're producing. (Cats inherited this from Dogs, and Maple Syrup already had it.)",
   "🐈 New hobby: Cats — track cats like dogs, with vet/feed/weight logs, breeding records, litters with named kittens, and full pedigree. Plus a Barn cat toggle that unlocks pest-catch tracking: log every mouse, rat, vole, or other pest your working cat catches, by date and what they were protecting. Stats show kills per cat and pest type.",
@@ -1223,11 +1259,19 @@ function ToastHost() {
   }, []);
   if (items.length === 0) return null;
   return (
-    <div style={{
-      position: "fixed", top: 16, left: 0, right: 0,
-      display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
-      zIndex: 9999, pointerEvents: "none", padding: "0 16px",
-    }}>
+    <div
+      data-no-keyboard-shift
+      style={{
+        position: "fixed",
+        // Respect the device notch / Dynamic Island so toasts don't render
+        // behind the status bar overlay on modern iPhones. The 16px base is
+        // additive to the safe-area inset (0px on non-notched devices, ~50px
+        // on iPhone 14 Pro+).
+        top: "calc(16px + env(safe-area-inset-top))",
+        left: 0, right: 0,
+        display: "flex", flexDirection: "column", alignItems: "center", gap: 8,
+        zIndex: 9999, pointerEvents: "none", padding: "0 16px",
+      }}>
       {items.map((t) => (
         <div key={t.id} style={{
           background: t.kind === "error" ? "#C84B31" : "#2C1810",
@@ -2576,7 +2620,11 @@ export default function HomesteadApp() {
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
-        body { margin: 0; }
+        /* Lock horizontal scrolling — modal/overlay widths can briefly exceed
+           viewport on first render (e.g. before flex layout settles) and would
+           otherwise create a phantom sideways scroll. Belt-and-suspenders on
+           html and body. */
+        html, body { margin: 0; overflow-x: hidden; max-width: 100vw; }
         input, select, textarea { font-family: ${FONT_BODY}; }
         input:focus, select:focus, textarea:focus { outline: 2px solid ${palette.accent}; outline-offset: -1px; }
         button { font-family: ${FONT_BODY}; }
@@ -2591,8 +2639,13 @@ export default function HomesteadApp() {
         /* Modal overlays: any fixed-position element with flex centering.
            Uses align-items as the anchor since every modal overlay in this
            app structures itself that way. Targets both common spacings React
-           may use when serializing inline styles. */
-        body.keyboard-open div[style*="position: fixed"][style*="align-items: center"] {
+           may use when serializing inline styles.
+           The :not([data-no-keyboard-shift]) exclusion prevents the rule from
+           accidentally hijacking elements that LOOK like modals to the
+           selector but aren't (signed-out banner, toast host, onboarding
+           wizard backdrop) — those get visually wrecked when the keyboard
+           inset is forced onto them. */
+        body.keyboard-open div[style*="position: fixed"][style*="align-items: center"]:not([data-no-keyboard-shift]) {
           padding-bottom: var(--keyboard-height) !important;
           box-sizing: border-box;
           transition: padding-bottom 0.2s ease;
@@ -2601,6 +2654,7 @@ export default function HomesteadApp() {
 
       {signedOutRemotely && (
         <div
+          data-no-keyboard-shift
           onClick={() => setModal({ type: "auth" })}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
@@ -11059,8 +11113,14 @@ function OnboardingWizard({ update, onClose }) {
 
   // Wizard uses its own modal styling — distinct from regular modals so it
   // feels like a welcome experience, not a settings dialog.
+  //
+  // data-no-keyboard-shift opts this backdrop out of the global keyboard-open
+  // CSS that adds padding-bottom to modal overlays. The wizard's inner card is
+  // already overflowY:auto and the useNativeKeyboardInset hook scrolls the
+  // focused input into view, so the backdrop-padding shift is redundant AND
+  // visibly wrong here — it pushes the wizard halfway off-screen on iOS.
   return (
-    <div style={{
+    <div data-no-keyboard-shift style={{
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 200, padding: 16,

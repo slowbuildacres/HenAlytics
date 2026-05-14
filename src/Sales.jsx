@@ -113,6 +113,49 @@ function computeRevenue(sale) {
 }
 
 // ============================================================================
+// DERIVE REVENUE from a legacy sold_eggs entry
+// ----------------------------------------------------------------------------
+// Different versions of the sold_eggs form have written different field
+// combinations over time. A user reported that sales were landing in the
+// Sales tab at $0 because the original derivation only looked at
+// `e.pricePerDozen` — which can be missing on entries created before the
+// unit-based selling form was introduced, or when the form's derivation
+// guard didn't fire (e.g. empty unitQty at save time).
+//
+// Try every known shape before giving up at 0. Returns { revenue,
+// pricePerDozen } so callers can use both. Mirrors the matching helper in
+// HomesteadApp.jsx so the migration and read-time paths agree.
+// ============================================================================
+function deriveSoldEggsRevenue(e) {
+  const qty = Number(e.count) || 0;
+  let pricePerDozen = Number(e.pricePerDozen) || 0;
+  let revenue = 0;
+  if (pricePerDozen > 0 && qty > 0) {
+    // Canonical path — current form writes both fields.
+    revenue = (qty / 12) * pricePerDozen;
+  } else if (Number(e.unitQty) > 0 && Number(e.pricePerUnit) > 0) {
+    // Form-fields path — raw inputs survived but derivation didn't run.
+    const unitToCount = {
+      single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+      custom: Number(e.customEggsPerUnit) || 0,
+    };
+    const eggsPerUnit = unitToCount[e.unit] || 12;
+    const totalEggs = Number(e.unitQty) * eggsPerUnit;
+    revenue = Number(e.unitQty) * Number(e.pricePerUnit);
+    if (totalEggs > 0) pricePerDozen = revenue / (totalEggs / 12);
+  } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
+    // Old-old shape — pricePerUnit was stored as $/dozen with total eggs in count.
+    pricePerDozen = Number(e.pricePerUnit);
+    revenue = (qty / 12) * pricePerDozen;
+  } else if (Number(e.totalRevenue) > 0) {
+    // Last-ditch — entry has a stashed totalRevenue from some other path.
+    revenue = Number(e.totalRevenue);
+    if (qty > 0) pricePerDozen = revenue / (qty / 12);
+  }
+  return { revenue, pricePerDozen };
+}
+
+// ============================================================================
 // FUNCTION
 // ============================================================================
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
@@ -991,23 +1034,28 @@ export default function SalesPage({ data, update }) {
   const sales = data.sales || [];
   const customers = data.customers || [];
 
-  // Also pull legacy sold_eggs from entries
+  // Also pull legacy sold_eggs from entries. Uses deriveSoldEggsRevenue so
+  // entries that lack a clean pricePerDozen field still surface with the
+  // right revenue — see helper comment for the field-shape history.
   const legacyEggSales = useMemo(() => {
     const eggEntries = (data.entries?.["egg_layers"] || []).filter(e => e.action === "sold_eggs");
-    return eggEntries.map(e => ({
-      id: e.id,
-      date: e.date,
-      hobbyType: "eggs",
-      eggType: "Chicken",
-      eggPurpose: "Eating",
-      qty: Number(e.count) || 0,
-      unit: "eggs",
-      pricePerUnit: Number(e.pricePerDozen) || 0,
-      totalRevenue: ((Number(e.count)||0) / 12) * (Number(e.pricePerDozen)||0),
-      note: e.note || "",
-      buyerId: null,
-      isLegacy: true,
-    }));
+    return eggEntries.map(e => {
+      const { revenue, pricePerDozen } = deriveSoldEggsRevenue(e);
+      return {
+        id: e.id,
+        date: e.date,
+        hobbyType: "eggs",
+        eggType: "Chicken",
+        eggPurpose: "Eating",
+        qty: Number(e.count) || 0,
+        unit: "eggs",
+        pricePerUnit: pricePerDozen,
+        totalRevenue: revenue,
+        note: e.note || "",
+        buyerId: null,
+        isLegacy: true,
+      };
+    });
   }, [data.entries]);
 
   const allSales = useMemo(() => {
@@ -1487,14 +1535,17 @@ export function getSalesForHobby(data, hobbyType) {
   if (hobbyType === "eggs") {
     const legacy = (data.entries?.["egg_layers"] || [])
       .filter(e => e.action === "sold_eggs")
-      .map(e => ({
-        id: e.id, date: e.date, hobbyType: "eggs",
-        eggType: "Chicken", eggPurpose: "Eating",
-        qty: Number(e.count)||0, unit: "eggs",
-        pricePerUnit: Number(e.pricePerDozen)||0,
-        totalRevenue: ((Number(e.count)||0)/12)*(Number(e.pricePerDozen)||0),
-        note: e.note||"", isLegacy: true,
-      }));
+      .map(e => {
+        const { revenue, pricePerDozen } = deriveSoldEggsRevenue(e);
+        return {
+          id: e.id, date: e.date, hobbyType: "eggs",
+          eggType: "Chicken", eggPurpose: "Eating",
+          qty: Number(e.count)||0, unit: "eggs",
+          pricePerUnit: pricePerDozen,
+          totalRevenue: revenue,
+          note: e.note||"", isLegacy: true,
+        };
+      });
     const newIds = new Set(sales.map(s=>s.id));
     return [...sales, ...legacy.filter(s=>!newIds.has(s.id))];
   }

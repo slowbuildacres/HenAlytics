@@ -5,7 +5,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, fmtTemp } from "./units.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -960,8 +960,12 @@ function WeatherCard({ stats }) {
         🌦️ Weather
       </div>
       <div style={{ display: "flex", flexWrap: "wrap", gap: 14 }}>
-        {weatherStats.hottestDay && <Stat big={`${weatherStats.hottestDay.highF}°`} label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`} accent={palette.accent} />}
-        {weatherStats.coldestDay && <Stat big={`${weatherStats.coldestDay.lowF}°`} label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`} accent="#7AA8B8" />}
+        {/* fmtTemp() reads the user's temperature preference (F/C) from the
+            shared units module and formats with the right unit symbol. Stored
+            values in weather are always in Fahrenheit (highF/lowF field names
+            from the weather API) — fmtTemp handles the conversion. */}
+        {weatherStats.hottestDay && <Stat big={fmtTemp(weatherStats.hottestDay.highF)} label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`} accent={palette.accent} />}
+        {weatherStats.coldestDay && <Stat big={fmtTemp(weatherStats.coldestDay.lowF)} label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`} accent="#7AA8B8" />}
         {weatherStats.totalRainIn > 0 && <Stat big={`${weatherStats.totalRainIn.toFixed(1)}"`} label="rain logged" accent={palette.leaf} />}
       </div>
     </Card>

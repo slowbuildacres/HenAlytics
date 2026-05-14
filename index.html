@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
 <meta name="theme-color" content="#F4EDE0">
 
 <!-- SEO basics -->
@@ -12,19 +12,14 @@
 <link rel="canonical" href="https://henalytics.com/">
 <meta name="google-site-verification" content="LkcnIetC3csRgY4GBWBdCyIEmzi96o9Pn7W7CEvPwJA">
 
-<!-- Open Graph (Facebook, LinkedIn, iMessage previews, etc.) -->
+<!-- Open Graph — powers link previews on Facebook, iMessage, LinkedIn,
+     Slack, Discord, WhatsApp, and most modern apps that unfurl links. -->
 <meta property="og:type" content="website">
 <meta property="og:url" content="https://henalytics.com/">
 <meta property="og:title" content="Henalytics — Homestead tracker for gardens, eggs & meat birds">
 <meta property="og:description" content="A simple homestead tracker for gardens, egg layers, and meat chickens.">
 <meta property="og:image" content="https://henalytics.com/icon-512.png">
 <meta property="og:site_name" content="Henalytics">
-
-<!-- Twitter Card -->
-<meta name="twitter:card" content="summary">
-<meta name="twitter:title" content="Henalytics — Homestead tracker">
-<meta name="twitter:description" content="A simple homestead tracker for gardens, egg layers, and meat chickens.">
-<meta name="twitter:image" content="https://henalytics.com/icon-512.png">
 
 <!-- Favicon (browser tab) -->
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
@@ -44,6 +39,9 @@
 
 <style>
   html, body, #root { margin: 0; padding: 0; }
+  /* Lock horizontal scrolling at the document level — covers the brief window
+     between page load and React mount where inline-style rules don't yet apply. */
+  html, body { overflow-x: hidden; max-width: 100vw; }
   body { background: #F4EDE0; }
 </style>
 </head>
