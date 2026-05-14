@@ -3122,7 +3122,17 @@ export default function HomesteadApp() {
             <div style={{
               position: "absolute", top: "calc(100% + 6px)", left: 0, right: 0,
               background: palette.card, border: `1.5px solid ${palette.ink}`,
-              borderRadius: 10, zIndex: 60, overflow: "hidden",
+              borderRadius: 10, zIndex: 60,
+              // When all hobbies are enabled the list can extend below the
+              // fixed bottom nav. Clamp to the available viewport and let
+              // the list scroll internally. The 220px subtracts roughly:
+              // safe-area-top + the switcher button + the bottom nav +
+              // safe-area-bottom + a little breathing room.
+              maxHeight: "calc(100vh - 220px - env(safe-area-inset-bottom))",
+              overflowY: "auto",
+              overflowX: "hidden",
+              WebkitOverflowScrolling: "touch",
+              overscrollBehavior: "contain",
               boxShadow: "3px 4px 0 " + palette.line,
             }}>
               {(() => {
@@ -12451,6 +12461,142 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           { label: "Jars made", value: jarsMadeInRange },
           { label: "In pantry", value: jarsInPantry },
           { label: "Sales revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" },
+        ],
+      };
+    }
+    // Helper for hobbies whose primary records live on the hobby object
+    // (not in data.entries) and have their own date field. Mirrors the
+    // canning/incubator filter pattern.
+    const inRange = (dateStr) => {
+      if (!dateStr) return filter === "all";
+      if (filter === "all") return true;
+      const d = new Date(dateStr + "T12:00");
+      if (filter === "today") return dateStr === todayStr;
+      if (filter === "week")  return d >= oneWeekAgo;
+      if (filter === "year")  return d >= oneYearAgo;
+      return true;
+    };
+    if (hobby.type === "dogs") {
+      const dogs = (hobby.animals || []).filter(a => !a.archived);
+      const lgds = dogs.filter(a => a.isLGD);
+      const litters = (hobby.litters || []).filter(l => inRange(l.whelpDate));
+      const pupsBorn = litters.reduce((s, l) => s + (Number(l.totalBorn) || (l.puppies?.length || 0)), 0);
+      const attacks = (hobby.attacks || []).filter(a => inRange(a.date));
+      const revenue = litters.reduce((s, l) =>
+        s + (l.puppies || []).reduce((ps, p) =>
+          ps + (p.status === "sold" && inRange(p.placeDate || l.whelpDate) ? (Number(p.placePrice) || 0) : 0), 0)
+      , 0);
+      const stats = [
+        { label: "Dogs", value: dogs.length },
+        { label: "Pups born", value: pupsBorn },
+      ];
+      if (lgds.length > 0) stats.push({ label: "Attacks deterred", value: attacks.length });
+      else stats.push({ label: "Litters", value: litters.length });
+      stats.push({ label: "Pup revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" });
+      return { emoji: "🐕", label: "Dogs", stats };
+    }
+    if (hobby.type === "cats") {
+      const cats = (hobby.animals || []).filter(a => !a.archived);
+      const barnCats = cats.filter(a => a.isBarnCat);
+      const litters = (hobby.litters || []).filter(l => inRange(l.birthDate));
+      const kittensBorn = litters.reduce((s, l) => s + (Number(l.totalBorn) || (l.kittens?.length || 0)), 0);
+      const attacks = (hobby.attacks || []).filter(a => inRange(a.date));
+      const predatorsKilled = attacks.reduce((s, a) => s + (Number(a.predatorsKilled) || 0), 0);
+      const revenue = litters.reduce((s, l) =>
+        s + (l.kittens || []).reduce((ps, p) =>
+          ps + (p.status === "sold" && inRange(p.placeDate || l.birthDate) ? (Number(p.placePrice) || 0) : 0), 0)
+      , 0);
+      const stats = [
+        { label: "Cats", value: cats.length },
+        { label: "Kittens born", value: kittensBorn },
+      ];
+      if (barnCats.length > 0) {
+        stats.push({ label: "Kills logged", value: attacks.length });
+        if (predatorsKilled > 0 && attacks.length !== predatorsKilled) {
+          // Multi-kill attacks: show total predators caught instead of revenue
+          stats.push({ label: "Pests caught", value: predatorsKilled });
+        } else {
+          stats.push({ label: "Kitten revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" });
+        }
+      } else {
+        stats.push({ label: "Litters", value: litters.length });
+        stats.push({ label: "Kitten revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" });
+      }
+      return { emoji: "🐈", label: "Cats", stats };
+    }
+    if (hobby.type === "maple_syrup") {
+      // entries are already filtered to the time window via filteredEntries
+      const sap = entries.filter(e => e.action === "sap_collected")
+        .reduce((s, e) => s + (Number(e.gallons) || 0), 0);
+      const syrup = entries.filter(e => e.action === "boil")
+        .reduce((s, e) => s + (Number(e.syrupGal) || 0), 0);
+      const tapEntries = entries.filter(e => e.action === "tap_set")
+        .reduce((s, e) => s + (Number(e.count) || 0), 0);
+      const cost = entries.filter(e => e.action === "supplies" || e.action === "infrastructure")
+        .reduce((s, e) => s + (Number(e.cost) || 0), 0);
+      // Seasons in range — use startDate as the season's date
+      const seasons = (hobby.seasons || []).filter(s => inRange(s.startDate));
+      // For "all-time" filter, surface peak taps from any season; otherwise
+      // sum tap_set entries in the window.
+      const peakTaps = (hobby.seasons || []).reduce((m, s) => Math.max(m, Number(s.totalTaps) || 0), 0);
+      const tapsValue = filter === "all" ? Math.max(peakTaps, tapEntries) : tapEntries;
+      return {
+        emoji: "🍁", label: "Maple Syrup",
+        stats: [
+          { label: "Sap collected", value: sap > 0 ? `${sap.toFixed(1)} gal` : "—" },
+          { label: "Syrup made", value: syrup > 0 ? `${syrup.toFixed(2)} gal` : "—" },
+          { label: filter === "all" ? "Most taps" : "Taps set", value: tapsValue || "—" },
+          { label: filter === "all" ? "Seasons" : "Cost", value: filter === "all" ? (hobby.seasons || []).length : (cost > 0 ? fmtMoney(cost) : "—") },
+        ],
+      };
+    }
+    if (hobby.type === "dehydrating") {
+      const batches = (hobby.batches || []).filter(b => !b.archived && inRange(b.date));
+      const totalOz = batches.reduce((s, b) => s + (Number(b.outputOz) || 0), 0);
+      const totalCost = batches.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+      const avgRun = batches.length > 0
+        ? batches.reduce((s, b) => s + (Number(b.dryerHours) || 0), 0) / batches.length
+        : 0;
+      return {
+        emoji: "🌬️", label: "Dehydrating",
+        stats: [
+          { label: "Batches", value: batches.length },
+          { label: "Total output", value: totalOz > 0 ? `${totalOz.toFixed(1)} oz` : "—" },
+          { label: "Avg run", value: avgRun > 0 ? `${avgRun.toFixed(1)} hr` : "—" },
+          { label: "Cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
+        ],
+      };
+    }
+    if (hobby.type === "freeze_drying") {
+      const batches = (hobby.batches || []).filter(b => !b.archived && inRange(b.date));
+      const totalOz = batches.reduce((s, b) => s + (Number(b.outputOz) || 0), 0);
+      const totalCost = batches.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+      const totalHours = batches.reduce((s, b) => s + (Number(b.runHours) || 0), 0);
+      return {
+        emoji: "❄️", label: "Freeze Drying",
+        stats: [
+          { label: "Batches", value: batches.length },
+          { label: "Total output", value: totalOz > 0 ? `${totalOz.toFixed(1)} oz` : "—" },
+          { label: "Run hours", value: totalHours > 0 ? totalHours.toFixed(1) : "—" },
+          { label: "Cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
+        ],
+      };
+    }
+    if (hobby.type === "fermentation") {
+      // Ferments use startDate; stages are dated individually so we count
+      // stages whose date falls in the window.
+      const ferments = (hobby.ferments || []).filter(f => inRange(f.startDate));
+      const active = ferments.filter(f => !f.archived);
+      const completed = ferments.filter(f => f.archived);
+      const allStages = (hobby.ferments || []).flatMap(f => f.stages || []);
+      const stagesInRange = allStages.filter(st => inRange(st.date));
+      return {
+        emoji: "🫧", label: "Fermentation",
+        stats: [
+          { label: filter === "all" ? "Active" : "Started", value: filter === "all" ? (hobby.ferments || []).filter(f => !f.archived).length : ferments.length },
+          { label: "Completed", value: completed.length },
+          { label: "Stage logs", value: stagesInRange.length },
+          { label: "Recipes", value: (hobby.recipes || []).length },
         ],
       };
     }
