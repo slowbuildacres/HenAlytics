@@ -272,8 +272,8 @@ function collectEvents({ animal, hobby, entries, sales, species }) {
     });
   }
 
-  if (species === "dog") {
-    // Dog breedings use damId/sireId
+  if (species === "dog" || species === "cat") {
+    // Dogs and cats use damId/sireId with optional sireExternal for unknown sires
     (hobby.breedings || []).filter(b => b.damId === animalId || b.sireId === animalId).forEach(b => {
       const role = b.damId === animalId ? "as dam" : "as sire";
       const otherId = b.damId === animalId ? b.sireId : b.damId;
