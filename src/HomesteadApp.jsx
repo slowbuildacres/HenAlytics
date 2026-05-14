@@ -1278,6 +1278,20 @@ const startCheckout = async (tier) => {
 
   if (useIap) {
     try {
+      // Require sign-in BEFORE kicking off the Apple purchase sheet. Apple
+      // doesn't care about our Supabase user — it cares about the Apple ID
+      // signed into the device — so without a sign-in check here, a user
+      // could complete a real purchase and have it credited to an anonymous
+      // RevenueCat ID with no Henalytics account behind it. The webhook
+      // handler logs that case ("anonymous purchase, awaiting user
+      // identification") and skips writing a supporters row, so the supporter
+      // wall never sees the purchase. Match the Stripe-branch guard below.
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) {
+        toast("Please sign in first so we can connect this contribution to your account.");
+        return;
+      }
+
       const productId = TIER_TO_IAP_PRODUCT[tier];
       if (!productId) {
         toast(`Unknown tier: ${tier}`, { kind: "error" });
