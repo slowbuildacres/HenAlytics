@@ -303,13 +303,25 @@ export async function hasActiveSubscription() {
 // Apple requires that users can manage their subscriptions from inside the app
 // OR from iOS Settings. We use Apple's deep link to the subscriptions screen
 // so users don't have to hunt through Settings.
+//
+// Note: we deep-link directly via itms-apps:// instead of using RC's
+// showManageSubscriptions API, because the latter is not implemented in
+// @revenuecat/purchases-capacitor v13.x on iOS (it throws "not implemented
+// on ios" at runtime). The itms-apps:// URL is what RC's docs say to use
+// as the fallback, and it opens the same App Store subscriptions screen.
 // ============================================================================
 export async function openManageSubscriptions() {
   if (!isNative()) return;
-  if (!_initialized || !_purchases) return;
   try {
-    await _purchases.showManageSubscriptions();
+    // Apple's documented deep link to the subscriptions management screen.
+    // Works on iOS 15+. Older iOS falls back to a regular App Store launch.
+    const url = "itms-apps://apps.apple.com/account/subscriptions";
+    // We use window.open with _system to hand off to the system browser/App
+    // Store, the same pattern HomesteadApp uses for openExternalUrl on native.
+    if (typeof window !== "undefined" && window.open) {
+      window.open(url, "_system");
+    }
   } catch (e) {
-    console.error("[iap] showManageSubscriptions failed:", e);
+    console.error("[iap] openManageSubscriptions failed:", e);
   }
 }
