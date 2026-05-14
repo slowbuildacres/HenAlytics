@@ -46,6 +46,8 @@ import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
 import DehydratingPage, { DehydratingAnalytics } from "./Dehydrating.jsx";
 import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
+import CatsPage, { CatsAnalytics } from "./Cats.jsx";
+import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -93,6 +95,8 @@ const defaultData = () => ({
     { id: "dehydrating", name: "Dehydrating 🌬️", type: "dehydrating", icon: "sprout", batches: [], hidden: true },
     { id: "fermentation", name: "Fermentation 🫧", type: "fermentation", icon: "sprout", ferments: [], recipes: [], hidden: true },
     { id: "dogs", name: "Dogs 🐕", type: "dogs", icon: "sprout", animals: [], breedings: [], litters: [], attacks: [], hidden: true },
+    { id: "cats", name: "Cats 🐈", type: "cats", icon: "sprout", animals: [], breedings: [], litters: [], attacks: [], hidden: true },
+    { id: "maple_syrup", name: "Maple Syrup 🍁", type: "maple_syrup", icon: "sprout", seasons: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -481,6 +485,42 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       }
     }
   });
+  // ---- Cats hobby ----
+  // Same data shape as dogs (animals/breedings/litters/attacks). Attacks
+  // record kills/pest-catches for barn cats.
+  const hasCats = data.hobbies.some(h => h.id === "cats");
+  if (!hasCats) {
+    data.hobbies.push({ id: "cats", name: "Cats 🐈", type: "cats", icon: "sprout", animals: [], breedings: [], litters: [], attacks: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "cats") {
+      if (!Array.isArray(h.animals)) h.animals = [];
+      if (!Array.isArray(h.breedings)) h.breedings = [];
+      if (!Array.isArray(h.litters)) h.litters = [];
+      if (!Array.isArray(h.attacks)) h.attacks = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "cats" || h.name === "Cats") {
+        h.name = "Cats 🐈";
+      }
+    }
+  });
+  // ---- Maple Syrup hobby ----
+  // Per-season aggregate model. Each season tracks total taps + start/end
+  // dates; entries (sap_collected, boil, supplies, infrastructure) attach
+  // to a seasonId.
+  const hasMapleSyrup = data.hobbies.some(h => h.id === "maple_syrup");
+  if (!hasMapleSyrup) {
+    data.hobbies.push({ id: "maple_syrup", name: "Maple Syrup 🍁", type: "maple_syrup", icon: "sprout", seasons: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "maple_syrup") {
+      if (!Array.isArray(h.seasons)) h.seasons = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "maple_syrup" || h.name === "Maple Syrup") {
+        h.name = "Maple Syrup 🍁";
+      }
+    }
+  });
   // ---- Sheep hobby ----
   const hasSheep = data.hobbies.some(h => h.id === "sheep");
   if (!hasSheep) {
@@ -588,7 +628,7 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   // but the migration still applies to any old entries on those hobbies
   // where the animal was somehow never archived. Defensive.
   if (!data.deathArchiveMigrationV1) {
-    const livestockTypes = new Set(["cows", "goats", "pigs", "sheep", "horses", "dogs"]);
+    const livestockTypes = new Set(["cows", "goats", "pigs", "sheep", "horses", "dogs", "cats"]);
     for (const h of data.hobbies || []) {
       if (!livestockTypes.has(h.type)) continue;
       if (!Array.isArray(h.animals)) continue;
@@ -921,9 +961,11 @@ const newId = () => {
 const APP_STORE_FUND_GOAL = 200;
 const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
-const CURRENT_VERSION = 36;
+const CURRENT_VERSION = 37;
 
 const WHATS_NEW = [
+  "🐈 New hobby: Cats — track cats like dogs, with vet/feed/weight logs, breeding records, litters with named kittens, and full pedigree. Plus a Barn cat toggle that unlocks pest-catch tracking: log every mouse, rat, vole, or other pest your working cat catches, by date and what they were protecting. Stats show kills per cat and pest type.",
+  "🍁 New hobby: Maple Syrup — track each sugaring season with total taps, sap collected, syrup yielded, and supplies/infrastructure costs. Includes the 40:1 industry rule of thumb so you can see your boil efficiency, plus year-over-year syrup yield charts when you've got multiple seasons logged.",
   "💕 Breeding for cows, goats, and sheep — log who bred with whom (or an external/unknown sire), method (Natural / AI / Embryo transfer / Other), and breed date. Expected calving / kidding / lambing date auto-fills based on species gestation (cows 283 days, goats 150, sheep 147) and gets added to your calendar. All editable in case your breed runs shorter or longer. Sheep breeding records also now show method in the history view.",
   "🐣 Chick sales fixed and editable — sales from the brooder now show up properly in the Sales tab with the right icon and details, and you can edit or delete them like any other sale. Edits sync back to the brooder so your remaining-chick count stays correct.",
   "🥚 Log eggs as \"Total\" across all flocks — multi-flock users can now pick \"Total — split evenly across all flocks\" when logging eggs collected. If the count doesn't divide evenly, the remainder spreads one egg at a time (e.g. 13 across 4 flocks → 4/3/3/3). Per-flock analytics still work because we create one entry per flock under the hood.",
@@ -1966,7 +2008,7 @@ export default function HomesteadApp() {
       setActiveHobby(newActive);
       // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
       // bounce to "home" so we don't stay on a page tied to the hidden hobby.
-      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning", "freeze_drying", "dehydrating", "fermentation", "dogs"];
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning", "freeze_drying", "dehydrating", "fermentation", "dogs", "cats", "maple_syrup"];
       if (hobbyPages.includes(page)) {
         const newHobbyType = (firstVisible || {}).type;
         if (hobbyPages.includes(newHobbyType)) {
@@ -2702,6 +2744,8 @@ export default function HomesteadApp() {
                         farmstand: "farmstand",
                         baking: "baking",
                         dogs: "dogs",
+                        cats: "cats",
+                        maple_syrup: "maple_syrup",
                       };
                       // Garden, egg_layers, meat_chickens all share the
                       // generic "home" page (which keys off activeHobby).
@@ -2814,6 +2858,16 @@ export default function HomesteadApp() {
             <DogsAnalytics hobby={data.hobbies.find(h=>h.id==="dogs")} />
           </AnalyticsShareWrapper>
         )}
+        {page === "analytics" && activeHobby === "cats" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cats")} entries={data.entries["cats"] || []} data={data}>
+            <CatsAnalytics hobby={data.hobbies.find(h=>h.id==="cats")} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby === "maple_syrup" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data}>
+            <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
+          </AnalyticsShareWrapper>
+        )}
         {page === "analytics" && activeHobby === "horses" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data}>
             <HorsesAnalytics hobby={data.hobbies.find(h=>h.id==="horses")} sales={data.sales || []} />
@@ -2837,7 +2891,7 @@ export default function HomesteadApp() {
         {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
           <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "dogs" && (
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
@@ -2888,6 +2942,12 @@ export default function HomesteadApp() {
         {page === "dogs" && (
           <DogsPage hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} />
         )}
+        {page === "cats" && (
+          <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "maple_syrup" && (
+          <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} />
+        )}
         {page === "horses" && (
           <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} />
         )}
@@ -2926,7 +2986,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "dogs"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "dogs") setPage("dogs"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "dogs" || page === "cats" || page === "maple_syrup"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "dogs") setPage("dogs"); else if (activeHobby === "cats") setPage("cats"); else if (activeHobby === "maple_syrup") setPage("maple_syrup"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
@@ -7577,7 +7637,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup" };
 
   // Category groups. Each group is a list of hobby types it contains.
   // Hobby types NOT in any group render flat at the top of the modal.
@@ -7619,6 +7679,8 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
     else if (h.type === "dehydrating") { setActiveHobby("dehydrating"); setPage("dehydrating"); }
     else if (h.type === "fermentation") { setActiveHobby("fermentation"); setPage("fermentation"); }
     else if (h.type === "dogs") { setActiveHobby("dogs"); setPage("dogs"); }
+    else if (h.type === "cats") { setActiveHobby("cats"); setPage("cats"); }
+    else if (h.type === "maple_syrup") { setActiveHobby("maple_syrup"); setPage("maple_syrup"); }
     else { setActiveHobby(h.id); setPage("home"); }
     onClose();
   };
@@ -10763,7 +10825,7 @@ function OnboardingWizard({ update, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false, freeze_drying: false, dehydrating: false, fermentation: false, dogs: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false, freeze_drying: false, dehydrating: false, fermentation: false, dogs: false, cats: false, maple_syrup: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -11115,6 +11177,22 @@ function OnboardingWizard({ update, onClose }) {
               icon="🐕"
               label="Dogs"
               sub="Breeding, litters, vet/meds, livestock guardian tracking"
+            />
+
+            <HobbyCheckbox
+              checked={hobbies.cats || false}
+              onToggle={() => setHobbies((h) => ({ ...h, cats: !h.cats }))}
+              icon="🐈"
+              label="Cats"
+              sub="Breeding, litters, vet/meds, barn-cat kill log"
+            />
+
+            <HobbyCheckbox
+              checked={hobbies.maple_syrup || false}
+              onToggle={() => setHobbies((h) => ({ ...h, maple_syrup: !h.maple_syrup }))}
+              icon="🍁"
+              label="Maple Syrup"
+              sub="Taps, sap, syrup yield, season-by-season"
             />
 
             <div style={{

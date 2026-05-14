@@ -73,6 +73,8 @@ const HOBBY_META = {
   sheep:         { label: "Sheep",         emoji: "🐑", color: palette.yolk },
   pig:           { label: "Pigs",          emoji: "🐷", color: palette.accent },
   dog:           { label: "Dogs",          emoji: "🐕", color: palette.feather },
+  cat:           { label: "Cats",          emoji: "🐈", color: palette.feather },
+  maple_syrup:   { label: "Maple Syrup",   emoji: "🍁", color: palette.honey },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 };
 
@@ -946,6 +948,13 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.qty} ${birdLabel}${sale.qty === 1 ? "" : "s"}${batchLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/chick`;
   } else if (sale.hobbyType === "garden") {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit || ""}`;
+  } else if (sale.hobbyType === "cat" || sale.hobbyType === "dog") {
+    // Cat/dog sales are usually a single animal or a kitten/puppy placement.
+    const species = sale.hobbyType === "cat" ? "Cat" : "Dog";
+    detail = `${sale.crop || species} · ${sale.saleType || "sold"}`;
+  } else if (sale.hobbyType === "maple_syrup") {
+    const unit = sale.unit || "pints";
+    detail = `${sale.qty || 0} ${unit} syrup${sale.pricePerUnit ? ` @ ${fmtMoney(sale.pricePerUnit)}/${unit.replace(/s$/, "")}` : ""}`;
   } else {
     detail = sale.otherItem || "";
   }
