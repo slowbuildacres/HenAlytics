@@ -14,6 +14,11 @@ import HomesteadApp from './HomesteadApp.jsx';
 // console with errors. Detect Capacitor and skip them entirely on native.
 const isNative = !!(window.Capacitor?.isNativePlatform?.());
 
+// Enable Apple IAP on native. Set false to revert to Stripe-only.
+if (isNative) {
+  window.__HENALYTICS_USE_IAP__ = true;
+}
+
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <HomesteadApp />

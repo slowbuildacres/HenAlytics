@@ -48,6 +48,10 @@ import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
 import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
+import {
+  initIap, identifyIapUser, purchaseProduct, restorePurchases,
+  hasActiveSubscription, openManageSubscriptions, TIER_TO_IAP_PRODUCT,
+} from "./IapManager.js";
 
 // ============ DESIGN TOKENS ============
 const palette = {
@@ -1263,6 +1267,49 @@ function ToastHost() {
 // price they actually get; client-side tier is just a route key.
 // ============================================================================
 const startCheckout = async (tier) => {
+  // ---- IAP branch (native iOS/Android) ----
+  // Apple's rules require IAP for digital goods sold to iOS users. Even though
+  // Stripe still works on web, on native we route through RevenueCat → Apple
+  // IAP. The web (Stripe) path is unchanged below this branch.
+  //
+  // The feature flag (window.__HENALYTICS_USE_IAP__) is set in main.jsx and
+  // only flips true on native. Web is unaffected.
+  const useIap = isNativeApp() && (typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true);
+
+  if (useIap) {
+    try {
+      const productId = TIER_TO_IAP_PRODUCT[tier];
+      if (!productId) {
+        toast(`Unknown tier: ${tier}`, { kind: "error" });
+        return;
+      }
+      // RC handles the Apple purchase sheet, receipt validation, and webhook
+      // delivery. The webhook (api/revenuecat-webhook) fires server-to-server
+      // and updates the supporters table BEFORE this function returns.
+      const result = await purchaseProduct(productId);
+      if (!result.success) {
+        if (!result.userCanceled) {
+          toast(result.error || "Purchase failed", { kind: "error" });
+        }
+        // User canceled — silently ignore, same as if they closed Stripe Checkout
+        return;
+      }
+      // Success — dispatch event for the supporterName prompt effect to pick up.
+      // We use a custom event instead of URL params (which IAP doesn't have).
+      if (typeof window !== "undefined") {
+        window.dispatchEvent(new CustomEvent("henalytics-iap-success", {
+          detail: { tier, productId },
+        }));
+      }
+      return;
+    } catch (e) {
+      console.error("startCheckout (IAP) error:", e);
+      toast("Couldn't complete purchase. Please try again.", { kind: "error" });
+      return;
+    }
+  }
+
+  // ---- Stripe branch (web, or native with IAP flag off) ----
   try {
     // Need the user's JWT to authenticate with our API.
     const { data: { session } } = await supabase.auth.getSession();
@@ -2167,6 +2214,33 @@ export default function HomesteadApp() {
     }, 2500);
   }, [user]);
 
+  // ---- IAP success listener (native iOS/Android) ----
+  //
+  // The IAP path doesn't have a ?supported=<tier> URL round-trip (Apple's
+  // purchase sheet is in-app), so after a successful IAP, `startCheckout`
+  // dispatches a `henalytics-iap-success` CustomEvent. We watch for it,
+  // wait a beat for the RevenueCat webhook to land (which writes the
+  // supporters row), then open the supporter-name prompt.
+  //
+  // We don't bother with URL cleanup here since IAP doesn't change the URL.
+  useEffect(() => {
+    if (!user) return;
+    const onIapSuccess = (e) => {
+      const tier = e?.detail?.tier;
+      if (!tier) return;
+      // Brief delay gives RevenueCat's webhook a chance to land. RC webhooks
+      // typically arrive within 1-2s of purchase confirmation; 2.5s matches
+      // our Stripe-path delay for consistency.
+      const marker = `henalytics-iap-handled-${tier}-${Date.now()}`;
+      try { sessionStorage.setItem(marker, "1"); } catch (_) {}
+      setTimeout(() => {
+        setModal({ type: "supporterName" });
+      }, 2500);
+    };
+    window.addEventListener("henalytics-iap-success", onIapSuccess);
+    return () => window.removeEventListener("henalytics-iap-success", onIapSuccess);
+  }, [user]);
+
   // Refs let us detect transitions like "user just signed in"
   const prevUserRef = useRef(null);
   const saveTimerRef = useRef(null);
@@ -2197,6 +2271,25 @@ export default function HomesteadApp() {
     });
     return () => listener.subscription.unsubscribe();
   }, []);
+
+  // ---- IAP init / identify hook ----
+  // No-op on web. On native, initializes RevenueCat and tells it which
+  // Supabase user owns this device. On sign-out (user → null) we also call
+  // identifyIapUser so RC logs out the current user. IapManager handles
+  // dedupe so this is safe to fire on every auth state change.
+  //
+  // This hook is harmless if IAP is disabled (the IapManager module no-ops
+  // when not on native, and the inner init only runs the actual SDK config
+  // when the IAP feature flag is off it still tracks user identity for
+  // when the flag eventually flips on).
+  useEffect(() => {
+    if (user?.id) {
+      initIap(user.id);
+      identifyIapUser(user.id);
+    } else {
+      initIap(null);
+    }
+  }, [user?.id]);
 
   // ---- Keep the setNewPassword modal sticky while recovery is pending ----
   // If anything else clears `modal` (an invite flow, a stray close), re-open it.
@@ -6810,11 +6903,71 @@ function SupportModal({ onClose }) {
           🌾 One-time $5 · Bag of feed
         </button>
 
-        <div style={{
-          marginTop: 12, textAlign: "center", fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
-        }}>
-          Secure checkout via Stripe — Apple Pay & Google Pay supported.
-        </div>
+        {/* ---- Platform-aware checkout footer ---- */}
+        {/* On IAP-enabled native, hide the "Stripe" line entirely — Apple
+            doesn't want competing payment systems mentioned in IAP-using apps. */}
+        {!(isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true) && (
+          <div style={{
+            marginTop: 12, textAlign: "center", fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+          }}>
+            Secure checkout via Stripe — Apple Pay & Google Pay supported.
+          </div>
+        )}
+
+        {/* ---- Native IAP only: Restore + Manage Subscription ---- */}
+        {/* Apple requires a visible "Restore Purchases" button. We also expose
+            "Manage Subscription" so users can cancel/change from inside the app. */}
+        {isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true && (
+          <div style={{
+            marginTop: 16,
+            display: "flex",
+            gap: 8,
+            justifyContent: "center",
+            flexWrap: "wrap",
+          }}>
+            <button
+              type="button"
+              onClick={async () => {
+                const r = await restorePurchases();
+                if (r.success) {
+                  toast("Purchases restored. If you had an active subscription, it should now be reflected.");
+                } else {
+                  toast(r.error || "Couldn't restore purchases.", { kind: "error" });
+                }
+              }}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: `1.5px solid ${palette.line}`,
+                background: "transparent",
+                color: palette.inkSoft,
+                fontFamily: FONT_BODY,
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Restore Purchases
+            </button>
+            <button
+              type="button"
+              onClick={() => openManageSubscriptions()}
+              style={{
+                padding: "8px 14px",
+                borderRadius: 8,
+                border: `1.5px solid ${palette.line}`,
+                background: "transparent",
+                color: palette.inkSoft,
+                fontFamily: FONT_BODY,
+                fontWeight: 600,
+                fontSize: 12,
+                cursor: "pointer",
+              }}
+            >
+              Manage Subscription
+            </button>
+          </div>
+        )}
 
         <div style={{
           marginTop: 20, textAlign: "center", fontSize: 13, color: palette.inkSoft, fontStyle: "italic",
@@ -12885,7 +13038,11 @@ function AppStoreFundModal({ onClose, onLeaveTip }) {
             lineHeight: 1.55,
           }}>
             <div style={{ marginBottom: 4 }}>
-              🔒 <strong>Secure checkout via Stripe.</strong> Apple Pay & Google Pay supported. Stripe sends a receipt to your email.
+              {(isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true) ? (
+                <>🔒 <strong>Secure checkout via Apple.</strong> Manage or cancel anytime from iOS Settings → Subscriptions.</>
+              ) : (
+                <>🔒 <strong>Secure checkout via Stripe.</strong> Apple Pay & Google Pay supported. Stripe sends a receipt to your email.</>
+              )}
             </div>
             <div>
               💌 Changed your mind? Email <strong>slowbuildacres@gmail.com</strong> for a full refund — no questions asked.
@@ -13082,7 +13239,9 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
           <div style={{
             marginTop: 10, textAlign: "center", fontSize: 11, color: palette.inkSoft, lineHeight: 1.5,
           }}>
-            Secure checkout via Stripe — Apple Pay & Google Pay supported.
+            {(isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true)
+              ? "Secure checkout via Apple."
+              : "Secure checkout via Stripe — Apple Pay & Google Pay supported."}
           </div>
 
           <button
