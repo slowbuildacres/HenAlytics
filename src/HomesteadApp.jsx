@@ -1127,15 +1127,35 @@ const openExternalUrl = async (url) => {
   }
 };
 
-// Soft keyboard listener for native iOS/Android. When the keyboard appears,
-// sets a CSS variable --keyboard-height with the keyboard's pixel height and
-// adds a `keyboard-open` class to the body. This lets CSS shift fixed-position
-// modals up so the focused input stays visible above the keyboard. On web
-// this is a no-op (the browser handles keyboard reflow itself).
+// Soft keyboard listener for native iOS/Android.
+//
+// Behavior split by platform:
+//   - Android: when the keyboard appears, sets --keyboard-height and adds
+//     `keyboard-open` to <body>. CSS uses these to shift fixed-position
+//     modal overlays up so the focused input stays visible.
+//   - iOS: only fires the scrollIntoView fallback. We DO NOT add the
+//     `keyboard-open` class, because iOS WKWebView already handles keyboard
+//     avoidance natively — adding our CSS shift on top double-compensates
+//     and pushes modal content far above the keyboard with a big gap. The
+//     ensureFocusedVisible() scroll is a safety net for any input that
+//     WKWebView misses (rare).
+//   - Web: no-op, browsers handle their own reflow.
 const useNativeKeyboardInset = () => {
   React.useEffect(() => {
     if (!isNativeApp()) return;
     let currentHeight = 0;
+
+    // iOS detection. Capacitor exposes the platform via getPlatform(); we use
+    // the same window.Capacitor shape that isNativeApp() depends on so we
+    // don't take a new dep. Falls back to userAgent sniffing if the API isn't
+    // available for some reason (defensive — should never hit).
+    const platform = (() => {
+      try {
+        if (window.Capacitor?.getPlatform) return window.Capacitor.getPlatform();
+      } catch (_) {}
+      return /iphone|ipad|ipod/i.test(navigator.userAgent || "") ? "ios" : "android";
+    })();
+    const isIOS = platform === "ios";
 
     // Scroll the focused input/textarea into view above the keyboard. Uses
     // requestAnimationFrame so layout has settled after the keyboard appears.
@@ -1157,7 +1177,9 @@ const useNativeKeyboardInset = () => {
     const onShow = (e) => {
       currentHeight = (e && e.keyboardHeight) || 0;
       document.documentElement.style.setProperty("--keyboard-height", currentHeight + "px");
-      document.body.classList.add("keyboard-open");
+      // Android-only: enable CSS modal shift. iOS WKWebView handles its own
+      // input scroll already; adding our class causes the double-shift bug.
+      if (!isIOS) document.body.classList.add("keyboard-open");
       ensureFocusedVisible();
     };
     const onHide = () => {

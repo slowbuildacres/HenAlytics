@@ -22,7 +22,7 @@ const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
 
-const COW_BREEDS=["Angus","Hereford","Holstein","Jersey","Simmental","Charolais","Longhorn","Dexter","Highland","Brown Swiss","Guernsey","Limousin","Red Angus","Shorthorn","Mixed","Other"];
+const COW_BREEDS=["Angus","Hereford","Holstein","Jersey","Ayrshire","Simmental","Charolais","Longhorn","Dexter","Highland","Brown Swiss","Guernsey","Limousin","Red Angus","Shorthorn","Mixed","Other"];
 const COW_PURPOSES=["Dairy","Beef","Both"];
 const COW_SEXES=["Cow","Bull","Steer","Heifer","Calf"];
 
