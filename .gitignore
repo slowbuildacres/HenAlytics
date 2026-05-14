@@ -7,3 +7,7 @@ dist/
 .vercel
 *.save
 *.pre-iap-backup
+
+# Android signing keystore (never commit)
+*.keystore
+android/keystore.properties
