@@ -127,7 +127,11 @@ function computeRevenue(sale) {
 // HomesteadApp.jsx so the migration and read-time paths agree.
 // ============================================================================
 function deriveSoldEggsRevenue(e) {
-  const qty = Number(e.count) || 0;
+  // qty starts from canonical e.count; if that's missing we'll derive from
+  // unitQty × eggsPerUnit below. Returning the derived qty lets the sales
+  // log display "12 eggs" instead of "0 eggs" for entries where the save-
+  // time derivation never ran.
+  let qty = Number(e.count) || 0;
   let pricePerDozen = Number(e.pricePerDozen) || 0;
   let revenue = 0;
   if (pricePerDozen > 0 && qty > 0) {
@@ -142,7 +146,10 @@ function deriveSoldEggsRevenue(e) {
     const eggsPerUnit = unitToCount[e.unit] || 12;
     const totalEggs = Number(e.unitQty) * eggsPerUnit;
     revenue = Number(e.unitQty) * Number(e.pricePerUnit);
-    if (totalEggs > 0) pricePerDozen = revenue / (totalEggs / 12);
+    if (totalEggs > 0) {
+      pricePerDozen = revenue / (totalEggs / 12);
+      if (qty === 0) qty = totalEggs;
+    }
   } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
     // Old-old shape — pricePerUnit was stored as $/dozen with total eggs in count.
     pricePerDozen = Number(e.pricePerUnit);
@@ -152,7 +159,7 @@ function deriveSoldEggsRevenue(e) {
     revenue = Number(e.totalRevenue);
     if (qty > 0) pricePerDozen = revenue / (qty / 12);
   }
-  return { revenue, pricePerDozen };
+  return { revenue, pricePerDozen, qty };
 }
 
 // ============================================================================
@@ -1040,14 +1047,14 @@ export default function SalesPage({ data, update }) {
   const legacyEggSales = useMemo(() => {
     const eggEntries = (data.entries?.["egg_layers"] || []).filter(e => e.action === "sold_eggs");
     return eggEntries.map(e => {
-      const { revenue, pricePerDozen } = deriveSoldEggsRevenue(e);
+      const { revenue, pricePerDozen, qty } = deriveSoldEggsRevenue(e);
       return {
         id: e.id,
         date: e.date,
         hobbyType: "eggs",
         eggType: "Chicken",
         eggPurpose: "Eating",
-        qty: Number(e.count) || 0,
+        qty,
         unit: "eggs",
         pricePerUnit: pricePerDozen,
         totalRevenue: revenue,
@@ -1536,11 +1543,11 @@ export function getSalesForHobby(data, hobbyType) {
     const legacy = (data.entries?.["egg_layers"] || [])
       .filter(e => e.action === "sold_eggs")
       .map(e => {
-        const { revenue, pricePerDozen } = deriveSoldEggsRevenue(e);
+        const { revenue, pricePerDozen, qty } = deriveSoldEggsRevenue(e);
         return {
           id: e.id, date: e.date, hobbyType: "eggs",
           eggType: "Chicken", eggPurpose: "Eating",
-          qty: Number(e.count)||0, unit: "eggs",
+          qty, unit: "eggs",
           pricePerUnit: pricePerDozen,
           totalRevenue: revenue,
           note: e.note||"", isLegacy: true,
