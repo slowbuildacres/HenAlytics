@@ -506,20 +506,34 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
       // Sales integration: push to data.sales so the chick income shows up
       // in the unified sales ledger. We tag with hobbyType="incubator" so
       // the Sales page can filter / attribute it correctly.
+      //
+      // Field names (qty, pricePerUnit, note) match Sales.jsx conventions so
+      // the row renders correctly AND can be edited from the Sales tab.
+      // brooderBatchId + dispositionId give us a backlink so edits made in
+      // the Sales tab can sync the disposition record.
       if (type === "sold" && disposition.pricePerBird > 0) {
         if (!Array.isArray(d.sales)) d.sales = [];
+        const saleId = newId();
+        disposition.saleId = saleId;
         d.sales.push({
-          id: newId(),
+          id: saleId,
           date,
           hobbyId: h.id,
           hobbyType: "incubator",
-          item: `${b.birdType || "Bird"} chicks (${b.name || "brooder"})`,
-          quantity: n,
-          unit: "chicks",
+          // Sales.jsx schema:
+          qty: n,
           pricePerUnit: disposition.pricePerBird,
           totalRevenue: disposition.pricePerBird * n,
-          customer: disposition.soldTo,
-          notes: disposition.notes,
+          note: disposition.notes,
+          buyerId: null,
+          // Chick-specific fields, used by the chicks render branch in Sales.jsx:
+          birdType: b.birdType || "Bird",
+          brooderBatchName: b.name || "",
+          // Backlink so Sales-tab edits can update the disposition record:
+          brooderBatchId: b.id,
+          dispositionId: disposition.id,
+          // Customer name as plain text (no buyer directory entry created):
+          customerName: disposition.soldTo,
           created: Date.now(),
         });
       }

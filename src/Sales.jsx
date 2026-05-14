@@ -66,6 +66,7 @@ const HOBBY_META = {
   sourdough:     { label: "Sourdough",     emoji: "🍞", color: palette.yolk },
   baking:        { label: "Baking",        emoji: "🥧", color: palette.yolk },
   canning:       { label: "Canning",       emoji: "🫙", color: palette.leafSoft },
+  incubator:     { label: "Chicks",         emoji: "🐣", color: palette.yolkSoft },
   horse:         { label: "Horses",        emoji: "🐴", color: palette.feather },
   cow:           { label: "Cattle",        emoji: "🐄", color: palette.feather },
   goat:          { label: "Goats",         emoji: "🐐", color: palette.leaf },
@@ -184,6 +185,13 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
   const [otherItem, setOtherItem] = useState(existingSale?.otherItem || "");
   const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : "");
 
+  // Incubator / chicks (brooder sales). birdType + brooderBatchName are
+  // free-text so the user can edit if needed; the underlying brooder batch
+  // is the source of truth for "remaining chicks", but the sale is editable
+  // on its own.
+  const [chickBirdType, setChickBirdType] = useState(existingSale?.birdType || "Chicken");
+  const [chickBrooderName, setChickBrooderName] = useState(existingSale?.brooderBatchName || "");
+
   // Horse-sale: if user picks an existing horse from the dropdown, this
   // holds its id. On save, the matching horse is archived in the Horses
   // hobby so the user doesn't have to do that step manually.
@@ -208,6 +216,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
     if (hobbyType === "canning") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "horse") return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
+    if (hobbyType === "incubator") return q * (Number(pricePerUnit) || 0);
     return Number(flatPrice) || 0;
   }, [hobbyType, qty, unit, pricePerUnit, pricingMethod, avgWeightLbs, pricePerLb, flatPrice]);
 
@@ -223,6 +232,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       else if (h.type === "baking") types.add("baking");
       else if (h.type === "canning") types.add("canning");
       else if (h.type === "horses") types.add("horse");
+      else if (h.type === "incubator") types.add("incubator");
     });
     // Always include eggs and farmstand
     types.add("eggs");
@@ -293,6 +303,20 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       if (selectedAnimalId) sale.animalId = selectedAnimalId;
     } else if (hobbyType === "garden") {
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit) || 0 };
+    } else if (hobbyType === "incubator") {
+      // Chick sales (typically created automatically by the brooder
+      // disposition flow, but also editable from here).
+      // Preserve brooder backlink fields if present on the existing sale so
+      // edits stay linked to the source disposition.
+      sale = {
+        ...sale,
+        birdType: chickBirdType,
+        brooderBatchName: chickBrooderName,
+        pricePerUnit: Number(pricePerUnit) || 0,
+      };
+      if (existingSale?.brooderBatchId) sale.brooderBatchId = existingSale.brooderBatchId;
+      if (existingSale?.dispositionId) sale.dispositionId = existingSale.dispositionId;
+      if (existingSale?.hobbyId) sale.hobbyId = existingSale.hobbyId;
     } else {
       sale = { ...sale, otherItem, flatPrice: Number(flatPrice) || 0 };
     }
@@ -345,6 +369,23 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
             a.archivedDate = date;
             a.saleId = sale.id;
           }
+        }
+      }
+      // If editing a brooder-linked chick sale, sync the matching brooder
+      // disposition so price/count/date/notes stay consistent between the
+      // Sales tab and the Incubator page. The brooder's remaining-chick
+      // count is derived from disposition counts, so changing qty here must
+      // update the disposition or the brooder will look wrong.
+      if (isEdit && hobbyType === "incubator" && sale.brooderBatchId && sale.dispositionId) {
+        const incHobby = (d.hobbies || []).find(h => h.id === sale.hobbyId);
+        const batch = incHobby?.brooderBatches?.find(b => b.id === sale.brooderBatchId);
+        const disp = batch?.dispositions?.find(x => x.id === sale.dispositionId);
+        if (disp) {
+          disp.count = Number(sale.qty) || disp.count;
+          disp.pricePerBird = Number(sale.pricePerUnit) || disp.pricePerBird;
+          disp.date = sale.date;
+          disp.notes = sale.note || "";
+          if (sale.customerName != null) disp.soldTo = sale.customerName;
         }
       }
       return d;
@@ -749,6 +790,33 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 )}
               </>}
 
+              {/* Incubator / chicks */}
+              {hobbyType === "incubator" && <>
+                <Field label="Bird type">
+                  <input style={inputStyle} value={chickBirdType} onChange={e=>setChickBirdType(e.target.value)} placeholder="e.g. Chicken, Duck, Quail" />
+                </Field>
+                <Field label="Brooder batch (optional)">
+                  <input style={inputStyle} value={chickBrooderName} onChange={e=>setChickBrooderName(e.target.value)} placeholder="e.g. Spring batch #1" />
+                </Field>
+                <div style={{ display:"flex",gap:12 }}>
+                  <div style={{ flex:1 }}>
+                    <Field label="Chicks sold">
+                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Price per chick">
+                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    </Field>
+                  </div>
+                </div>
+                {existingSale?.brooderBatchId && (
+                  <div style={{ fontSize:12, color:palette.inkSoft, marginBottom:10, padding:"8px 10px", background:palette.bgAlt, borderRadius:6, lineHeight:1.5 }}>
+                    Linked to a brooder batch — edits sync to the Incubator page.
+                  </div>
+                )}
+              </>}
+
               {/* Other */}
               {hobbyType === "other" && <>
                 <Field label="What was sold?">
@@ -872,6 +940,10 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.crop || "Canning"} · ${sale.qty} ${unitLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/jar`;
   } else if (sale.hobbyType === "horse") {
     detail = `${sale.crop || "Horse"} · ${sale.saleType || "sold"}`;
+  } else if (sale.hobbyType === "incubator") {
+    const birdLabel = sale.birdType ? sale.birdType.toLowerCase() : "chick";
+    const batchLabel = sale.brooderBatchName ? ` (${sale.brooderBatchName})` : "";
+    detail = `${sale.qty} ${birdLabel}${sale.qty === 1 ? "" : "s"}${batchLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/chick`;
   } else if (sale.hobbyType === "garden") {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit || ""}`;
   } else {
@@ -938,7 +1010,27 @@ export default function SalesPage({ data, update }) {
     // of editing/deleting sales that had already been migrated.
     const saleIds = new Set(sales.map(s => s.id));
     const legacyOnly = legacyEggSales.filter(s => !saleIds.has(s.id));
-    return [...sales, ...legacyOnly].sort((a,b) => (b.date||"").localeCompare(a.date||""));
+    // Read-time migration for OLD brooder-disposition sales that were written
+    // with the wrong field names (quantity/item/customer/notes instead of
+    // qty/pricePerUnit/customerName/note). Maps them to the modern shape so
+    // they render correctly in the list AND can be edited from the modal.
+    // The actual fix at write-time is in Incubator.jsx — this just keeps
+    // pre-fix data from looking broken to existing users.
+    const normalized = [...sales, ...legacyOnly].map(s => {
+      if (s.hobbyType !== "incubator") return s;
+      const out = { ...s };
+      if (out.qty == null && out.quantity != null) out.qty = out.quantity;
+      if (out.note == null && out.notes != null) out.note = out.notes;
+      if (out.customerName == null && out.customer != null) out.customerName = out.customer;
+      // Old saves stuffed "Chicken chicks (Spring batch)" into `item`. Pull
+      // bird type out of that string if we don't already have it.
+      if (!out.birdType && typeof out.item === "string") {
+        const m = out.item.match(/^(\S+)\s+chicks/i);
+        if (m) out.birdType = m[1];
+      }
+      return out;
+    });
+    return normalized.sort((a,b) => (b.date||"").localeCompare(a.date||""));
   }, [sales, legacyEggSales]);
 
   const filtered = filterType === "all" ? allSales : allSales.filter(s => s.hobbyType === filterType);
@@ -1001,6 +1093,9 @@ export default function SalesPage({ data, update }) {
 
   const deleteSale = (id) => {
     update(d => {
+      // Snapshot the sale before deletion so we can unwind the brooder
+      // disposition (if this was a brooder-linked chick sale).
+      const target = (d.sales || []).find(s => s.id === id);
       d.sales = (d.sales||[]).filter(s => s.id !== id);
       // Also remove any legacy `sold_eggs` entry with the same id. Otherwise
       // a sale that was migrated from the old per-flock egg-sale logger would
@@ -1010,6 +1105,17 @@ export default function SalesPage({ data, update }) {
         d.entries["egg_layers"] = d.entries["egg_layers"].filter(
           e => !(e.action === "sold_eggs" && e.id === id)
         );
+      }
+      // Brooder-linked: remove the matching disposition so the brooder's
+      // remaining count comes back. If the batch was auto-archived (count
+      // hit 0), un-archive it since we just freed up chicks.
+      if (target?.brooderBatchId && target?.dispositionId) {
+        const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
+        const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);
+        if (batch && Array.isArray(batch.dispositions)) {
+          batch.dispositions = batch.dispositions.filter(x => x.id !== target.dispositionId);
+          if (batch.archived) batch.archived = false;
+        }
       }
       return d;
     });
