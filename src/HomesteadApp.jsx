@@ -1878,6 +1878,49 @@ function NavTab({ active, onClick, icon: Icon, label }) {
   );
 }
 
+// NavTipButton — distinguished "action" button inside the bottom nav.
+// Same height as the surrounding NavTabs but visually distinct so it pops.
+// Two visual states:
+//   - outlined heart (default): user hasn't tipped this month
+//   - filled red heart: user has at least one supporter row this calendar
+//     month (one-time tip OR subscription payment)
+// Replaces the heart icon that used to live in the top-right header —
+// multiple users reported missing the support entry point up there.
+function NavTipButton({ onClick, filled }) {
+  return (
+    <button
+      onClick={onClick}
+      aria-label={filled ? "Thank you for tipping" : "Tip Henalytics"}
+      title={filled ? "Thanks for supporting Henalytics this month!" : "Tip Henalytics"}
+      style={{
+        flex: 1, maxWidth: 120, padding: "6px 4px",
+        background: "transparent",
+        border: "none", cursor: "pointer",
+        display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
+        fontWeight: 700, fontSize: 11,
+        color: palette.bg,
+      }}
+    >
+      <span style={{
+        background: filled ? palette.accent : "transparent",
+        color: filled ? "#FFFFFF" : palette.bg,
+        width: 36, height: 36, borderRadius: 18,
+        border: filled ? "none" : `2px solid ${palette.bg}`,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        boxShadow: filled ? "0 2px 6px rgba(200,75,49,0.4)" : "none",
+        transition: "background 200ms ease, border 200ms ease",
+      }}>
+        <Heart
+          size={18}
+          strokeWidth={filled ? 2.5 : 2}
+          fill={filled ? "#FFFFFF" : "none"}
+        />
+      </span>
+      Tip
+    </button>
+  );
+}
+
 // ============ ERROR BOUNDARY ============
 // Catches render errors in child components and shows a friendly fallback
 // instead of a white screen. Resets when the `resetKey` prop changes
@@ -2005,6 +2048,10 @@ export default function HomesteadApp() {
   const [userCount, setUserCount] = useState(null);
   const [showMilestone, setShowMilestone] = useState(false);
   const lastEntryCountRef = React.useRef(0);
+  // Whether the current user has any supporter row created in the current
+  // calendar month. Drives the Tip button visual: outlined heart by default,
+  // filled red heart when this is true. Refreshed when the user changes.
+  const [tippedThisMonth, setTippedThisMonth] = useState(false);
   const [seasonFilter, setSeasonFilter] = useState("all"); // garden-only: season ID
   // Date-range filter for non-garden analytics. dateFilter is one of:
   // "all" | "7d" | "30d" | "60d" | "90d" | "custom". customStart/customEnd
@@ -2163,6 +2210,45 @@ export default function HomesteadApp() {
     fetchAll();
     return () => { cancelled = true; };
   }, []);
+  // ---- Tipped this month ----
+  // Drives the Tip button visual. Queries supporters table for any record
+  // this user has created in the current calendar month. Re-runs when user
+  // changes. Falls back to data.userHasTipped if DB query fails so degraded
+  // conditions don't lose the supporter feedback.
+  useEffect(() => {
+    let cancelled = false;
+    const checkTipped = async () => {
+      if (!user || !isSupabaseConfigured) {
+        if (!cancelled) setTippedThisMonth(!!data?.userHasTipped);
+        return;
+      }
+      try {
+        const now = new Date();
+        const monthStartISO = new Date(now.getFullYear(), now.getMonth(), 1).toISOString();
+        const { data: rows, error } = await supabase
+          .from("supporters")
+          .select("id, created_at")
+          .eq("user_id", user.id)
+          .gte("created_at", monthStartISO)
+          .limit(1);
+        if (cancelled) return;
+        if (error) {
+          console.warn("[tip-status] supporters query failed:", error.message);
+          setTippedThisMonth(!!data?.userHasTipped);
+          return;
+        }
+        setTippedThisMonth(Array.isArray(rows) && rows.length > 0);
+      } catch (e) {
+        if (!cancelled) {
+          console.warn("[tip-status] query threw:", e);
+          setTippedThisMonth(!!data?.userHasTipped);
+        }
+      }
+    };
+    checkTipped();
+    return () => { cancelled = true; };
+  }, [user, data?.userHasTipped]);
+
 
   // Compute the current milestone — the highest threshold in the config
   // that's ≤ the live user count. Memoized so the trigger effect below
@@ -2975,14 +3061,9 @@ export default function HomesteadApp() {
           </button>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <SyncIndicator status={syncStatus} signedIn={!!user} />
-            <button
-              onClick={() => setModal({ type: "support" })}
-              style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.accent }}
-              title="Support Henalytics"
-              aria-label="Support Henalytics"
-            >
-              <Heart size={20} fill="currentColor" />
-            </button>
+            {/* Top-right Heart was here — moved to the bottom nav as a
+                prominent "Tip" action button since multiple users reported
+                missing the support entry point up here. */}
             <button
               onClick={() => setModal({ type: "barn" })}
               style={{ background: "none", border: "none", cursor: "pointer", padding: 6, color: palette.ink }}
@@ -3320,6 +3401,7 @@ export default function HomesteadApp() {
         <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "dogs" || page === "cats" || page === "maple_syrup"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "dogs") setPage("dogs"); else if (activeHobby === "cats") setPage("cats"); else if (activeHobby === "maple_syrup") setPage("maple_syrup"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
+        <NavTipButton filled={tippedThisMonth} onClick={() => setModal({ type: "support" })} />
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
       </nav>

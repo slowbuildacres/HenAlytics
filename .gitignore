@@ -11,3 +11,7 @@ dist/
 # Android signing keystore (never commit)
 *.keystore
 android/keystore.properties
+
+# Local patch scripts and backups (not for git)
+apply_*.py
+*.backup_*
