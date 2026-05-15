@@ -639,13 +639,31 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   // all to the first flock for that hobby so per-flock analytics work cleanly.
   // This is a one-time backfill — once entries have flockId, this runs without
   // effect. Only touches entries with actions that are flock-scoped.
-  const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue"];
+  const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue","broody"];
   if (eggLayersHobby && Array.isArray(eggLayersHobby.flocks) && eggLayersHobby.flocks.length > 0) {
     const defaultFlockId = eggLayersHobby.flocks[0].id;
     const eggLayerEntries = data.entries[eggLayersHobby.id] || [];
     eggLayerEntries.forEach(e => {
       if (!e.flockId && flockScopedActions.includes(e.action)) {
         e.flockId = defaultFlockId;
+      }
+    });
+  }
+
+  // Sex split + broody backfill — each flock gets `females` and `males` ints
+  // (default everyone to female, since most laying flocks are all hens) and
+  // `broodyCount` (default 0). namedBirds gain a `broody` boolean too.
+  // Done unconditionally so existing flocks pick up the new fields cleanly.
+  if (eggLayersHobby && Array.isArray(eggLayersHobby.flocks)) {
+    eggLayersHobby.flocks.forEach(fl => {
+      const total = Number(fl.birdCount) || 0;
+      if (typeof fl.females !== "number") fl.females = total;
+      if (typeof fl.males !== "number") fl.males = 0;
+      if (typeof fl.broodyCount !== "number") fl.broodyCount = 0;
+      if (Array.isArray(fl.namedBirds)) {
+        fl.namedBirds.forEach(b => {
+          if (typeof b.broody !== "boolean") b.broody = false;
+        });
       }
     });
   }
@@ -731,10 +749,22 @@ function getEntryPrimaryPhoto(entry) {
 // Since real CSV multi-sheet would need a library, we instead make ONE wide CSV
 // with a "Hobby" column, plus separate downloads for cleaner per-hobby files.
 // We'll trigger one combined CSV download — the simplest, most useful default.
+//
+// Sources of rows in the export:
+//   1. data.entries[hobbyId]              — log entries per hobby (feed, eggs,
+//                                            harvests, butcher events, etc.)
+//   2. h.archivedSeasons[].finalEntries   — snapshotted entries for finished
+//                                            garden seasons
+//   3. h.archivedBatches[].finalEntries   — snapshotted entries for finalized
+//                                            meat-bird batches
+//   4. data.sales[]                       — top-level sale records (Sales tab)
+//                                            with full price/buyer/totals
 function exportAllAsCsv(data) {
   // Collect all entries into one flat array, with hobby info attached.
   const rows = [];
   const hobbies = data.hobbies || [];
+  const hobbiesByType = new Map(hobbies.map(h => [h.type, h]));
+  const customersById = new Map((data.customers || []).map(c => [c.id, c.name]));
 
   hobbies.forEach((h) => {
     const liveEntries = (data.entries[h.id] || []).map((e) => ({ ...e, hobbyName: h.name, hobbyType: h.type, archived: false }));
@@ -753,14 +783,51 @@ function exportAllAsCsv(data) {
     });
   });
 
+  // ALSO walk data.sales[] — these are top-level sale records logged via
+  // the Sales tab. They never live under data.entries, which is why an
+  // earlier version of this export silently dropped them.
+  (data.sales || []).forEach((s) => {
+    if (!s) return;
+    const sourceHobby = s.hobbyId ? hobbies.find(h => h.id === s.hobbyId) : hobbiesByType.get(s.hobbyType);
+    const hobbyName = sourceHobby ? sourceHobby.name : (s.hobbyType || "Sale");
+    rows.push({
+      ...s,
+      action: "sale",
+      hobbyName,
+      // Salvage qty into the canonical CSV columns. Sales store qty on
+      // `qty`; entries store qty on `count` or `quantity` depending on
+      // the action. The columns below check all three.
+      hobbyType: s.hobbyType || "",
+      buyer: customersById.get(s.buyerId) || s.buyerName || "",
+      // Keep the original for traceability in case a power-user reconciles
+      archived: false,
+    });
+  });
+
   // Sort newest first
   rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
-  // Define columns. Order matters — most useful first.
+  // Define columns. Order matters — most useful first. Sales-relevant columns
+  // (revenue/price/buyer/totals) sit near the start so they're visible
+  // without horizontal scrolling in spreadsheet apps.
   const columns = [
-    "date", "hobbyName", "action", "count", "quantity", "unit", "plant",
-    "lbs", "gallons", "cost", "pricePerDozen", "avgWeight", "cuft",
-    "item", "cause", "issueType", "detail", "note",
+    "date", "hobbyName", "hobbyType", "action",
+    // quantities — sales use `qty`, log entries use `count` or `quantity`
+    "qty", "count", "quantity", "unit",
+    // money — covers every sale shape (per-unit, per-lb, per-dozen, flat)
+    // plus expense entries (cost). totalRevenue and totalCost get filled in
+    // for farmstand/sourdough/baking/canning sale rows.
+    "pricePerUnit", "pricePerLb", "pricePerDozen", "flatPrice",
+    "costPerUnit", "cost", "totalRevenue", "totalCost",
+    // entity / who bought / what was sold
+    "buyer", "crop", "plant", "item", "saleForm", "saleType",
+    "eggType", "eggPurpose", "eggTypeCustom",
+    "honeyForm", "honeyContainer", "gardenUnit", "birdType",
+    // measurements
+    "lbs", "gallons", "avgWeight", "avgWeightLbs", "cuft",
+    // events / context
+    "cause", "issueType", "detail", "note",
+    // weather (live entries only — sales don't have it)
     "weather_highF", "weather_lowF", "weather_precipIn", "weather_summary",
     "contextName", "archived",
   ];
@@ -4046,6 +4113,7 @@ function QuickLogTiles({ hobby, setModal }) {
         <Tile icon={Egg} label="Eggs Laid" color={palette.yolk} onClick={() => setModal({ type: "log", action: "eggs" })} />
         <Tile icon={DollarSign} label="Sold Eggs" color={palette.accent} onClick={() => setModal({ type: "log", action: "sold_eggs" })} />
         <Tile icon={Archive} label="Bedding" color={palette.featherSoft} onClick={() => setModal({ type: "log", action: "bedding" })} />
+        <Tile icon={NotebookPen} label="Broody" color={palette.maple || palette.yolkSoft} onClick={() => setModal({ type: "log", action: "broody" })} />
         <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
         <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
@@ -4592,7 +4660,28 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
             <span style={{ fontSize: 18 }}>{emoji}</span>
             <span style={{ fontWeight: 600, fontSize: 15, color: palette.ink }}>{flock.name}</span>
-            <span style={{ fontSize: 11, color: palette.inkSoft, background: palette.card, padding: "2px 8px", borderRadius: 4 }}>{flock.birdType} · {flock.birdCount} birds</span>
+            {(() => {
+              // Detailed badge — shows total + sex split + active broody count.
+              // Falls back to legacy "N birds" if the flock hasn't been migrated.
+              const sn = sexNames(flock.birdType);
+              const f = typeof flock.females === "number" ? flock.females : null;
+              const m = typeof flock.males === "number" ? flock.males : null;
+              // Active broody count: prefer named-bird flags if present (more
+              // accurate), otherwise fall back to the flock-level counter.
+              const broodyNamed = (flock.namedBirds || []).filter(b => b.broody && !b.archived).length;
+              const broody = broodyNamed > 0 ? broodyNamed : (Number(flock.broodyCount) || 0);
+              const parts = [flock.birdType, `${flock.birdCount} bird${flock.birdCount === 1 ? "" : "s"}`];
+              if (f !== null && m !== null && (f + m === flock.birdCount) && (f > 0 || m > 0)) {
+                // Replace the generic "N birds" with the sex split for clarity
+                parts.splice(1, 1, `${f} ${f === 1 ? sn.female : sn.femalePl} · ${m} ${m === 1 ? sn.male : sn.malePl}`);
+              }
+              if (broody > 0) parts.push(`${broody} broody`);
+              return (
+                <span style={{ fontSize: 11, color: palette.inkSoft, background: palette.card, padding: "2px 8px", borderRadius: 4 }}>
+                  {parts.join(" · ")}
+                </span>
+              );
+            })()}
           </div>
           {flock.startDate && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2, marginLeft: 26 }}>Since {flock.startDate}</div>}
         </div>
@@ -4973,6 +5062,15 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       break;
     }
     case "butcher": detail = `${entry.count || 0} birds · avg ${entry.avgWeight || 0} lbs`; break;
+    case "broody": {
+      const status = entry.broodyStatus === "ended" ? "broke / hatched" : "went broody";
+      const parts = [];
+      if (entry.namedBirdName) parts.push(entry.namedBirdName);
+      parts.push(status);
+      if (entry.note) parts.push(entry.note.length > 40 ? entry.note.slice(0, 40) + "…" : entry.note);
+      detail = parts.join(" · ");
+      break;
+    }
     case "note": detail = entry.note ? (entry.note.length > 50 ? entry.note.slice(0, 50) + "…" : entry.note) : ""; break;
     default: detail = entry.note || "";
   }
@@ -8572,14 +8670,36 @@ function ReorderHobbiesModal({ data, update, onClose }) {
   );
 }
 
+// Species-aware sex names. Returned values are the labels we show in UI;
+// the underlying data fields are always `females` / `males` so we never have
+// to translate when computing stats. "Hen" doubles as the female word for
+// chickens, turkeys, AND quail, so quite a few species share the same label.
+// Helpers return both the singular and plural form when count matters.
+function sexNames(birdType) {
+  const t = birdType || "Chicken";
+  if (t === "Duck")    return { female: "duck",   male: "drake",   femalePl: "ducks",   malePl: "drakes" };
+  if (t === "Goose")   return { female: "goose",  male: "gander",  femalePl: "geese",   malePl: "ganders" };
+  if (t === "Turkey")  return { female: "hen",    male: "tom",     femalePl: "hens",    malePl: "toms" };
+  if (t === "Quail")   return { female: "hen",    male: "cock",    femalePl: "hens",    malePl: "cocks" };
+  if (t === "Peafowl") return { female: "peahen", male: "peacock", femalePl: "peahens", malePl: "peacocks" };
+  // Chicken, Guinea, Other — chicken terms read fine for the rest.
+  return { female: "hen", male: "rooster", femalePl: "hens", malePl: "roosters" };
+}
+
 function AddFlockModal({ hobbyId, update, onClose }) {
   const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const [name, setName] = useState("");
   const [birdType, setBirdType] = useState("Chicken");
   const [count, setCount] = useState("");
+  const [females, setFemales] = useState("");
+  const [males, setMales] = useState("");
   const [date, setDate] = useState(todayStr());
   const [cost, setCost] = useState("");
   const [purchasedFrom, setPurchasedFrom] = useState("");
+  const sn = sexNames(birdType);
+  // Total updates live as the user types — preview goes under the inputs so
+  // it's clear they don't have to add the numbers themselves.
+  const totalPreview = (parseInt(females) || 0) + (parseInt(males) || 0);
   return (
     <Modal open onClose={onClose} title="Add a flock">
       <Field label="Flock name">
@@ -8592,9 +8712,23 @@ function AddFlockModal({ hobbyId, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="How many birds?">
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
-      </Field>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <Field label={`Number of ${sn.femalePl}`}>
+            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={females} onChange={(e) => setFemales(e.target.value)} placeholder="0" />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label={`Number of ${sn.malePl}`}>
+            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={males} onChange={(e) => setMales(e.target.value)} placeholder="0" />
+          </Field>
+        </div>
+      </div>
+      {totalPreview > 0 && (
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: -8, marginBottom: 8, fontStyle: "italic" }}>
+          Total: {totalPreview} bird{totalPreview === 1 ? "" : "s"}
+        </div>
+      )}
       <Field label="Date acquired">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
@@ -8605,13 +8739,15 @@ function AddFlockModal({ hobbyId, update, onClose }) {
         <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
       </Field>
       <Btn variant="primary" onClick={() => {
-        const n = parseInt(count);
+        const f = parseInt(females) || 0;
+        const m = parseInt(males) || 0;
+        const n = f + m;
         if (!n || n < 1 || !name.trim()) return;
         update((d) => {
           const h = d.hobbies.find((x) => x.id === hobbyId);
           if (!h) return d;
           if (!Array.isArray(h.flocks)) h.flocks = [];
-          h.flocks.push({ id: Math.random().toString(36).slice(2,10), name: name.trim(), birdType, birdCount: n, startDate: date, cost: parseFloat(cost) || 0, purchasedFrom: purchasedFrom.trim(), history: [{ date, count: n, cost: parseFloat(cost)||0, purchasedFrom: purchasedFrom.trim() }], eggBasket: null });
+          h.flocks.push({ id: Math.random().toString(36).slice(2,10), name: name.trim(), birdType, birdCount: n, females: f, males: m, broodyCount: 0, startDate: date, cost: parseFloat(cost) || 0, purchasedFrom: purchasedFrom.trim(), history: [{ date, count: n, females: f, males: m, cost: parseFloat(cost)||0, purchasedFrom: purchasedFrom.trim() }], eggBasket: null });
           return d;
         });
         onClose();
@@ -8876,6 +9012,28 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
                 onChange={(e) => updateBird(b.id, { notes: e.target.value })}
                 placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
               />
+              {/* Broody toggle — surfaces the bird's current state and lets the
+                  user flip it directly from the manage-birds list. Side-effects
+                  (updating the flock counter, logging an entry) happen via the
+                  Broody tile on the main page, not here; this is just the flag
+                  for users who'd rather just track without logging an event. */}
+              <button
+                type="button"
+                onClick={() => updateBird(b.id, { broody: !b.broody })}
+                style={{
+                  marginTop: 8,
+                  display: "flex", alignItems: "center", gap: 8,
+                  padding: "6px 10px",
+                  background: b.broody ? palette.yolkSoft : "transparent",
+                  border: `1.5px solid ${b.broody ? palette.yolk : palette.line}`,
+                  borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+                  fontSize: 12, color: palette.ink, width: "100%",
+                  textAlign: "left",
+                }}
+              >
+                <span style={{ fontSize: 14 }}>{b.broody ? "🪺" : "○"}</span>
+                <span>{b.broody ? "Currently broody" : "Not broody"} — tap to toggle</span>
+              </button>
               {dyingBirdId === b.id ? (
                 <div style={{ marginTop: 8, padding: 10, background: palette.bgAlt, border: `1.5px solid ${palette.accent}`, borderRadius: 8 }}>
                   <div style={{ fontSize: 12, color: palette.ink, marginBottom: 8, lineHeight: 1.5 }}>
@@ -9011,9 +9169,15 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) {
   const BIRD_TYPES = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
+  // Pre-fill from females/males if present, fall back to legacy birdCount so
+  // pre-migration data still loads sensibly.
+  const initialFemales = flock && typeof flock.females === "number" ? flock.females
+    : (Number(flock?.birdCount) || 0);
+  const initialMales = flock && typeof flock.males === "number" ? flock.males : 0;
   const [name, setName] = useState(flock?.name || "");
   const [birdType, setBirdType] = useState(flock?.birdType || "Chicken");
-  const [count, setCount] = useState(String(flock?.birdCount || 0));
+  const [females, setFemales] = useState(String(initialFemales));
+  const [males, setMales] = useState(String(initialMales));
   const [date, setDate] = useState(flock?.startDate || todayStr());
   const [cost, setCost] = useState(flock?.cost ? String(flock.cost) : "");
   const [purchasedFrom, setPurchasedFrom] = useState(flock?.purchasedFrom || "");
@@ -9021,8 +9185,13 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
 
   if (!flock) { onClose(); return null; }
 
+  const sn = sexNames(birdType);
+  const totalPreview = (parseInt(females) || 0) + (parseInt(males) || 0);
+
   const save = () => {
-    const n = parseInt(count);
+    const f = parseInt(females) || 0;
+    const m = parseInt(males) || 0;
+    const n = f + m;
     if (!n || n < 1 || !name.trim()) return;
     update((d) => {
       const h = d.hobbies.find(x => x.id === hobbyId);
@@ -9032,6 +9201,8 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
         fl.name = name.trim();
         fl.birdType = birdType;
         fl.birdCount = n;
+        fl.females = f;
+        fl.males = m;
         fl.startDate = date;
         fl.cost = parseFloat(cost) || 0;
         fl.purchasedFrom = purchasedFrom.trim();
@@ -9069,9 +9240,23 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
           ))}
         </div>
       </Field>
-      <Field label="Number of birds">
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} />
-      </Field>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <Field label={`Number of ${sn.femalePl}`}>
+            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={females} onChange={e=>setFemales(e.target.value)} />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label={`Number of ${sn.malePl}`}>
+            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={males} onChange={e=>setMales(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+      {totalPreview > 0 && (
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: -8, marginBottom: 8, fontStyle: "italic" }}>
+          Total: {totalPreview} bird{totalPreview === 1 ? "" : "s"}
+        </div>
+      )}
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
@@ -10708,7 +10893,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         // Picker UI sets flockId for multi-flock users; this fallback covers
         // single-flock users (no picker shown) AND any edge case where the
         // picker was missed.
-        const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue","move_tractor"];
+        const flockScopedActions = ["fed","bedding","death","eggs","eggs_laid","sold_eggs","note","issue","move_tractor","broody"];
         if (hobby.type === "egg_layers" && !entry.flockId && flockScopedActions.includes(action)) {
           const firstFlock = (hobby.flocks || [])[0];
           if (firstFlock) entry.flockId = firstFlock.id;
@@ -10757,6 +10942,35 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           const h = d.hobbies.find((x) => x.id === hobby.id);
           const n = Math.max(1, Number(cleanFields.count) || 1);
           h.flockSize = Math.max(0, (h.flockSize || 0) - n);
+        }
+
+        // Broody log side-effect: keep the named-bird `broody` flag and the
+        // flock-level broodyCount in sync with what the user just logged.
+        // "started" → bird goes broody, counter goes up. "ended" → flag off,
+        // counter goes down. When no named bird is picked we only touch the
+        // flock counter (for users who don't use named birds).
+        if (action === "broody" && hobby.type === "egg_layers") {
+          const h = d.hobbies.find((x) => x.id === hobby.id);
+          const fl = (h.flocks || []).find(x => x.id === entry.flockId);
+          if (fl) {
+            const status = cleanFields.broodyStatus || "started";
+            const namedId = cleanFields.namedBirdId || null;
+            if (namedId) {
+              const nb = (fl.namedBirds || []).find(b => b.id === namedId);
+              if (nb) {
+                nb.broody = (status === "started");
+                // Stamp the bird's name on the entry so the activity feed
+                // and Journal can display "Henrietta — went broody" without
+                // an extra lookup later.
+                const entryRef = (d.entries[hobby.id] || []).find(e => e.id === entry.id);
+                if (entryRef) entryRef.namedBirdName = nb.name;
+              }
+            } else {
+              // Flock-level counter only — bump up or down based on status.
+              const cur = Number(fl.broodyCount) || 0;
+              fl.broodyCount = status === "started" ? cur + 1 : Math.max(0, cur - 1);
+            }
+          }
         }
 
         // "Total" flock divvy: split eggs across all flocks using
@@ -10832,7 +11046,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     eggs: "eggs collected", bedding: "bedding change", death: "death",
     note: "a note", butcher: "butcher",
     sold_eggs: "eggs sold", infrastructure: "infrastructure",
-    eggs_laid: "eggs laid",
+    eggs_laid: "eggs laid", broody: "broody hen",
   };
   const titlePrefix = isEdit ? "Edit" : "Log";
   const dynamicTitle = `${titlePrefix} ${titles[action] || "entry"}`;
@@ -11281,6 +11495,53 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           <textarea style={{ ...inputStyle, minHeight: 100 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Anything you want to remember about this hobby..." autoFocus />
         </Field>
       )}
+
+      {action === "broody" && (() => {
+        // Broody log: pick a named hen if known, or just log against the flock.
+        // Status = "started" or "ended" — toggles the hen's broody flag in the
+        // save effect below. Females-only — broody is a hen behavior.
+        // The flock id comes from the flock picker (fields.flockId), with a
+        // fallback to the first flock for single-flock users where the picker
+        // isn't shown.
+        const flockIdForBroody = fields.flockId || (hobby.flocks || [])[0]?.id;
+        const flockForBroody = (hobby.flocks || []).find(f => f.id === flockIdForBroody);
+        const broodyCandidates = (flockForBroody?.namedBirds || []).filter(b => !b.archived);
+        const status = fields.broodyStatus || "started";
+        const sn = sexNames(flockForBroody?.birdType);
+        return (
+          <>
+            <Field label="What happened?">
+              <div style={{ display: "flex", gap: 6 }}>
+                {[
+                  { v: "started", l: "🪺 Went broody" },
+                  { v: "ended",   l: "✅ Broke / hatched" },
+                ].map(o => (
+                  <button key={o.v} onClick={() => set("broodyStatus", o.v)} style={{
+                    flex: 1, padding: "8px 10px", borderRadius: 8,
+                    border: `1.5px solid ${status === o.v ? palette.ink : palette.line}`,
+                    background: status === o.v ? palette.ink : palette.card,
+                    color: status === o.v ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
+                  }}>{o.l}</button>
+                ))}
+              </div>
+            </Field>
+            {broodyCandidates.length > 0 && (
+              <Field label={`Which ${sn.female}? (optional)`}>
+                <select style={inputStyle} value={fields.namedBirdId || ""} onChange={e => set("namedBirdId", e.target.value)}>
+                  <option value="">— No specific bird, just track count —</option>
+                  {broodyCandidates.map(b => (
+                    <option key={b.id} value={b.id}>{b.name}{b.broody ? " (currently broody)" : ""}</option>
+                  ))}
+                </select>
+              </Field>
+            )}
+            <Field label="Note (optional)">
+              <textarea style={{ ...inputStyle, minHeight: 70 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder={status === "started" ? "Where she's sitting, how long, etc." : "Did chicks hatch? How many?"} />
+            </Field>
+          </>
+        );
+      })()}
 
       {/* PHOTO UPLOAD — supports up to 5 photos per entry */}
       {user && (

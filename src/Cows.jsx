@@ -2,10 +2,11 @@
 // COWS — per-animal tracking, dairy or beef, milk/calves/butcher logging
 // ============================================================================
 import React, { useState } from "react";
-import { X, Edit3, Plus } from "lucide-react";
+import { X, Edit3, Plus, Camera } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+import { scanBarcode, isScanSupported } from "./lib/barcodeScanner.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -51,6 +52,36 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
   const[sex,setSex]=useState(animal?.sex||"Cow");
   const[dob,setDob]=useState(animal?.dob||"");
   const[tagId,setTagId]=useState(animal?.tagId||"");
+  // RFID tag — required for cattle movement in Canada. Free-text for now
+  // since we don't have a barcode scanner wired up; user types the number.
+  const[rfidNumber,setRfidNumber]=useState(animal?.rfidNumber||"");
+  // Scanner state — surfaces a brief inline note when a scan fails or is
+  // cancelled, so the user knows what happened instead of nothing.
+  const[scanError,setScanError]=useState("");
+  const scanAvailable = isScanSupported();
+  const handleScan = async () => {
+    setScanError("");
+    const res = await scanBarcode();
+    if (res.ok) {
+      // Strip whitespace and non-digits — CCIA tag numbers are always
+      // numeric, and some barcode formats encode extra padding chars.
+      // Keep all digits the scanner returned.
+      const digits = String(res.value || "").replace(/\D+/g, "");
+      setRfidNumber(digits || res.value || "");
+    } else if (res.reason === "cancelled") {
+      // No-op — user closed the scanner intentionally.
+    } else if (res.reason === "denied") {
+      setScanError("Camera permission denied. You can grant it in Settings, or type the number by hand.");
+    } else if (res.reason === "unsupported") {
+      setScanError("Scanner not available on this device. Type the number by hand.");
+    } else {
+      setScanError("Couldn't scan that tag. Try again or type it by hand.");
+    }
+  };
+  // Brand date + location (e.g. "left hip", "right shoulder"). Both optional
+  // since not every cattle keeper brands their animals.
+  const[brandDate,setBrandDate]=useState(animal?.brandDate||"");
+  const[brandLocation,setBrandLocation]=useState(animal?.brandLocation||"");
   const[notes,setNotes]=useState(animal?.notes||"");
   const[confirmDelete,setConfirmDelete]=useState(false);
   // Push 7a — pedigree fields. See Goats.jsx for the design rationale; same
@@ -64,7 +95,7 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -106,6 +137,72 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
         <div style={{flex:1}}><Field label="Ear tag / ID (optional)"><input style={inputStyle} value={tagId} onChange={e=>setTagId(e.target.value)} placeholder="e.g. #42"/></Field></div>
       </div>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
+
+      {/* Identification — RFID tag (Canada requires this for movement) and
+          branding details. Collapsed by default since not every herd needs
+          this level of detail; opens for users in regulated jurisdictions
+          or anyone who brands their cattle. */}
+      <details style={{marginBottom:14}}>
+        <summary style={{cursor:"pointer",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,fontWeight:600,color:palette.ink,userSelect:"none"}}>
+          🏷️ Identification & branding (optional)
+        </summary>
+        <div style={{padding:"12px 4px 4px"}}>
+          <Field label="RFID tag number (optional)">
+            <div style={{display:"flex",gap:8}}>
+              <input
+                style={{...inputStyle, flex:1}}
+                value={rfidNumber}
+                onChange={e=>setRfidNumber(e.target.value)}
+                placeholder="124 000 000 000 000"
+                inputMode="numeric"
+              />
+              {scanAvailable && (
+                <button
+                  type="button"
+                  onClick={handleScan}
+                  style={{
+                    display:"flex", alignItems:"center", gap:6,
+                    padding:"0 14px", borderRadius:8,
+                    border:`1.5px solid ${palette.ink}`,
+                    background:palette.bgAlt, color:palette.ink,
+                    fontFamily:FONT_BODY, fontSize:13, fontWeight:600,
+                    cursor:"pointer", flexShrink:0, whiteSpace:"nowrap",
+                  }}
+                  aria-label="Scan barcode on tag"
+                >
+                  <Camera size={15}/> Scan
+                </button>
+              )}
+            </div>
+            <div style={{fontSize:11,color:palette.inkSoft,marginTop:4,lineHeight:1.4}}>
+              Required by CCIA / CFIA for cattle movement in Canada.
+              {scanAvailable
+                ? " Tap Scan to read the barcode on the tag, or type the 15-digit number."
+                : " Type the 15-digit number from the tag."}
+            </div>
+            {scanError && (
+              <div style={{
+                fontSize:11, color:palette.accent, marginTop:6, lineHeight:1.4,
+                padding:"6px 10px", background:palette.accent+"15", borderRadius:6,
+              }}>
+                {scanError}
+              </div>
+            )}
+          </Field>
+          <div style={{display:"flex",gap:12}}>
+            <div style={{flex:1}}>
+              <Field label="Brand date (optional)">
+                <input type="date" style={inputStyle} value={brandDate} onChange={e=>setBrandDate(e.target.value)}/>
+              </Field>
+            </div>
+            <div style={{flex:1}}>
+              <Field label="Brand location (optional)">
+                <input style={inputStyle} value={brandLocation} onChange={e=>setBrandLocation(e.target.value)} placeholder="e.g. left hip"/>
+              </Field>
+            </div>
+          </div>
+        </div>
+      </details>
 
       {/* Push 7a — Pedigree. Sire = Bull only (Steers are castrated, can't sire);
           Dam = Cow or Heifer (heifers can be mothers too). */}
@@ -215,6 +312,12 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   const[calfName,setCalfName]=useState("");
   const[calfSex,setCalfSex]=useState("Calf");
   const[calfTagId,setCalfTagId]=useState("");
+  // Preg-check: result (pregnant / open / inconclusive), how it was determined
+  // (palpation, ultrasound, blood test), and expected calving date if positive.
+  // Default calving date = test date + 283 days (typical bovine gestation).
+  const[pregResult,setPregResult]=useState("pregnant");
+  const[pregMethod,setPregMethod]=useState("palpation");
+  const[pregExpectedCalving,setPregExpectedCalving]=useState("");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
     if(action==="milk")entry.gallons=Number(gallons)||0;
@@ -224,6 +327,20 @@ function LogModal({animal,hobbyId,action,update,onClose}){
     if(action==="butcher")entry.cost=Number(cost)||0;
     if(action==="death")entry.cause=cause.trim();
     if(action==="sale"){entry.buyer=saleBuyer.trim();entry.price=Number(salePrice)||0;entry.saleType=saleType;}
+    if(action==="preg_test"){
+      entry.pregResult=pregResult;
+      entry.pregMethod=pregMethod;
+      if(pregResult==="pregnant"){
+        // Auto-fill expected calving (test date + 283 days) when the user
+        // didn't pick one. Stored as a regular date string so it shows up
+        // in chronological history naturally.
+        entry.expectedCalving = pregExpectedCalving || (() => {
+          const t = new Date(date + "T12:00");
+          t.setDate(t.getDate() + 283);
+          return t.toISOString().slice(0, 10);
+        })();
+      }
+    }
     update(d=>{
       d.entries[hobbyId]=d.entries[hobbyId]||[];
       d.entries[hobbyId].push(entry);
@@ -302,7 +419,7 @@ function LogModal({animal,hobbyId,action,update,onClose}){
     });
     onClose();
   };
-  const titles={milk:"Log milk",fed:"Log feed",calf:"Log calf born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note"};
+  const titles={milk:"Log milk",fed:"Log feed",calf:"Log calf born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note",preg_test:"Pregnancy check"};
   const isDeath=action==="death";
   const isSale=action==="sale";
   return(
@@ -339,6 +456,50 @@ function LogModal({animal,hobbyId,action,update,onClose}){
         <Field label="Buyer / new home (optional)"><input style={inputStyle} value={saleBuyer} onChange={e=>setSaleBuyer(e.target.value)} placeholder="Name of buyer" autoFocus/></Field>
         {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
       </>}
+      {action==="preg_test"&&<>
+        <Field label="Result">
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[{v:"pregnant",l:"🤰 Pregnant",c:palette.leaf},{v:"open",l:"❌ Open",c:palette.accent},{v:"inconclusive",l:"❓ Inconclusive",c:palette.feather}].map(o=>(
+              <button key={o.v} onClick={()=>setPregResult(o.v)} style={{
+                flex:"1 1 auto", padding:"8px 12px", borderRadius:8,
+                border:`1.5px solid ${pregResult===o.v?palette.ink:palette.line}`,
+                background:pregResult===o.v?palette.ink:palette.card,
+                color:pregResult===o.v?palette.bg:palette.ink,
+                fontFamily:FONT_BODY, fontWeight:600, fontSize:13, cursor:"pointer",
+              }}>{o.l}</button>
+            ))}
+          </div>
+        </Field>
+        <Field label="Method">
+          <select style={inputStyle} value={pregMethod} onChange={e=>setPregMethod(e.target.value)}>
+            <option value="palpation">Rectal palpation</option>
+            <option value="ultrasound">Ultrasound</option>
+            <option value="blood">Blood test (BioPRYN/PAG)</option>
+            <option value="milk">Milk test</option>
+            <option value="visual">Visual / behavioral</option>
+            <option value="other">Other</option>
+          </select>
+        </Field>
+        {pregResult==="pregnant"&&(() => {
+          // Compute the default expected calving date (test date + 283 days)
+          // for the placeholder so the user sees what we'd save if they
+          // leave it blank.
+          let defaultCalving = "";
+          try {
+            const t = new Date(date + "T12:00");
+            t.setDate(t.getDate() + 283);
+            defaultCalving = t.toISOString().slice(0, 10);
+          } catch (e) {}
+          return (
+            <Field label="Expected calving date (optional)">
+              <input type="date" style={inputStyle} value={pregExpectedCalving} onChange={e=>setPregExpectedCalving(e.target.value)} placeholder={defaultCalving} />
+              <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>
+                Leave blank to auto-set to {defaultCalving} (test date + 283 days, typical bovine gestation).
+              </div>
+            </Field>
+          );
+        })()}
+      </>}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived cattle list. You can restore from there if this was a mistake.</div>}
       {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived cattle list and {saleType!=="rehomed"?"a sale record will appear in your Sales tab":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
@@ -357,8 +518,20 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
   const totalMilkGal=milkEntries.reduce((s,e)=>s+(Number(e.gallons)||0),0);
   const todayMilk=milkEntries.filter(e=>e.date===today).reduce((s,e)=>s+(Number(e.gallons)||0),0);
   const purposeColor={Dairy:palette.leaf,Beef:palette.accent,Both:palette.feather};
-  const LOG_ACTIONS=animal.purpose==="Beef"?["fed","weight","health","butcher","death","sale","note"]:animal.purpose==="Dairy"?["milk","fed","calf","health","death","sale","note"]:["milk","fed","calf","weight","health","butcher","death","sale","note"];
-  const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",calf:"🍼 Calf",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note"};
+  // Purpose drives which actions show. Preg check is only for females that
+  // can carry — Cows and Heifers. Filters out Bulls/Steers regardless of
+  // purpose. The base set is per purpose; we splice preg_test in for the
+  // breeding-capable sexes.
+  const canCarry = animal.sex === "Cow" || animal.sex === "Heifer";
+  const baseActions = animal.purpose==="Beef"
+    ? ["fed","weight","health","butcher","death","sale","note"]
+    : animal.purpose==="Dairy"
+      ? ["milk","fed","calf","health","death","sale","note"]
+      : ["milk","fed","calf","weight","health","butcher","death","sale","note"];
+  const LOG_ACTIONS = canCarry
+    ? [...baseActions.filter(a => a !== "note"), "preg_test", "note"]
+    : baseActions;
+  const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",calf:"🍼 Calf",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note",preg_test:"🤰 Preg check"};
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
@@ -389,6 +562,26 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
             <span style={{fontSize:11,background:palette.bgAlt,padding:"2px 8px",borderRadius:4,color:palette.inkSoft}}>{animal.breed}</span>
             <span style={{fontSize:11,background:purposeColor[animal.purpose]+"25",padding:"2px 8px",borderRadius:4,color:purposeColor[animal.purpose],fontWeight:600}}>{animal.purpose}</span>
             {animal.tagId&&<span style={{fontSize:11,color:palette.inkSoft}}>#{animal.tagId}</span>}
+            {(() => {
+              // Latest preg-test for this animal — surface a badge in the
+              // header so users can see "pregnant, due X" at a glance.
+              // Only "pregnant" gets a badge (open/inconclusive doesn't
+              // need to be advertised on the card; it's in the history).
+              if (!canCarry) return null;
+              const latestPreg = animalEntries
+                .filter(e => e.action === "preg_test")
+                .sort((a, b) => b.date.localeCompare(a.date))[0];
+              if (!latestPreg || latestPreg.pregResult !== "pregnant") return null;
+              return (
+                <span style={{
+                  fontSize: 11, background: palette.leafSoft + "60",
+                  padding: "2px 8px", borderRadius: 4,
+                  color: palette.leaf, fontWeight: 600,
+                }}>
+                  🤰 {latestPreg.expectedCalving ? `due ${fmtDate(latestPreg.expectedCalving)}` : "pregnant"}
+                </span>
+              );
+            })()}
           </div>
           {animal.dob&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:2,marginLeft:26}}>Born {fmtDate(animal.dob)}</div>}
         </div>
@@ -413,6 +606,12 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
             else if(e.action==="fed")detail=`${e.lbs} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
             else if(e.action==="calf")detail=`${e.count} calf`;
             else if(e.action==="weight"||e.action==="butcher")detail=`${e.weight} lbs`;
+            else if(e.action==="preg_test"){
+              const r = e.pregResult==="pregnant"?"🤰 pregnant":e.pregResult==="open"?"❌ open":"❓ inconclusive";
+              const m = e.pregMethod && e.pregMethod!=="other" ? ` · ${e.pregMethod}` : "";
+              const ec = e.pregResult==="pregnant" && e.expectedCalving ? ` · due ${fmtDate(e.expectedCalving)}` : "";
+              detail = `${r}${m}${ec}`;
+            }
             return (
               <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
                 <span>{fmtDate(e.date)} · {actionLabels[e.action]||e.action}</span>

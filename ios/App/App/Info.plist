@@ -71,5 +71,7 @@
 			</array>
 		</dict>
 	</array>
+<key>NSCameraUsageDescription</key>
+	<string>Henalytics uses the camera to scan barcodes on cattle RFID tags so you don't have to type the number by hand.</string>
 </dict>
 </plist>

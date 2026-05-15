@@ -255,7 +255,132 @@ function RunModal({ run, hobbyId, update, onClose }) {
 // ============================================================================
 // LOG HATCH MODAL — record hatch results
 // ============================================================================
+// ============================================================================
+// CANDLE MODAL — log mid-incubation fertility check. Around day 7-12 for
+// chickens, day 10-14 for waterfowl, day 7 for quail (varies by species).
+// User shines a light through each egg and removes ones with no development.
+// We record `candledCount` (the number that made it through) and `candledOn`
+// (the date) on the run. Two derived stats become available afterward:
+//   - candling survival = candledCount / eggsSet
+//   - hatch rate from candled = eggsHatched / candledCount
+//   - overall hatch rate = eggsHatched / eggsSet (already shown)
+// ============================================================================
+function CandleModal({ run, hobbyId, update, onClose }) {
+  // Pre-fill from existing values when editing a previously-logged candling.
+  const [candled, setCandled] = useState(run.candledCount != null ? String(run.candledCount) : "");
+  const [date, setDate] = useState(run.candledOn || todayStr());
+  const [notes, setNotes] = useState(run.candleNotes || "");
+  // Whether the user actually removed the undeveloped eggs from the
+  // incubator (vs just checking and leaving everything in). Drives the
+  // "active eggs in incubator" count displayed on the run card.
+  // Default ON because that's by far the more common workflow — if you
+  // candled, you usually pulled the duds. User can uncheck for the rare
+  // "just observing" case.
+  const [discard, setDiscard] = useState(
+    run.discardedAfterCandle != null ? run.discardedAfterCandle : true
+  );
+
+  // Live preview of survival rate as user types
+  const previewSurvival = candled && run.eggsSet
+    ? ((Number(candled) / run.eggsSet) * 100).toFixed(1)
+    : null;
+  const removed = candled ? Math.max(0, run.eggsSet - (Number(candled) || 0)) : 0;
+
+  const save = () => {
+    const c = Number(candled);
+    if (isNaN(c) || c < 0 || c > run.eggsSet) return;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const r = (h.runs || []).find(x => x.id === run.id);
+      if (r) {
+        r.candledCount = c;
+        r.candledOn = date;
+        r.candleNotes = notes.trim();
+        r.discardedAfterCandle = discard;
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  const isEdit = run.candledCount != null;
+
+  return (
+    <Modal open onClose={onClose} title={isEdit ? "Edit candling" : "Log candling"}>
+      <div style={{
+        background: palette.bgAlt, borderRadius: 8, padding: "10px 12px",
+        marginBottom: 12, fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+      }}>
+        💡 Candling shines a light through each egg to check for development.
+        Typical days: chickens day 7-12 · waterfowl day 10-14 · quail day 7.
+        Log the number that <strong>kept developing</strong> (the keepers).
+      </div>
+      <Field label="Date candled">
+        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+      </Field>
+      <Field label={`Eggs that showed development (of ${run.eggsSet} set)`}>
+        <input
+          type="number" min={0} max={run.eggsSet}
+          style={inputStyle} value={candled}
+          onChange={e => setCandled(e.target.value)}
+          placeholder="0" autoFocus inputMode="numeric"
+        />
+      </Field>
+      {/* Discard checkbox — only meaningful when at least one egg was
+          removed. Tapping the whole row flips the box so it works on
+          touch without aiming at the tiny native checkbox. */}
+      {removed > 0 && (
+        <div
+          onClick={() => setDiscard(!discard)}
+          style={{
+            display: "flex", alignItems: "flex-start", gap: 10,
+            padding: "10px 12px", marginBottom: 12,
+            background: discard ? palette.yolkSoft : palette.card,
+            border: `1.5px solid ${discard ? palette.yolk : palette.line}`,
+            borderRadius: 8, cursor: "pointer",
+          }}
+        >
+          <input
+            type="checkbox" checked={discard}
+            onChange={() => setDiscard(!discard)}
+            onClick={e => e.stopPropagation()}
+            style={{ marginTop: 2, flexShrink: 0 }}
+          />
+          <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.4 }}>
+            <div style={{ fontWeight: 600 }}>Discard undeveloped eggs</div>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+              Removes the {removed} undeveloped egg{removed === 1 ? "" : "s"} from the active count, so the incubator shows {candled} eggs going forward.
+            </div>
+          </div>
+        </div>
+      )}
+      <Field label="Notes (optional)">
+        <textarea
+          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          value={notes} onChange={e => setNotes(e.target.value)}
+          placeholder="What you saw, which eggs you removed, etc."
+        />
+      </Field>
+      {previewSurvival !== null && (
+        <div style={{
+          background: palette.yolkSoft, borderRadius: 8, padding: "10px 12px",
+          fontSize: 13, color: palette.ink, marginBottom: 12, lineHeight: 1.5,
+        }}>
+          🥚 Survival to candling: <strong>{previewSurvival}%</strong>
+          {" "}({candled} of {run.eggsSet})
+          {removed > 0 && <> · {removed} removed</>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!candled}>{isEdit ? "Save changes" : "Log candling"}</Btn>
+      </div>
+    </Modal>
+  );
+}
 function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
+
   const [hatched, setHatched] = useState(run.eggsHatched != null ? String(run.eggsHatched) : "");
   const [notes, setNotes] = useState(run.notes || "");
   const hatchRate = hatched && run.eggsSet ? ((Number(hatched)/run.eggsSet)*100).toFixed(1) : null;
@@ -290,13 +415,35 @@ function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
     <Modal open onClose={onClose} title="Log hatch results">
       <div style={{ marginBottom:14,padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,color:palette.ink }}>
         <strong>{run.name}</strong> · {run.eggsSet} eggs set · {BIRD_EMOJI[run.birdType]} {run.birdType}
+        {run.candledCount != null && (
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
+            💡 {run.candledCount} survived candling ({((run.candledCount / run.eggsSet) * 100).toFixed(0)}%)
+            {run.discardedAfterCandle && (
+              <> · {run.candledCount} active in incubator</>
+            )}
+          </div>
+        )}
       </div>
       <Field label="Eggs hatched">
-        <input type="number" min={0} max={run.eggsSet} style={inputStyle} value={hatched} onChange={e=>setHatched(e.target.value)} placeholder="0" autoFocus />
+        {/* When the user discarded after candling, cap the hatch input at the
+            active count rather than the original set count — otherwise the
+            field would let them type more than physically possible. */}
+        <input
+          type="number" min={0}
+          max={run.discardedAfterCandle && run.candledCount != null ? run.candledCount : run.eggsSet}
+          style={inputStyle} value={hatched}
+          onChange={e=>setHatched(e.target.value)}
+          placeholder="0" autoFocus
+        />
       </Field>
       {hatchRate && (
         <div style={{ background:palette.yolkSoft,borderRadius:8,padding:"8px 12px",marginBottom:14,fontSize:13,color:palette.ink }}>
-          🐣 Hatch rate: <strong>{hatchRate}%</strong> ({hatched} of {run.eggsSet})
+          🐣 Hatch rate: <strong>{hatchRate}%</strong> ({hatched} of {run.eggsSet} overall)
+          {run.candledCount != null && Number(hatched) > 0 && run.candledCount > 0 && (
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 3 }}>
+              From candled keepers: {((Number(hatched) / run.candledCount) * 100).toFixed(0)}% ({hatched} of {run.candledCount})
+            </div>
+          )}
         </div>
       )}
       <Field label="Notes (optional)">
@@ -726,7 +873,23 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatche
           <div style={{ display:"flex",alignItems:"center",gap:8,flexWrap:"wrap" }}>
             <span style={{ fontSize:18 }}>{BIRD_EMOJI[run.birdType]}</span>
             <span style={{ fontWeight:700,fontSize:15,color:palette.ink }}>{run.name}</span>
-            <span style={{ fontSize:11,background:palette.bgAlt,padding:"2px 8px",borderRadius:4,color:palette.inkSoft }}>{run.birdType} · {run.eggsSet} eggs</span>
+            {(() => {
+              // After a candling discard, the "active in incubator" count is
+              // the candled count, not the original set count. We show the
+              // active number prominently and surface the original as
+              // "from N set" so the math still reads cleanly.
+              const isDiscarded = run.candledCount != null && run.discardedAfterCandle && run.status === "incubating";
+              if (isDiscarded) {
+                return (
+                  <span style={{ fontSize:11,background:palette.bgAlt,padding:"2px 8px",borderRadius:4,color:palette.inkSoft }}>
+                    {run.birdType} · <strong style={{ color: palette.ink }}>{run.candledCount}</strong> active <span style={{ opacity: 0.7 }}>(from {run.eggsSet} set)</span>
+                  </span>
+                );
+              }
+              return (
+                <span style={{ fontSize:11,background:palette.bgAlt,padding:"2px 8px",borderRadius:4,color:palette.inkSoft }}>{run.birdType} · {run.eggsSet} eggs</span>
+              );
+            })()}
             {run.variety && <span style={{ fontSize:11,color:palette.inkSoft }}>{run.variety}</span>}
           </div>
           <div style={{ fontSize:11,color:palette.inkSoft,marginTop:3 }}>Set {fmtDate(run.dateSet)}</div>
@@ -739,11 +902,25 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatche
         // "Move to brooder" CTA if one exists (avoiding duplicate creation)
         // but still surface a link so users can jump to the batch.
         const existingBrooder = brooderBatches.find(b => b.sourceBatchId === run.id);
+        const overall = ((run.eggsHatched / run.eggsSet) * 100).toFixed(0);
+        const hasCandle = run.candledCount != null && run.candledCount > 0;
+        const survival = hasCandle
+          ? ((run.candledCount / run.eggsSet) * 100).toFixed(0)
+          : null;
+        const fromCandled = hasCandle
+          ? ((run.eggsHatched / run.candledCount) * 100).toFixed(0)
+          : null;
         return (
           <div style={{ padding:"10px 12px",background:palette.yolkSoft,borderRadius:8,fontSize:13,color:palette.ink }}>
             <div>
-              🐣 Hatched {run.eggsHatched} of {run.eggsSet} ({((run.eggsHatched/run.eggsSet)*100).toFixed(0)}% hatch rate)
+              🐣 Hatched <strong>{run.eggsHatched}</strong> of {run.eggsSet} ({overall}% overall)
             </div>
+            {hasCandle && (
+              <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.5 }}>
+                💡 Candling survival: <strong style={{ color: palette.ink }}>{run.candledCount}/{run.eggsSet}</strong> ({survival}%)
+                {" · "}🐣 Hatch from candled: <strong style={{ color: palette.ink }}>{fromCandled}%</strong>
+              </div>
+            )}
             {run.hatchedDate && (
               <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
                 {fmtDate(run.hatchedDate)} · {fmtAgeSince(run.hatchedDate)}
@@ -788,6 +965,24 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatche
             </div>
           </div>
 
+          {/* Candling badge — if already candled, show survival stat right
+              on the card. Same line as the date pills above feels tight,
+              so we put it just below them. */}
+          {run.candledCount != null && (
+            <div style={{
+              background: palette.yolkSoft, border: `1px solid ${palette.yolk}`,
+              borderRadius: 6, padding: "6px 10px",
+              fontSize: 12, color: palette.ink, marginBottom: 10, lineHeight: 1.4,
+            }}>
+              🥚 Candled <strong>{run.candledCount}/{run.eggsSet}</strong>
+              {" "}({((run.candledCount / run.eggsSet) * 100).toFixed(0)}% survival)
+              {run.discardedAfterCandle && run.candledCount < run.eggsSet && (
+                <> · <span style={{ color: palette.inkSoft }}>{run.eggsSet - run.candledCount} discarded</span></>
+              )}
+              {run.candledOn && <span style={{ color: palette.inkSoft }}> · {fmtDate(run.candledOn)}</span>}
+            </div>
+          )}
+
           {isLockdown && (
             <div style={{ background:"#FFF3CD",border:"1.5px solid "+palette.yolk,borderRadius:8,padding:"8px 12px",fontSize:13,color:palette.ink,marginBottom:10 }}>
               ⚠️ <strong>Lockdown time!</strong> Stop turning eggs and increase humidity.
@@ -797,6 +992,9 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatche
           <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
             <Btn small variant="accent" onClick={() => setModal({ type:"logHatch", runId:run.id })}>
               🐣 Log hatch results
+            </Btn>
+            <Btn small variant="ghost" onClick={() => setModal({ type:"candle", runId:run.id })}>
+              💡 {run.candledCount != null ? "Edit candling" : "Candle eggs"}
             </Btn>
             {!hasCalendarEvents && (
               <Btn small variant="ghost" onClick={addToCalendar}>
@@ -990,6 +1188,14 @@ export function IncubatorAnalytics({ hobby }) {
     ? (completed.reduce((s,r) => s + (r.eggsHatched/r.eggsSet)*100, 0) / completed.length).toFixed(1)
     : "—";
 
+  // Candling stats — only meaningful for runs where the user actually logged
+  // a candling check. We compute survival-to-candling as candledCount/eggsSet
+  // averaged across runs that have candling data.
+  const candledRuns = runs.filter(r => r.candledCount != null && r.eggsSet > 0);
+  const avgCandlingSurvival = candledRuns.length > 0
+    ? (candledRuns.reduce((s,r) => s + (r.candledCount/r.eggsSet)*100, 0) / candledRuns.length).toFixed(1)
+    : "—";
+
   // By bird type
   const byType = {};
   runs.forEach(r => {
@@ -1011,6 +1217,14 @@ export function IncubatorAnalytics({ hobby }) {
         <StatCard label="Total eggs set" value={totalSet} accent={palette.yolk} />
         <StatCard label="Total hatched" value={totalHatched} accent={palette.leaf} />
         <StatCard label="Avg hatch rate" value={avgHatchRate === "—" ? "—" : `${avgHatchRate}%`} accent={palette.feather} />
+        {candledRuns.length > 0 && (
+          <StatCard
+            label="Avg candling survival"
+            value={`${avgCandlingSurvival}%`}
+            sub={`across ${candledRuns.length} candled run${candledRuns.length === 1 ? "" : "s"}`}
+            accent={palette.honey}
+          />
+        )}
         <StatCard label="Runs completed" value={completed.length} accent={palette.ink} />
       </div>
 
@@ -1132,6 +1346,11 @@ function IncubatorModalRouter({ modal, hobby, data, update, setModal, onClose })
         onAfterSave={({ runId }) => setModal({ type: "moveToBrooder", runId })}
       />
     );
+  }
+  if (modal.type === "candle") {
+    const run = (hobby.runs||[]).find(r => r.id === modal.runId);
+    if (!run) { onClose(); return null; }
+    return <CandleModal run={run} hobbyId={hobby.id} update={update} onClose={onClose} />;
   }
   if (modal.type === "moveToBrooder") {
     const run = (hobby.runs||[]).find(r => r.id === modal.runId);
