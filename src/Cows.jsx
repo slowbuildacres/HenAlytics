@@ -2,11 +2,10 @@
 // COWS — per-animal tracking, dairy or beef, milk/calves/butcher logging
 // ============================================================================
 import React, { useState } from "react";
-import { X, Edit3, Plus, Camera } from "lucide-react";
+import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
-import { scanBarcode, isScanSupported } from "./lib/barcodeScanner.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -179,32 +178,9 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,onClose}){
   // Pasture / herd assignment — optional. Empty string = "Ungrouped" on
   // the main page. Cows can move between pastures freely.
   const[pastureId,setPastureId]=useState(animal?.pastureId||"");
-  // RFID tag — required for cattle movement in Canada. Free-text for now
-  // since we don't have a barcode scanner wired up; user types the number.
+  // RFID tag — required for cattle movement in Canada. Free-text since
+  // barcode scanning requires ML Kit which excludes too many older devices.
   const[rfidNumber,setRfidNumber]=useState(animal?.rfidNumber||"");
-  // Scanner state — surfaces a brief inline note when a scan fails or is
-  // cancelled, so the user knows what happened instead of nothing.
-  const[scanError,setScanError]=useState("");
-  const scanAvailable = isScanSupported();
-  const handleScan = async () => {
-    setScanError("");
-    const res = await scanBarcode();
-    if (res.ok) {
-      // Strip whitespace and non-digits — CCIA tag numbers are always
-      // numeric, and some barcode formats encode extra padding chars.
-      // Keep all digits the scanner returned.
-      const digits = String(res.value || "").replace(/\D+/g, "");
-      setRfidNumber(digits || res.value || "");
-    } else if (res.reason === "cancelled") {
-      // No-op — user closed the scanner intentionally.
-    } else if (res.reason === "denied") {
-      setScanError("Camera permission denied. You can grant it in Settings, or type the number by hand.");
-    } else if (res.reason === "unsupported") {
-      setScanError("Scanner not available on this device. Type the number by hand.");
-    } else {
-      setScanError("Couldn't scan that tag. Try again or type it by hand.");
-    }
-  };
   // Brand date + location (e.g. "left hip", "right shoulder"). Both optional
   // since not every cattle keeper brands their animals.
   const[brandDate,setBrandDate]=useState(animal?.brandDate||"");
@@ -298,38 +274,10 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,onClose}){
                 placeholder="124 000 000 000 000"
                 inputMode="numeric"
               />
-              {scanAvailable && (
-                <button
-                  type="button"
-                  onClick={handleScan}
-                  style={{
-                    display:"flex", alignItems:"center", gap:6,
-                    padding:"0 14px", borderRadius:8,
-                    border:`1.5px solid ${palette.ink}`,
-                    background:palette.bgAlt, color:palette.ink,
-                    fontFamily:FONT_BODY, fontSize:13, fontWeight:600,
-                    cursor:"pointer", flexShrink:0, whiteSpace:"nowrap",
-                  }}
-                  aria-label="Scan barcode on tag"
-                >
-                  <Camera size={15}/> Scan
-                </button>
-              )}
             </div>
             <div style={{fontSize:11,color:palette.inkSoft,marginTop:4,lineHeight:1.4}}>
-              Required by CCIA / CFIA for cattle movement in Canada.
-              {scanAvailable
-                ? " Tap Scan to read the barcode on the tag, or type the 15-digit number."
-                : " Type the 15-digit number from the tag."}
+              Required by CCIA / CFIA for cattle movement in Canada. Type the 15-digit number from the tag.
             </div>
-            {scanError && (
-              <div style={{
-                fontSize:11, color:palette.accent, marginTop:6, lineHeight:1.4,
-                padding:"6px 10px", background:palette.accent+"15", borderRadius:6,
-              }}>
-                {scanError}
-              </div>
-            )}
           </Field>
           <div style={{display:"flex",gap:12}}>
             <div style={{flex:1}}>
