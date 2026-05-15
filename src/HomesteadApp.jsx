@@ -724,11 +724,13 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   // International support — units backfill. Defaults to USD/Fahrenheit/auto
   // for existing accounts. Hemisphere auto-detects from saved location lat.
   if (!data.units || typeof data.units !== "object") {
-    data.units = { temperature: "F", currency: "USD", hemisphere: "auto" };
+    data.units = { temperature: "F", currency: "USD", hemisphere: "auto", weight: "lbs", volume: "gal" };
   } else {
     if (!data.units.temperature) data.units.temperature = "F";
     if (!data.units.currency) data.units.currency = "USD";
     if (!data.units.hemisphere) data.units.hemisphere = "auto";
+    if (!data.units.weight) data.units.weight = "lbs";
+    if (!data.units.volume) data.units.volume = "gal";
   }
 
   // One-time: reconcile death entries with animal archive state. Before this
@@ -1092,7 +1094,7 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, setUserUnits, getCurrentHemisphere, currencySymbol } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput } from "./units.js";
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -6888,6 +6890,8 @@ function InternationalSection({ data, update, setModal, onClose }) {
   const currency = units.currency || "USD";
   const tempUnit = units.temperature || "F";
   const hemisphere = units.hemisphere || "auto";
+  const weightUnit = units.weight || "lbs";
+  const volumeUnit = units.volume || "gal";
   const lat = data.homesteadLocation?.lat;
   const detectedHem = typeof lat === "number" ? (lat < 0 ? "south" : "north") : null;
 
@@ -6926,7 +6930,7 @@ function InternationalSection({ data, update, setModal, onClose }) {
             {open ? "Hide international settings" : "🌍 Currency, temperature, hemisphere"}
           </div>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
-            Currently: {currency} · {tempUnit === "C" ? "°C" : "°F"} · {hemisphere === "auto" ? `${detectedHem || "north"} (auto)` : hemisphere}
+            Currently: {currency} · {tempUnit === "C" ? "°C" : "°F"} · {weightUnit} · {volumeUnit} · {hemisphere === "auto" ? `${detectedHem || "north"} (auto)` : hemisphere}
           </div>
         </div>
         <ChevronDown
@@ -6976,7 +6980,53 @@ function InternationalSection({ data, update, setModal, onClose }) {
             </div>
           </div>
 
-          {/* Hemisphere */}
+          {/* Weight */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>⚖️ Weight</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[{ k: "lbs", l: "Pounds (lbs / oz)" }, { k: "kg", l: "Kilograms (kg / g)" }].map(o => (
+                <button
+                  key={o.k}
+                  onClick={() => setUnit("weight", o.k)}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 8,
+                    border: `1.5px solid ${weightUnit === o.k ? palette.ink : palette.line}`,
+                    background: weightUnit === o.k ? palette.ink : palette.bg,
+                    color: weightUnit === o.k ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{o.l}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>
+              Small weights auto-switch to oz / g (under 1 lb / 1 kg).
+            </div>
+          </div>
+
+          {/* Volume */}
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>🪣 Volume</div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {[{ k: "gal", l: "Gallons (gal / cups)" }, { k: "L", l: "Liters (L / mL)" }].map(o => (
+                <button
+                  key={o.k}
+                  onClick={() => setUnit("volume", o.k)}
+                  style={{
+                    flex: 1, padding: "8px 12px", borderRadius: 8,
+                    border: `1.5px solid ${volumeUnit === o.k ? palette.ink : palette.line}`,
+                    background: volumeUnit === o.k ? palette.ink : palette.bg,
+                    color: volumeUnit === o.k ? palette.bg : palette.ink,
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+                  }}
+                >{o.l}</button>
+              ))}
+            </div>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>
+              Small volumes auto-switch to cups / mL (under 1 gal / 1 L).
+            </div>
+          </div>
+
+                    {/* Hemisphere */}
           <div>
             <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>🌎 Hemisphere</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
