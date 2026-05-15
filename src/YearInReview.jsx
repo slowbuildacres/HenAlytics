@@ -1180,12 +1180,59 @@ function computeStats(data, year) {
   const eggLaidEntries = allEntries.filter((e) => e.action === "eggs_laid" || e.action === "eggs");
   const eggsCollected = eggLaidEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
   const dozensCollected = eggsCollected / 12;
-  const soldEggsEntries = allEntries.filter((e) => e.action === "sold_eggs");
-  const eggsSold = soldEggsEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
-  const eggRevenue = soldEggsEntries.reduce((s, e) => {
-    const dozens = (Number(e.count) || 0) / 12;
-    return s + dozens * (Number(e.pricePerDozen) || 0);
-  }, 0);
+  // Eggs sold revenue + count. Pulls from BOTH data.entries (legacy
+  // sold_eggs action) AND data.sales (new sales flow writes here with
+  // hobbyType="eggs"). Dedupes by id so a migrated entry that appears
+  // in both places only counts once. Uses a shape-tolerant derivation
+  // for unit-based entries (e.g. "2 dozen at $5/dz" with count=0).
+  // The derivation logic mirrors deriveSoldEggsRevenue in Sales.jsx.
+  const deriveSoldEggsRevenue = (e) => {
+    let qty = Number(e.count ?? e.qty) || 0;
+    let pricePerDozen = Number(e.pricePerDozen) || 0;
+    let revenue = 0;
+    if (pricePerDozen > 0 && qty > 0) {
+      revenue = (qty / 12) * pricePerDozen;
+    } else if (Number(e.unitQty) > 0 && Number(e.pricePerUnit) > 0) {
+      const unitToCount = {
+        single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+        custom: Number(e.customEggsPerUnit) || 0,
+      };
+      const eggsPerUnit = unitToCount[e.unit] || 12;
+      const totalEggs = Number(e.unitQty) * eggsPerUnit;
+      revenue = Number(e.unitQty) * Number(e.pricePerUnit);
+      if (totalEggs > 0) {
+        pricePerDozen = revenue / (totalEggs / 12);
+        if (qty === 0) qty = totalEggs;
+      }
+    } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
+      // Old shape — pricePerUnit was stored as $/dozen with eggs in count
+      pricePerDozen = Number(e.pricePerUnit);
+      revenue = (qty / 12) * pricePerDozen;
+    } else if (Number(e.totalRevenue) > 0) {
+      revenue = Number(e.totalRevenue);
+      if (qty > 0) pricePerDozen = revenue / (qty / 12);
+    }
+    return { qty, revenue };
+  };
+
+  // Source 1: legacy sold_eggs entries on data.entries[egg_layers_id]
+  const legacySoldEggsEntries = allEntries.filter((e) => e.action === "sold_eggs");
+  // Source 2: new sales rows with hobbyType="eggs" (the canonical home for eggs sales now)
+  const salesSourcedEggs = (data.sales || [])
+    .filter((s) => s && s.hobbyType === "eggs" && inYear(s));
+  // Dedupe by id — migrations sometimes copy a record from entries → sales.
+  const seenIds = new Set(legacySoldEggsEntries.map((e) => e.id));
+  const soldEggsEntries = [
+    ...legacySoldEggsEntries,
+    ...salesSourcedEggs.filter((s) => !seenIds.has(s.id)),
+  ];
+  let eggsSold = 0;
+  let eggRevenue = 0;
+  soldEggsEntries.forEach((e) => {
+    const d = deriveSoldEggsRevenue(e);
+    eggsSold += d.qty;
+    eggRevenue += d.revenue;
+  });
   const eggLayerFeedCost = allEntries.filter((e) => e.action === "fed" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const eggLayerInfraCost = allEntries.filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   let eggLayerBirdCost = 0;
