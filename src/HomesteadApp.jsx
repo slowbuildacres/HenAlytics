@@ -3711,15 +3711,37 @@ function JournalPage({ data, update, setModal }) {
 
   // Hobbies that actually have entries (avoid showing pills for unused ones).
   // We respect the user's hobby ordering / hidden flags via data.hobbies.
+  //
+  // Archived meat-bird batches keep their entries in a `finalEntries`
+  // snapshot on the batch (so they're removed from data.entries to keep
+  // live analytics clean). The Journal is the place to view history, so
+  // we include those snapshot entries when deciding which hobbies have
+  // anything to show.
+  const archivedEntriesByHobby = React.useMemo(() => {
+    const map = {};
+    for (const h of data.hobbies || []) {
+      const batches = Array.isArray(h.archivedBatches) ? h.archivedBatches : [];
+      const merged = [];
+      for (const b of batches) {
+        if (Array.isArray(b.finalEntries)) merged.push(...b.finalEntries);
+      }
+      if (merged.length > 0) map[h.id] = merged;
+    }
+    return map;
+  }, [data.hobbies]);
+
   const hobbiesWithEntries = React.useMemo(() => {
     const list = [];
     for (const h of data.hobbies || []) {
       if (h.hidden) continue;
       const arr = data.entries?.[h.id];
-      if (Array.isArray(arr) && arr.length > 0) list.push(h);
+      const archived = archivedEntriesByHobby[h.id];
+      const liveHas = Array.isArray(arr) && arr.length > 0;
+      const archivedHas = Array.isArray(archived) && archived.length > 0;
+      if (liveHas || archivedHas) list.push(h);
     }
     return list;
-  }, [data.hobbies, data.entries]);
+  }, [data.hobbies, data.entries, archivedEntriesByHobby]);
 
   // Collect all entries (or just the filtered hobby's) and tag with season +
   // hobby info. Then group by season key, sort groups newest-first, sort
@@ -3727,16 +3749,30 @@ function JournalPage({ data, update, setModal }) {
   const grouped = React.useMemo(() => {
     const byKey = new Map(); // key → { info, items: [{ entry, hobby }] }
     const includeHobby = (h) => hobbyFilter === "all" || hobbyFilter === h.id;
+    // De-dupe by entry id so that if an entry exists in both data.entries
+    // and an archived batch's finalEntries snapshot (shouldn't happen, but
+    // belt-and-suspenders), we render it only once.
+    const seenIds = new Set();
+    const pushEntry = (e, h) => {
+      if (!e || !e.date) return;
+      if (e.id) {
+        if (seenIds.has(e.id)) return;
+        seenIds.add(e.id);
+      }
+      const info = getSeasonInfo(e.date, data);
+      if (!byKey.has(info.key)) byKey.set(info.key, { info, items: [] });
+      byKey.get(info.key).items.push({ entry: e, hobby: h });
+    };
     for (const h of data.hobbies || []) {
       if (h.hidden) continue;
       if (!includeHobby(h)) continue;
       const arr = data.entries?.[h.id];
-      if (!Array.isArray(arr)) continue;
-      for (const e of arr) {
-        if (!e || !e.date) continue;
-        const info = getSeasonInfo(e.date, data);
-        if (!byKey.has(info.key)) byKey.set(info.key, { info, items: [] });
-        byKey.get(info.key).items.push({ entry: e, hobby: h });
+      if (Array.isArray(arr)) {
+        for (const e of arr) pushEntry(e, h);
+      }
+      const archived = archivedEntriesByHobby[h.id];
+      if (Array.isArray(archived)) {
+        for (const e of archived) pushEntry(e, h);
       }
     }
     // Sort each group's items newest-first
@@ -3745,7 +3781,7 @@ function JournalPage({ data, update, setModal }) {
     }
     // Sort groups newest season first
     return Array.from(byKey.values()).sort((a, b) => b.info.sortOrder - a.info.sortOrder);
-  }, [data.hobbies, data.entries, data.homesteadLocation, hobbyFilter]);
+  }, [data.hobbies, data.entries, data.homesteadLocation, hobbyFilter, archivedEntriesByHobby]);
 
   // On first render (or when filter changes and we have results), expand only
   // the most recent season so the page doesn't open as a giant wall.
@@ -3768,10 +3804,21 @@ function JournalPage({ data, update, setModal }) {
 
   // Delete handler — mirrors HomePage's logic so the Journal stays consistent
   // (butcher entries also clean up freezerLog + currentBatch.butchered).
+  // Also handles entries that live in archived batches' finalEntries
+  // snapshot — the Journal surfaces those now, so deletion must reach them.
   const deleteEntry = (entry, hobby) => {
     getEntryPhotos(entry).forEach((p) => deletePhoto(p).catch(() => {}));
     update((d) => {
       d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== entry.id);
+      // Also strip the entry from any archived batch's finalEntries.
+      const hForArchive = d.hobbies.find((x) => x.id === hobby.id);
+      if (hForArchive && Array.isArray(hForArchive.archivedBatches)) {
+        for (const b of hForArchive.archivedBatches) {
+          if (Array.isArray(b.finalEntries)) {
+            b.finalEntries = b.finalEntries.filter((x) => x.id !== entry.id);
+          }
+        }
+      }
       if (entry.action === "butcher") {
         const h = d.hobbies.find((x) => x.id === hobby.id);
         if (h && Array.isArray(h.currentBatches)) {
@@ -4637,6 +4684,38 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   const activeBatches = hobby.currentBatches || [];
   const archivedBatches = hobby.archivedBatches || [];
 
+  // Inverse of finalize: pop the batch from archivedBatches, push it back to
+  // currentBatches with endDate cleared, and re-hydrate its entries into
+  // data.entries[hobby.id] from the snapshot we stored at finalize time.
+  // Behind a confirm prompt so accidental taps don't shuffle data around.
+  const restorePastBatch = (batchId) => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h || !Array.isArray(h.archivedBatches)) return d;
+      const idx = h.archivedBatches.findIndex((b) => b.id === batchId);
+      if (idx === -1) return d;
+      const target = h.archivedBatches[idx];
+      const restored = JSON.parse(JSON.stringify(target));
+      // Clear finalize-only fields so the batch reads as active again.
+      const snapshotEntries = Array.isArray(restored.finalEntries) ? restored.finalEntries : [];
+      delete restored.finalEntries;
+      restored.endDate = "";
+      h.currentBatches = h.currentBatches || [];
+      h.currentBatches.push(restored);
+      h.archivedBatches.splice(idx, 1);
+      // Re-hydrate the entries. We de-dupe by entry id in case a parallel
+      // path already promoted some of them back (shouldn't happen, but
+      // belt-and-suspenders since data corruption here would be confusing).
+      d.entries[hobby.id] = d.entries[hobby.id] || [];
+      const existingIds = new Set(d.entries[hobby.id].map(e => e.id).filter(Boolean));
+      for (const e of snapshotEntries) {
+        if (!e || (e.id && existingIds.has(e.id))) continue;
+        d.entries[hobby.id].push(e);
+      }
+      return d;
+    }, { immediate: true });
+  };
+
   // Past batches section — extracted so we can render it in both the
   // "has active batches" path AND the "no active batches" empty-state path.
   // Without this, users who finalize their only batch would see "No active
@@ -4681,6 +4760,27 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
                   {butchered > 0 && <> · Butchered <strong style={{ color: palette.ink }}>{butchered}</strong></>}
                   {totalWeight > 0 && <> · <strong style={{ color: palette.ink }}>{totalWeight.toFixed(1)} lbs</strong></>}
                   {deaths > 0 && <> · {deaths} lost</>}
+                </div>
+                <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const msg = `Restore "${b.name}" to active batches? Any logged entries for this batch will come back too.`;
+                      if (typeof window !== "undefined" && window.confirm && !window.confirm(msg)) return;
+                      restorePastBatch(b.id);
+                    }}
+                    style={{
+                      padding: "5px 10px",
+                      borderRadius: 6,
+                      border: `1.5px solid ${palette.line}`,
+                      background: palette.bg,
+                      color: palette.ink,
+                      fontFamily: FONT_BODY,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                    }}
+                  >↩️ Restore to active</button>
                 </div>
               </div>
             );
@@ -10694,13 +10794,30 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
         d.entries[hobby.id].push(entry);
       } else {
-        // Edit: replace the existing entry in place
+        // Edit: replace the existing entry in place. The entry may live in
+        // data.entries[hobby.id] OR — for finalized meat-bird batches — on
+        // an archivedBatch's finalEntries snapshot. Update wherever it is.
         const idx = d.entries[hobby.id].findIndex((e) => e.id === existingEntry.id);
         if (idx !== -1) {
           d.entries[hobby.id][idx] = entry;
         } else {
-          // If somehow it's missing (e.g., removed elsewhere), add it back
-          d.entries[hobby.id].push(entry);
+          let foundInArchive = false;
+          const hForArchive = d.hobbies.find((x) => x.id === hobby.id);
+          if (hForArchive && Array.isArray(hForArchive.archivedBatches)) {
+            for (const b of hForArchive.archivedBatches) {
+              if (!Array.isArray(b.finalEntries)) continue;
+              const ai = b.finalEntries.findIndex((e) => e.id === existingEntry.id);
+              if (ai !== -1) {
+                b.finalEntries[ai] = entry;
+                foundInArchive = true;
+                break;
+              }
+            }
+          }
+          if (!foundInArchive) {
+            // Not in live entries OR archived snapshots — add as new to avoid losing the edit.
+            d.entries[hobby.id].push(entry);
+          }
         }
       }
 

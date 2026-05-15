@@ -155,43 +155,54 @@ function HiveModal({ hive, onSave, onClose }) {
 }
 
 // ============ LOG ENTRY MODAL ============
-function LogEntryModal({ hive, action, onSave, onClose }) {
-  const [date, setDate] = useState(todayStr());
-  const [note, setNote] = useState("");
+function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
+  // Edit mode pre-fills every action-specific field from the saved entry.
+  // Without these, tapping "edit" on a saved entry would open a blank form
+  // — and saving from that blank form silently dropped the edit because
+  // handleSave previously assigned a fresh id, missing the parent's
+  // findIndex(e.id===…) lookup.
+  const isEdit = !!existingEntry;
+  const e = existingEntry || {};
+  const [date, setDate] = useState(e.date || todayStr());
+  const [note, setNote] = useState(e.note || "");
   // Inspection fields
-  const [queenSeen, setQueenSeen] = useState(false);
-  const [broodPattern, setBroodPattern] = useState("Good");
-  const [temperament, setTemperament] = useState("Calm");
-  const [honeyStores, setHoneyStores] = useState("Adequate");
-  const [population, setPopulation] = useState("Strong");
-  const [supersedureCells, setSupersedureCells] = useState(false);
-  const [swarmCells, setSwarmCells] = useState(false);
+  const [queenSeen, setQueenSeen] = useState(!!e.queenSeen);
+  const [broodPattern, setBroodPattern] = useState(e.broodPattern || "Good");
+  const [temperament, setTemperament] = useState(e.temperament || "Calm");
+  const [honeyStores, setHoneyStores] = useState(e.honeyStores || "Adequate");
+  const [population, setPopulation] = useState(e.population || "Strong");
+  const [supersedureCells, setSupersedureCells] = useState(!!e.supersedureCells);
+  const [swarmCells, setSwarmCells] = useState(!!e.swarmCells);
   // Harvest fields
-  const [harvestLbs, setHarvestLbs] = useState("");
-  const [harvestJars, setHarvestJars] = useState("");
-  const [harvestRevenue, setHarvestRevenue] = useState("");
+  const [harvestLbs, setHarvestLbs] = useState(e.lbs != null ? String(e.lbs) : "");
+  const [harvestJars, setHarvestJars] = useState(e.jars != null ? String(e.jars) : "");
+  const [harvestRevenue, setHarvestRevenue] = useState(e.revenue != null ? String(e.revenue) : "");
   // Feed fields
-  const [feedType, setFeedType] = useState("Sugar syrup (2:1)");
-  const [feedQty, setFeedQty] = useState("");
-  const [feedCost, setFeedCost] = useState("");
+  const [feedType, setFeedType] = useState(e.feedType || "Sugar syrup (2:1)");
+  const [feedQty, setFeedQty] = useState(e.qty != null ? String(e.qty) : "");
+  const [feedCost, setFeedCost] = useState(action === "feed" && e.cost != null ? String(e.cost) : "");
   // Treatment fields
-  const [treatmentType, setTreatmentType] = useState(MITE_TREATMENTS[0]);
-  const [miteCount, setMiteCount] = useState("");
-  const [treatmentCost, setTreatmentCost] = useState("");
+  const [treatmentType, setTreatmentType] = useState(e.treatmentType || MITE_TREATMENTS[0]);
+  const [miteCount, setMiteCount] = useState(e.miteCount != null ? String(e.miteCount) : "");
+  const [treatmentCost, setTreatmentCost] = useState(action === "treatment" && e.cost != null ? String(e.cost) : "");
   // Infrastructure
-  const [item, setItem] = useState("");
-  const [infraCost, setInfraCost] = useState("");
+  const [item, setItem] = useState(e.item || "");
+  const [infraCost, setInfraCost] = useState(action === "infrastructure" && e.cost != null ? String(e.cost) : "");
   // Split/swarm
-  const [splitDetails, setSplitDetails] = useState("");
+  const [splitDetails, setSplitDetails] = useState(e.detail || "");
   // Death/loss
-  const [deathCause, setDeathCause] = useState("Unknown");
+  const [deathCause, setDeathCause] = useState(e.cause || "Unknown");
   // Varroa testing
-  const [varroaMethod, setVarroaMethod] = useState("Sugar roll");
-  const [varroaCount, setVarroaCount] = useState("");
-  const [varroaTreatedAfter, setVarroaTreatedAfter] = useState(false);
+  const [varroaMethod, setVarroaMethod] = useState(e.varroaMethod || "Sugar roll");
+  const [varroaCount, setVarroaCount] = useState(e.varroaCount != null ? String(e.varroaCount) : "");
+  const [varroaTreatedAfter, setVarroaTreatedAfter] = useState(!!e.varroaTreatedAfter);
 
   const handleSave = () => {
-    let entry = { id: newId(), date, action, hiveId: hive.id, created: Date.now() };
+    // Preserve id + created on edit so the parent's findIndex(e.id) lookup
+    // finds the row to update. Without this, saving an edit silently no-ops.
+    let entry = isEdit
+      ? { ...existingEntry, date, action, hiveId: hive.id }
+      : { id: newId(), date, action, hiveId: hive.id, created: Date.now() };
     if (action === "inspect") {
       entry = { ...entry, queenSeen, broodPattern, temperament, honeyStores, population, supersedureCells, swarmCells, note };
     } else if (action === "harvest") {
@@ -229,7 +240,7 @@ function LogEntryModal({ hive, action, onSave, onClose }) {
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{titles[action]||action}</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit " : ""}{titles[action]||action}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
