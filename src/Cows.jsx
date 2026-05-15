@@ -427,7 +427,7 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,onClose}){
   );
 }
 
-function LogModal({animal,hobbyId,action,update,onClose}){
+function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose}){
   const[date,setDate]=useState(todayStr());
   const[gallons,setGallons]=useState("");
   const[lbs,setLbs]=useState("");
@@ -438,6 +438,19 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   // Death-only: optional cause. Stored on the entry AND folded into archivedReason
   // so the existing "Archived cattle" section reads "Died: predator" etc.
   const[cause,setCause]=useState("");
+  // Heat-only: intensity describes how strong the signs were. We also use it
+  // to grade missed-vs-caught heats over time (a "quiet" heat is easy to
+  // miss; tracking these helps identify cows with subtle estrus).
+  const[heatIntensity,setHeatIntensity]=useState("standing");
+  // AI-only: who the sire is, the method used, optional cost + technician.
+  // Sire is either a Bull picked from your existing animals (`aiSireId`)
+  // OR free-text for outside semen with a code like "Select Sires #14HO12345"
+  // (`aiSireName`). Toggle which mode via aiUseExternal.
+  const[aiSireId,setAiSireId]=useState("");
+  const[aiSireName,setAiSireName]=useState("");
+  const[aiUseExternal,setAiUseExternal]=useState(false);
+  const[aiMethod,setAiMethod]=useState("AI (cervical)");
+  const[aiTechnician,setAiTechnician]=useState("");
   // Sale-only: buyer name, sale price, sold-vs-rehomed. On save these archive
   // the animal AND create a `data.sales[]` entry shaped like the existing
   // horse-sale shape so it shows up in the Sales tab.
@@ -482,6 +495,38 @@ function LogModal({animal,hobbyId,action,update,onClose}){
           return t.toISOString().slice(0, 10);
         })();
       }
+    }
+    if(action==="heat"){
+      // Heat intensity describes how visible the signs were. Used downstream
+      // for grading missed-vs-caught heats over time.
+      entry.heatIntensity = heatIntensity;
+      // Compute expected next heat (~21 days). Stored on the entry so the
+      // animal-history view and stats can reason about cycle regularity
+      // without re-calculating each time.
+      entry.nextHeatExpected = addDays(date, 21);
+    }
+    if(action==="ai"){
+      // Sire reference: either an internal Bull (aiSireId) or external
+      // semen identified by name. We persist whichever the user chose.
+      entry.aiMethod = aiMethod;
+      if(aiUseExternal){
+        entry.aiSireId = null;
+        entry.aiSireName = aiSireName.trim();
+      } else {
+        entry.aiSireId = aiSireId || null;
+        // Snapshot the sire name at log time so it stays readable even if
+        // the bull is later archived/renamed.
+        const sireAnimal = animals.find(a => a.id === aiSireId);
+        entry.aiSireName = sireAnimal?.name || "";
+      }
+      entry.aiTechnician = aiTechnician.trim();
+      // Cost shares the `cost` state used by feed/butcher — repurposed
+      // since each action only renders one cost field at a time.
+      entry.cost = Number(cost) || 0;
+      // Expected preg check ~30 days after AI. Most ranchers do palpation
+      // at 35-45d, ultrasound at 28-35d, blood at 28d+. 30 hits the sweet
+      // spot of "earliest reliable test for most methods".
+      entry.pregCheckDue = addDays(date, 30);
     }
     update(d=>{
       d.entries[hobbyId]=d.entries[hobbyId]||[];
@@ -557,11 +602,38 @@ function LogModal({animal,hobbyId,action,update,onClose}){
           notes:notes||"",
         });
       }
+      // Heat-cycle calendar event: next expected heat ~21 days out, so the
+      // user gets a reminder to watch for signs again. Linked to the entry
+      // via relatedId so editing/deleting the heat entry could clean it
+      // up later.
+      if(action==="heat"){
+        d.calendarEvents = d.calendarEvents || [];
+        d.calendarEvents.push({
+          id: newId(),
+          date: entry.nextHeatExpected,
+          title: `🔥 Next heat expected — ${animal.name}`,
+          kind: "cow_heat_expected",
+          relatedId: entry.id,
+          animalId: animal.id,
+        });
+      }
+      // AI calendar event: preg check due ~30 days out.
+      if(action==="ai"){
+        d.calendarEvents = d.calendarEvents || [];
+        d.calendarEvents.push({
+          id: newId(),
+          date: entry.pregCheckDue,
+          title: `🤰 Preg check due — ${animal.name}`,
+          kind: "cow_preg_check_due",
+          relatedId: entry.id,
+          animalId: animal.id,
+        });
+      }
       return d;
     });
     onClose();
   };
-  const titles={milk:"Log milk",fed:"Log feed",calf:"Log calf born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note",preg_test:"Pregnancy check"};
+  const titles={milk:"Log milk",fed:"Log feed",calf:"Log calf born",weight:"Log weight",health:"Health check",butcher:"Log butcher",death:"Log death",sale:"Log sale",note:"Add note",preg_test:"Pregnancy check",heat:"Log heat",ai:"Log breeding (AI)"};
   const isDeath=action==="death";
   const isSale=action==="sale";
   return(
@@ -642,6 +714,100 @@ function LogModal({animal,hobbyId,action,update,onClose}){
           );
         })()}
       </>}
+      {action==="heat"&&<>
+        <Field label="Intensity">
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[
+              {v:"standing", l:"💯 Standing heat", sub:"clearest sign"},
+              {v:"mounting", l:"⬆️ Mounting", sub:"others or being mounted"},
+              {v:"quiet", l:"🤫 Quiet", sub:"suspected, weak signs"},
+              {v:"bloody", l:"🩸 Bloody", sub:"post-heat spotting"},
+            ].map(o => (
+              <button key={o.v} onClick={()=>setHeatIntensity(o.v)} style={{
+                flex:"1 1 calc(50% - 3px)", padding:"10px 12px", borderRadius:8,
+                border:`1.5px solid ${heatIntensity===o.v?palette.ink:palette.line}`,
+                background:heatIntensity===o.v?palette.ink:palette.card,
+                color:heatIntensity===o.v?palette.bg:palette.ink,
+                fontFamily:FONT_BODY, fontWeight:600, fontSize:12, cursor:"pointer",
+                textAlign:"left",
+              }}>
+                <div>{o.l}</div>
+                <div style={{fontSize:10,opacity:0.7,marginTop:2,fontWeight:400}}>{o.sub}</div>
+              </button>
+            ))}
+          </div>
+        </Field>
+        <div style={{fontSize:11,color:palette.inkSoft,marginBottom:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
+          📅 We'll add "Next heat expected" to your calendar for {addDays(date, 21)} (~21 days from today). Useful for catching the next breeding window.
+        </div>
+      </>}
+      {action==="ai"&&(() => {
+        // Sire picker — surface only Bulls in this hobby. If user doesn't
+        // have any tracked Bulls, default to external mode so the form is
+        // immediately usable.
+        const sires = animals.filter(a => !a.archived && a.sex === "Bull");
+        const noInternalSires = sires.length === 0;
+        return (
+          <>
+            <Field label="Method">
+              <select style={inputStyle} value={aiMethod} onChange={e=>setAiMethod(e.target.value)}>
+                <option>AI (cervical)</option>
+                <option>AI (deep horn)</option>
+                <option>Embryo transfer</option>
+                <option>Pasture mating</option>
+                <option>Hand mating</option>
+              </select>
+            </Field>
+            {!noInternalSires && (
+              <Field label="Sire source">
+                <div style={{display:"flex",gap:6}}>
+                  <button onClick={()=>setAiUseExternal(false)} style={{
+                    flex:1, padding:"8px 10px", borderRadius:8,
+                    border:`1.5px solid ${!aiUseExternal?palette.ink:palette.line}`,
+                    background:!aiUseExternal?palette.ink:palette.card,
+                    color:!aiUseExternal?palette.bg:palette.ink,
+                    fontFamily:FONT_BODY, fontWeight:600, fontSize:13, cursor:"pointer",
+                  }}>🐂 Your bull</button>
+                  <button onClick={()=>setAiUseExternal(true)} style={{
+                    flex:1, padding:"8px 10px", borderRadius:8,
+                    border:`1.5px solid ${aiUseExternal?palette.ink:palette.line}`,
+                    background:aiUseExternal?palette.ink:palette.card,
+                    color:aiUseExternal?palette.bg:palette.ink,
+                    fontFamily:FONT_BODY, fontWeight:600, fontSize:13, cursor:"pointer",
+                  }}>📦 Outside semen</button>
+                </div>
+              </Field>
+            )}
+            {(noInternalSires || aiUseExternal) ? (
+              <Field label="Sire (name / code)">
+                <input style={inputStyle} value={aiSireName} onChange={e=>setAiSireName(e.target.value)} placeholder="e.g. Select Sires #14HO12345" />
+              </Field>
+            ) : (
+              <Field label="Sire">
+                <select style={inputStyle} value={aiSireId} onChange={e=>setAiSireId(e.target.value)}>
+                  <option value="">— Select a bull —</option>
+                  {sires.map(s => <option key={s.id} value={s.id}>{s.name}{s.breed?` · ${s.breed}`:""}</option>)}
+                </select>
+              </Field>
+            )}
+            <div style={{display:"flex",gap:12}}>
+              <div style={{flex:1}}>
+                <Field label="Cost (optional)">
+                  <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/>
+                </Field>
+              </div>
+              <div style={{flex:1}}>
+                <Field label="Technician (optional)">
+                  <input style={inputStyle} value={aiTechnician} onChange={e=>setAiTechnician(e.target.value)} placeholder="Name or service"/>
+                </Field>
+              </div>
+            </div>
+            <div style={{fontSize:11,color:palette.inkSoft,marginBottom:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
+              📅 We'll add "Preg check due" to your calendar for {addDays(date, 30)} (~30 days from breeding). Most checks are accurate by then.
+            </div>
+          </>
+        );
+      })()}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived cattle list. You can restore from there if this was a mistake.</div>}
       {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived cattle list and {saleType!=="rehomed"?"a sale record will appear in your Sales tab":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
@@ -660,10 +826,10 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
   const totalMilkGal=milkEntries.reduce((s,e)=>s+(Number(e.gallons)||0),0);
   const todayMilk=milkEntries.filter(e=>e.date===today).reduce((s,e)=>s+(Number(e.gallons)||0),0);
   const purposeColor={Dairy:palette.leaf,Beef:palette.accent,Both:palette.feather};
-  // Purpose drives which actions show. Preg check is only for females that
-  // can carry — Cows and Heifers. Filters out Bulls/Steers regardless of
-  // purpose. The base set is per purpose; we splice preg_test in for the
-  // breeding-capable sexes.
+  // Purpose drives which actions show. Preg check + heat + AI are only for
+  // females that can carry — Cows and Heifers. Filters out Bulls/Steers
+  // regardless of purpose. The base set is per purpose; we splice the
+  // breeding-related actions in for the breeding-capable sexes.
   const canCarry = animal.sex === "Cow" || animal.sex === "Heifer";
   const baseActions = animal.purpose==="Beef"
     ? ["fed","weight","health","butcher","death","sale","note"]
@@ -671,13 +837,13 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
       ? ["milk","fed","calf","health","death","sale","note"]
       : ["milk","fed","calf","weight","health","butcher","death","sale","note"];
   const LOG_ACTIONS = canCarry
-    ? [...baseActions.filter(a => a !== "note"), "preg_test", "note"]
+    ? [...baseActions.filter(a => a !== "note"), "heat", "ai", "preg_test", "note"]
     : baseActions;
-  const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",calf:"🍼 Calf",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note",preg_test:"🤰 Preg check"};
+  const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",calf:"🍼 Calf",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note",preg_test:"🤰 Preg check",heat:"🔥 Heat",ai:"💉 Breed"};
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
-      {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} update={update} onClose={()=>setLogAction(null)}/>}
+      {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} animals={animals} hobby={hobby} update={update} onClose={()=>setLogAction(null)}/>}
       {showPedigree && (
         <PedigreeView
           animal={animal}
@@ -753,6 +919,19 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
               const m = e.pregMethod && e.pregMethod!=="other" ? ` · ${e.pregMethod}` : "";
               const ec = e.pregResult==="pregnant" && e.expectedCalving ? ` · due ${fmtDate(e.expectedCalving)}` : "";
               detail = `${r}${m}${ec}`;
+            }
+            else if(e.action==="heat"){
+              const i = e.heatIntensity === "standing" ? "standing" :
+                e.heatIntensity === "mounting" ? "mounting" :
+                e.heatIntensity === "bloody" ? "bloody" : "quiet";
+              const next = e.nextHeatExpected ? ` · next ${fmtDate(e.nextHeatExpected)}` : "";
+              detail = `${i}${next}`;
+            }
+            else if(e.action==="ai"){
+              const sire = e.aiSireName || "unknown sire";
+              const m = e.aiMethod ? ` · ${e.aiMethod}` : "";
+              const c = e.cost > 0 ? ` · ${fmtMoney(e.cost)}` : "";
+              detail = `× ${sire}${m}${c}`;
             }
             return (
               <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
