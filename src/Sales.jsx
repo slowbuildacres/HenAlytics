@@ -66,6 +66,10 @@ const HOBBY_META = {
   sourdough:     { label: "Sourdough",     emoji: "🍞", color: palette.yolk },
   baking:        { label: "Baking",        emoji: "🥧", color: palette.yolk },
   canning:       { label: "Canning",       emoji: "🫙", color: palette.leafSoft },
+  tincture:      { label: "Tinctures",     emoji: "🌿", color: palette.leaf },
+  oil_infusion:  { label: "Oil Infusions", emoji: "🫒", color: palette.leaf },
+  salve:         { label: "Salves",        emoji: "🪻", color: palette.leaf },
+  tea:           { label: "Tea Blends",    emoji: "🍵", color: palette.leaf },
   incubator:     { label: "Chicks",         emoji: "🐣", color: palette.yolkSoft },
   horse:         { label: "Horses",        emoji: "🐴", color: palette.feather },
   cow:           { label: "Cattle",        emoji: "🐄", color: palette.feather },
@@ -99,6 +103,15 @@ function computeRevenue(sale) {
     // Both flow through Baking/Canning pages with totalRevenue prefilled (caught
     // by the early return above), but fall back to qty × pricePerUnit if a
     // user creates the sale directly from the Sales tab.
+    return qty * price;
+  }
+  // Herbalism types — tincture, oil infusion, salve, tea. Each sub-page
+  // prefills totalRevenue when creating the sale (caught by early-return
+  // above); the fallback below handles direct-from-Sales-tab creation,
+  // and computes qty × pricePerUnit which is the natural model for all
+  // four (bottles × $/bottle, tins × $/tin, sachets × $/sachet, oz × $/oz).
+  if (sale.hobbyType === "tincture" || sale.hobbyType === "oil_infusion" ||
+      sale.hobbyType === "salve" || sale.hobbyType === "tea") {
     return qty * price;
   }
   if (sale.hobbyType === "eggs") {
@@ -266,6 +279,11 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
     if (hobbyType === "sourdough") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "baking") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "canning") return q * (Number(pricePerUnit) || 0);
+    // Herbalism types follow qty × price pattern (bottles, tins, sachets, or oz)
+    if (hobbyType === "tincture" || hobbyType === "oil_infusion" ||
+        hobbyType === "salve" || hobbyType === "tea") {
+      return q * (Number(pricePerUnit) || 0);
+    }
     if (hobbyType === "horse") return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "incubator") return q * (Number(pricePerUnit) || 0);
@@ -283,6 +301,10 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       else if (h.type === "sourdough") types.add("sourdough");
       else if (h.type === "baking") types.add("baking");
       else if (h.type === "canning") types.add("canning");
+      else if (h.type === "tincture") types.add("tincture");
+      else if (h.type === "oil_infusion") types.add("oil_infusion");
+      else if (h.type === "salve") types.add("salve");
+      else if (h.type === "tea") types.add("tea");
       else if (h.type === "horses") types.add("horse");
       else if (h.type === "incubator") types.add("incubator");
     });
@@ -990,6 +1012,19 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
   } else if (sale.hobbyType === "canning") {
     const unitLabel = sale.gardenUnit || sale.unit || "jars";
     detail = `${sale.crop || "Canning"} · ${sale.qty} ${unitLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/jar`;
+  } else if (sale.hobbyType === "tincture") {
+    const unit = sale.gardenUnit || "bottle";
+    detail = `${sale.crop || "Tincture"} · ${sale.qty} × ${unit} @ ${fmtMoney(sale.pricePerUnit||0)}/bottle`;
+  } else if (sale.hobbyType === "oil_infusion") {
+    const unit = sale.gardenUnit || "bottle";
+    detail = `${sale.crop || "Infused oil"} · ${sale.qty} × ${unit} @ ${fmtMoney(sale.pricePerUnit||0)}/bottle`;
+  } else if (sale.hobbyType === "salve") {
+    const unit = sale.gardenUnit || "tin";
+    detail = `${sale.crop || "Salve"} · ${sale.qty} × ${unit} @ ${fmtMoney(sale.pricePerUnit||0)}/tin`;
+  } else if (sale.hobbyType === "tea") {
+    const unit = sale.gardenUnit || "unit";
+    const unitLabel = unit === "oz" ? "oz" : `× ${unit}`;
+    detail = `${sale.crop || "Tea blend"} · ${sale.qty} ${unitLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/${unit === "oz" ? "oz" : "sachet"}`;
   } else if (sale.hobbyType === "horse") {
     detail = `${sale.crop || "Horse"} · ${sale.saleType || "sold"}`;
   } else if (sale.hobbyType === "incubator") {

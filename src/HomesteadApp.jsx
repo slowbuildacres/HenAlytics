@@ -45,6 +45,10 @@ import CanningPage, { CanningAnalytics } from "./Canning.jsx";
 import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
 import DehydratingPage, { DehydratingAnalytics } from "./Dehydrating.jsx";
 import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
+import TincturePage, { TinctureAnalytics } from "./Tincture.jsx";
+import OilInfusionPage, { OilInfusionAnalytics } from "./OilInfusion.jsx";
+import SalvePage, { SalveAnalytics } from "./Salve.jsx";
+import TeaPage, { TeaAnalytics } from "./Tea.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
 import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
@@ -486,6 +490,23 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       data.hobbies.push({ id, name, type, icon, hidden: true, ...shape });
     }
   });
+
+  // Herbalism — virtual wrapper hobby with four sub-types (tincture, oil
+  // infusion, salve, tea). Each is its own real hobby on data.hobbies so
+  // analytics / sales / reordering all work the existing way. The
+  // HerbalismPage component routes between them via a tab bar, same
+  // pattern as PreservingPage.
+  const herbalismTypes = [
+    { id: "tincture",     name: "Tinctures 🌿",     type: "tincture",     icon: "sprout", batches: [] },
+    { id: "oil_infusion", name: "Oil Infusions 🫒", type: "oil_infusion", icon: "sprout", batches: [] },
+    { id: "salve",        name: "Salves 🪻",         type: "salve",        icon: "sprout", batches: [] },
+    { id: "tea",          name: "Tea Blends 🍵",    type: "tea",          icon: "sprout", batches: [] },
+  ];
+  herbalismTypes.forEach(({ id, name, type, icon, ...shape }) => {
+    if (!data.hobbies.some(h => h.id === id)) {
+      data.hobbies.push({ id, name, type, icon, hidden: true, ...shape });
+    }
+  });
   data.hobbies.forEach((h) => {
     if (h.type === "freeze_drying") {
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -508,6 +529,38 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       if (typeof h.hidden === "undefined") h.hidden = true;
       if (!h.name || h.name === "fermentation" || h.name === "Fermentation") {
         h.name = "Fermentation 🫧";
+      }
+    }
+    // Herbalism sub-types — same heal pattern as preserving. Each batch
+    // record lives on h.batches[]; specific fields differ per sub-type
+    // (tinctures have menstruum, oils have carrier, etc.) and are
+    // defined in the per-sub-type page files.
+    if (h.type === "tincture") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "tincture" || h.name === "Tincture") {
+        h.name = "Tinctures 🌿";
+      }
+    }
+    if (h.type === "oil_infusion") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "oil_infusion" || h.name === "Oil_infusion") {
+        h.name = "Oil Infusions 🫒";
+      }
+    }
+    if (h.type === "salve") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "salve" || h.name === "Salve") {
+        h.name = "Salves 🪻";
+      }
+    }
+    if (h.type === "tea") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
+      if (!h.name || h.name === "tea" || h.name === "Tea") {
+        h.name = "Tea Blends 🍵";
       }
     }
   });
@@ -3204,12 +3257,16 @@ export default function HomesteadApp() {
             }}>
               {(() => {
                 const preservingTypes = ["canning", "freeze_drying", "dehydrating", "fermentation"];
+                const herbalismTypes = ["tincture", "oil_infusion", "salve", "tea"];
+                const groupedTypes = [...preservingTypes, ...herbalismTypes];
                 const visiblePreserving = data.hobbies.filter(h => preservingTypes.includes(h.type) && !h.hidden);
+                const visibleHerbalism = data.hobbies.filter(h => herbalismTypes.includes(h.type) && !h.hidden);
                 const isPreservingActive = preservingTypes.includes(activeHobby);
-                const nonPreservingVisible = data.hobbies.filter(h => !h.hidden && !preservingTypes.includes(h.type));
+                const isHerbalismActive = herbalismTypes.includes(activeHobby);
+                const nonGroupedVisible = data.hobbies.filter(h => !h.hidden && !groupedTypes.includes(h.type));
                 return (
                   <>
-                    {nonPreservingVisible.map((h) => (
+                    {nonGroupedVisible.map((h) => (
                 <button
                   key={h.id}
                   onClick={() => {
@@ -3280,6 +3337,35 @@ export default function HomesteadApp() {
                       >
                         <HobbyIcon name="sprout" size={18} strokeWidth={1.5} />
                         Preserving 🥫
+                      </button>
+                    )}
+                    {visibleHerbalism.length > 0 && (
+                      <button
+                        key="herbalism-group"
+                        onClick={() => {
+                          // Route to whichever herbalism sub-type the user
+                          // has enabled first. HerbalismPage's tab bar then
+                          // lets them switch between visible sub-types.
+                          const preferredOrder = ["tincture", "oil_infusion", "salve", "tea"];
+                          const target = preferredOrder.find(t =>
+                            visibleHerbalism.some(h => h.type === t)
+                          ) || visibleHerbalism[0].type;
+                          setActiveHobby(target);
+                          setSeasonFilter("all");
+                          setHobbyMenuOpen(false);
+                          if (page !== "analytics") setPage(target);
+                        }}
+                        style={{
+                          width: "100%", padding: "12px 16px",
+                          background: isHerbalismActive ? palette.bgAlt : "transparent",
+                          border: "none", borderBottom: `1px solid ${palette.line}`,
+                          cursor: "pointer", textAlign: "left",
+                          display: "flex", alignItems: "center", gap: 10,
+                          color: palette.ink, fontWeight: 500,
+                        }}
+                      >
+                        <HobbyIcon name="sprout" size={18} strokeWidth={1.5} />
+                        Herbalism 🌿
                       </button>
                     )}
                   </>
@@ -3425,6 +3511,18 @@ export default function HomesteadApp() {
         {page === "fermentation" && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="fermentation" />
         )}
+        {page === "tincture" && (
+          <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tincture" />
+        )}
+        {page === "oil_infusion" && (
+          <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="oil_infusion" />
+        )}
+        {page === "salve" && (
+          <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="salve" />
+        )}
+        {page === "tea" && (
+          <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tea" />
+        )}
         {page === "sheep" && (
           <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
         )}
@@ -3475,7 +3573,7 @@ export default function HomesteadApp() {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "dogs" || page === "cats" || page === "maple_syrup"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "dogs") setPage("dogs"); else if (activeHobby === "cats") setPage("cats"); else if (activeHobby === "maple_syrup") setPage("maple_syrup"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "tincture" || page === "oil_infusion" || page === "salve" || page === "tea" || page === "dogs" || page === "cats" || page === "maple_syrup"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "tincture") setPage("tincture"); else if (activeHobby === "oil_infusion") setPage("oil_infusion"); else if (activeHobby === "salve") setPage("salve"); else if (activeHobby === "tea") setPage("tea"); else if (activeHobby === "dogs") setPage("dogs"); else if (activeHobby === "cats") setPage("cats"); else if (activeHobby === "maple_syrup") setPage("maple_syrup"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         <NavTipButton filled={tippedThisMonth} onClick={() => setModal({ type: "support" })} />
@@ -3618,6 +3716,164 @@ function PreservingAnalyticsPage({ data, initialSubType, spouseMode }) {
       {activeSub === "fermentation" && fermentationHobby && (
         <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data}>
           <FermentationAnalytics hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} />
+        </AnalyticsShareWrapper>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// HERBALISM — virtual wrapper hobby with four sub-types (tincture, oil
+// infusion, salve, tea). Mirrors PreservingPage exactly: tab bar at the
+// top, each tab routes to the corresponding sub-type's page component.
+// Each sub-type is a real hobby with its own data on data.hobbies, so
+// analytics / sales / picker reordering all keep working unchanged.
+//
+// Tabs only render when their sub-hobby page component is available, so
+// future sub-types can be added by dropping the import + tab entry in.
+// ============================================================================
+function HerbalismPage({ data, update, setModal, initialSubType }) {
+  const [activeSub, setActiveSub] = useState(initialSubType || "tincture");
+
+  const tinctureHobby = data.hobbies.find(h => h.type === "tincture");
+  const oilHobby = data.hobbies.find(h => h.type === "oil_infusion");
+  const salveHobby = data.hobbies.find(h => h.type === "salve");
+  const teaHobby = data.hobbies.find(h => h.type === "tea");
+
+  // Tabs are listed in the natural workflow order: tinctures (alcohol) →
+  // oils (carrier oil) → salves (oils + beeswax) → teas (dried blends).
+  // All four sub-types have real pages now.
+  const tabs = [
+    { key: "tincture",     label: "Tinctures",     emoji: "🌿", hobby: tinctureHobby },
+    { key: "oil_infusion", label: "Oil infusions", emoji: "🫒", hobby: oilHobby       },
+    { key: "salve",        label: "Salves",        emoji: "🪻", hobby: salveHobby     },
+    { key: "tea",          label: "Tea blends",    emoji: "🍵", hobby: teaHobby       },
+  ];
+
+  return (
+    <div>
+      {/* Tab bar */}
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16,
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        paddingBottom: 2,
+      }}>
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSub(t.key)}
+            style={{
+              flexShrink: 0,
+              padding: "8px 14px", borderRadius: 999,
+              border: `1.5px solid ${activeSub === t.key ? palette.ink : palette.line}`,
+              background: activeSub === t.key ? palette.ink : palette.card,
+              color: activeSub === t.key ? palette.bg : palette.ink,
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+
+      {/* Active sub-hobby page */}
+      {activeSub === "tincture" && tinctureHobby && (
+        <TincturePage hobby={tinctureHobby} data={data} update={update} setModal={setModal} />
+      )}
+      {activeSub === "oil_infusion" && oilHobby && (
+        <OilInfusionPage hobby={oilHobby} data={data} update={update} setModal={setModal} />
+      )}
+      {activeSub === "salve" && salveHobby && (
+        <SalvePage hobby={salveHobby} data={data} update={update} setModal={setModal} />
+      )}
+      {activeSub === "tea" && teaHobby && (
+        <TeaPage hobby={teaHobby} data={data} update={update} setModal={setModal} />
+      )}
+    </div>
+  );
+}
+
+// Small placeholder for herbalism sub-types whose pages aren't shipped yet.
+// Renders inline so the user can still tap the tab and see what's coming
+// rather than hitting a blank screen.
+function ComingSoonSubHobby({ name, emoji }) {
+  return (
+    <div style={{
+      padding: 28, background: palette.card, border: `2px dashed ${palette.line}`,
+      borderRadius: 12, textAlign: "center", color: palette.inkSoft,
+    }}>
+      <div style={{ fontSize: 36, marginBottom: 10 }}>{emoji}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 6 }}>
+        {name} — coming soon
+      </div>
+      <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+        This sub-hobby is being built. Tinctures are ready now — tap the Tinctures tab to get started.
+      </div>
+    </div>
+  );
+}
+
+// Herbalism analytics wrapper — same pattern as PreservingAnalyticsPage.
+// Each sub-type's analytics component renders independently inside its tab.
+function HerbalismAnalyticsPage({ data, initialSubType, spouseMode }) {
+  const [activeSub, setActiveSub] = useState(initialSubType || "tincture");
+
+  const tinctureHobby = data.hobbies.find(h => h.type === "tincture");
+  const oilHobby = data.hobbies.find(h => h.type === "oil_infusion");
+  const salveHobby = data.hobbies.find(h => h.type === "salve");
+  const teaHobby = data.hobbies.find(h => h.type === "tea");
+
+  const tabs = [
+    { key: "tincture",     label: "Tinctures",     emoji: "🌿", hobby: tinctureHobby, hasPage: true  },
+    { key: "oil_infusion", label: "Oil infusions", emoji: "🫒", hobby: oilHobby,       hasPage: false },
+    { key: "salve",        label: "Salves",        emoji: "🪻", hobby: salveHobby,     hasPage: false },
+    { key: "tea",          label: "Tea blends",    emoji: "🍵", hobby: teaHobby,       hasPage: false },
+  ];
+
+  return (
+    <div>
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16,
+        overflowX: "auto", WebkitOverflowScrolling: "touch",
+        paddingBottom: 2,
+      }}>
+        {tabs.map(t => (
+          <button
+            key={t.key}
+            onClick={() => setActiveSub(t.key)}
+            style={{
+              flexShrink: 0,
+              padding: "8px 14px", borderRadius: 999,
+              border: `1.5px solid ${activeSub === t.key ? palette.ink : palette.line}`,
+              background: activeSub === t.key ? palette.ink : palette.card,
+              color: activeSub === t.key ? palette.bg : palette.ink,
+              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+              cursor: "pointer", whiteSpace: "nowrap",
+            }}
+          >
+            {t.emoji} {t.label}
+          </button>
+        ))}
+      </div>
+      {activeSub === "tincture" && tinctureHobby && (
+        <AnalyticsShareWrapper hobby={tinctureHobby} data={data} spouseMode={spouseMode}>
+          <TinctureAnalytics hobby={tinctureHobby} entries={data.entries?.["tincture"] || []} />
+        </AnalyticsShareWrapper>
+      )}
+      {activeSub === "oil_infusion" && oilHobby && (
+        <AnalyticsShareWrapper hobby={oilHobby} data={data} spouseMode={spouseMode}>
+          <OilInfusionAnalytics hobby={oilHobby} entries={data.entries?.["oil_infusion"] || []} />
+        </AnalyticsShareWrapper>
+      )}
+      {activeSub === "salve" && salveHobby && (
+        <AnalyticsShareWrapper hobby={salveHobby} data={data} spouseMode={spouseMode}>
+          <SalveAnalytics hobby={salveHobby} entries={data.entries?.["salve"] || []} />
+        </AnalyticsShareWrapper>
+      )}
+      {activeSub === "tea" && teaHobby && (
+        <AnalyticsShareWrapper hobby={teaHobby} data={data} spouseMode={spouseMode}>
+          <TeaAnalytics hobby={teaHobby} entries={data.entries?.["tea"] || []} />
         </AnalyticsShareWrapper>
       )}
     </div>
@@ -8342,7 +8598,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
 
   // Category groups. Each group is a list of hobby types it contains.
   // Hobby types NOT in any group render flat at the top of the modal.
@@ -8350,6 +8606,7 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
     { id: "livestock",  label: "Livestock",     types: ["goats", "cows", "pigs", "sheep", "horses"] },
     { id: "kitchen",    label: "Kitchen",       types: ["baking", "sourdough"] },
     { id: "preserving", label: "Preserving 🥫", types: ["canning", "freeze_drying", "dehydrating", "fermentation"] },
+    { id: "herbalism",  label: "Herbalism 🌿",  types: ["tincture", "oil_infusion", "salve", "tea"] },
   ];
 
   // Per-group "show all" state. Default false so only enabled hobbies show
@@ -8383,6 +8640,10 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
     else if (h.type === "freeze_drying") { setActiveHobby("freeze_drying"); setPage("freeze_drying"); }
     else if (h.type === "dehydrating") { setActiveHobby("dehydrating"); setPage("dehydrating"); }
     else if (h.type === "fermentation") { setActiveHobby("fermentation"); setPage("fermentation"); }
+    else if (h.type === "tincture") { setActiveHobby("tincture"); setPage("tincture"); }
+    else if (h.type === "oil_infusion") { setActiveHobby("oil_infusion"); setPage("oil_infusion"); }
+    else if (h.type === "salve") { setActiveHobby("salve"); setPage("salve"); }
+    else if (h.type === "tea") { setActiveHobby("tea"); setPage("tea"); }
     else if (h.type === "dogs") { setActiveHobby("dogs"); setPage("dogs"); }
     else if (h.type === "cats") { setActiveHobby("cats"); setPage("cats"); }
     else if (h.type === "maple_syrup") { setActiveHobby("maple_syrup"); setPage("maple_syrup"); }
@@ -8512,20 +8773,19 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
 // ============================================================================
 function ReorderHobbiesModal({ data, update, onClose }) {
   const PRESERVING_TYPES = ["canning", "freeze_drying", "dehydrating", "fermentation"];
+  const HERBALISM_TYPES = ["tincture", "oil_infusion", "salve", "tea"];
 
   // Build the "display rows" — same set of items the picker shows. Each row
-  // is either a single hobby or the preserving-as-one block.
+  // is either a single hobby or the preserving-as-one / herbalism-as-one block.
   // We compute this on every render rather than caching so the modal reflects
   // the latest order as soon as a move lands.
   const buildRows = () => {
     const visible = data.hobbies.filter(h => !h.hidden);
     const rows = [];
     let preservingPlaced = false;
+    let herbalismPlaced = false;
     visible.forEach(h => {
       if (PRESERVING_TYPES.includes(h.type)) {
-        // Only push one synthetic row for the whole preserving block,
-        // keyed on the FIRST visible preserving hobby's position. We track
-        // all the member ids so the move logic can shift them together.
         if (!preservingPlaced) {
           const members = visible.filter(x => PRESERVING_TYPES.includes(x.type));
           rows.push({
@@ -8536,6 +8796,18 @@ function ReorderHobbiesModal({ data, update, onClose }) {
             memberIds: members.map(m => m.id),
           });
           preservingPlaced = true;
+        }
+      } else if (HERBALISM_TYPES.includes(h.type)) {
+        if (!herbalismPlaced) {
+          const members = visible.filter(x => HERBALISM_TYPES.includes(x.type));
+          rows.push({
+            key: "herbalism",
+            label: "Herbalism 🌿",
+            icon: "sprout",
+            isPreserving: false,
+            memberIds: members.map(m => m.id),
+          });
+          herbalismPlaced = true;
         }
       } else {
         rows.push({
