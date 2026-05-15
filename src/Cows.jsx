@@ -39,7 +39,131 @@ function Modal({open,onClose,title,children}){
 function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1}}>{value}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
 function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{title}</div>{children}</div>;}
 
-function AnimalModal({animal,hobbyId,animals,update,onClose}){
+// ============================================================================
+// PASTURE / HERD MODAL — create or edit a grouping for cattle. The `type`
+// flips the label between "pasture" (a fenced area) and "herd" (a
+// management group), but functionally they behave the same. Each cow gets
+// an optional pastureId, and the main page groups by pasture.
+// ============================================================================
+function PastureModal({pasture,hobbyId,update,onClose}){
+  const isEdit = !!pasture;
+  const [name, setName] = useState(pasture?.name || "");
+  const [type, setType] = useState(pasture?.type || "pasture");
+  const [acreage, setAcreage] = useState(pasture?.acreage ? String(pasture.acreage) : "");
+  const [notes, setNotes] = useState(pasture?.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const save = () => {
+    if (!name.trim()) return;
+    const id = pasture?.id || newId();
+    const data = {
+      id,
+      name: name.trim(),
+      type,
+      acreage: Number(acreage) || 0,
+      notes: notes.trim(),
+      created: pasture?.created || Date.now(),
+    };
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      if (!Array.isArray(h.pastures)) h.pastures = [];
+      if (isEdit) {
+        const idx = h.pastures.findIndex(p => p.id === id);
+        if (idx !== -1) h.pastures[idx] = data;
+        else h.pastures.push(data);
+      } else {
+        h.pastures.push(data);
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  // Deleting a pasture just unassigns its cattle (sets pastureId to null
+  // on each cow); the cows stay, they just move to the Ungrouped section.
+  // Less destructive than asking "are you sure" with no recovery path.
+  const remove = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      (h.animals || []).forEach(a => {
+        if (a.pastureId === pasture.id) a.pastureId = null;
+      });
+      h.pastures = (h.pastures || []).filter(p => p.id !== pasture.id);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={isEdit ? `Edit ${type}` : "Add a pasture or herd"}>
+      <Field label="Type">
+        <div style={{display:"flex",gap:6}}>
+          {[
+            {v:"pasture", l:"🌾 Pasture", sub:"A fenced area"},
+            {v:"herd", l:"🐂 Herd", sub:"A management group"},
+          ].map(o => (
+            <button key={o.v} onClick={()=>setType(o.v)} style={{
+              flex:1, padding:"10px 12px", borderRadius:8,
+              border:`1.5px solid ${type===o.v?palette.ink:palette.line}`,
+              background:type===o.v?palette.ink:palette.card,
+              color:type===o.v?palette.bg:palette.ink,
+              fontFamily:FONT_BODY, fontWeight:600, fontSize:13, cursor:"pointer",
+              textAlign:"left",
+            }}>
+              <div>{o.l}</div>
+              <div style={{fontSize:10,opacity:0.75,marginTop:2,fontWeight:400}}>{o.sub}</div>
+            </button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Name">
+        <input
+          style={inputStyle}
+          value={name}
+          onChange={e=>setName(e.target.value)}
+          placeholder={type==="pasture" ? "e.g. North Pasture, Barn Lot" : "e.g. Breeding herd, Yearlings"}
+          autoFocus
+        />
+      </Field>
+      <Field label={type==="pasture" ? "Acreage (optional)" : "Approx. acreage (optional)"}>
+        <input
+          type="number" min={0} step="0.1"
+          style={inputStyle}
+          value={acreage}
+          onChange={e=>setAcreage(e.target.value)}
+          placeholder="0"
+          inputMode="decimal"
+        />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea
+          style={{...inputStyle, minHeight: 60, resize: "vertical"}}
+          value={notes}
+          onChange={e=>setNotes(e.target.value)}
+          placeholder={type==="pasture" ? "Water source, fencing notes, rotation schedule..." : "Purpose, rotation plan, etc."}
+        />
+      </Field>
+      <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center",marginTop:6}}>
+        <Btn onClick={save}>{isEdit ? "Save changes" : "Add"}</Btn>
+        {isEdit && !confirmDelete && (
+          <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete</Btn>
+        )}
+        {isEdit && confirmDelete && (
+          <Btn variant="danger" onClick={remove}>Confirm — delete</Btn>
+        )}
+      </div>
+      {confirmDelete && (
+        <div style={{fontSize:11,color:palette.inkSoft,marginTop:8,fontStyle:"italic",lineHeight:1.5}}>
+          Deleting moves all cattle in this {type} back to "Ungrouped". The animals themselves are not affected.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+function AnimalModal({animal,hobbyId,animals,pastures=[],update,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
   // Breed: dropdown + "Other" custom text field
@@ -52,6 +176,9 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
   const[sex,setSex]=useState(animal?.sex||"Cow");
   const[dob,setDob]=useState(animal?.dob||"");
   const[tagId,setTagId]=useState(animal?.tagId||"");
+  // Pasture / herd assignment — optional. Empty string = "Ungrouped" on
+  // the main page. Cows can move between pastures freely.
+  const[pastureId,setPastureId]=useState(animal?.pastureId||"");
   // RFID tag — required for cattle movement in Canada. Free-text for now
   // since we don't have a barcode scanner wired up; user types the number.
   const[rfidNumber,setRfidNumber]=useState(animal?.rfidNumber||"");
@@ -95,7 +222,7 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),pastureId:pastureId||null,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -136,6 +263,21 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
         <div style={{flex:1}}><Field label="Date of birth (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field></div>
         <div style={{flex:1}}><Field label="Ear tag / ID (optional)"><input style={inputStyle} value={tagId} onChange={e=>setTagId(e.target.value)} placeholder="e.g. #42"/></Field></div>
       </div>
+      {/* Pasture / herd assignment — only shown when at least one exists.
+          Users who haven't created a pasture yet don't see this field at
+          all, keeping the form short for simple setups. */}
+      {pastures.length > 0 && (
+        <Field label="Pasture / herd (optional)">
+          <select style={inputStyle} value={pastureId} onChange={e=>setPastureId(e.target.value)}>
+            <option value="">— Ungrouped —</option>
+            {pastures.map(p => (
+              <option key={p.id} value={p.id}>
+                {p.type === "herd" ? "🐂" : "🌾"} {p.name}{p.acreage ? ` · ${p.acreage} acres` : ""}
+              </option>
+            ))}
+          </select>
+        </Field>
+      )}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
 
       {/* Identification — RFID tag (Canada requires this for movement) and
@@ -861,8 +1003,11 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
 
 function CowModalRouter({modal,hobby,update,onClose}){
   if(!modal)return null;
-  if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;
-  if(modal.type==="editAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;}
+  const pastures = hobby.pastures || [];
+  if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} pastures={pastures} update={update} onClose={onClose}/>;
+  if(modal.type==="editAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} pastures={pastures} update={update} onClose={onClose}/>;}
+  if(modal.type==="addPasture")return <PastureModal hobbyId={hobby.id} update={update} onClose={onClose}/>;
+  if(modal.type==="editPasture"){const pasture=pastures.find(p=>p.id===modal.pastureId);if(!pasture){onClose();return null;}return <PastureModal pasture={pasture} hobbyId={hobby.id} update={update} onClose={onClose}/>;}
   return null;
 }
 
@@ -924,6 +1069,9 @@ export default function CowsPage({hobby,data,update}){
           {animals.length>0 && (
             <button onClick={()=>setBreedingModal({open:true,breeding:null})} style={{padding:"7px 14px",borderRadius:8,background:palette.bgAlt,border:`1.5px solid ${palette.line}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink}}>💕 Breeding</button>
           )}
+          {animals.length>0 && (
+            <button onClick={()=>setLocalModal({type:"addPasture",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.bgAlt,border:`1.5px solid ${palette.line}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink}}>🌾 Pasture</button>
+          )}
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add cow</button>
         </div>
       </div>
@@ -943,7 +1091,99 @@ export default function CowsPage({hobby,data,update}){
           <div style={{fontSize:13,marginBottom:14}}>Add your first cow to start tracking milk, feed, and calves.</div>
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first cow</button>
         </div>
-      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal}/>)}
+      ):(() => {
+        // Pasture grouping: only kicks in when the user has created at
+        // least one pasture/herd. Otherwise the original flat list is
+        // preserved exactly (zero-impact for users who don't care about
+        // grouping).
+        const pastures = hobby.pastures || [];
+        if (pastures.length === 0) {
+          return animals.map(a => <AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal}/>);
+        }
+        // Build groups: one per existing pasture, plus a synthetic
+        // "Ungrouped" group for cows with no pastureId. Empty groups still
+        // show (so the user can tap an empty pasture's header to assign
+        // cows to it).
+        const buckets = new Map();
+        pastures.forEach(p => buckets.set(p.id, { pasture: p, animals: [] }));
+        const ungrouped = [];
+        animals.forEach(a => {
+          if (a.pastureId && buckets.has(a.pastureId)) {
+            buckets.get(a.pastureId).animals.push(a);
+          } else {
+            ungrouped.push(a);
+          }
+        });
+        // Per-pasture cost analytics — sum feed + butcher entries for the
+        // cows that live in each pasture. Cheap O(n*m) since herds are
+        // small; could index by animalId if it ever matters.
+        const costFor = (groupAnimals) => {
+          const animalIds = new Set(groupAnimals.map(a => a.id));
+          let feedCost = 0, feedLbs = 0;
+          entries.forEach(e => {
+            if (!animalIds.has(e.animalId)) return;
+            if (e.action === "fed") {
+              feedCost += Number(e.cost) || 0;
+              feedLbs += Number(e.lbs) || 0;
+            }
+          });
+          return { feedCost, feedLbs };
+        };
+
+        const renderGroup = (label, emoji, pasture, list) => {
+          const stats = costFor(list);
+          const acreage = pasture?.acreage || 0;
+          const isUngrouped = !pasture;
+          return (
+            <details
+              key={pasture?.id || "__ungrouped__"}
+              open={list.length > 0}
+              style={{marginBottom:14, background:palette.bgAlt, borderRadius:10, padding:10}}
+            >
+              <summary style={{cursor:"pointer", userSelect:"none", display:"flex", alignItems:"center", justifyContent:"space-between", padding:"4px 6px"}}>
+                <span style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
+                  <span style={{fontSize:16}}>{emoji}</span>
+                  <span style={{fontFamily:FONT_DISPLAY,fontSize:17,color:palette.ink}}>{label}</span>
+                  <span style={{fontSize:11,color:palette.inkSoft,background:palette.card,padding:"2px 8px",borderRadius:4}}>
+                    {list.length} {list.length === 1 ? "cow" : "cattle"}
+                    {acreage > 0 && <> · {acreage} ac</>}
+                    {stats.feedCost > 0 && <> · {fmtMoney(stats.feedCost)} feed</>}
+                  </span>
+                </span>
+                {!isUngrouped && (
+                  <button
+                    type="button"
+                    onClick={(e)=>{e.preventDefault();e.stopPropagation();setLocalModal({type:"editPasture",hobbyId:hobby.id,pastureId:pasture.id});}}
+                    style={{background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4}}
+                    aria-label={`Edit ${pasture.name}`}
+                  ><Edit3 size={13}/></button>
+                )}
+              </summary>
+              <div style={{marginTop:10}}>
+                {list.length === 0 ? (
+                  <div style={{padding:"14px 10px", fontSize:12, color:palette.inkSoft, fontStyle:"italic", textAlign:"center"}}>
+                    No cattle assigned. Edit a cow and pick this {pasture?.type === "herd" ? "herd" : "pasture"} to assign.
+                  </div>
+                ) : (
+                  list.map(a => <AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal}/>)
+                )}
+              </div>
+            </details>
+          );
+        };
+
+        return (
+          <>
+            {pastures.map(p => renderGroup(
+              p.name,
+              p.type === "herd" ? "🐂" : "🌾",
+              p,
+              buckets.get(p.id)?.animals || []
+            ))}
+            {ungrouped.length > 0 && renderGroup("Ungrouped", "🐄", null, ungrouped)}
+          </>
+        );
+      })()}
 
       {breedings.length>0 && (
         <details style={{marginTop:18}}>
