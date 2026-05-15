@@ -1122,9 +1122,6 @@ const newId = () => {
 // Apple Developer: $99/year + Google Play: $25 one-time + buffer for icons,
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
-// ============================================================================
-const APP_STORE_FUND_GOAL = 200;
-const APP_STORE_FUND_RAISED = 0; // Update manually as Stripe tips come in. Keep this <= GOAL.
 
 const CURRENT_VERSION = 39;
 
@@ -2254,31 +2251,6 @@ export default function HomesteadApp() {
     const timer = setTimeout(() => setShowSupporterThanks(true), 2200);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.supportersDismissedMonth]);
-
-  // ---- App Store fundraiser popup ----
-  // Fires once per calendar month for users who haven't tipped yet and haven't
-  // dismissed it for the current month. Shows on a 4s delay to let the page
-  // settle in. Tracked in data.appStoreFundDismissedMonth ("YYYY-MM") and
-  // data.userHasTipped (boolean). We don't fire on the same days as the monthly
-  // supporter thank-you (1st-3rd) so users don't get hit with two popups.
-  const [showAppStoreFund, setShowAppStoreFund] = useState(false);
-  const appStoreFundShownRef = React.useRef(false);
-  useEffect(() => {
-    if (appStoreFundShownRef.current) return;
-    if (!data?.onboardedAt) return;
-    if (data?.userHasTipped) return;
-    const now = new Date();
-    const dayOfMonth = now.getDate();
-    // Fire 21st-23rd of each month — separate from monthly thank-you (1st-3rd)
-    // so users never get hit with two donation popups in the same week.
-    if (dayOfMonth < 21 || dayOfMonth > 23) return;
-    const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-    if (data?.appStoreFundDismissedMonth === monthKey) return;
-    appStoreFundShownRef.current = true;
-    const timer = setTimeout(() => setShowAppStoreFund(true), 4000);
-    return () => clearTimeout(timer);
-  }, [data?.onboardedAt, data?.appStoreFundDismissedMonth, data?.userHasTipped]);
-
   // ---- Milestone popup ----
   // Pulls config from Supabase app_config table (id='active_milestone') and
   // calls the get_user_count() RPC to get the live signup count. Combines
@@ -3075,34 +3047,12 @@ export default function HomesteadApp() {
       )}
 
       {/* App Store fundraiser popup (once per month for non-tippers) */}
-      {showAppStoreFund && !showWhatsNew && !showSupporterThanks && (
-        <AppStoreFundModal
-          onClose={() => {
-            setShowAppStoreFund(false);
-            const now = new Date();
-            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-            update(d => { d.appStoreFundDismissedMonth = monthKey; return d; });
-          }}
-          onLeaveTip={() => {
-            setShowAppStoreFund(false);
-            const now = new Date();
-            const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
-            update(d => {
-              d.appStoreFundDismissedMonth = monthKey;
-              // Optimistically mark as tipped so we don't pester them again.
-              // (User can untip in Settings if they didn't actually complete checkout.)
-              d.userHasTipped = true;
-              return d;
-            });
-          }}
-        />
-      )}
-
+      
       {/* Milestone popup — fires after a log save when the user has crossed
           a milestone threshold they haven't seen yet. Marks seen on either
           button so each milestone shows exactly once per user. Tapping
           Support opens the existing SupportModal flow. */}
-      {showMilestone && !showWhatsNew && !showSupporterThanks && !showAppStoreFund && milestoneConfig && currentMilestone != null && (
+      {showMilestone && !showWhatsNew && !showSupporterThanks && milestoneConfig && currentMilestone != null && (
         <MilestoneModal
           config={milestoneConfig}
           userCount={userCount}
@@ -7469,13 +7419,12 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
             🔧 Owner debug tools
           </div>
           <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
-            Reset popup dismissal flags so What's New, the monthly supporter thank-you, and the App Store fundraiser re-fire on next page load. Only you can see this.
+            Reset popup dismissal flags so What's New and the monthly supporter thank-you re-fire on next page load. Only you can see this.
           </div>
           <Btn variant="ghost" small onClick={() => {
             update((d) => {
               d.lastSeenVersion = 0;
               d.supportersDismissedMonth = null;
-              d.appStoreFundDismissedMonth = null;
               d.userHasTipped = false;
               return d;
             });
@@ -14072,183 +14021,6 @@ function WhatsNewModal({ onClose }) {
           >
             Got it — let's go! 🌾
           </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// APP STORE FUNDRAISER MODAL — fires once/month for users who haven't tipped yet
-// ----------------------------------------------------------------------------
-// Soft, honest ask to help fund the Apple ($99/yr) and Google Play ($25) fees
-// so Henalytics can launch officially. Trust signals throughout: real costs
-// disclosed, Stripe checkout, refund mention, easy dismiss, no urgency tactics.
-// ============================================================================
-function AppStoreFundModal({ onClose, onLeaveTip }) {
-  const goal = APP_STORE_FUND_GOAL;
-  const raised = Math.max(0, Math.min(APP_STORE_FUND_RAISED, goal));
-  const percent = goal > 0 ? Math.round((raised / goal) * 100) : 0;
-
-  const handleTip = () => {
-    if (onLeaveTip) onLeaveTip();
-    startCheckout("one_time");
-  };
-
-  return (
-    <div onClick={onClose} style={{
-      position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)",
-      display: "flex", alignItems: "center", justifyContent: "center",
-      zIndex: 200, padding: 16,
-    }}>
-      <div onClick={e => e.stopPropagation()} style={{
-        background: palette.bg, borderRadius: 20, maxWidth: 440, width: "100%",
-        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
-        fontFamily: FONT_BODY, overflow: "hidden", maxHeight: "92vh",
-        display: "flex", flexDirection: "column",
-      }}>
-        {/* Header */}
-        <div style={{
-          background: palette.yolk, padding: "20px 24px 16px",
-          textAlign: "center", position: "relative", flexShrink: 0,
-        }}>
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              position: "absolute", top: 12, right: 12,
-              background: "transparent", border: "none", cursor: "pointer",
-              color: palette.ink, padding: 6, borderRadius: 6,
-            }}
-          >
-            <X size={20} />
-          </button>
-          <div style={{ fontSize: 36, marginBottom: 4 }}>📱</div>
-          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "0 0 4px", color: palette.ink, lineHeight: 1.2 }}>
-            Help bring Henalytics to the App Store
-          </h2>
-          <p style={{ fontSize: 13, color: palette.ink, margin: 0, opacity: 0.85 }}>
-            Totally optional · easy dismiss · no pressure
-          </p>
-        </div>
-
-        {/* Body */}
-        <div style={{ padding: "20px 24px", overflowY: "auto", flex: "1 1 auto" }}>
-          <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginTop: 0, marginBottom: 14 }}>
-            Henalytics is a website right now. To get it on the iPhone App Store and Google Play, I have to pay developer fees and put in the build work. The app stays <strong>100% free</strong> for everyone — this just covers the upfront costs.
-          </p>
-
-          {/* Cost breakdown — transparency is the trust builder */}
-          <div style={{
-            padding: "12px 14px", background: palette.bgAlt, borderRadius: 10,
-            marginBottom: 14, fontSize: 13, color: palette.ink, lineHeight: 1.7,
-          }}>
-            <div style={{ fontWeight: 700, marginBottom: 6 }}>What it actually costs:</div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>🍎 Apple Developer fee</span>
-              <span>$99/year</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>🤖 Google Play fee</span>
-              <span>$25 one-time</span>
-            </div>
-            <div style={{ display: "flex", justifyContent: "space-between" }}>
-              <span>🎨 Icons, screenshots, my time</span>
-              <span>~$76</span>
-            </div>
-            <div style={{
-              display: "flex", justifyContent: "space-between",
-              paddingTop: 6, marginTop: 6, borderTop: `1px solid ${palette.line}`,
-              fontWeight: 700,
-            }}>
-              <span>Goal</span>
-              <span>${goal}</span>
-            </div>
-          </div>
-
-          {/* Progress bar */}
-          <div style={{ marginBottom: 16 }}>
-            <div style={{
-              display: "flex", justifyContent: "space-between",
-              fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600,
-            }}>
-              <span>Raised so far</span>
-              <span>${raised} of ${goal}</span>
-            </div>
-            <div style={{
-              height: 12, background: palette.bgAlt, borderRadius: 6,
-              overflow: "hidden", border: `1px solid ${palette.line}`,
-            }}>
-              <div style={{
-                width: `${percent}%`, height: "100%",
-                background: palette.leaf, transition: "width 0.4s ease",
-              }} />
-            </div>
-            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>
-              {percent}% there{percent < 100 ? " — every bit helps." : " — goal reached, thank you!"}
-            </div>
-          </div>
-
-          <p style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, margin: "0 0 14px" }}>
-            If you'd like to chip in a few bucks toward making it happen, that means a lot. If not, no worries at all — just keep using and enjoying Henalytics.
-          </p>
-
-          <p style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, margin: "0 0 14px", fontStyle: "italic" }}>
-            — Riley, the Henalytics maker
-          </p>
-
-          {/* Tip button */}
-          <button
-            onClick={handleTip}
-            style={{
-              width: "100%", padding: "14px 16px", borderRadius: 10,
-              background: palette.leaf, color: palette.bg,
-              border: `2px solid ${palette.ink}`, boxShadow: `3px 3px 0 ${palette.line}`,
-              fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, cursor: "pointer",
-              marginBottom: 10,
-            }}
-          >
-            💚 Chip in $5 toward the App Store launch
-          </button>
-
-          <button
-            onClick={onClose}
-            style={{
-              width: "100%", padding: "10px 16px", borderRadius: 10,
-              background: "transparent", color: palette.inkSoft,
-              border: `1.5px solid ${palette.line}`,
-              fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
-              marginBottom: 14,
-            }}
-          >
-            Maybe later
-          </button>
-
-          {/* Trust signals — small print at the bottom */}
-          <div style={{
-            padding: "10px 12px", background: palette.card, borderRadius: 8,
-            border: `1.5px solid ${palette.line}`, fontSize: 11, color: palette.inkSoft,
-            lineHeight: 1.55,
-          }}>
-            <div style={{ marginBottom: 4 }}>
-              {(isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true) ? (
-                <>🔒 <strong>Secure checkout via Apple.</strong> Manage or cancel anytime from iOS Settings → Subscriptions.</>
-              ) : (
-                <>🔒 <strong>Secure checkout via Stripe.</strong> Apple Pay & Google Pay supported. Stripe sends a receipt to your email.</>
-              )}
-            </div>
-            <div>
-              💌 Changed your mind? Email <strong>slowbuildacres@gmail.com</strong> for a full refund — no questions asked.
-            </div>
-          </div>
-
-          {/* Sign-off */}
-          <p style={{
-            fontSize: 12, color: palette.inkSoft, textAlign: "center",
-            marginTop: 14, marginBottom: 0, fontStyle: "italic", lineHeight: 1.5,
-          }}>
-            Thank you for helping me support homesteads around the globe.
-          </p>
         </div>
       </div>
     </div>
