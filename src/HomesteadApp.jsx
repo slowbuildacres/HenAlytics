@@ -3185,6 +3185,8 @@ export default function HomesteadApp() {
                   inside PreservingPage handles the sub-type distinction. */}
               {(hobby.type === "canning" || hobby.type === "freeze_drying" || hobby.type === "dehydrating" || hobby.type === "fermentation")
                 ? "Preserving 🥫"
+                : (hobby.type === "tincture" || hobby.type === "oil_infusion" || hobby.type === "salve" || hobby.type === "tea")
+                ? "Herbalism 🌿"
                 : hobby.name}
             </span>
             <ChevronDown size={18} style={{ transform: hobbyMenuOpen ? "rotate(180deg)" : "", transition: "transform 0.2s" }} />
@@ -3417,7 +3419,10 @@ export default function HomesteadApp() {
         {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
           <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
+        {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
+          <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
+        )}
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
           <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
