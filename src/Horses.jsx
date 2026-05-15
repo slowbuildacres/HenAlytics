@@ -1000,6 +1000,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
       )}
       {historyHorse && (
         <AnimalHistoryView
+          update={update}
           animal={historyHorse}
           hobby={hobby}
           entries={(data?.entries?.[hobby.id]) || []}

@@ -325,6 +325,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
       )}
       {showHistory && (
         <AnimalHistoryView
+          update={update}
           animal={animal}
           hobby={hobby}
           entries={entries}

@@ -1353,6 +1353,7 @@ export default function CatsPage({ hobby, data, update, setModal }) {
       )}
       {historyAnimal && (
         <AnimalHistoryView
+          update={update}
           animal={historyAnimal}
           hobby={hobby}
           entries={(data?.entries?.[hobby.id]) || []}

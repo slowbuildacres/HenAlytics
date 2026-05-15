@@ -991,6 +991,7 @@ export default function SheepPage({ hobby, data, update, setModal }) {
       )}
       {historyAnimal && (
         <AnimalHistoryView
+          update={update}
           animal={historyAnimal}
           hobby={hobby}
           entries={(data?.entries?.[hobby.id]) || []}
