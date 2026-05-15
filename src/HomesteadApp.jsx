@@ -1094,7 +1094,7 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -11438,11 +11438,35 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         </Field>
       )}
 
-      {action === "watered" && hobby.type !== "garden" && (
-        <Field label="Gallons">
-          <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.gallons || ""} onChange={(e) => set("gallons", e.target.value)} />
-        </Field>
-      )}
+      {action === "watered" && hobby.type !== "garden" && (() => {
+        // Volume input. Canonical storage is gallons (fields.gallons).
+        // In L-mode we show/accept liters and convert at the boundary:
+        //   value:    stored gallons → liters for display
+        //   onChange: typed liters   → gallons for storage
+        const volUnit = getCurrentVolumeUnit();
+        const isMetric = volUnit === "L";
+        const displayValue = fields.gallons === "" || fields.gallons == null
+          ? ""
+          : (isMetric
+              ? String(Math.round(volumeFromGal(Number(fields.gallons)) * 100) / 100)
+              : fields.gallons);
+        return (
+          <Field label={isMetric ? "Liters" : "Gallons"}>
+            <input
+              type="number" inputMode="decimal" step="0.1" style={inputStyle}
+              value={displayValue}
+              onChange={(e) => {
+                const raw = e.target.value;
+                if (raw === "") { set("gallons", ""); return; }
+                // Convert the typed value back to canonical gallons.
+                const gal = isMetric ? galFromInput(raw) : Number(raw);
+                set("gallons", String(gal));
+              }}
+              placeholder={isMetric ? "Liters of water" : "Gallons of water"}
+            />
+          </Field>
+        );
+      })()}
 
       {action === "fertilized" && hobby.type === "garden" && (
         <>
@@ -11573,16 +11597,47 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
                         color: currentUnit===u?palette.bg:palette.ink,
                         fontFamily:FONT_BODY,fontSize:13,fontWeight:600,cursor:"pointer",
                       }}
-                    >{u}</button>
+                    >{/* Storage stays "lbs"; label shows "kg" in metric mode */}
+                      {u === "lbs" ? weightUnitLabel() : u}</button>
                   ))}
                 </div>
-                <input
-                  type="number" inputMode="decimal" step="0.1"
-                  style={inputStyle}
-                  value={currentUnit === "cups" ? (fields.feedAmount || "") : (fields.lbs || "")}
-                  onChange={(e) => set(currentUnit === "cups" ? "feedAmount" : "lbs", e.target.value)}
-                  placeholder={currentUnit === "cups" ? "Cups of feed" : "Pounds of feed"}
-                />
+                {(() => {
+                  // For the lbs storage field, show the value in the user's
+                  // weight unit (kg or lbs) and convert back on save. The
+                  // cups field is unit-agnostic and passes through directly.
+                  const wUnit = getCurrentWeightUnit();
+                  const metricW = wUnit === "kg";
+                  const isCups = currentUnit === "cups";
+                  let shownValue;
+                  if (isCups) {
+                    shownValue = fields.feedAmount || "";
+                  } else if (fields.lbs === "" || fields.lbs == null) {
+                    shownValue = "";
+                  } else {
+                    shownValue = metricW
+                      ? String(Math.round(weightFromLbs(Number(fields.lbs)) * 100) / 100)
+                      : fields.lbs;
+                  }
+                  const placeholder = isCups
+                    ? "Cups of feed"
+                    : (metricW ? "Kilograms of feed" : "Pounds of feed");
+                  return (
+                    <input
+                      type="number" inputMode="decimal" step="0.1"
+                      style={inputStyle}
+                      value={shownValue}
+                      onChange={(e) => {
+                        const raw = e.target.value;
+                        if (isCups) { set("feedAmount", raw); return; }
+                        if (raw === "") { set("lbs", ""); return; }
+                        // Convert typed weight back to canonical pounds.
+                        const lbs = metricW ? lbsFromInput(raw) : Number(raw);
+                        set("lbs", String(lbs));
+                      }}
+                      placeholder={placeholder}
+                    />
+                  );
+                })()}
               </Field>
             );
           })()}
