@@ -1123,9 +1123,11 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 39;
+const CURRENT_VERSION = 40;
 
 const WHATS_NEW = [
+  "💚 Tip button is now in the bottom nav — the heart icon used to live in the top-right corner where a lot of folks missed it. Now it sits in the main nav between Calendar and Sales. When you tip in a given month, the heart fills red so you can see your support at a glance.",
+  "🎉 Growth milestone celebrations — when Henalytics hits a new user milestone (1,500, 3,000, 5,000 and up), you'll get a one-time celebration message after your next log entry. Includes an optional tip prompt; dismiss anytime, only shows once per milestone.",
   "🍎 Supporting Henalytics on iOS now uses Apple's In-App Purchase system — same tip tiers, same gratitude, but Apple handles the checkout natively. You can also restore prior purchases and manage your subscription right from the Support menu. (Web continues to use the existing checkout flow.)",
   "📊 Year in Review now covers every hobby — Dogs, Cats, Maple Syrup, Dehydrating, Fermentation, and Freeze Drying all get their own card on the Year in Review page if you have the hobby enabled. New stats include puppies/kittens born, vet visits, kills/pests caught for working cats, syrup made and boil ratio for maple, batches and output ounces for the preserving hobbies. Stats only show for hobbies you actually use, so the page stays focused.",
   "🔨 Infrastructure tracking in every hobby — Sourdough, Baking, Canning, Farmstand, Dehydrating, and Fermentation now have a 🔨 Infrastructure button to log one-time costs like a new oven, pressure canner, dehydrator, fermentation crocks, or a roadside stand build. Each hobby's stats page now totals what you've spent on infrastructure separately from ongoing costs, so you can see the real investment side by side with what you're producing. (Cats inherited this from Dogs, and Maple Syrup already had it.)",
@@ -2812,7 +2814,6 @@ export default function HomesteadApp() {
     saveImmediateRef.current = false; // one-shot
     const fire = async () => {
       const result = await saveHomestead(user, data);
-      console.log("[SAVE] result:", result, "user:", user ? user.email || user.id : "null");
       setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
@@ -9670,16 +9671,13 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
   // line 224. This was the long-standing "meat birds finalize doesn't stick"
   // bug. Same fix applied to the ButcherModal "also finalize" path below.
   const finalize = () => {
-    console.log("[FINALIZE] starting for batch:", batch.id, "hobby:", hobby.id);
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
       if (!h || !Array.isArray(h.currentBatches)) {
-        console.warn("[FINALIZE] aborted - hobby not found or no currentBatches");
         return d;
       }
       const idx = h.currentBatches.findIndex((b) => b.id === batch.id);
       if (idx === -1) {
-        console.warn("[FINALIZE] aborted - batch not in currentBatches");
         return d;
       }
       const target = h.currentBatches[idx];
@@ -9693,7 +9691,6 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
       if (h.currentBatch && h.currentBatch.id === target.id) {
         h.currentBatch = null;
       }
-      console.log("[FINALIZE] complete - currentBatches:", h.currentBatches.length, "archivedBatches:", h.archivedBatches.length);
       return d;
     }, { immediate: true });
     onClose();
@@ -10236,7 +10233,6 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                 // at the same batch — otherwise migrateData rehydrates the
                 // finalized batch on next load. See EditBatchModal.finalize
                 // for the original analysis.
-                console.log("[BUTCHER-FINALIZE] alsoFinalize:", alsoFinalize, "willEmptyBatch:", willEmptyBatch, "batchId:", target?.id);
                 if (alsoFinalize && willEmptyBatch) {
                   const finalBatch = JSON.parse(JSON.stringify(target));
                   finalBatch.endDate = todayStr();
@@ -10248,9 +10244,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                   if (h.currentBatch && h.currentBatch.id === target.id) {
                     h.currentBatch = null;
                   }
-                  console.log("[BUTCHER-FINALIZE] archived - currentBatches:", h.currentBatches.length, "archivedBatches:", h.archivedBatches.length);
                 } else {
-                  console.warn("[BUTCHER-FINALIZE] SKIPPED archive step - alsoFinalize:", alsoFinalize, "willEmptyBatch:", willEmptyBatch);
                 }
                 return d;
               }, wantImmediate ? { immediate: true } : undefined);
