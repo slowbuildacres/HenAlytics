@@ -1187,7 +1187,25 @@ function computeStats(data, year) {
   // for unit-based entries (e.g. "2 dozen at $5/dz" with count=0).
   // The derivation logic mirrors deriveSoldEggsRevenue in Sales.jsx.
   const deriveSoldEggsRevenue = (e) => {
-    let qty = Number(e.count ?? e.qty) || 0;
+    // data.sales records (the canonical home for new eggs sales) always
+    // carry a precise `totalRevenue` field. Use it directly — this
+    // totalRevenue branch takes precedence so sales-shaped records
+    // never fall into the shape-guessing fallbacks below, which were
+    // tuned for legacy data.entries[sold_eggs] records and misinterpret
+    // a sale's pricePerUnit ($/egg or $/dozen depending on `unit`).
+    //
+    // For qty, convert into total egg count when the sale stored its
+    // quantity as dozens (unit === "dozen") so eggsSold tallies cleanly.
+    if (Number(e.totalRevenue) > 0) {
+      const revenue = Number(e.totalRevenue);
+      const rawQty = Number(e.qty ?? e.count) || 0;
+      // unit can be "eggs" or "dozen" on data.sales rows; "dozen" → ×12.
+      const qty = e.unit === "dozen" ? rawQty * 12 : rawQty;
+      return { qty, revenue };
+    }
+
+    // Legacy data.entries[sold_eggs] shapes — same logic as Sales.jsx.
+    let qty = Number(e.count) || 0;
     let pricePerDozen = Number(e.pricePerDozen) || 0;
     let revenue = 0;
     if (pricePerDozen > 0 && qty > 0) {
@@ -1205,12 +1223,9 @@ function computeStats(data, year) {
         if (qty === 0) qty = totalEggs;
       }
     } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
-      // Old shape — pricePerUnit was stored as $/dozen with eggs in count
+      // Old-old shape — pricePerUnit was stored as $/dozen with eggs in count
       pricePerDozen = Number(e.pricePerUnit);
       revenue = (qty / 12) * pricePerDozen;
-    } else if (Number(e.totalRevenue) > 0) {
-      revenue = Number(e.totalRevenue);
-      if (qty > 0) pricePerDozen = revenue / (qty / 12);
     }
     return { qty, revenue };
   };
