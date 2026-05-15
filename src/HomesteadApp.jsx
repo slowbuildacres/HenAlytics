@@ -2397,7 +2397,7 @@ export default function HomesteadApp() {
   // fmtTemp() are called from many components and read these globals.
   useEffect(() => {
     setUserUnits(data?.units, data?.homesteadLocation);
-  }, [data?.units?.currency, data?.units?.temperature, data?.units?.hemisphere, data?.homesteadLocation?.lat]);
+  }, [data?.units?.currency, data?.units?.temperature, data?.units?.hemisphere, data?.units?.weight, data?.units?.volume, data?.homesteadLocation?.lat]);
 
   // ---- Default active hobby to user's first visible hobby on first load ----
   // The activeHobby state starts as "garden", but the user might have
@@ -5061,7 +5061,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
                 <div style={{ fontSize: 12, color: palette.inkSoft }}>
                   {startedCount > 0 && <>Started <strong style={{ color: palette.ink }}>{startedCount}</strong></>}
                   {butchered > 0 && <> · Butchered <strong style={{ color: palette.ink }}>{butchered}</strong></>}
-                  {totalWeight > 0 && <> · <strong style={{ color: palette.ink }}>{totalWeight.toFixed(1)} lbs</strong></>}
+                  {totalWeight > 0 && <> · <strong style={{ color: palette.ink }}>{fmtWeight(totalWeight)}</strong></>}
                   {deaths > 0 && <> · {deaths} lost</>}
                 </div>
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
@@ -5187,7 +5187,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
   const Icon = icons[entry.action] || Edit3;
   let detail = "";
   switch (entry.action) {
-    case "watered": detail = entry.gallons ? `${entry.gallons} gal` : (entry.amount || ""); break;
+    case "watered": detail = entry.gallons ? fmtVolume(Number(entry.gallons)) : (entry.amount || ""); break;
     case "fertilized": {
       const typeLabels = {
         compost: "Compost", manure: "Manure", granular: "Granular",
@@ -5205,17 +5205,16 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     case "planted": detail = `${entry.plant || ""} ${entry.quantity ? "× " + entry.quantity : ""}`.trim(); break;
     case "harvested": detail = `${entry.plant || ""} · ${entry.quantity || 0} ${entry.unit || "lbs"}`; break;
     case "fed": {
-      // Display in whichever unit was logged. Legacy entries have just
-      // `lbs`; newer entries with cups have feedUnit="cups" + feedAmount.
-      let amt, unit;
+      // Display in whichever unit was logged, converted to the user's
+      // preferred unit system. Legacy entries have just `lbs`; newer
+      // entries with cups have feedUnit="cups" + feedAmount.
+      let amtLabel;
       if (entry.feedUnit === "cups") {
-        amt = entry.feedAmount || 0;
-        unit = "cups";
+        amtLabel = fmtCups(Number(entry.feedAmount) || 0);
       } else {
-        amt = entry.lbs || entry.feedAmount || 0;
-        unit = "lbs";
+        amtLabel = fmtWeight(Number(entry.lbs ?? entry.feedAmount) || 0);
       }
-      detail = `${amt} ${unit} · ${fmtMoney(entry.cost)}`;
+      detail = `${amtLabel} · ${fmtMoney(entry.cost)}`;
       break;
     }
     case "eggs": detail = `${entry.count || 0} eggs`; break;
@@ -5275,7 +5274,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       detail = parts.join(" · ");
       break;
     }
-    case "butcher": detail = `${entry.count || 0} birds · avg ${entry.avgWeight || 0} lbs`; break;
+    case "butcher": detail = `${entry.count || 0} birds · avg ${fmtWeight(Number(entry.avgWeight) || 0)}`; break;
     case "broody": {
       const status = entry.broodyStatus === "ended" ? "broke / hatched" : "went broody";
       const parts = [];
@@ -6018,17 +6017,17 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
         <StatCard label="Total Birds Started" value={totalStart} accent={palette.feather} />
         <StatCard label="Total Butchered" value={adjButchered} accent={palette.ink} />
         <StatCard label="Mortality Rate" value={`${mortalityRate}%`} sub={`${totalDeaths} deaths`} accent={palette.accent} />
-        <StatCard label="Avg Final Weight" value={`${avgWeight} lbs`} accent={palette.leaf} />
+        <StatCard label="Avg Final Weight" value={fmtWeight(Number(avgWeight) || 0)} accent={palette.leaf} />
         {fcr !== "—" && <StatCard label="Feed Conversion (FCR)" value={fcr} sub="lbs feed per lb meat" accent={palette.feather} />}
         {(totalFeedLbs > 0 || totalFeedCups > 0) && (
           <StatCard
             label="Total Feed"
             value={
               totalFeedLbs > 0 && totalFeedCups > 0
-                ? `${totalFeedLbs.toFixed(1)} lbs + ${totalFeedCups.toFixed(1)} cups`
+                ? `${fmtWeight(totalFeedLbs)} + ${fmtCups(totalFeedCups)}`
                 : totalFeedLbs > 0
-                  ? `${totalFeedLbs.toFixed(1)} lbs`
-                  : `${totalFeedCups.toFixed(1)} cups`
+                  ? fmtWeight(totalFeedLbs)
+                  : fmtCups(totalFeedCups)
             }
             accent={palette.feather}
           />
@@ -10178,7 +10177,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
             {isButcher ? (
               <>
                 Sending <strong>{plannedCount} bird{plannedCount === 1 ? "" : "s"}</strong> from <strong>{batch.name}</strong> to the freezer log
-                {" "}at <strong>{avgWeight} lbs</strong> avg.
+                {" "}at <strong>{fmtWeight(Number(avgWeight) || 0)}</strong> avg.
               </>
             ) : (
               <>
@@ -12823,7 +12822,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const stats = [
         { label: "Birds raised", value: totalBirds },
         { label: "Butchered", value: totalButchered },
-        { label: "Avg weight", value: `${avgWeight} lbs` },
+        { label: "Avg weight", value: fmtWeight(Number(avgWeight) || 0) },
         { label: "Deaths", value: deaths },
       ];
       if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: fmtTractorDistance(tractorFeet) });
@@ -12838,7 +12837,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       return {
         emoji: "🌱", label: "Garden",
         stats: [
-          { label: "Harvest", value: `${totalHarvest.toFixed(1)} lbs` },
+          { label: "Harvest", value: fmtWeight(totalHarvest) },
           { label: "Plantings", value: plantings },
           { label: "Waterings", value: waterings },
           { label: "Season", value: seasonName },
@@ -12870,7 +12869,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       return {
         emoji: "🐝", label: "Beekeeping",
         stats: [
-          { label: "Honey harvested", value: `${totalLbs.toFixed(1)} lbs` },
+          { label: "Honey harvested", value: fmtWeight(totalLbs) },
           { label: "Hives", value: hives },
           { label: "Inspections", value: inspections },
           { label: "Harvests", value: harvests.length },
@@ -12930,7 +12929,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       return {
         emoji: "🐐", label: "Goats",
         stats: [
-          { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
+          { label: "Milk", value: milkGal > 0 ? fmtVolume(milkGal) : "—" },
           { label: "Goats", value: goatCount },
           { label: "Kids born", value: kids },
           { label: "Butchered", value: butchered },
@@ -12946,7 +12945,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       return {
         emoji: "🐄", label: "Cows",
         stats: [
-          { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
+          { label: "Milk", value: milkGal > 0 ? fmtVolume(milkGal) : "—" },
           { label: "Cows", value: cowCount },
           { label: "Calves born", value: calves },
           { label: "Butchered", value: butchered },
@@ -12963,7 +12962,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
         stats: [
           { label: "Pigs", value: pigCount },
           { label: "Butchered", value: butchered.length },
-          { label: "Meat", value: meatLbs > 0 ? `${Math.round(meatLbs)} lbs` : "—" },
+          { label: "Meat", value: meatLbs > 0 ? fmtWeight(meatLbs) : "—" },
           { label: "Piglets born", value: litters },
         ],
       };
@@ -12984,8 +12983,8 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
         stats: [
           { label: "Sheep", value: liveCount },
           { label: "Lambs born", value: lambsBorn },
-          { label: "Milk", value: milkGal > 0 ? `${milkGal.toFixed(1)} gal` : "—" },
-          { label: "Wool", value: woolLbs > 0 ? `${woolLbs.toFixed(1)} lbs` : (meatLbs > 0 ? `${Math.round(meatLbs)} lbs meat` : "—") },
+          { label: "Milk", value: milkGal > 0 ? fmtVolume(milkGal) : "—" },
+          { label: "Wool", value: woolLbs > 0 ? fmtWeight(woolLbs) : (meatLbs > 0 ? `${fmtWeight(meatLbs)} meat` : "—") },
         ],
       };
     }
@@ -13240,8 +13239,8 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       return {
         emoji: "🍁", label: "Maple Syrup",
         stats: [
-          { label: "Sap collected", value: sap > 0 ? `${sap.toFixed(1)} gal` : "—" },
-          { label: "Syrup made", value: syrup > 0 ? `${syrup.toFixed(2)} gal` : "—" },
+          { label: "Sap collected", value: sap > 0 ? fmtVolume(sap) : "—" },
+          { label: "Syrup made", value: syrup > 0 ? fmtVolume(syrup, { decimals: 2 }) : "—" },
           { label: filter === "all" ? "Most taps" : "Taps set", value: tapsValue || "—" },
           { label: filter === "all" ? "Seasons" : "Cost", value: filter === "all" ? (hobby.seasons || []).length : (cost > 0 ? fmtMoney(cost) : "—") },
         ],
@@ -13903,7 +13902,7 @@ function PerennialDetailModal({ hobbyId, perennial, update, setModal, onClose })
       <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:12 }}>
         {perennial.category === "tree" ? "🌳 Orchard tree" : "🌿 Perennial plant"}
         {perennial.plantDate ? ` · Planted ${perennial.plantDate}` : ""}
-        {perennial.totalHarvest ? ` · ${perennial.totalHarvest} lbs lifetime` : ""}
+        {perennial.totalHarvest ? ` · ${fmtWeight(Number(perennial.totalHarvest) || 0)} lifetime` : ""}
       </div>
 
       <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:14 }}>
