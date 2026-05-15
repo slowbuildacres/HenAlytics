@@ -6,6 +6,7 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -587,8 +588,20 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose}){
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
-      {action==="milk"&&<Field label="Milk (gallons)"><input type="number" min={0} step="0.1" style={inputStyle} value={gallons} onChange={e=>setGallons(e.target.value)} placeholder="0" autoFocus/>{gallons&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{(Number(gallons)*3.785).toFixed(1)} liters · {(Number(gallons)*128).toFixed(0)} oz</div>}</Field>}
-      {action==="fed"&&<div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Feed (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>}
+      {action==="milk"&&(()=>{
+        // Milk volume input. Canonical storage is gallons. In L-mode the
+        // field shows/accepts liters and converts at the boundary.
+        const isMetricV=getCurrentVolumeUnit()==="L";
+        const shown=gallons===""||gallons==null?"":(isMetricV?String(Math.round(volumeFromGal(Number(gallons))*100)/100):gallons);
+        return <Field label={isMetricV?"Milk (liters)":"Milk (gallons)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setGallons(r===""?"":(isMetricV?String(galFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}
+      {action==="fed"&&(()=>{
+        // Feed weight input. Canonical storage is pounds. In kg-mode the
+        // field shows/accepts kg and converts at the boundary.
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+      })()}
       {action==="calf"&&<>
         <Field label="Calves born"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>
         <div style={{fontSize:11,color:palette.inkSoft,marginBottom:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
@@ -610,7 +623,11 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose}){
           </div>
         )}
       </>}
-      {(action==="weight"||action==="butcher")&&<Field label="Weight (lbs)"><input type="number" min={0} step="1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>}
+      {(action==="weight"||action==="butcher")&&(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}
       {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
@@ -846,8 +863,8 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
       </div>
       {(animal.purpose==="Dairy"||animal.purpose==="Both")&&(
         <div style={{background:palette.bgAlt,borderRadius:8,padding:"8px 12px",marginBottom:10,display:"flex",gap:16,flexWrap:"wrap"}}>
-          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Today: </span><strong>{todayMilk>0?`${todayMilk} gal`:"—"}</strong></div>
-          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>All-time: </span><strong>{totalMilkGal>0?`${totalMilkGal.toFixed(1)} gal`:"—"}</strong></div>
+          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Today: </span><strong>{todayMilk>0?fmtVolume(todayMilk):"—"}</strong></div>
+          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>All-time: </span><strong>{totalMilkGal>0?fmtVolume(totalMilkGal):"—"}</strong></div>
         </div>
       )}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
@@ -859,10 +876,10 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {recentEntries.map(e=>{
             let detail="";
-            if(e.action==="milk")detail=`${e.gallons} gal`;
-            else if(e.action==="fed")detail=`${e.lbs} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+            if(e.action==="milk")detail=fmtVolume(Number(e.gallons)||0);
+            else if(e.action==="fed")detail=`${fmtWeight(Number(e.lbs)||0)}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
             else if(e.action==="calf")detail=`${e.count} calf`;
-            else if(e.action==="weight"||e.action==="butcher")detail=`${e.weight} lbs`;
+            else if(e.action==="weight"||e.action==="butcher")detail=fmtWeight(Number(e.weight)||0);
             else if(e.action==="preg_test"){
               const r = e.pregResult==="pregnant"?"🤰 pregnant":e.pregResult==="open"?"❌ open":"❓ inconclusive";
               const m = e.pregMethod && e.pregMethod!=="other" ? ` · ${e.pregMethod}` : "";
@@ -919,15 +936,15 @@ export function CowsAnalytics({hobby,entries}){
   return(
     <div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
-        <StatCard label="Total milk" value={`${totalMilkGal.toFixed(1)} gal`} accent={palette.leaf}/>
+        <StatCard label="Total milk" value={fmtVolume(totalMilkGal)} accent={palette.leaf}/>
         <StatCard label="Animals" value={animals.length} accent={palette.ink}/>
         <StatCard label="Calves born" value={totalCalves} accent={palette.yolk}/>
         <StatCard label="Feed cost" value={fmtMoney(totalFeedCost)} accent={palette.feather}/>
-        {butcherEntries.length>0&&<StatCard label="Butchered" value={butcherEntries.length} sub={`${totalMeatLbs.toFixed(0)} lbs`} accent={palette.accent}/>}
+        {butcherEntries.length>0&&<StatCard label="Butchered" value={butcherEntries.length} sub={fmtWeight(totalMeatLbs)} accent={palette.accent}/>}
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
       </div>
-      {milkTrend.length>1&&<ChartCard title="🥛 Daily milk (gallons)"><ResponsiveContainer width="100%" height={180}><BarChart data={milkTrend}><XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[`${v} gal`,"Milk"]}/><Bar dataKey="gal" fill={palette.leaf} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>}
-      {milkChart.length>1&&<ChartCard title="🐄 Milk by animal"><div style={{display:"flex",flexDirection:"column",gap:6}}>{milkChart.map(a=><div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><span>🐄 {a.name}</span><strong>{a.gal} gal</strong></div>)}</div></ChartCard>}
+      {milkTrend.length>1&&<ChartCard title={`🥛 Daily milk (${volumeUnitLabel()})`}><ResponsiveContainer width="100%" height={180}><BarChart data={milkTrend}><XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[fmtVolume(Number(v)||0),"Milk"]}/><Bar dataKey="gal" fill={palette.leaf} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>}
+      {milkChart.length>1&&<ChartCard title="🐄 Milk by animal"><div style={{display:"flex",flexDirection:"column",gap:6}}>{milkChart.map(a=><div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><span>🐄 {a.name}</span><strong>{fmtVolume(Number(a.gal)||0)}</strong></div>)}</div></ChartCard>}
       {animals.length===0&&<div style={{padding:24,textAlign:"center",color:palette.inkSoft,fontSize:13}}>No cow entries yet.</div>}
     </div>
   );
