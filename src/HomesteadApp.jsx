@@ -7775,6 +7775,55 @@ function SupportModal({ onClose }) {
           </div>
         )}
 
+        {/* Apple-required disclosure block for auto-renewing subscriptions.
+            Apple App Review (May 2026) requires this to be visible in the
+            same view as the subscription purchase buttons. Includes:
+              - Length (monthly, auto-renewing)
+              - Cancel-anywhere reassurance
+              - Functional links to Privacy Policy AND Terms of Use (EULA) */}
+        <div style={{
+          marginTop: 18,
+          padding: "12px 14px",
+          background: palette.card,
+          borderRadius: 10,
+          border: `1px solid ${palette.line}`,
+          fontSize: 11,
+          lineHeight: 1.5,
+          color: palette.inkSoft,
+        }}>
+          <div style={{ marginBottom: 6 }}>
+            Subscriptions auto-renew monthly at the selected price until
+            canceled. You can cancel anytime in your device's subscription
+            settings, at least 24 hours before the renewal date. Unused
+            portions of a free trial (if any) are forfeited when you
+            purchase a subscription.
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", justifyContent: "center", marginTop: 8 }}>
+            <button
+              type="button"
+              onClick={() => openExternalUrl("https://henalytics.com/privacy")}
+              style={{
+                fontSize: 11, color: palette.ink, textDecoration: "underline",
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Privacy Policy
+            </button>
+            <button
+              type="button"
+              onClick={() => openExternalUrl("https://www.apple.com/legal/internet-services/itunes/dev/stdeula/")}
+              style={{
+                fontSize: 11, color: palette.ink, textDecoration: "underline",
+                background: "none", border: "none", padding: 0, cursor: "pointer",
+                fontFamily: "inherit",
+              }}
+            >
+              Terms of Use (EULA)
+            </button>
+          </div>
+        </div>
+
         <div style={{
           marginTop: 20, textAlign: "center", fontSize: 13, color: palette.inkSoft, fontStyle: "italic",
         }}>
