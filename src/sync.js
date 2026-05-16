@@ -60,13 +60,30 @@ async function ensureHomestead(userId) {
       return { membership: m, score };
     });
 
+    // The cached active homestead id is AUTHORITATIVE as long as the user
+    // is still a member of it. Membership is an explicit choice — the user
+    // either created this homestead or accepted an invite to it — so it
+    // must not be overridden by a data-volume heuristic.
+    //
+    // This is critical for farm hands: every user auto-creates their own
+    // (usually empty) homestead on first load, so a farm hand is 'owner'
+    // of a private row. Without this guard, a farm hand whose shared
+    // homestead happens to score 0 would be routed back to their private
+    // homestead, and their logged work would never reach the real owner.
+    //
+    // We intentionally do NOT require score > 0 here. An empty shared
+    // homestead is still the correct homestead to load.
     if (cachedId) {
       const cachedMatch = scored.find((s) => s.membership.homestead_id === cachedId);
-      if (cachedMatch && cachedMatch.score > 0) {
+      if (cachedMatch) {
         return { id: cachedMatch.membership.homestead_id, role: cachedMatch.membership.role };
       }
     }
 
+    // No valid cached id (first load on this device, or the cached
+    // homestead is one the user is no longer a member of). Fall back to
+    // a heuristic: prefer a homestead the user owns, breaking ties by
+    // data score then join order.
     const owned = scored.filter((s) => s.membership.role === 'owner');
     if (owned.length > 0) {
       owned.sort((a, b) => {
