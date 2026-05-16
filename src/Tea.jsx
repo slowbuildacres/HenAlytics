@@ -505,9 +505,14 @@ export default function TeaPage({ hobby, data, update }) {
   const active = batches.filter(b => !b.archived);
   const sales = (data.sales || []).filter(s => s.hobbyType === "tea");
 
+  // A batch is "available" if it still has stock OR nothing has been
+  // made yet (a freshly created blend the user may stock later — it must
+  // still be visible, otherwise it silently disappears). "soldOut" is
+  // only a batch that HAD stock and ran out.
   const available = active.filter(b => {
     const remaining = b.packaging === "bulk" ? (b.bulkRemainingOz || 0) : (b.sachetsRemaining || 0);
-    return remaining > 0;
+    const made = b.packaging === "bulk" ? (b.totalWeightOz || 0) : (b.sachetsMade || 0);
+    return remaining > 0 || made <= 0;
   });
   const soldOut = active.filter(b => {
     const remaining = b.packaging === "bulk" ? (b.bulkRemainingOz || 0) : (b.sachetsRemaining || 0);
