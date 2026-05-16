@@ -407,7 +407,7 @@ function SellBakeModal({ bake, onSell, onClose }) {
 // ============================================================================
 
 function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
-  const [date, setDate] = useState(entry?.date || todayStr());
+  const [date, setDate] = useState(entry?.date || todayIso());
   const [item, setItem] = useState(entry?.item || "");
   const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
   const [note, setNote] = useState(entry?.note || "");

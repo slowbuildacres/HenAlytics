@@ -222,7 +222,7 @@ function migrateData(data) {
         pricePerUnit: pricePerDozen,
         totalRevenue: revenue,
         note: e.note || "",
-        buyerId: null,
+        buyerId: e.buyerId || null,
         created: e.created || Date.now(),
         migratedFromEntries: true,
       });
@@ -11190,6 +11190,21 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         created: isEdit ? existingEntry.created : Date.now(),
         ...cleanFields,
       };
+      // sold_eggs customer handling: if the user typed a NEW customer name,
+      // create the data.customers row now and point buyerId at it. The
+      // transient UI-only fields (newBuyerName, _showNewBuyer) must not be
+      // persisted on the entry.
+      if (action === "sold_eggs") {
+        if (entry._showNewBuyer && entry.newBuyerName && entry.newBuyerName.trim()) {
+          const newCustId = newId();
+          d.customers = d.customers || [];
+          d.customers.push({ id: newCustId, name: entry.newBuyerName.trim(), note: "" });
+          entry.buyerId = newCustId;
+        }
+        delete entry.newBuyerName;
+        delete entry._showNewBuyer;
+        if (!entry.buyerId) delete entry.buyerId;
+      }
       if (finalPaths.length > 0) entry.photoPaths = finalPaths;
       if (weather) entry.weather = weather;
       // Preserve batch/season association when editing
@@ -11820,6 +11835,50 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           </Field>
           <Field label="Price per unit ($)">
             <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
+          </Field>
+          {/* Customer picker — mirrors the Sales tab. Pick an existing
+              customer or add a new one. The chosen buyerId rides on the
+              sold_eggs entry and is carried into data.sales so the Sales
+              tab shows the customer name. */}
+          <Field label="Customer (optional)">
+            {!fields._showNewBuyer ? (
+              <div style={{ display: "flex", gap: 8 }}>
+                <select
+                  style={{ ...inputStyle, flex: 1 }}
+                  value={fields.buyerId || ""}
+                  onChange={(e) => set("buyerId", e.target.value)}
+                >
+                  <option value="">— No customer —</option>
+                  {(data.customers || []).map((c) => (
+                    <option key={c.id} value={c.id}>{c.name}</option>
+                  ))}
+                </select>
+                <button
+                  type="button"
+                  onClick={() => { set("_showNewBuyer", true); set("buyerId", ""); }}
+                  style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.ink, whiteSpace: "nowrap" }}
+                >
+                  + New
+                </button>
+              </div>
+            ) : (
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  style={{ ...inputStyle, flex: 1 }}
+                  value={fields.newBuyerName || ""}
+                  onChange={(e) => set("newBuyerName", e.target.value)}
+                  placeholder="Customer name"
+                  autoFocus
+                />
+                <button
+                  type="button"
+                  onClick={() => { set("_showNewBuyer", false); set("newBuyerName", ""); }}
+                  style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}
+                >
+                  Cancel
+                </button>
+              </div>
+            )}
           </Field>
           <Field label="Sold to / notes (optional)">
             <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
