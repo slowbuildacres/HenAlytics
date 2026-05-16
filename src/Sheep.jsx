@@ -20,7 +20,7 @@
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
@@ -549,9 +549,13 @@ function ShearingModal({ animals, shearing, onSave, onDelete, onClose }) {
       </Field>
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
-          <Field label="Wool (lbs)">
-            <input type="number" step="0.1" style={inputStyle} value={woolLbs} onChange={e=>setWoolLbs(e.target.value)} placeholder="0.0" />
-          </Field>
+          {(()=>{
+            const isMetricW=getCurrentWeightUnit()==="kg";
+            const shown=woolLbs===""||woolLbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(woolLbs))*100)/100):woolLbs);
+            return <Field label={isMetricW?"Wool (kg)":"Wool (lbs)"}>
+              <input type="number" step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setWoolLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0.0" />
+            </Field>;
+          })()}
         </div>
         <div style={{ flex:1 }}>
           <Field label="Grade (optional)">
@@ -603,6 +607,9 @@ function MilkLogModal({ animals, onSave, onClose }) {
       </Field>
       <Field label="Ounces">
         <input type="number" step="0.1" style={inputStyle} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus />
+        {oz && getCurrentVolumeUnit() === "L" && (
+          <div style={{ fontSize:12, color:palette.inkSoft, marginTop:4 }}>{fmtVolume(Number(oz)/128)}</div>
+        )}
       </Field>
       <Field label="Notes (optional)">
         <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} />
@@ -667,7 +674,11 @@ function FedLogModal({ onSave, onClose }) {
   return (
     <ModalShell title="🌾 Log feeding" onClose={onClose}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} /></Field>
-      <Field label="Pounds fed (optional)"><input type="number" step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} /></Field>
+      {(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shown=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
+        return <Field label={isMetricW?"Kilograms fed (optional)":"Pounds fed (optional)"}><input type="number" step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} /></Field>;
+      })()}
       <Field label="Cost (optional)"><input type="number" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" /></Field>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
@@ -794,16 +805,20 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
           {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
-      {action === "weight" && (
-        <Field label="Weight (lbs)">
+      {action === "weight" && (()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shown=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return (
+        <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
           <input
             type="number" step="0.1" min={0}
-            style={inputStyle} value={weight}
-            onChange={e => setWeight(e.target.value)}
+            style={inputStyle} value={shown}
+            onChange={e => {const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
             placeholder="0" autoFocus inputMode="decimal"
           />
         </Field>
-      )}
+        );
+      })()}
       {action === "sale" && (
         <>
           <Field label="Type">
@@ -1226,7 +1241,7 @@ export default function SheepPage({ hobby, data, update, setModal }) {
                     <div style={{ fontSize:11,color:palette.inkSoft }}>{fmtDate(s.date)}</div>
                   </div>
                   <div style={{ fontWeight:700,fontSize:14,color:palette.feather,fontFamily:FONT_DISPLAY }}>
-                    {s.woolLbs.toFixed(1)} lbs
+                    {fmtWeight(Number(s.woolLbs)||0)}
                   </div>
                 </div>
               );
@@ -1316,13 +1331,13 @@ export function SheepAnalytics({ hobby, entries = [] }) {
         <StatCard label="Live sheep" value={liveAnimals.length} accent={palette.leaf} />
         <StatCard label="Total invested" value={fmtMoney(totalPurchaseCost + feedCost)} sub={`${fmtMoney(feedCost)} feed`} accent={palette.feather} />
         {(subType === "milk" || subType === "mixed") && milkOz > 0 && (
-          <StatCard label="Milk" value={`${milkGal.toFixed(1)} gal`} sub={`${milkOz.toFixed(0)} oz total`} accent={palette.leafSoft} />
+          <StatCard label="Milk" value={fmtVolume(milkGal)} accent={palette.leafSoft} />
         )}
         {(subType === "wool" || subType === "mixed") && totalWoolLbs > 0 && (
-          <StatCard label="Wool" value={`${totalWoolLbs.toFixed(1)} lbs`} sub={`${shearings.length} shearings`} accent={palette.yolk} />
+          <StatCard label="Wool" value={fmtWeight(totalWoolLbs)} sub={`${shearings.length} shearings`} accent={palette.yolk} />
         )}
         {totalMeatLbs > 0 && (
-          <StatCard label="Meat" value={`${totalMeatLbs.toFixed(0)} lbs`} sub={`${butcherEntries.length} butchered`} accent={palette.accent} />
+          <StatCard label="Meat" value={fmtWeight(totalMeatLbs)} sub={`${butcherEntries.length} butchered`} accent={palette.accent} />
         )}
       </div>
 
@@ -1341,7 +1356,7 @@ export function SheepAnalytics({ hobby, entries = [] }) {
         <>
           <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>Feed</h3>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:18 }}>
-            <StatCard label="Feed used" value={`${feedLbs.toFixed(0)} lbs`} accent={palette.feather} />
+            <StatCard label="Feed used" value={fmtWeight(feedLbs)} accent={palette.feather} />
             <StatCard label="Feed cost" value={fmtMoney(feedCost)} accent={palette.accent} />
             {liveAnimals.length > 0 && <StatCard label="Cost / sheep" value={fmtMoney(feedCost / liveAnimals.length)} sub="lifetime" accent={palette.feather} />}
           </div>

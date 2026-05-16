@@ -38,6 +38,7 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -476,17 +477,25 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
                     color: feedUnit===u?palette.bg:palette.ink,
                     fontFamily:FONT_BODY,fontSize:13,fontWeight:600,cursor:"pointer",
                   }}
-                >{u}</button>
+                >{u === "lbs" ? weightUnitLabel() : u}</button>
               ))}
             </div>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder={feedUnit==="cups"?"Cups of feed":"Pounds of feed"} autoFocus/>
+            {(()=>{
+              const metricW=getCurrentWeightUnit()==="kg";
+              const isCups=feedUnit==="cups";
+              const shown=isCups?lbs:(lbs===""||lbs==null?"":(metricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs));
+              const ph=isCups?"Cups of feed":(metricW?"Kilograms of feed":"Pounds of feed");
+              return <input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;if(isCups){setLbs(r);return;}if(r===""){setLbs("");return;}setLbs(metricW?String(lbsFromInput(r)):r);}} placeholder={ph} autoFocus/>;
+            })()}
           </Field>
           <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
         </>
       )}
-      {action==="weight" && (
-        <Field label="Current weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>
-      )}
+      {action==="weight" && (()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return <Field label={isMetricW?"Current weight (kg)":"Current weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}
       {action==="bred" && (
         <>
           <Field label="Buck (optional)">
@@ -612,7 +621,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
       </div>
       {latestWeight && (
         <div style={{background:palette.bgAlt,borderRadius:8,padding:"8px 12px",marginBottom:10,display:"flex",gap:16,flexWrap:"wrap"}}>
-          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Current: </span><strong>{latestWeight} lbs</strong></div>
+          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Current: </span><strong>{fmtWeight(Number(latestWeight)||0)}</strong></div>
         </div>
       )}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
@@ -629,12 +638,13 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
             if(e.action==="fed"){
               const u=e.feedUnit||"lbs";
               const a=u==="cups"?(Number(e.feedAmount)||0):(Number(e.lbs)||Number(e.feedAmount)||0);
-              detail=`${a} ${u}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+              const amtLabel=u==="cups"?fmtCups(a):fmtWeight(a);
+              detail=`${amtLabel}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
             }
-            else if(e.action==="weight")detail=`${e.weight||0} lbs`;
+            else if(e.action==="weight")detail=fmtWeight(Number(e.weight)||0);
             else if(e.action==="bred")detail=`${e.buckName?"sire: "+e.buckName+" · ":""}kindle ${fmtDate(e.kindleDate)}`;
             else if(e.action==="litter")detail=`${e.kitsAlive||0} alive${e.kitsStillborn>0?` · ${e.kitsStillborn} stillborn`:""}`;
-            else if(e.action==="butcher")detail=`${e.weight||0} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+            else if(e.action==="butcher")detail=`${fmtWeight(Number(e.weight)||0)}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
             else if(e.action==="death")detail=e.cause||"unknown";
             return (
               <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
@@ -702,9 +712,10 @@ function LegacyLogSection({hutches, entries, hobbyId, update}){
                 else if(e.action==="fed") {
                   const u=e.feedUnit||"lbs";
                   const a=u==="cups"?(Number(e.feedAmount)||0):(Number(e.lbs)||Number(e.feedAmount)||0);
-                  detail = `${a} ${u} · ${fmtMoney(e.cost)}`;
+                  const amtLabel=u==="cups"?fmtCups(a):fmtWeight(a);
+                  detail = `${amtLabel} · ${fmtMoney(e.cost)}`;
                 }
-                else if(e.action==="butcher") detail = `${e.count||0} · avg ${e.avgWeight||0} lbs`;
+                else if(e.action==="butcher") detail = `${e.count||0} · avg ${fmtWeight(Number(e.avgWeight)||0)}`;
                 else if(e.action==="death") detail = `${e.count||1} · ${e.cause||"unknown"}`;
                 else if(e.action==="infrastructure") detail = `${e.item||""} · ${fmtMoney(e.cost)}`;
                 else if(e.note) detail = e.note.length>50 ? e.note.slice(0,50)+"…" : e.note;
@@ -974,8 +985,8 @@ export function RabbitsAnalytics({hobby,entries}){
       <h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink}}>meat production</h3>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
         <StatCard label="Butchered" value={totalButchered} accent={palette.ink}/>
-        <StatCard label="Avg final weight" value={avgButcherWeight !== "—" ? avgButcherWeight+" lbs" : "—"} accent={palette.feather}/>
-        <StatCard label="Total meat" value={totalMeatLbs > 0 ? totalMeatLbs.toFixed(1)+" lbs" : "—"} accent={palette.leaf}/>
+        <StatCard label="Avg final weight" value={avgButcherWeight !== "—" ? fmtWeight(Number(avgButcherWeight)||0) : "—"} accent={palette.feather}/>
+        <StatCard label="Total meat" value={totalMeatLbs > 0 ? fmtWeight(totalMeatLbs) : "—"} accent={palette.leaf}/>
         {totalDeaths > 0 && <StatCard label="Deaths" value={totalDeaths} accent={palette.accent}/>}
       </div>
       <h3 style={{fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink}}>costs</h3>

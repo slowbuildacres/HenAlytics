@@ -6,6 +6,7 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -270,10 +271,24 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
-      {action==="milk"&&<Field label="Milk collected (oz)"><input type="number" min={0} step="0.1" style={inputStyle} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus/>{oz&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{(Number(oz)/128).toFixed(2)} gallons</div>}</Field>}
-      {action==="fed"&&<div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Feed (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>}
+      {action==="milk"&&(()=>{
+        // Milk stored in oz. In metric mode show a mL/L hint instead of the
+        // gallons hint. The input value stays in oz (canonical) — only the
+        // helper text adapts. (oz → mL ≈ ×29.5735)
+        const isMetricV=getCurrentVolumeUnit()==="L";
+        return <Field label="Milk collected (oz)"><input type="number" min={0} step="0.1" style={inputStyle} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus/>{oz&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{isMetricV?fmtVolume(Number(oz)/128):`${(Number(oz)/128).toFixed(2)} gallons`}</div>}</Field>;
+      })()}
+      {action==="fed"&&(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+      })()}
       {action==="kid"&&<Field label="Kids born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
-      {(action==="weight"||action==="butcher")&&<Field label="Weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>}
+      {(action==="weight"||action==="butcher")&&(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}
       {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
@@ -349,8 +364,8 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
       </div>
       {(animal.purpose==="Dairy"||animal.purpose==="Both")&&(
         <div style={{background:palette.bgAlt,borderRadius:8,padding:"8px 12px",marginBottom:10,display:"flex",gap:16,flexWrap:"wrap"}}>
-          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Today: </span><strong>{todayMilk>0?`${todayMilk} oz`:"—"}</strong></div>
-          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>All-time: </span><strong>{totalMilkOz>0?`${totalMilkOz} oz (${(totalMilkOz/128).toFixed(1)} gal)`:"—"}</strong></div>
+          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Today: </span><strong>{todayMilk>0?fmtVolume(todayMilk/128):"—"}</strong></div>
+          <div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>All-time: </span><strong>{totalMilkOz>0?fmtVolume(totalMilkOz/128):"—"}</strong></div>
           {lastMilk&&<div style={{fontSize:12,color:palette.inkSoft}}>Last: {fmtDate(lastMilk.date)}</div>}
         </div>
       )}
@@ -366,10 +381,10 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {recentEntries.map(e=>{
             let detail="";
-            if(e.action==="milk")detail=`${e.oz||e.gallons} ${e.oz!=null?"oz":"gal"}`;
-            else if(e.action==="fed")detail=`${e.lbs} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+            if(e.action==="milk")detail=fmtVolume((e.oz!=null?Number(e.oz)/128:Number(e.gallons))||0);
+            else if(e.action==="fed")detail=`${fmtWeight(Number(e.lbs)||0)}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
             else if(e.action==="kid"||e.action==="calf"||e.action==="litter")detail=`${e.count} ${e.action==="litter"?"piglets":e.action==="calf"?"calf":"kid"}${e.count!==1?"s":""}`;
-            else if(e.action==="weight"||e.action==="butcher")detail=`${e.weight} lbs`;
+            else if(e.action==="weight"||e.action==="butcher")detail=fmtWeight(Number(e.weight)||0);
             return (
               <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
                 <span>{fmtDate(e.date)} · {actionLabels[e.action]||e.action}</span>
@@ -724,15 +739,15 @@ export function GoatsAnalytics({hobby,entries}){
   return(
     <div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
-        <StatCard label="Total milk" value={`${(totalMilkOz/128).toFixed(1)} gal`} sub={`${totalMilkOz.toFixed(0)} oz`} accent={palette.leaf}/>
+        <StatCard label="Total milk" value={fmtVolume(totalMilkOz/128)} accent={palette.leaf}/>
         <StatCard label="Animals" value={animals.length} accent={palette.ink}/>
         <StatCard label="Kids born" value={totalKids} accent={palette.yolk}/>
         <StatCard label="Feed cost" value={fmtMoney(totalFeedCost)} accent={palette.feather}/>
-        {butcherEntries.length>0&&<StatCard label="Butchered" value={butcherEntries.length} sub={`${totalMeatLbs.toFixed(0)} lbs`} accent={palette.accent}/>}
+        {butcherEntries.length>0&&<StatCard label="Butchered" value={butcherEntries.length} sub={fmtWeight(totalMeatLbs)} accent={palette.accent}/>}
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
       </div>
       {milkTrend.length>1&&<ChartCard title="🥛 Daily milk (oz)"><ResponsiveContainer width="100%" height={180}><BarChart data={milkTrend}><XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[`${v} oz`,"Milk"]}/><Bar dataKey="oz" fill={palette.leaf} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>}
-      {milkChart.length>1&&<ChartCard title="🐐 Milk by animal"><div style={{display:"flex",flexDirection:"column",gap:6}}>{milkChart.map(a=><div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><span>🐐 {a.name}</span><strong>{a.oz} oz ({(a.oz/128).toFixed(1)} gal)</strong></div>)}</div></ChartCard>}
+      {milkChart.length>1&&<ChartCard title="🐐 Milk by animal"><div style={{display:"flex",flexDirection:"column",gap:6}}>{milkChart.map(a=><div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><span>🐐 {a.name}</span><strong>{fmtVolume((Number(a.oz)||0)/128)}</strong></div>)}</div></ChartCard>}
       {animals.length===0&&<div style={{padding:24,textAlign:"center",color:palette.inkSoft,fontSize:13}}>No goat entries yet.</div>}
     </div>
   );

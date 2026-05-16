@@ -6,6 +6,7 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -97,7 +98,11 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
       </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{PIG_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
-        <div style={{flex:1}}><Field label="Start weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={startWeight} onChange={e=>setStartWeight(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}>{(()=>{
+          const isMetricW=getCurrentWeightUnit()==="kg";
+          const shown=startWeight===""||startWeight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(startWeight))*100)/100):startWeight);
+          return <Field label={isMetricW?"Start weight (kg)":"Start weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setStartWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field>;
+        })()}</div>
       </div>
       <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
@@ -247,10 +252,22 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
       <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
-      {action==="fed"&&<div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Feed (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={lbs} onChange={e=>setLbs(e.target.value)} placeholder="0" autoFocus/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>}
-      {action==="weight"&&<Field label="Current weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>}
+      {action==="fed"&&(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+      })()}
+      {action==="weight"&&(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return <Field label={isMetricW?"Current weight (kg)":"Current weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}
       {action==="litter"&&<Field label="Piglets born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
-      {action==="butcher"&&<><Field label="Hanging weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field><Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></>}
+      {action==="butcher"&&<>{(()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
         <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
@@ -313,9 +330,9 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
       </div>
       {(latestWeight||startWeight>0)&&(
         <div style={{background:palette.bgAlt,borderRadius:8,padding:"8px 12px",marginBottom:10,display:"flex",gap:16,flexWrap:"wrap"}}>
-          {startWeight>0&&<div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Start: </span><strong>{startWeight} lbs</strong></div>}
-          {latestWeight&&<div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Current: </span><strong>{latestWeight} lbs</strong></div>}
-          {gain!==null&&<div style={{fontSize:12,color:gain>0?palette.leaf:palette.accent}}><strong>+{gain.toFixed(1)} lbs gained</strong></div>}
+          {startWeight>0&&<div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Start: </span><strong>{fmtWeight(Number(startWeight)||0)}</strong></div>}
+          {latestWeight&&<div style={{fontSize:12,color:palette.ink}}><span style={{color:palette.inkSoft}}>Current: </span><strong>{fmtWeight(Number(latestWeight)||0)}</strong></div>}
+          {gain!==null&&<div style={{fontSize:12,color:gain>0?palette.leaf:palette.accent}}><strong>+{fmtWeight(Number(gain)||0)} gained</strong></div>}
         </div>
       )}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
@@ -327,10 +344,10 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {recentEntries.map(e=>{
             let detail="";
-            if(e.action==="fed")detail=`${e.lbs} lbs${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
-            else if(e.action==="weight")detail=`${e.weight} lbs`;
+            if(e.action==="fed")detail=`${fmtWeight(Number(e.lbs)||0)}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
+            else if(e.action==="weight")detail=fmtWeight(Number(e.weight)||0);
             else if(e.action==="litter")detail=`${e.count} piglets`;
-            else if(e.action==="butcher")detail=`${e.weight} lbs`;
+            else if(e.action==="butcher")detail=fmtWeight(Number(e.weight)||0);
             return (
               <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
                 <span>{fmtDate(e.date)} · {actionLabels[e.action]||e.action}</span>
@@ -368,7 +385,7 @@ export function PigsAnalytics({hobby,entries}){
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
         <StatCard label="Pigs" value={animals.length} accent={palette.ink}/>
         <StatCard label="Total feed cost" value={fmtMoney(totalFeedCost)} accent={palette.feather}/>
-        <StatCard label="Meat produced" value={`${totalMeatLbs.toFixed(0)} lbs`} accent={palette.leaf}/>
+        <StatCard label="Meat produced" value={fmtWeight(totalMeatLbs)} accent={palette.leaf}/>
         <StatCard label="Piglets born" value={totalPiglets} accent={palette.yolk}/>
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
         {costPerLb!=="—"&&<StatCard label="Feed cost / lb" value={`$${costPerLb}`} accent={palette.accent}/>}
@@ -380,7 +397,7 @@ export function PigsAnalytics({hobby,entries}){
               const latest=weights.sort((a,b)=>b.date.localeCompare(a.date))[0];
               const animal=animals.find(a=>a.name===name);
               const gain=latest&&animal?.startWeight?latest.weight-animal.startWeight:null;
-              return <div key={name} style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><div><strong>🐷 {name}</strong>{animal?.breed&&<div style={{fontSize:11,color:palette.inkSoft}}>{animal.breed}</div>}</div><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{latest.weight} lbs</div>{gain!==null&&<div style={{fontSize:11,color:palette.leaf}}>+{gain.toFixed(1)} lbs gained</div>}</div></div>;
+              return <div key={name} style={{display:"flex",justifyContent:"space-between",padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><div><strong>🐷 {name}</strong>{animal?.breed&&<div style={{fontSize:11,color:palette.inkSoft}}>{animal.breed}</div>}</div><div style={{textAlign:"right"}}><div style={{fontWeight:700}}>{fmtWeight(Number(latest.weight)||0)}</div>{gain!==null&&<div style={{fontSize:11,color:palette.leaf}}>+{fmtWeight(Number(gain)||0)} gained</div>}</div></div>;
             })}
           </div>
         </ChartCard>

@@ -30,7 +30,7 @@
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 
 const palette = {
@@ -878,11 +878,15 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
           {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
-      {action === "weight" && (
-        <Field label="Weight (lbs)">
-          <input type="number" step="0.1" min={0} style={inputStyle} value={weight} onChange={e => setWeight(e.target.value)} placeholder="0" autoFocus inputMode="decimal" />
+      {action === "weight" && (()=>{
+        const isMetricW=getCurrentWeightUnit()==="kg";
+        const shown=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
+        return (
+        <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
+          <input type="number" step="0.1" min={0} style={inputStyle} value={shown} onChange={e => {const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus inputMode="decimal" />
         </Field>
-      )}
+        );
+      })()}
       {action === "fed" && (
         <>
           <Field label="How much feed?">
@@ -899,17 +903,35 @@ function LogEntryModal({ animals, action, onSave, onClose }) {
                     color: feedUnit === u ? palette.bg : palette.ink,
                     fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
                   }}
-                >{u}</button>
+                >{/* storage stays "lbs"; label shows "kg" in metric mode */}
+                  {u === "lbs" ? weightUnitLabel() : u}</button>
               ))}
             </div>
-            <input
-              type="number" inputMode="decimal" step="0.1" min={0}
-              style={inputStyle}
-              value={feedAmount}
-              onChange={e => setFeedAmount(e.target.value)}
-              placeholder={feedUnit === "cups" ? "Cups of feed" : "Pounds of feed"}
-              autoFocus
-            />
+            {(()=>{
+              // feedAmount is stored in lbs when feedUnit==="lbs". In kg-mode
+              // the field shows/accepts kg and converts on the boundary.
+              const metricW=getCurrentWeightUnit()==="kg";
+              const isCups=feedUnit==="cups";
+              const shown=isCups
+                ? feedAmount
+                : (feedAmount===""||feedAmount==null
+                    ? ""
+                    : (metricW?String(Math.round(weightFromLbs(Number(feedAmount))*100)/100):feedAmount));
+              const ph=isCups?"Cups of feed":(metricW?"Kilograms of feed":"Pounds of feed");
+              return <input
+                type="number" inputMode="decimal" step="0.1" min={0}
+                style={inputStyle}
+                value={shown}
+                onChange={e => {
+                  const r=e.target.value;
+                  if(isCups){setFeedAmount(r);return;}
+                  if(r===""){setFeedAmount("");return;}
+                  setFeedAmount(metricW?String(lbsFromInput(r)):r);
+                }}
+                placeholder={ph}
+                autoFocus
+              />;
+            })()}
           </Field>
           <Field label="Cost ($, optional)">
             <input
