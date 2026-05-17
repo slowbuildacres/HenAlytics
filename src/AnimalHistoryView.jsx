@@ -116,8 +116,21 @@ const detailForEntry = (e) => {
     if (e.kitsAlive != null) bits.push(`${e.kitsAlive} alive`);
     if (e.kitsStillborn > 0) bits.push(`${e.kitsStillborn} stillborn`);
   }
-  if (e.action === "note" && e.note) bits.push(e.note);
-  if (e.action === "health" && e.note) bits.push(e.note);
+  // BUG1-NOTES-FALLBACK: per-animal entries store their text in `notes`
+  // (plural). The old code checked `e.note` (singular) for note/health
+  // entries, so the timeline preview was always blank for them. This
+  // general fallback surfaces the notes for ANY action that has no other
+  // detail — covering health, note, and kids/litter/lambing entries —
+  // while leaving actions that already built a detail (milk, fed, etc.)
+  // untouched. `e.note` is kept as a defensive fallback for legacy data.
+  if (bits.length === 0) {
+    const noteText = (e.notes != null && String(e.notes).trim() !== "")
+      ? String(e.notes).trim()
+      : (e.note != null && String(e.note).trim() !== "")
+        ? String(e.note).trim()
+        : "";
+    if (noteText) bits.push(noteText);
+  }
   return bits.join(" · ");
 };
 
