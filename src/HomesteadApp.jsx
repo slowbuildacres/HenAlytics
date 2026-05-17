@@ -4305,7 +4305,7 @@ function QuickLogTiles({ hobby, setModal }) {
       <div style={grid}>
         <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
         <Tile icon={Leaf} label="Fertilized" color={palette.leafSoft || "#A8C078"} onClick={() => setModal({ type: "log", action: "fertilized" })} />
-        <Tile icon={Sprout} label="Planted" color={palette.leaf} onClick={() => setModal({ type: "log", action: "planted" })} />
+        <Tile icon={Sprout} label="Plant Annual" color={palette.leaf} onClick={() => setModal({ type: "log", action: "planted" })} />
         <Tile icon={Scissors} label="Harvested" color={palette.accent} onClick={() => setModal({ type: "log", action: "harvested" })} />
         <Tile icon={AlertTriangle} label="Report Issue" color={palette.yolk} onClick={() => setModal({ type: "log", action: "issue" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.feather} onClick={() => setModal({ type: "log", action: "note" })} />
@@ -4683,7 +4683,7 @@ function GardenSummary({ hobby, data, update, setModal }) {
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.leafSoft, lineHeight: 1 }}>{plantings}</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>plantings · {totalHarvest.toFixed(1)} harvested · day {days}</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {totalHarvest.toFixed(1)} harvested · day {days}</div>
         </div>
       </div>
 
@@ -5130,7 +5130,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
         const softCulledCount = entries
           .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
           .reduce((s, e) => s + Number(e.cullCount), 0);
-        const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount);
+        const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount + (Number(batch.countAdjustment) || 0));
         return (
           <div
             key={batch.id}
@@ -5666,7 +5666,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
   return (
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
-        <StatCard label="Plantings" value={plantings} accent={palette.leaf} />
+        <StatCard label="Annuals planted" value={plantings} accent={palette.leaf} />
         <StatCard label="Total Harvest" value={totalHarvest.toFixed(1)} sub="lbs / units" accent={palette.leaf} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
         <StatCard label="Waterings" value={waterings} accent="#3F7CAC" />
@@ -6568,7 +6568,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <EditBatchModal hobby={targetHobby} batchId={modal.batchId} update={update} onClose={close} />;
+    return <EditBatchModal hobby={targetHobby} batchId={modal.batchId} entries={(data.entries && data.entries[targetHobby.id]) || []} update={update} onClose={close} />;
   }
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
@@ -9671,7 +9671,7 @@ function EditFlockEntryModal({ hobby, index, update, onClose }) {
 }
 
 // Edit the current meat-chicken batch. Lets you fix the name, date, count, or cost.
-function EditBatchModal({ hobby, batchId, update, onClose }) {
+function EditBatchModal({ hobby, batchId, entries = [], update, onClose }) {
   // Push 4b — find the specific batch in currentBatches[]. batchId is
   // passed in by the caller (MeatChickensSummary). For safety on stale
   // hobby data (legacy single-batch users mid-migration, etc.) we fall
@@ -9687,6 +9687,20 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
   // Default to Chicken for legacy batches that predate the bird-type field
   const [birdType, setBirdType] = useState(batch.birdType || "Chicken");
   const [count, setCount] = useState(String(batch.startCount || 0));
+  // Derived live count, mirroring the active-batch-card formula so the
+  // "Current bird count" field below shows the same number the user sees on
+  // the card. deaths/butchered/softCulled come from the batch's own records.
+  const _deaths = (entries || [])
+    .filter((e) => e.action === "death" && e.batchId === batch.id)
+    .reduce((s, e) => s + (Number(e.count) || 1), 0);
+  const _butchered = (batch.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
+  const _softCulled = (entries || [])
+    .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
+    .reduce((s, e) => s + Number(e.cullCount), 0);
+  // Pure derived count (no adjustment) — the back-computation baseline.
+  const _derivedCount = (Number(batch.startCount) || 0) - _deaths - _butchered - _softCulled;
+  const _currentLive = Math.max(0, _derivedCount + (Number(batch.countAdjustment) || 0));
+  const [currentCount, setCurrentCount] = useState(String(_currentLive));
   const [date, setDate] = useState(batch.startDate || todayStr());
   const [cost, setCost] = useState(batch.chickCost ? String(batch.chickCost) : "");
   // Confirmation gate for the destructive Delete action — we don't want a
@@ -9701,6 +9715,17 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
       if (!h || !Array.isArray(h.currentBatches)) return d;
       const idx = h.currentBatches.findIndex((b) => b.id === batch.id);
       if (idx === -1) return d;
+      // Back-compute countAdjustment so the live count lands on what the
+      // user typed in "Current bird count". Uses the EDITED startCount (n),
+      // not the old one, so changing both fields at once stays consistent.
+      // History (deaths/butchered/softCulled) is untouched — this is a pure
+      // offset. If the field was left at the derived value, the adjustment
+      // naturally computes to 0.
+      const _tgt = parseInt(currentCount);
+      const _newDerived = n - _deaths - _butchered - _softCulled;
+      const _adj = (Number.isFinite(_tgt) && currentCount.trim() !== "")
+        ? (_tgt - _newDerived)
+        : (Number(h.currentBatches[idx].countAdjustment) || 0);
       h.currentBatches[idx] = {
         ...h.currentBatches[idx],
         name: name.trim(),
@@ -9708,6 +9733,7 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
         startDate: date,
         startCount: n,
         chickCost: parseFloat(cost) || 0,
+        countAdjustment: _adj,
       };
       return d;
     });
@@ -9795,6 +9821,19 @@ function EditBatchModal({ hobby, batchId, update, onClose }) {
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"} (started with)`}>
         <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+      </Field>
+      <Field label="Current bird count (alive now)">
+        <input type="number" inputMode="numeric" style={inputStyle} value={currentCount} onChange={(e) => setCurrentCount(e.target.value)} />
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+          {(() => {
+            const t = parseInt(currentCount);
+            const adj = (Number.isFinite(t) && currentCount.trim() !== "") ? (t - _derivedCount) : 0;
+            if (adj === 0) {
+              return "Auto-calculated from your butcher and loss records. Edit only if the real count differs (e.g. after restoring a finalized batch).";
+            }
+            return `Manually adjusted ${adj > 0 ? "+" : ""}${adj} from the ${_derivedCount} your records imply. Butcher and loss history is unchanged.`;
+          })()}
+        </div>
       </Field>
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
@@ -9966,7 +10005,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
   const previouslySoftRemoved = batch ? (entries || [])
     .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
     .reduce((s, e) => s + Number(e.cullCount), 0) : 0;
-  const remaining = batch ? (batch.startCount - deaths - previouslyButchered - previouslySoftRemoved) : 0;
+  const remaining = batch ? (batch.startCount - deaths - previouslyButchered - previouslySoftRemoved + (Number(batch.countAdjustment) || 0)) : 0;
 
   const plannedCount = parseInt(count) || 0;
   const remainingAfter = Math.max(0, remaining - plannedCount);
@@ -11030,6 +11069,20 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
   const activeBatches = (hobby.type === "meat_chickens" && Array.isArray(hobby.currentBatches))
     ? hobby.currentBatches
     : [];
+  // Live bird count for a batch — same formula as the batch card / butcher
+  // modal (startCount - deaths - butchered - softCulled + countAdjustment),
+  // so the picker label below agrees with every other count display.
+  const batchLiveCount = (b) => {
+    const ents = (data.entries && data.entries[hobby.id]) || [];
+    const d = ents
+      .filter((e) => e.action === "death" && e.batchId === b.id)
+      .reduce((s, e) => s + (Number(e.count) || 1), 0);
+    const bu = (b.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
+    const sc = ents
+      .filter((e) => e.action === "note" && e.batchId === b.id && Number(e.cullCount) > 0)
+      .reduce((s, e) => s + Number(e.cullCount), 0);
+    return Math.max(0, (Number(b.startCount) || 0) - d - bu - sc + (Number(b.countAdjustment) || 0));
+  };
   // Actions that belong to a specific batch. "infrastructure" is hobby-wide
   // (coop building, fencing, etc.) and stays un-batched.
   const batchScopedActions = ["fed", "watered", "death", "note", "move_tractor"];
@@ -11306,6 +11359,48 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           }
         }
 
+        // FEAT6-FED: "Total" feed divvy for egg layers — split one feeding
+        // evenly across all flocks. Feed amount + cost are decimals, so we
+        // divide evenly and place any rounding remainder on the LAST flock;
+        // the shares always sum back to the entered total. One entry per
+        // flock keeps per-flock feed analytics correct. Each split entry
+        // carries `totalEntryGroup` so they read as a single user action.
+        if (
+          action === "fed" &&
+          hobby.type === "egg_layers" &&
+          entry.flockId === "__TOTAL__"
+        ) {
+          const flocks = (hobby.flocks || []).filter(Boolean);
+          if (flocks.length > 0) {
+            const isCups = entry.feedUnit === "cups";
+            const totalAmt = Math.max(0, Number(isCups ? entry.feedAmount : entry.lbs) || 0);
+            const totalCost = Math.max(0, Number(entry.cost) || 0);
+            const groupId = entry.id;
+            const round2 = (x) => Math.round(x * 100) / 100;
+            const per = flocks.length;
+            const baseAmt = round2(totalAmt / per);
+            const baseCost = round2(totalCost / per);
+            flocks.forEach((fl, i) => {
+              const isLast = i === per - 1;
+              // Last flock absorbs the rounding remainder so shares sum exact.
+              const amt = isLast ? round2(totalAmt - baseAmt * (per - 1)) : baseAmt;
+              const cost = isLast ? round2(totalCost - baseCost * (per - 1)) : baseCost;
+              const split = {
+                ...entry,
+                id: newId(),
+                flockId: fl.id,
+                cost,
+                totalEntryGroup: groupId,
+                splitFromTotal: totalAmt,
+              };
+              if (isCups) { split.feedAmount = amt; split.lbs = 0; }
+              else { split.lbs = amt; split.feedAmount = amt; }
+              d.entries[hobby.id].push(split);
+            });
+            return d; // skip the default push below
+          }
+        }
+
         // "Total" flock divvy: split eggs across all flocks using
         // largest-remainder. 13 eggs / 4 flocks → 4,3,3,3 (the first
         // (remainder) flocks each get +1 to absorb the slack).
@@ -11334,6 +11429,47 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
                 totalEntryGroup: groupId,
                 splitFromTotal: total,
               });
+            });
+            return d; // skip the default push below
+          }
+        }
+
+        // FEAT6-FED: "All batches" feed divvy for meat birds — split one
+        // feeding evenly across every active batch. Same even-split + last-
+        // batch-remainder approach as the egg-layer flock split above. One
+        // entry per batch keeps per-batch feed analytics (and the Stats
+        // per-batch cost breakdown) accurate.
+        if (
+          action === "fed" &&
+          hobby.type === "meat_chickens" &&
+          entry.batchId === "__ALL__"
+        ) {
+          const h = d.hobbies.find((x) => x.id === hobby.id);
+          const batches = (h && Array.isArray(h.currentBatches)) ? h.currentBatches.filter(Boolean) : [];
+          if (batches.length > 0) {
+            const isCups = entry.feedUnit === "cups";
+            const totalAmt = Math.max(0, Number(isCups ? entry.feedAmount : entry.lbs) || 0);
+            const totalCost = Math.max(0, Number(entry.cost) || 0);
+            const groupId = entry.id;
+            const round2 = (x) => Math.round(x * 100) / 100;
+            const per = batches.length;
+            const baseAmt = round2(totalAmt / per);
+            const baseCost = round2(totalCost / per);
+            batches.forEach((b, i) => {
+              const isLast = i === per - 1;
+              const amt = isLast ? round2(totalAmt - baseAmt * (per - 1)) : baseAmt;
+              const cost = isLast ? round2(totalCost - baseCost * (per - 1)) : baseCost;
+              const split = {
+                ...entry,
+                id: newId(),
+                batchId: b.id,
+                cost,
+                totalEntryGroup: groupId,
+                splitFromTotal: totalAmt,
+              };
+              if (isCups) { split.feedAmount = amt; split.lbs = 0; }
+              else { split.lbs = amt; split.feedAmount = amt; }
+              d.entries[hobby.id].push(split);
             });
             return d; // skip the default push below
           }
@@ -11411,6 +11547,10 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             {(action === "eggs" || action === "eggs_laid") && (
               <option value="__TOTAL__">🥚 Total — split evenly across all flocks</option>
             )}
+            {/* FEAT6-FED: feed can also be logged as one total split across flocks. */}
+            {action === "fed" && (
+              <option value="__TOTAL__">🌾 Total — split evenly across all flocks</option>
+            )}
             {hobby.flocks.map(f => (
               <option key={f.id} value={f.id}>
                 {f.name}{f.birdType ? ` (${f.birdType})` : ""}
@@ -11420,6 +11560,11 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
           {fields.flockId === "__TOTAL__" && (action === "eggs" || action === "eggs_laid") && (
             <div style={{ fontSize:11, color:palette.inkSoft, marginTop:6, lineHeight:1.4 }}>
               Eggs will be divided evenly across all {hobby.flocks.length} flocks. If the count doesn't divide evenly, the remainder is spread one egg at a time (e.g. 13 eggs across 4 flocks → 4/3/3/3).
+            </div>
+          )}
+          {fields.flockId === "__TOTAL__" && action === "fed" && (
+            <div style={{ fontSize:11, color:palette.inkSoft, marginTop:6, lineHeight:1.4 }}>
+              This feeding will be divided evenly across all {hobby.flocks.length} flocks. Amount and cost are split equally, with any remainder added to the last flock.
             </div>
           )}
         </Field>
@@ -11438,11 +11583,18 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
           >
             <option value="">— Pick a batch —</option>
-            {activeBatches.map(b => (
-              <option key={b.id} value={b.id}>
-                {b.name || "Batch"}{b.startCount ? ` (${b.startCount} birds)` : ""}
-              </option>
-            ))}
+            {/* FEAT6-FED: feed can be logged once and split across all batches. */}
+            {action === "fed" && activeBatches.length > 1 && (
+              <option value="__ALL__">🌾 All batches — split this feeding evenly</option>
+            )}
+            {activeBatches.map(b => {
+              const _live = batchLiveCount(b);
+              return (
+                <option key={b.id} value={b.id}>
+                  {b.name || "Batch"} ({_live} bird{_live === 1 ? "" : "s"})
+                </option>
+              );
+            })}
           </select>
         </Field>
       )}
@@ -11514,7 +11666,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 
       {action === "planted" && (
         <>
-          <Field label="Plant / crop">
+          <Field label="Annual (what you planted)">
             <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
@@ -12952,7 +13104,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
         emoji: "🌱", label: "Garden",
         stats: [
           { label: "Harvest", value: fmtWeight(totalHarvest) },
-          { label: "Plantings", value: plantings },
+          { label: "Annuals", value: plantings },
           { label: "Waterings", value: waterings },
           { label: "Season", value: seasonName },
         ],
