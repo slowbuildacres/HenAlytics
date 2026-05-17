@@ -57,7 +57,9 @@ export default function CalendarPage({ data, update, setModal }) {
   const userEvents = data.calendarEvents || [];
   const allEvents = useMemo(() => {
     const frostEvts = frostDateEvents(frostDates);
-    return [...userEvents, ...frostEvts].sort((a, b) => a.date.localeCompare(b.date));
+    // Expand recurring user events into per-date occurrences before merging.
+    const expanded = expandRecurring(userEvents);
+    return [...expanded, ...frostEvts].sort((a, b) => a.date.localeCompare(b.date));
   }, [userEvents, frostDates]);
 
   return (
@@ -82,8 +84,7 @@ export default function CalendarPage({ data, update, setModal }) {
       {/* Quick actions */}
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
         <QuickActionBtn icon={Sprout} label="Plan a crop" onClick={() => setModal({ type: "planCrop" })} />
-        <QuickActionBtn icon={Drumstick} label="Plan birds" onClick={() => setModal({ type: "planBirds" })} />
-        <QuickActionBtn icon={Star} label="Custom event" onClick={() => setModal({ type: "addCalendarEvent" })} />
+        <QuickActionBtn icon={Star} label="Plan an event" onClick={() => setModal({ type: "addCalendarEvent" })} />
       </div>
 
       {/* Main view */}
@@ -246,7 +247,7 @@ function TimelineView({ events, update, setModal, userEvents }) {
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {byMonth[m].map((e) => (
                 <EventRow
-                  key={e.id}
+                  key={e._occKey || e.id}
                   event={e}
                   isPast={e.date < todayStr}
                   isToday={e.date === todayStr}
@@ -444,7 +445,7 @@ function MonthView({ events, update, setModal, userEvents }) {
               </div>
               {cellEvents.slice(0, 2).map((e) => (
                 <div
-                  key={e.id}
+                  key={e._occKey || e.id}
                   style={{
                     fontSize: 9,
                     background: (
@@ -491,6 +492,64 @@ const navBtnStyle = {
 // ============================================================================
 // HELPERS
 // ============================================================================
+
+// ============================================================================
+// RECURRING EVENT EXPANSION
+// ============================================================================
+// Events may carry an optional `recurrence` ("daily"|"weekly"|"biweekly"|
+// "monthly"|"yearly") and optional `recurEnd` (YYYY-MM-DD). A one-off event
+// has no `recurrence`. expandRecurring() takes the raw event list and returns
+// a flat list where each recurring event is replaced by virtual occurrences,
+// one per matching date, bounded by recurEnd or a 24-month cap. Each virtual
+// occurrence keeps the original `id` (so edit routing + isUserEvent still
+// resolve to the single stored record) plus a unique `_occKey` for React.
+function addMonthsIso(isoStr, months) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  const base = new Date(y, (m - 1) + months, d);
+  // Clamp day overflow (e.g. Jan 31 + 1mo): if the month rolled past, snap to
+  // the last day of the intended month.
+  if (base.getDate() !== d) base.setDate(0);
+  return isoDate(base);
+}
+function addDaysIso(isoStr, days) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  return isoDate(new Date(y, m - 1, d + days));
+}
+function expandRecurring(events) {
+  const out = [];
+  // Hard horizon so a daily event without an end date can't run forever.
+  const today = new Date();
+  const horizon = isoDate(new Date(today.getFullYear() + 2, today.getMonth(), today.getDate()));
+  for (const e of events) {
+    if (!e || !e.recurrence) {
+      out.push(e);
+      continue;
+    }
+    const stop = (e.recurEnd && e.recurEnd < horizon) ? e.recurEnd : horizon;
+    // Each occurrence is computed as (anchor + step*n) so monthly/yearly stay
+    // pinned to the original day-of-month — e.g. a "31st monthly" event reads
+    // Jan 31, Feb 28, Mar 31, ... rather than collapsing to the 28th once it
+    // clamps in February. Stepping from the previous (clamped) date would
+    // lose that intent.
+    let n = 0;
+    let guard = 0;
+    while (guard < 1000) {
+      let cursor;
+      if (e.recurrence === "daily") cursor = addDaysIso(e.date, n);
+      else if (e.recurrence === "weekly") cursor = addDaysIso(e.date, n * 7);
+      else if (e.recurrence === "biweekly") cursor = addDaysIso(e.date, n * 14);
+      else if (e.recurrence === "monthly") cursor = addMonthsIso(e.date, n);
+      else if (e.recurrence === "yearly") cursor = addMonthsIso(e.date, n * 12);
+      else { cursor = e.date; } // unknown recurrence — emit once below
+      if (cursor > stop) break;
+      out.push({ ...e, date: cursor, _occKey: `${e.id}@${cursor}` });
+      if (!["daily", "weekly", "biweekly", "monthly", "yearly"].includes(e.recurrence)) break;
+      n += 1;
+      guard += 1;
+    }
+  }
+  return out;
+}
 
 function isoDate(d) {
   const y = d.getFullYear();

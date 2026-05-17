@@ -57,6 +57,18 @@ const newId = () => {
   );
 };
 
+// Recurrence options for calendar events. "none" => a one-off event (stored
+// with no `recurrence` field at all, so existing events stay one-offs).
+const RECUR_OPTIONS = [
+  { id: "none",     label: "Does not repeat" },
+  { id: "daily",    label: "Daily" },
+  { id: "weekly",   label: "Weekly" },
+  { id: "biweekly", label: "Every 2 weeks" },
+  { id: "monthly",  label: "Monthly" },
+  { id: "yearly",   label: "Yearly" },
+];
+
+
 // Modal/Field/Btn imported from these prop-bag patterns; we mirror them here
 // to keep this file self-contained.
 function Modal({ open, onClose, title, children }) {
@@ -742,25 +754,78 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
   const [date, setDate] = useState(prefillDate || todayStr());
   const [notes, setNotes] = useState("");
   const [type, setType] = useState("custom");
+  const [preset, setPreset] = useState("custom");
+  const [recurrence, setRecurrence] = useState("none");
+  const [recurEnd, setRecurEnd] = useState("");
+
+  // Event-type presets. "Custom event" leads the list; the rest pre-fill a
+  // title + notes + category. Bird presets folded in from the old Plan Birds
+  // modal, which no longer has its own entry point.
+  const EVENT_PRESETS = [
+    { id: "custom",        title: "",                     emoji: "⭐", cat: "custom",     notes: "" },
+    { id: "order_chicks",  title: "Order chicks",         emoji: "🐣", cat: "chicken",    notes: "Place hatchery order or pick up local." },
+    { id: "chicks_arrive", title: "Chicks arrive",        emoji: "🐣", cat: "chicken",    notes: "Set up brooder, food, water before they arrive." },
+    { id: "butcher_day",   title: "Butcher day",          emoji: "🔪", cat: "chicken",    notes: "Plan supplies, helpers, freezer space." },
+    { id: "order_layers",  title: "Pick up layers",       emoji: "🐔", cat: "egg_layers", notes: "Confirm coop is ready." },
+    { id: "coop_clean",    title: "Deep clean coop",      emoji: "🧹", cat: "chicken",    notes: "Plan for full bedding refresh." },
+    { id: "vaccinate",     title: "Vaccinate flock",      emoji: "💉", cat: "chicken",    notes: "" },
+    { id: "order_feed",    title: "Order feed",           emoji: "🌾", cat: "custom",     notes: "" },
+  ];
+
+  // Picking a preset pre-fills title/notes/category. "Custom" clears them so
+  // the user types their own. Notes/title stay editable after picking.
+  const choosePreset = (p) => {
+    setPreset(p.id);
+    setType(p.cat);
+    setTitle(p.title);
+    setNotes(p.notes);
+  };
 
   const submit = () => {
     if (!title.trim()) return;
     update((d) => {
       d.calendarEvents = d.calendarEvents || [];
-      d.calendarEvents.push({
+      const evt = {
         id: newId(),
         date,
         title: title.trim(),
         type,
         notes,
-      });
+      };
+      // Only persist recurrence when it's an actual repeat — keeps one-off
+      // events clean and identical in shape to every pre-existing event.
+      if (recurrence && recurrence !== "none") {
+        evt.recurrence = recurrence;
+        if (recurEnd) evt.recurEnd = recurEnd;
+      }
+      d.calendarEvents.push(evt);
       return d;
     });
     onClose();
   };
 
   return (
-    <Modal open onClose={onClose} title="Add custom event">
+    <Modal open onClose={onClose} title="Plan an event">
+      <Field label="Event type">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {EVENT_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              onClick={() => choosePreset(p)}
+              style={{
+                padding: "8px 10px",
+                background: preset === p.id ? palette.ink : palette.card,
+                color: preset === p.id ? palette.bg : palette.ink,
+                border: `1.5px solid ${preset === p.id ? palette.ink : palette.line}`,
+                borderRadius: 8, cursor: "pointer",
+                fontFamily: FONT_BODY, fontSize: 12.5,
+              }}
+            >
+              {p.emoji} {p.id === "custom" ? "Custom event" : p.title}
+            </button>
+          ))}
+        </div>
+      </Field>
       <Field label="Title">
         <input
           style={inputStyle}
@@ -773,6 +838,16 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
+      <Field label="Repeats">
+        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+          {RECUR_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </Field>
+      {recurrence !== "none" && (
+        <Field label="Repeat until (optional)">
+          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+        </Field>
+      )}
       <Field label="Category">
         <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="custom">Custom / general</option>
@@ -809,6 +884,8 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
   const [title, setTitle] = useState(event?.title || "");
   const [date, setDate] = useState(event?.date || "");
   const [notes, setNotes] = useState(event?.notes || "");
+  const [recurrence, setRecurrence] = useState(event?.recurrence || "none");
+  const [recurEnd, setRecurEnd] = useState(event?.recurEnd || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // If the event disappears (e.g. deleted in another tab / by another user)
@@ -828,6 +905,16 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
         evt.title = title.trim();
         evt.date = date;
         evt.notes = notes;
+        // Series-only recurrence: editing applies to the whole series.
+        if (recurrence && recurrence !== "none") {
+          evt.recurrence = recurrence;
+          if (recurEnd) evt.recurEnd = recurEnd;
+          else delete evt.recurEnd;
+        } else {
+          // Switched back to one-off — strip the recurrence fields.
+          delete evt.recurrence;
+          delete evt.recurEnd;
+        }
       }
       return d;
     });
@@ -850,6 +937,21 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
+      <Field label="Repeats">
+        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+          {RECUR_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </Field>
+      {recurrence !== "none" && (
+        <Field label="Repeat until (optional)">
+          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+        </Field>
+      )}
+      {recurrence !== "none" && (
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.4 }}>
+          Editing or deleting affects the whole repeating series.
+        </div>
+      )}
       <Field label="Notes">
         <textarea
           style={{ ...inputStyle, minHeight: 60, fontFamily: FONT_BODY }}
@@ -1063,15 +1165,9 @@ export function PlanForDayModal({ date, setModal, onClose }) {
           }}
         />
         <PlanChoice
-          icon="🐔"
-          label="Bird event"
-          sub="Order chicks, butcher day, deep clean coop, etc."
-          onClick={() => choose("planBirds")}
-        />
-        <PlanChoice
           icon="⭐"
-          label="Custom event"
-          sub="Order feed, fix coop, anything else"
+          label="Plan an event"
+          sub="Bird events, feed runs, coop work, anything"
           onClick={() => choose("addCalendarEvent")}
         />
       </div>
