@@ -17,6 +17,22 @@ const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
 const inputStyle={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"};
 const newId=()=>Math.random().toString(36).slice(2,10);
+// Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
+// If the sale already has a buyerId (picked from the dropdown) this is a
+// no-op. Otherwise, if it carries a non-empty `buyer` name, find a
+// case-insensitive match or create a new customer record, then stamp
+// sale.buyerId so the Sales tab links the sale and rolls up the spend.
+// No-op when buyer is blank — keeps the buyer field genuinely optional.
+const resolveSaleBuyer = (d, sale) => {
+  if (!sale) return;
+  if (sale.buyerId) return;
+  const name = (sale.buyer != null) ? String(sale.buyer).trim() : "";
+  if (!name) return;
+  d.customers = d.customers || [];
+  let c = d.customers.find(x => (x.name || "").trim().toLowerCase() === name.toLowerCase());
+  if (!c) { c = { id: newId(), name, note: "" }; d.customers.push(c); }
+  sale.buyerId = c.id;
+};
 const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.getFullYear()}-${String(dt.getMonth()+1).padStart(2,"0")}-${String(dt.getDate()).padStart(2,"0")}`;};
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
@@ -186,7 +202,7 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
   );
 }
 
-function LogModal({animal,hobbyId,action,update,onClose}){
+function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const[date,setDate]=useState(todayStr());
   const[lbs,setLbs]=useState("");
   const[cost,setCost]=useState("");
@@ -198,6 +214,8 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   const[cause,setCause]=useState("");
   // Sale-only: buyer name, sale price, sold-vs-rehomed.
   const[saleBuyer,setSaleBuyer]=useState("");
+  const[buyerId,setBuyerId]=useState("");
+  const[showNewBuyer,setShowNewBuyer]=useState(false);
   const[salePrice,setSalePrice]=useState("");
   const[saleType,setSaleType]=useState("sold");
   const save=()=>{
@@ -236,11 +254,13 @@ function LogModal({animal,hobbyId,action,update,onClose}){
           a.saleId=entry.id;
         }
         d.sales=d.sales||[];
-        d.sales.push({
+        const _saleRow={
           id:entry.id,date,hobbyType:"pig",crop:animal.name,saleType,
           pricePerUnit:Number(salePrice)||0,totalRevenue:Number(salePrice)||0,
-          qty:1,animalId:animal.id,buyer:saleBuyer.trim(),notes:notes||"",
-        });
+          qty:1,animalId:animal.id,buyer:saleBuyer.trim(),buyerId:buyerId||null,notes:notes||"",
+        };
+        resolveSaleBuyer(d,_saleRow);
+        d.sales.push(_saleRow);
       }
       return d;
     });
@@ -271,7 +291,27 @@ function LogModal({animal,hobbyId,action,update,onClose}){
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
         <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
-        <Field label="Buyer / new home (optional)"><input style={inputStyle} value={saleBuyer} onChange={e=>setSaleBuyer(e.target.value)} placeholder="Name of buyer" autoFocus/></Field>
+        <Field label="Customer (optional)">
+          {!showNewBuyer ? (
+            <div style={{ display: "flex", gap: 8 }}>
+              <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+                const id = e.target.value;
+                setBuyerId(id);
+                const c = (customers || []).find(x => x.id === id);
+                setSaleBuyer(c ? c.name : "");
+              }}>
+                <option value="">— No customer —</option>
+                {(customers || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+              </select>
+              <button onClick={() => { setShowNewBuyer(true); setBuyerId(""); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.ink, whiteSpace: "nowrap" }}>+ New</button>
+            </div>
+          ) : (
+            <div style={{ display: "flex", gap: 8 }}>
+              <input style={{ ...inputStyle, flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+              <button onClick={() => { setShowNewBuyer(false); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
+            </div>
+          )}
+        </Field>
         {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
       </>}
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
@@ -282,7 +322,7 @@ function LogModal({animal,hobbyId,action,update,onClose}){
   );
 }
 
-function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}){
+function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,customers=[]}){
   const[logAction,setLogAction]=useState(null);
   const[showPedigree,setShowPedigree]=useState(false);
   const[showHistory,setShowHistory]=useState(false);
@@ -296,7 +336,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal}
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
-      {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} update={update} onClose={()=>setLogAction(null)}/>}
+      {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} update={update} onClose={()=>setLogAction(null)} customers={customers}/>}
       {showPedigree && (
         <PedigreeView
           animal={animal}
@@ -434,7 +474,7 @@ export default function PigsPage({hobby,data,update}){
           <div style={{fontSize:13,marginBottom:14}}>Add your first pig to track growth, feed, and butcher stats.</div>
           <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first pig</button>
         </div>
-      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal}/>)}
+      ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal} customers={data.customers||[]}/>)}
 
       {archived.length>0 && (
         <details style={{marginTop:18}}>

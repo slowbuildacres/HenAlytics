@@ -83,6 +83,16 @@ const HOBBY_META = {
 };
 
 const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Peafowl", "Other"];
+
+// Livestock that sell as one flat-priced transaction per animal (qty is always
+// 1, pricePerUnit === totalRevenue === the flat sale price). Horses were the
+// original member; cow/goat/sheep/pig/dog/cat were added later and write the
+// SAME sale shape from their hobby pages. The Sales edit modal must treat them
+// identically to horses or the flat price is lost on edit (Bug 5).
+const LIVESTOCK_FLAT_TYPES = ["horse", "cow", "goat", "sheep", "pig", "dog", "cat"];
+// Maps a flat-livestock sale's hobbyType to the matching hobby id, so the edit
+// modal can offer a "sell an existing animal" dropdown for any of them.
+const LIVESTOCK_HOBBY_ID = { horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats" };
 const EGG_PURPOSES = ["Eating", "Hatching"];
 const HONEY_FORMS = ["Raw comb", "Extracted", "Creamed", "Infused"];
 const HONEY_CONTAINERS = ["Half-pint jar (1 cup)", "Pint jar (2 cups)", "Quart jar", "Half-gallon", "Gallon", "Bulk lb"];
@@ -284,7 +294,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
         hobbyType === "salve" || hobbyType === "tea") {
       return q * (Number(pricePerUnit) || 0);
     }
-    if (hobbyType === "horse") return Number(pricePerUnit) || 0;
+    if (LIVESTOCK_FLAT_TYPES.includes(hobbyType)) return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "incubator") return q * (Number(pricePerUnit) || 0);
     return Number(flatPrice) || 0;
@@ -366,13 +376,17 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       const saleRev = (Number(qty)||0) * (Number(pricePerUnit)||0);
       const costTotal = (Number(qty)||0) * (Number(pricePerLb)||0);
       sale = { ...sale, crop, gardenUnit: gardenUnit || "jars", pricePerUnit: Number(pricePerUnit)||0, costPerUnit: Number(pricePerLb)||0, totalRevenue: saleRev, totalCost: costTotal };
-    } else if (hobbyType === "horse") {
-      // Horse sales: one transaction = one horse (or a lease). pricePerUnit is
-      // the sale/lease price, qty is always 1, crop holds the horse's name.
+    } else if (LIVESTOCK_FLAT_TYPES.includes(hobbyType)) {
+      // Flat-livestock sales (horse/cow/goat/sheep/pig/dog/cat): one
+      // transaction = one animal (or a lease). pricePerUnit is the flat
+      // sale/lease price, qty is always 1, crop holds the animal's name.
+      // Preserving pricePerUnit + totalPrice here is the Bug 5 fix: without
+      // an explicit branch these fell to the `other` path, which dropped the
+      // price and let `sale.totalRevenue = previewRevenue` (0) overwrite it.
       const saleRev = Number(pricePerUnit) || 0;
       // saleType (sold vs leased) goes in the otherItem field for now.
-      // If the user picked an existing horse from the dropdown, animalId
-      // travels with the sale so we can archive that horse on save.
+      // If the user picked an existing animal from the dropdown, animalId
+      // travels with the sale so we can archive that animal on save.
       sale = { ...sale, crop, saleType: otherItem || "sold", pricePerUnit: saleRev, totalRevenue: saleRev };
       if (selectedAnimalId) sale.animalId = selectedAnimalId;
     } else if (hobbyType === "garden") {
@@ -431,10 +445,10 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       // archive that animal so it disappears from the active herd list.
       // Skip on edits — we don't want to archive an animal that was already
       // archived by a prior save.
-      if (!isEdit && hobbyType === "horse" && selectedAnimalId) {
-        const horsesHobby = (d.hobbies || []).find(h => h.id === "horses");
-        if (horsesHobby) {
-          const a = (horsesHobby.animals || []).find(x => x.id === selectedAnimalId);
+      if (!isEdit && LIVESTOCK_FLAT_TYPES.includes(hobbyType) && selectedAnimalId) {
+        const livestockHobby = (d.hobbies || []).find(h => h.id === LIVESTOCK_HOBBY_ID[hobbyType]);
+        if (livestockHobby) {
+          const a = (livestockHobby.animals || []).find(x => x.id === selectedAnimalId);
           if (a && !a.archived) {
             a.archived = true;
             const verb = (otherItem || "sold") === "leased" ? "Leased" : "Sold";
@@ -814,17 +828,18 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 </div>
               </>}
 
-              {/* Horse */}
-              {hobbyType === "horse" && <>
-                {/* If the user has live horses tracked, offer to pick one. Picking
-                    will pre-fill the name AND archive the horse on save so the
-                    Sales tab can move it out of the active herd in one tap. */}
+              {/* Flat-livestock (horse/cow/goat/sheep/pig/dog/cat) */}
+              {LIVESTOCK_FLAT_TYPES.includes(hobbyType) && <>
+                {/* If the user has live animals of this type tracked, offer to
+                    pick one. Picking pre-fills the name AND archives the animal
+                    on save so the Sales tab can retire it in one tap. */}
                 {(() => {
-                  const horsesHobby = (data.hobbies || []).find(h => h.id === "horses");
-                  const liveHorses = (horsesHobby?.animals || []).filter(a => !a.archived);
-                  if (liveHorses.length === 0) return null;
+                  const speciesLabel = (HOBBY_META[hobbyType]?.label || "Animal");
+                  const lsHobby = (data.hobbies || []).find(h => h.id === LIVESTOCK_HOBBY_ID[hobbyType]);
+                  const liveAnimals = (lsHobby?.animals || []).filter(a => !a.archived);
+                  if (liveAnimals.length === 0) return null;
                   return (
-                    <Field label="Sell an existing horse? (optional)">
+                    <Field label={`Sell an existing animal? (optional)`}>
                       <select
                         style={inputStyle}
                         value={selectedAnimalId}
@@ -832,21 +847,21 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                           const id = e.target.value;
                           setSelectedAnimalId(id);
                           if (id) {
-                            const h = liveHorses.find(x => x.id === id);
+                            const h = liveAnimals.find(x => x.id === id);
                             if (h) setCrop(h.name);
                           }
                         }}
                       >
                         <option value="">— Type a name below instead —</option>
-                        {liveHorses.map(h => (
+                        {liveAnimals.map(h => (
                           <option key={h.id} value={h.id}>{h.name}</option>
                         ))}
                       </select>
                     </Field>
                   );
                 })()}
-                <Field label="Horse name">
-                  <input style={inputStyle} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Thunder, Buttercup" />
+                <Field label="Animal name">
+                  <input style={inputStyle} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Bessie, Thunder" />
                 </Field>
                 <Field label="Type of transaction">
                   <select style={inputStyle} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
@@ -859,7 +874,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 </Field>
                 {selectedAnimalId && (
                   <div style={{ fontSize:12, color:palette.inkSoft, marginBottom:10, padding:"8px 10px", background:palette.bgAlt, borderRadius:6, lineHeight:1.5 }}>
-                    Saving will also archive this horse so it disappears from your active Horses tab.
+                    Saving will also archive this animal so it disappears from your active list.
                   </div>
                 )}
               </>}
@@ -1025,8 +1040,13 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     const unit = sale.gardenUnit || "unit";
     const unitLabel = unit === "oz" ? "oz" : `× ${unit}`;
     detail = `${sale.crop || "Tea blend"} · ${sale.qty} ${unitLabel} @ ${fmtMoney(sale.pricePerUnit||0)}/${unit === "oz" ? "oz" : "sachet"}`;
-  } else if (sale.hobbyType === "horse") {
-    detail = `${sale.crop || "Horse"} · ${sale.saleType || "sold"}`;
+  } else if (sale.hobbyType === "horse" || sale.hobbyType === "cow" ||
+             sale.hobbyType === "goat" || sale.hobbyType === "sheep" ||
+             sale.hobbyType === "pig") {
+    // Flat-livestock detail: animal name + transaction type. cat/dog have
+    // their own (identical-shaped) branch just below for the species label.
+    const lsLabel = { horse: "Horse", cow: "Cow", goat: "Goat", sheep: "Sheep", pig: "Pig" }[sale.hobbyType] || "Animal";
+    detail = `${sale.crop || lsLabel} · ${sale.saleType || "sold"}`;
   } else if (sale.hobbyType === "incubator") {
     const birdLabel = sale.birdType ? sale.birdType.toLowerCase() : "chick";
     const batchLabel = sale.brooderBatchName ? ` (${sale.brooderBatchName})` : "";
