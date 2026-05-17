@@ -366,6 +366,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
   // feedUnit + feedAmount. Legacy `lbs` field still written when unit=lbs
   // for back-compat with old analytics.
   const[feedUnit,setFeedUnit]=useState("lbs");
+  const[herdWide,setHerdWide]=useState(false); // FEAT6-FED
   const[cost,setCost]=useState("");
   const[weight,setWeight]=useState("");
   const[kitsAlive,setKitsAlive]=useState("");
@@ -392,6 +393,8 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
       entry.lbs=feedUnit==="lbs"?(Number(lbs)||0):0;
       entry.cost=Number(cost)||0;
     }
+    // FEAT6-FED: a herd-wide feeding is not tied to one animal.
+    if(action==="fed"&&herdWide){entry.animalId=null;entry.animalName="";entry.herdWide=true;}
     if(action==="weight")entry.weight=Number(weight)||0;
     if(action==="bred"){
       const buck=availableBucks.find(b=>b.id===buckId);
@@ -489,6 +492,19 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
             })()}
           </Field>
           <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+          {/* FEAT6-FED: log this feeding for the whole herd instead of
+              just this animal. */}
+          <Field label="Who is this for?">
+            <div style={{display:"flex",gap:8}}>
+              <button type="button" onClick={()=>setHerdWide(false)} style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1.5px solid ${!herdWide?palette.ink:palette.line}`,background:!herdWide?palette.ink:palette.card,color:!herdWide?palette.bg:palette.ink,fontFamily:FONT_BODY,fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Just {animal.name}</button>
+              <button type="button" onClick={()=>setHerdWide(true)} style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1.5px solid ${herdWide?palette.ink:palette.line}`,background:herdWide?palette.ink:palette.card,color:herdWide?palette.bg:palette.ink,fontFamily:FONT_BODY,fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Whole herd</button>
+            </div>
+            {herdWide && (
+              <div style={{fontSize:11,color:palette.inkSoft,marginTop:6,lineHeight:1.4}}>
+                Recorded once for the whole herd — not attributed to {animal.name}. It still counts toward total feed cost and amount.
+              </div>
+            )}
+          </Field>
         </>
       )}
       {action==="weight" && (()=>{
