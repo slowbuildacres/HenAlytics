@@ -397,6 +397,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
   const[gallons,setGallons]=useState("");
   const[lbs,setLbs]=useState("");
   const[cost,setCost]=useState("");
+  const[herdWide,setHerdWide]=useState(false); // FEAT6-FED
   const[count,setCount]=useState("");
   const[weight,setWeight]=useState("");
   const[notes,setNotes]=useState("");
@@ -444,6 +445,8 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
     if(action==="milk")entry.gallons=Number(gallons)||0;
     if(action==="fed"){entry.lbs=Number(lbs)||0;entry.cost=Number(cost)||0;}
+    // FEAT6-FED: a herd-wide feeding is not tied to one animal.
+    if(action==="fed"&&herdWide){entry.animalId=null;entry.animalName="";entry.herdWide=true;}
     if(action==="calf")entry.count=Number(count)||1;
     if(action==="weight"||action==="butcher")entry.weight=Number(weight)||0;
     if(action==="butcher")entry.cost=Number(cost)||0;
@@ -623,6 +626,20 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
         const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
         return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
       })()}
+          {/* FEAT6-FED: log this feeding for the whole herd instead of just
+              this animal. A herd-wide feeding isn't pinned to one animal —
+              it still counts in total feed cost/amount analytics. */}
+          <Field label="Who is this for?">
+            <div style={{display:"flex",gap:8}}>
+              <button type="button" onClick={()=>setHerdWide(false)} style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1.5px solid ${!herdWide?palette.ink:palette.line}`,background:!herdWide?palette.ink:palette.card,color:!herdWide?palette.bg:palette.ink,fontFamily:FONT_BODY,fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Just {animal.name}</button>
+              <button type="button" onClick={()=>setHerdWide(true)} style={{flex:1,padding:"8px 10px",borderRadius:8,border:`1.5px solid ${herdWide?palette.ink:palette.line}`,background:herdWide?palette.ink:palette.card,color:herdWide?palette.bg:palette.ink,fontFamily:FONT_BODY,fontSize:12.5,fontWeight:600,cursor:"pointer"}}>Whole herd</button>
+            </div>
+            {herdWide && (
+              <div style={{fontSize:11,color:palette.inkSoft,marginTop:6,lineHeight:1.4}}>
+                Recorded once for the whole herd — not attributed to {animal.name}. It still counts toward total feed cost and amount.
+              </div>
+            )}
+          </Field>
       {action==="calf"&&<>
         <Field label="Calves born"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>
         <div style={{fontSize:11,color:palette.inkSoft,marginBottom:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
