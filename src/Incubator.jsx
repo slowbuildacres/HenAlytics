@@ -549,6 +549,167 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
 }
 
 // ============================================================================
+// EDIT BROODER BATCH MODAL
+// ============================================================================
+// Edit an existing brooder batch's core fields, delete it, or — if it was
+// finalized (archived / fully dispositioned) — return it to active. Reachable
+// from the edit pencil on any BrooderBatchCard. Mirrors how meat bird batches
+// can be edited and restored.
+function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
+  const [name, setName] = useState(batch.name || "");
+  const [birdType, setBirdType] = useState(batch.birdType || "Chicken");
+  const [initialCount, setInitialCount] = useState(String(batch.initialCount || 0));
+  const [startDate, setStartDate] = useState(batch.startDate || todayStr());
+  const [notes, setNotes] = useState(batch.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // A batch reads as "past" when archived OR every chick is dispositioned.
+  const remaining = remainingInBrooder(batch);
+  const isPast = !!batch.archived || remaining <= 0;
+  // How many chicks went out via "sold" dispositions — used to warn the user
+  // that deleting the batch leaves those Sales records in place.
+  const soldCount = (batch.dispositions || [])
+    .filter(d => d.type === "sold")
+    .reduce((s, d) => s + (Number(d.count) || 0), 0);
+
+  const canSave = parseInt(initialCount, 10) >= 0 && name.trim() !== "";
+
+  const save = () => {
+    if (!canSave) return;
+    const n = parseInt(initialCount, 10) || 0;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h || !Array.isArray(h.brooderBatches)) return d;
+      const idx = h.brooderBatches.findIndex(b => b.id === batch.id);
+      if (idx === -1) return d;
+      h.brooderBatches[idx] = {
+        ...h.brooderBatches[idx],
+        name: name.trim(),
+        birdType,
+        initialCount: n,
+        startDate,
+        notes: notes.trim(),
+      };
+      return d;
+    });
+    onClose();
+  };
+
+  // Return to active: clear the archived flag. If every chick was already
+  // dispositioned (remaining<=0) the batch would still filter as "past", so
+  // we also bump initialCount to whatever the user has in the field — they're
+  // told to raise it via the inline hint below.
+  const returnToActive = () => {
+    const n = parseInt(initialCount, 10) || 0;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h || !Array.isArray(h.brooderBatches)) return d;
+      const idx = h.brooderBatches.findIndex(b => b.id === batch.id);
+      if (idx === -1) return d;
+      h.brooderBatches[idx] = {
+        ...h.brooderBatches[idx],
+        archived: false,
+        name: name.trim() || h.brooderBatches[idx].name,
+        birdType,
+        initialCount: n,
+        startDate,
+        notes: notes.trim(),
+      };
+      return d;
+    });
+    onClose();
+  };
+
+  // Delete: remove the batch outright. Linked chick-sale records in the Sales
+  // tab are intentionally LEFT IN PLACE — a real sale is real revenue. Also
+  // clears the "brooder ready" calendar reminder tied to this batch.
+  const remove = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h || !Array.isArray(h.brooderBatches)) return d;
+      h.brooderBatches = h.brooderBatches.filter(b => b.id !== batch.id);
+      if (Array.isArray(d.calendarEvents)) {
+        d.calendarEvents = d.calendarEvents.filter(e => e.brooderBatchId !== batch.id);
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Edit brooder batch">
+      <Field label="Batch name">
+        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} autoFocus />
+      </Field>
+      <Field label="Bird type">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {BIRD_TYPES.map(t => (
+            <button
+              key={t}
+              onClick={() => setBirdType(t)}
+              style={{
+                padding: "8px 12px", borderRadius: 8,
+                border: `1.5px solid ${birdType === t ? palette.ink : palette.line}`,
+                background: birdType === t ? palette.ink : palette.card,
+                color: birdType === t ? palette.bg : palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >{BIRD_EMOJI[t]} {t}</button>
+          ))}
+        </div>
+      </Field>
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Chicks (started with)">
+            <input type="number" min={0} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} inputMode="numeric" />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Start date">
+            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
+      </Field>
+      <Btn onClick={save} disabled={!canSave} style={{ width: "100%" }}>Save changes</Btn>
+
+      {/* Past-batch / destructive actions, separated from the primary save. */}
+      <div style={{ marginTop: 16, paddingTop: 14, borderTop: `1px solid ${palette.line}` }}>
+        {isPast && (
+          <>
+            <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.4 }}>
+              This batch is finished. Return it to active if it was closed out by mistake.
+              {remaining <= 0 && " Since every chick was dispositioned, raise the \"Chicks (started with)\" count above so the batch has birds in it again."}
+            </div>
+            <Btn small variant="ghost" onClick={returnToActive} style={{ marginBottom: 10 }}>↩️ Return to active</Btn>
+          </>
+        )}
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {!confirmDelete ? (
+            <Btn small variant="ghost" onClick={() => setConfirmDelete(true)}>🗑️ Delete batch</Btn>
+          ) : (
+            <>
+              <Btn small variant="primary" onClick={remove}>Yes, delete</Btn>
+              <Btn small variant="ghost" onClick={() => setConfirmDelete(false)}>Cancel</Btn>
+            </>
+          )}
+        </div>
+        {confirmDelete && (
+          <div style={{ fontSize: 11, color: palette.accent, marginTop: 8, lineHeight: 1.4 }}>
+            ⚠️ Removes this brooder batch and its disposition history.
+            {soldCount > 0
+              ? ` The ${soldCount} chick sale${soldCount === 1 ? "" : "s"} from this batch will stay in your Sales tab.`
+              : ""} This can't be undone.
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
 // BROODER DISPOSITION MODAL
 // ----------------------------------------------------------------------------
 // The interesting one. Lets the user record what happened to N chicks from
@@ -1043,6 +1204,14 @@ function BrooderBatchCard({ batch, hobbyId, data, update, setModal }) {
             Started {fmtDate(batch.startDate)} · {age}
           </div>
         </div>
+        <div style={{ display: "flex", alignItems: "flex-start", gap: 6 }}>
+          <button
+            onClick={() => setModal({ type: "editBrooderBatch", batchId: batch.id })}
+            aria-label="Edit batch"
+            style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
+          >
+            <Edit3 size={14} />
+          </button>
         <div style={{ textAlign: "right" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: isFullyDisposed ? palette.inkSoft : palette.leaf, lineHeight: 1 }}>
             {remaining}
@@ -1050,6 +1219,7 @@ function BrooderBatchCard({ batch, hobbyId, data, update, setModal }) {
           <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>
             of {batch.initialCount}
           </div>
+        </div>
         </div>
       </div>
 
@@ -1361,6 +1531,11 @@ function IncubatorModalRouter({ modal, hobby, data, update, setModal, onClose })
     const batch = (hobby.brooderBatches||[]).find(b => b.id === modal.batchId);
     if (!batch) { onClose(); return null; }
     return <BrooderDispositionModal batch={batch} hobbyId={hobby.id} data={data} update={update} onClose={onClose} />;
+  }
+  if (modal.type === "editBrooderBatch") {
+    const batch = (hobby.brooderBatches||[]).find(b => b.id === modal.batchId);
+    if (!batch) { onClose(); return null; }
+    return <EditBrooderBatchModal batch={batch} hobbyId={hobby.id} data={data} update={update} onClose={onClose} />;
   }
   return null;
 }
