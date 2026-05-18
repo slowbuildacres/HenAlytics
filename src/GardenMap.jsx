@@ -169,31 +169,14 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
 
   const activeArea = map.areas[activeIdx];
 
-  // GARDEN_GRID: unified area creation. Asks Photo vs Grid (when the
-  // grid option is available), then name, then for a grid the dimensions.
-  // Uses window.prompt/confirm to match the file's existing creation UX.
-  const createArea = () => {
-    let mode = "photo";
-    if (gridChoiceOffered) {
-      // Ask which layout. OK = Grid, Cancel = Photo — phrased so the
-      // dialog text makes the mapping obvious.
-      const wantGrid = window.confirm(
-        "How do you want to lay out this area?\n\n" +
-        "OK = Grid (rows and columns, one plant per cell)\n" +
-        "Cancel = Photo (drop pins on a photo)"
-      );
-      mode = wantGrid ? "grid" : "photo";
-    }
-    const name = window.prompt("Name this area (e.g. 'Back beds', 'Raised beds'):", "Garden");
-    if (!name || !name.trim()) return;
-    let rows = 0, cols = 0;
-    if (mode === "grid") {
-      const r = parseInt(window.prompt("How many rows? (1-20)", "4"), 10);
-      if (!Number.isFinite(r) || r < 1 || r > 20) { window.alert("Rows must be 1-20."); return; }
-      const c = parseInt(window.prompt("How many columns? (1-20)", "6"), 10);
-      if (!Number.isFinite(c) || c < 1 || c > 20) { window.alert("Columns must be 1-20."); return; }
-      rows = r; cols = c;
-    }
+  // GARDEN_GRID_NEW_AREA_MODAL: area creation now opens an in-app modal instead of
+  // using window.prompt/confirm. createArea just opens it; NewAreaModal
+  // (below) collects the layout choice + name + dimensions and commits.
+  const [newAreaOpen, setNewAreaOpen] = useState(false);
+  const createArea = () => setNewAreaOpen(true);
+
+  // Commit handler passed to NewAreaModal. mode is "photo" | "grid".
+  const commitNewArea = ({ mode, name, rows, cols }) => {
     const newArea = (mode === "grid")
       ? { id: newId(), name: name.trim(), mode: "grid", rows, cols, photoPath: null, pins: [] }
       : { id: newId(), name: name.trim(), mode: "photo", photoPath: null, pins: [] };
@@ -205,6 +188,7 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
       return d;
     });
     setActiveIdx(map.areas.length);
+    setNewAreaOpen(false);
   };
 
   return (
@@ -309,6 +293,181 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
             <Archive size={14} /> View past years ({archivedSeasons.length})
           </button>
         )}
+
+        {/* GARDEN_GRID_NEW_AREA_MODAL: in-app new-area modal (replaces prompt/confirm) */}
+        {newAreaOpen && (
+          <NewAreaModal
+            gridChoiceOffered={gridChoiceOffered}
+            onCancel={() => setNewAreaOpen(false)}
+            onCreate={commitNewArea}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// GARDEN_GRID_NEW_AREA_MODAL: NEW AREA MODAL
+// ----------------------------------------------------------------------------
+// Replaces the old window.confirm/prompt area-creation flow with a proper
+// in-app form: a Photo/Grid layout choice (Grid only shown when offered),
+// a name field, and — for a grid — rows/cols number fields. Create is
+// disabled until the form is valid.
+// ============================================================================
+function NewAreaModal({ gridChoiceOffered, onCancel, onCreate }) {
+  // Default to "photo" — the always-available option. If the grid option
+  // is not offered, the layout chooser is hidden and mode stays "photo".
+  const [mode, setMode] = useState("photo");
+  const [name, setName] = useState("Garden");
+  const [rows, setRows] = useState("4");
+  const [cols, setCols] = useState("6");
+
+  const r = parseInt(rows, 10);
+  const c = parseInt(cols, 10);
+  const rowsValid = Number.isFinite(r) && r >= 1 && r <= 20;
+  const colsValid = Number.isFinite(c) && c >= 1 && c <= 20;
+  const nameValid = !!name.trim();
+  const formValid = nameValid && (mode !== "grid" || (rowsValid && colsValid));
+
+  const submit = () => {
+    if (!formValid) return;
+    onCreate({ mode, name, rows: r, cols: c });
+  };
+
+  // Layout choice tile — used for both Photo and Grid.
+  const choiceTile = (value, emoji, title, sub) => (
+    <button
+      type="button"
+      onClick={() => setMode(value)}
+      style={{
+        flex: 1, padding: "12px 10px", borderRadius: 10, cursor: "pointer",
+        textAlign: "center", fontFamily: FONT_BODY,
+        border: `2px solid ${mode === value ? palette.leaf : palette.line}`,
+        background: mode === value ? palette.leaf : palette.card,
+        color: mode === value ? palette.bg : palette.ink,
+      }}
+    >
+      <div style={{ fontSize: 22, marginBottom: 2 }}>{emoji}</div>
+      <div style={{ fontWeight: 700, fontSize: 13 }}>{title}</div>
+      <div style={{ fontSize: 10, marginTop: 2, opacity: 0.8 }}>{sub}</div>
+    </button>
+  );
+
+  return (
+    <div
+      onClick={onCancel}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 120, padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: palette.bg, padding: 18, borderRadius: 12,
+          maxWidth: 380, width: "100%",
+          border: `2px solid ${palette.ink}`, boxShadow: "4px 4px 0 " + palette.line,
+          fontFamily: FONT_BODY, color: palette.ink,
+        }}
+      >
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, marginBottom: 12 }}>
+          New garden area
+        </div>
+
+        {/* Layout choice — only when the grid option is offered. */}
+        {gridChoiceOffered && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, color: palette.inkSoft, marginBottom: 6, letterSpacing: 0.5, textTransform: "uppercase" }}>
+              Layout
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              {choiceTile("photo", "📷", "Photo", "Pins on a photo")}
+              {choiceTile("grid", "▦", "Grid", "Rows & columns")}
+            </div>
+          </>
+        )}
+
+        {/* Name */}
+        <div style={{ fontSize: 11, fontWeight: 600, color: palette.inkSoft, marginBottom: 6, letterSpacing: 0.5, textTransform: "uppercase" }}>
+          Area name
+        </div>
+        <input
+          type="text"
+          value={name}
+          onChange={(e) => setName(e.target.value)}
+          placeholder="e.g. Back beds, Raised beds"
+          maxLength={40}
+          style={{
+            width: "100%", padding: "10px 12px", fontSize: 14, fontFamily: FONT_BODY,
+            border: `1.5px solid ${palette.line}`, borderRadius: 8,
+            background: palette.card, color: palette.ink, boxSizing: "border-box",
+            marginBottom: 14,
+          }}
+        />
+
+        {/* Grid dimensions — only for a grid layout. */}
+        {mode === "grid" && (
+          <div style={{ marginBottom: 14 }}>
+            <div style={{ fontSize: 11, fontWeight: 600, color: palette.inkSoft, marginBottom: 6, letterSpacing: 0.5, textTransform: "uppercase" }}>
+              Grid size (1-20 each)
+            </div>
+            <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+              <input
+                type="number" min="1" max="20" value={rows}
+                onChange={(e) => setRows(e.target.value)}
+                aria-label="Rows"
+                style={{
+                  width: 64, padding: "8px 10px", fontSize: 14, fontFamily: FONT_BODY,
+                  border: `1.5px solid ${rowsValid ? palette.line : palette.accent}`, borderRadius: 8,
+                  background: palette.card, color: palette.ink, boxSizing: "border-box",
+                }}
+              />
+              <span style={{ fontSize: 13, color: palette.inkSoft }}>rows</span>
+              <span style={{ fontSize: 13, color: palette.inkSoft }}>×</span>
+              <input
+                type="number" min="1" max="20" value={cols}
+                onChange={(e) => setCols(e.target.value)}
+                aria-label="Columns"
+                style={{
+                  width: 64, padding: "8px 10px", fontSize: 14, fontFamily: FONT_BODY,
+                  border: `1.5px solid ${colsValid ? palette.line : palette.accent}`, borderRadius: 8,
+                  background: palette.card, color: palette.ink, boxSizing: "border-box",
+                }}
+              />
+              <span style={{ fontSize: 13, color: palette.inkSoft }}>columns</span>
+            </div>
+          </div>
+        )}
+
+        {/* Actions */}
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              padding: "9px 16px", fontSize: 13, fontFamily: FONT_BODY, fontWeight: 600,
+              background: "transparent", color: palette.inkSoft,
+              border: `1.5px solid ${palette.line}`, borderRadius: 8, cursor: "pointer",
+            }}
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={!formValid}
+            style={{
+              padding: "9px 16px", fontSize: 13, fontFamily: FONT_BODY, fontWeight: 700,
+              background: formValid ? palette.ink : palette.line,
+              color: palette.bg, border: "none", borderRadius: 8,
+              cursor: formValid ? "pointer" : "default",
+            }}
+          >
+            Create area
+          </button>
+        </div>
       </div>
     </div>
   );
