@@ -39,6 +39,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recha
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
+import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -155,7 +156,166 @@ function runMigrationIfNeeded(data, hobby, update) {
 // ============================================================================
 // ANIMAL MODAL — add / edit / archive / delete a rabbit
 // ============================================================================
-function AnimalModal({animal,hobbyId,animals,update,onClose}){
+// ============================================================================
+// ANIMAL PHOTOS — profile pic + dated timeline, per individual animal
+// ----------------------------------------------------------------------------
+// Uploads go through the shared Supabase Storage helpers (animalPhotos.js,
+// which wraps sync.js). Photos are stored as paths on animal.photos; the
+// images themselves live in the `photos` storage bucket, never in the data
+// blob. Each photo write happens immediately via update() — it does NOT wait
+// for the modal's Save button — so a photo can't be lost by closing without
+// saving. For that reason the section only appears on an already-saved
+// animal (a brand-new unsaved animal has no record to attach a photo to yet).
+// ============================================================================
+
+// Resolves a storage path to a signed URL on mount and renders the thumbnail.
+// Signed URLs are short-lived, so we resolve fresh each time the component
+// mounts rather than caching a URL in the data.
+function PhotoThumb({ path, size = 64, onClick }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    resolveAnimalPhotoUrl(path).then((u) => {
+      if (cancelled) return;
+      if (u) setUrl(u); else setFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        width: size, height: size, borderRadius: 8, flexShrink: 0,
+        border: `1.5px solid ${palette.line}`, background: palette.bgAlt,
+        backgroundImage: url ? `url(${url})` : "none",
+        backgroundSize: "cover", backgroundPosition: "center",
+        cursor: onClick ? "pointer" : "default",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, color: palette.inkSoft, textAlign: "center", overflow: "hidden",
+      }}
+    >
+      {!url && (failed ? "image\nunavailable" : "…")}
+    </div>
+  );
+}
+
+function AnimalPhotoSection({ animal, hobbyId, update, user }) {
+  const photos = timelineOf(animal);          // chronological, oldest first
+  const profile = profilePhotoOf(animal);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // findAnimal locates the live animal object inside an update() draft.
+  const findAnimal = (d) => {
+    const h = d.hobbies.find((x) => x.id === hobbyId);
+    return h ? (h.animals || []).find((a) => a.id === animal.id) : null;
+  };
+
+  const onPick = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // reset so the same file can be re-picked later
+    if (!file) return;
+    if (!user) { setErr("You must be signed in to add photos."); return; }
+    setErr("");
+    setBusy(true);
+    try {
+      await addPhotoToAnimal({ user, animalId: animal.id, file, update, findAnimal });
+    } catch (e2) {
+      // Upload failed — surface it. Given the known refresh-token bug, a
+      // silent failure here would be the worst outcome, so we show it.
+      setErr("Photo upload failed. Check your connection and that you're signed in, then try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeOne = async (path) => {
+    setErr("");
+    try {
+      await removePhotoFromAnimal({ path, update, findAnimal });
+    } catch (e2) {
+      setErr("Could not remove photo.");
+    }
+  };
+
+  const makeProfile = (path) => {
+    update((d) => {
+      const a = findAnimal(d);
+      if (a) a.photos = withProfileSet(a, path);
+      return d;
+    });
+  };
+
+  const editDate = (path, date) => {
+    update((d) => {
+      const a = findAnimal(d);
+      if (a) a.photos = withPhotoEdited(a, path, { date });
+      return d;
+    });
+  };
+
+  return (
+    <div style={{ marginBottom: 14, padding: 12, background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, marginBottom: 8 }}>
+        Photos {photos.length > 0 ? `· ${photos.length}` : ""}
+      </div>
+
+      {photos.length === 0 && (
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+          Add a profile photo, then keep adding over time — the journal shows them as a timeline so you can see how this goat has grown.
+        </div>
+      )}
+
+      {/* Timeline — oldest first. Each photo shows its date and quick actions. */}
+      {photos.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+          {photos.map((p) => {
+            const isProfile = profile && profile.path === p.path;
+            return (
+              <div key={p.path} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <PhotoThumb path={p.path} size={56} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    value={p.date || ""}
+                    onChange={(e) => editDate(p.path, e.target.value)}
+                  />
+                  <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                    {isProfile ? (
+                      <span style={{ fontSize: 11, color: palette.leaf, fontWeight: 600 }}>★ Profile photo</span>
+                    ) : (
+                      <button onClick={() => makeProfile(p.path)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: palette.inkSoft, textDecoration: "underline" }}>
+                        Set as profile
+                      </button>
+                    )}
+                    <button onClick={() => removeOne(p.path)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: palette.accent, textDecoration: "underline" }}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {err && <div style={{ fontSize: 12, color: palette.accent, marginBottom: 8 }}>{err}</div>}
+
+      <label style={{
+        display: "inline-block", padding: "8px 14px", borderRadius: 8,
+        background: busy ? palette.bgAlt : palette.yolk,
+        border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink,
+      }}>
+        {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another photo")}
+        <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
+      </label>
+    </div>
+  );
+}
+
+function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
   // Breed: dropdown + "Other" custom text field
@@ -199,6 +359,7 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
         damId:damId||null,dam:dam.trim(),
         registryNumber:registryNumber.trim(),
         registryName:registryName.trim(),
+        photos:animal?.photos||[],
         created:animal?.created||Date.now(),
         archived:animal?.archived||false,
         archivedReason:animal?.archivedReason,
@@ -308,6 +469,10 @@ function AnimalModal({animal,hobbyId,animals,update,onClose}){
           </Field>
         </div>
       </details>
+
+      {isEdit && animal && (
+        <AnimalPhotoSection animal={animal} hobbyId={hobbyId} update={update} user={user} />
+      )}
 
       <div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -850,13 +1015,13 @@ function HerdTallySection({ hobby, update }) {
   );
 }
 
-function RabbitsModalRouter({modal,hobby,update,onClose}){
+function RabbitsModalRouter({modal,hobby,update,user,onClose}){
   if(!modal)return null;
-  if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;
+  if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} user={user} onClose={onClose}/>;
   if(modal.type==="editAnimal"){
     const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);
     if(!animal){onClose();return null;}
-    return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;
+    return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} update={update} user={user} onClose={onClose}/>;
   }
   return null;
 }
@@ -864,7 +1029,7 @@ function RabbitsModalRouter({modal,hobby,update,onClose}){
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function RabbitsPage({hobby,data,update}){
+export default function RabbitsPage({hobby,data,update,user}){
   // Run migration once on mount. useEffect ensures we don't loop on the
   // update-triggered re-render — the flag check inside guards against it.
   useEffect(() => {
@@ -884,7 +1049,7 @@ export default function RabbitsPage({hobby,data,update}){
 
   return(
     <div>
-      <RabbitsModalRouter modal={localModal} hobby={hobby} update={update} onClose={()=>setLocalModal(null)}/>
+      <RabbitsModalRouter modal={localModal} hobby={hobby} update={update} user={user} onClose={()=>setLocalModal(null)}/>
       <HerdTallySection hobby={hobby} update={update}/>
 
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:14}}>

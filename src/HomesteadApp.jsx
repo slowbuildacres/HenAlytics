@@ -17,6 +17,13 @@ import {
   sendFeedback, acceptInvite, deleteAccount,
 } from "./sync.js";
 import {
+  photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
+  timelineOf as animalTimelineOf, uploadAnimalPhoto, resolveAnimalPhotoUrl,
+  removeAnimalPhotoFromStorage, withPhotoAdded as withAnimalPhotoAdded,
+  withPhotoRemoved as withAnimalPhotoRemoved, withProfileSet as withAnimalProfileSet,
+  withPhotoEdited as withAnimalPhotoEdited,
+} from "./animalPhotos.js";
+import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
 } from "./weather.js";
 import { autoDetectHardiness } from "./hardiness.js";
@@ -6589,7 +6596,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "namedBirds") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <NamedBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} />;
+    return <NamedBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} user={user} onClose={close} />;
   }
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -9166,7 +9173,122 @@ function AddFlockModal({ hobbyId, update, onClose }) {
 // leg band color. Doesn't replace birdCount on the flock — these are favorites
 // or otherwise notable birds the user wants to track by name.
 // ============================================================================
-function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
+// Resolves a storage path to a signed URL and renders a thumbnail. Signed
+// URLs are short-lived so we resolve fresh on mount rather than caching.
+function BirdPhotoThumb({ path, size = 52 }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    resolveAnimalPhotoUrl(path).then((u) => {
+      if (cancelled) return;
+      if (u) setUrl(u); else setFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: 8, flexShrink: 0,
+      border: `1.5px solid ${palette.line}`, background: palette.bgAlt,
+      backgroundImage: url ? `url(${url})` : "none",
+      backgroundSize: "cover", backgroundPosition: "center",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontSize: 9, color: palette.inkSoft, textAlign: "center", overflow: "hidden",
+    }}>
+      {!url && (failed ? "n/a" : "…")}
+    </div>
+  );
+}
+
+// Photo section for one named bird: profile pic + dated timeline. Uploads go
+// through the shared Supabase Storage helpers; only the path is stored on the
+// bird record. onCommit(nextPhotos) persists the change immediately.
+function BirdPhotoSection({ bird, user, onCommit }) {
+  const photos = animalTimelineOf(bird);          // chronological, oldest first
+  const profile = animalProfilePhotoOf(bird);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  const onPick = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = "";
+    if (!file) return;
+    if (!user) { setErr("You must be signed in to add photos."); return; }
+    setErr("");
+    setBusy(true);
+    try {
+      const path = await uploadAnimalPhoto(user, bird.id, file);
+      onCommit(withAnimalPhotoAdded(bird, path));
+    } catch (e2) {
+      setErr("Photo upload failed. Check your connection and that you're signed in, then try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeOne = async (path) => {
+    setErr("");
+    // Update the record first so the UI reflects it; storage delete is
+    // soft-fail (an orphaned file is harmless).
+    onCommit(withAnimalPhotoRemoved(bird, path));
+    removeAnimalPhotoFromStorage(path);
+  };
+
+  const makeProfile = (path) => onCommit(withAnimalProfileSet(bird, path));
+  const editDate = (path, date) => onCommit(withAnimalPhotoEdited(bird, path, { date }));
+
+  return (
+    <div style={{ marginTop: 8, padding: 10, background: palette.bgAlt, borderRadius: 8 }}>
+      <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 6 }}>
+        Photos {photos.length > 0 ? `· ${photos.length}` : ""}
+      </div>
+      {photos.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 6 }}>
+          {photos.map((p) => {
+            const isProfile = profile && profile.path === p.path;
+            return (
+              <div key={p.path} style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                <BirdPhotoThumb path={p.path} size={48} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    type="date"
+                    style={{ width: "100%", padding: "5px 7px", fontSize: 12, borderRadius: 6, border: `1.5px solid ${palette.line}`, background: palette.bg, color: palette.ink, fontFamily: FONT_BODY, boxSizing: "border-box" }}
+                    value={p.date || ""}
+                    onChange={(e) => editDate(p.path, e.target.value)}
+                  />
+                  <div style={{ display: "flex", gap: 10, marginTop: 3 }}>
+                    {isProfile ? (
+                      <span style={{ fontSize: 10, color: palette.leaf, fontWeight: 600 }}>★ Profile</span>
+                    ) : (
+                      <button onClick={() => makeProfile(p.path)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 10, color: palette.inkSoft, textDecoration: "underline" }}>
+                        Set as profile
+                      </button>
+                    )}
+                    <button onClick={() => removeOne(p.path)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 10, color: palette.accent, textDecoration: "underline" }}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      {err && <div style={{ fontSize: 11, color: palette.accent, marginBottom: 6 }}>{err}</div>}
+      <label style={{
+        display: "inline-block", padding: "6px 12px", borderRadius: 7,
+        background: busy ? palette.line : palette.yolk,
+        border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, color: palette.ink,
+      }}>
+        {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another")}
+        <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
+      </label>
+    </div>
+  );
+}
+
+function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
   const [birds, setBirds] = useState(() =>
     (flock?.namedBirds || []).map(b => ({ ...b }))
@@ -9311,6 +9433,31 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
       return rest;
     }));
   };
+
+  // ----- Named-bird photos -------------------------------------------------
+  // Photos commit IMMEDIATELY via update() — same rationale as commitDeath:
+  // a photo upload puts a real file in Supabase Storage, so the saved path
+  // must not be lost if the user closes with Cancel. We write only the one
+  // targeted bird's photos into flock.namedBirds (never the whole local
+  // `birds` array, so other in-progress edits aren't committed early), and
+  // mirror the change into local `birds` state so the UI updates live.
+  const commitBirdPhotos = (birdId, nextPhotos) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const fl = (h.flocks || []).find(x => x.id === flockId);
+      if (!fl) return d;
+      fl.namedBirds = (fl.namedBirds || []).map(nb =>
+        nb.id === birdId ? { ...nb, photos: nextPhotos } : nb
+      );
+      return d;
+    });
+    setBirds(prev => prev.map(b =>
+      b.id === birdId ? { ...b, photos: nextPhotos } : b
+    ));
+  };
+
+  // ----- end named-bird photos --------------------------------------------
 
   const save = () => {
     update(d => {
@@ -9475,6 +9622,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
                 <span style={{ fontSize: 14 }}>{b.broody ? "🪺" : "○"}</span>
                 <span>{b.broody ? "Currently broody" : "Not broody"} — tap to toggle</span>
               </button>
+              <BirdPhotoSection bird={b} user={user} onCommit={(nextPhotos) => commitBirdPhotos(b.id, nextPhotos)} />
               {dyingBirdId === b.id ? (
                 <div style={{ marginTop: 8, padding: 10, background: palette.bgAlt, border: `1.5px solid ${palette.accent}`, borderRadius: 8 }}>
                   <div style={{ fontSize: 12, color: palette.ink, marginBottom: 8, lineHeight: 1.5 }}>
