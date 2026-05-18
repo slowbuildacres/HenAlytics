@@ -1186,9 +1186,10 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 42;
+const CURRENT_VERSION = 43;
 
 const WHATS_NEW = [
+  "🌱 New garden layout: grid view — when you add a Garden Map area you can now lay it out as a grid of rows and columns (great for raised beds and square-foot gardening), instead of pinning plants on a photo. Tap a cell to plant it, tap again to log dates and notes. This is a Supporter early-access feature — Supporters have it now; it opens to everyone soon.",  // GARDEN_GRID
   "🌱 Become a Supporter — the monthly membership now comes with real perks: early access to new hobbies and features about a week before everyone else, a Supporter badge next to your homestead name, and a spot on the supporter wall. Every tier gets the same perks — pick the amount that feels right. The one-time tip is still there too. (The app stays free for everyone, always — Supporters just help keep it that way.)",  // STEP2C_SUPPORTER_COPY
   "⭐ Top Sponsor on the supporter wall — the monthly thank-you now highlights the supporter (or supporters, on a tie) who gave the most that month, in their own spot above the full supporter list. A small thank-you for the folks who go the extra mile to keep Henalytics free for everyone.",  // STEP2B_TOP_SPONSOR
   "💚 Tip button is now in the bottom nav — the heart icon used to live in the top-right corner where a lot of folks missed it. Now it sits in the main nav between Calendar and Sales. When you tip in a given month, the heart fills red so you can see your support at a glance.",
@@ -7026,7 +7027,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "editCalendarEvent") return <EditCalendarEventModal data={data} update={update} eventId={modal.eventId} onClose={close} />;
   if (modal.type === "editZone") return <EditZoneModal data={data} update={update} onClose={close} />;
   if (modal.type === "viewDayEvents") return <ViewDayEventsModal data={data} update={update} date={modal.date} setModal={setModal} onClose={close} />;
-  if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} />;
+  if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} /* GARDEN_GRID */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;

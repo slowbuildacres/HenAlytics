@@ -70,6 +70,39 @@ const pinDisplay = (pin) => {
   return { name: "Unknown plant", emoji: "🌱" };
 };
 
+// GARDEN_GRID: early-access gate for the "garden_grid" feature.
+// A self-contained copy of the same pure date logic used by the 2A gate
+// in HomesteadApp.jsx (GardenMap.jsx cannot cleanly import from there).
+// Returns "public" | "supporter" | "early-locked" | "hidden" | "ungated".
+function gardenGridGateState(config, isSupporter, now) {
+  const today = now instanceof Date ? now : new Date();
+  const features = config && config.features;
+  if (!features || typeof features !== "object") return "ungated";
+  const f = features["garden_grid"];
+  if (!f || typeof f !== "object" || !f.publicDate) return "ungated";
+  const parts = String(f.publicDate).split('-').map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return "ungated";
+  const publicAt = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+  if (isNaN(publicAt.getTime())) return "ungated";
+  if (today.getTime() >= publicAt.getTime()) return "public";
+  if (f.supporterEarlyAccess !== true) return "hidden";
+  const days = Number(f.earlyAccessDays);
+  const windowDays = (Number.isFinite(days) && days > 0) ? days : 7;
+  const earlyAt = new Date(publicAt.getTime() - windowDays * 86400000);
+  if (today.getTime() < earlyAt.getTime()) return "hidden";
+  return isSupporter ? "supporter" : "early-locked";
+}
+
+// GARDEN_GRID: format a YYYY-MM-DD date for display, e.g. "July 1".
+function gardenGridPublicDateLabel(config) {
+  const f = config && config.features && config.features['garden_grid'];
+  const parts = String((f && f.publicDate) || "").split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return "";
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+}
+
 // ============================================================================
 // GARDEN MAP DATA MIGRATION
 // ============================================================================
@@ -77,7 +110,13 @@ const pinDisplay = (pin) => {
 // New shape: { areas: [{ id, name, photoPath, pins[] }] }
 function migrateGardenMap(map) {
   if (!map) return { areas: [] };
-  if (Array.isArray(map.areas)) return map; // Already migrated
+  if (Array.isArray(map.areas)) {
+    // GARDEN_GRID: ensure every area has a mode. Absent => "photo",
+    // so all pre-grid areas keep behaving exactly as before. No rewrite
+    // of pins or anything else — only a default on a missing field.
+    map.areas.forEach((a) => { if (!a.mode) a.mode = "photo"; });
+    return map;
+  }
   // Old single-photo shape — wrap it as one area
   if (map.photoPath) {
     return {
@@ -96,7 +135,7 @@ function migrateGardenMap(map) {
 // MAIN MODAL
 // ============================================================================
 
-export default function GardenMapModal({ data, update, user, onClose }) {
+export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false }) {
   const hobby = data.hobbies.find((h) => h.id === "garden");
   const season = hobby?.currentSeason;
   if (!season) {
@@ -106,6 +145,16 @@ export default function GardenMapModal({ data, update, user, onClose }) {
 
   const map = migrateGardenMap(season.gardenMap);
   const archivedSeasons = (hobby.archivedSeasons || []).filter((s) => s.gardenMap);
+
+  // GARDEN_GRID: resolve whether the Grid area option is available.
+  // gridGate is one of public | supporter | early-locked | hidden | ungated.
+  // The Grid CHOICE is offered when public/supporter/ungated, shown locked
+  // when early-locked, and omitted when hidden. Existing grid areas are
+  // never affected — only the option to create a NEW one.
+  const gridGate = gardenGridGateState(earlyAccessConfig, isSupporter);
+  const gridChoiceOffered = gridGate === "public" || gridGate === "supporter" || gridGate === "ungated";
+  const gridChoiceLocked = gridGate === "early-locked";
+  const gridPublicLabel = gardenGridPublicDateLabel(earlyAccessConfig);
 
   // Active area index (0 = first area, etc). Start at 0 if any areas exist.
   const [activeIdx, setActiveIdx] = useState(0);
@@ -119,6 +168,44 @@ export default function GardenMapModal({ data, update, user, onClose }) {
   }, [map.areas.length, activeIdx]);
 
   const activeArea = map.areas[activeIdx];
+
+  // GARDEN_GRID: unified area creation. Asks Photo vs Grid (when the
+  // grid option is available), then name, then for a grid the dimensions.
+  // Uses window.prompt/confirm to match the file's existing creation UX.
+  const createArea = () => {
+    let mode = "photo";
+    if (gridChoiceOffered) {
+      // Ask which layout. OK = Grid, Cancel = Photo — phrased so the
+      // dialog text makes the mapping obvious.
+      const wantGrid = window.confirm(
+        "How do you want to lay out this area?\n\n" +
+        "OK = Grid (rows and columns, one plant per cell)\n" +
+        "Cancel = Photo (drop pins on a photo)"
+      );
+      mode = wantGrid ? "grid" : "photo";
+    }
+    const name = window.prompt("Name this area (e.g. 'Back beds', 'Raised beds'):", "Garden");
+    if (!name || !name.trim()) return;
+    let rows = 0, cols = 0;
+    if (mode === "grid") {
+      const r = parseInt(window.prompt("How many rows? (1-20)", "4"), 10);
+      if (!Number.isFinite(r) || r < 1 || r > 20) { window.alert("Rows must be 1-20."); return; }
+      const c = parseInt(window.prompt("How many columns? (1-20)", "6"), 10);
+      if (!Number.isFinite(c) || c < 1 || c > 20) { window.alert("Columns must be 1-20."); return; }
+      rows = r; cols = c;
+    }
+    const newArea = (mode === "grid")
+      ? { id: newId(), name: name.trim(), mode: "grid", rows, cols, photoPath: null, pins: [] }
+      : { id: newId(), name: name.trim(), mode: "photo", photoPath: null, pins: [] };
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === "garden");
+      if (!h?.currentSeason) return d;
+      h.currentSeason.gardenMap = migrateGardenMap(h.currentSeason.gardenMap);
+      h.currentSeason.gardenMap.areas.push(newArea);
+      return d;
+    });
+    setActiveIdx(map.areas.length);
+  };
 
   return (
     <div
@@ -158,45 +245,18 @@ export default function GardenMapModal({ data, update, user, onClose }) {
             areas={map.areas}
             activeIdx={activeIdx}
             setActiveIdx={setActiveIdx}
-            onAddArea={() => {
-              const name = prompt("Name this area (e.g. 'Back beds', 'Front yard'):", "New area");
-              if (!name?.trim()) return;
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === "garden");
-                if (!h?.currentSeason) return d;
-                h.currentSeason.gardenMap = migrateGardenMap(h.currentSeason.gardenMap);
-                h.currentSeason.gardenMap.areas.push({
-                  id: newId(),
-                  name: name.trim(),
-                  photoPath: null,
-                  pins: [],
-                });
-                return d;
-              });
-              setActiveIdx(map.areas.length); // jump to the new tab
-            }}
+            /* GARDEN_GRID: unified createArea (Photo/Grid chooser) */
+            onAddArea={createArea}
           />
         )}
 
         {/* Empty state — no areas at all */}
         {!showArchive && map.areas.length === 0 && (
           <EmptyState
-            onCreateFirst={() => {
-              const name = prompt("Name this area (e.g. 'Back beds', 'Front yard'):", "Garden");
-              if (!name?.trim()) return;
-              update((d) => {
-                const h = d.hobbies.find((x) => x.id === "garden");
-                if (!h?.currentSeason) return d;
-                h.currentSeason.gardenMap = { areas: [{
-                  id: newId(),
-                  name: name.trim(),
-                  photoPath: null,
-                  pins: [],
-                }]};
-                return d;
-              });
-              setActiveIdx(0);
-            }}
+            /* GARDEN_GRID: unified createArea (Photo/Grid chooser) */
+            onCreateFirst={createArea}
+            gridChoiceLocked={gridChoiceLocked}
+            gridPublicLabel={gridPublicLabel}
             archivedSeasons={archivedSeasons}
             onShowArchive={() => setShowArchive(true)}
           />
@@ -257,7 +317,7 @@ export default function GardenMapModal({ data, update, user, onClose }) {
 // ============================================================================
 // EMPTY STATE
 // ============================================================================
-function EmptyState({ onCreateFirst, archivedSeasons, onShowArchive }) {
+function EmptyState({ onCreateFirst, archivedSeasons, onShowArchive, /* GARDEN_GRID */ gridChoiceLocked = false, gridPublicLabel = "" }) {
   return (
     <div style={{
       padding: 28, background: palette.bgAlt, border: `1.5px dashed ${palette.line}`,
@@ -268,8 +328,17 @@ function EmptyState({ onCreateFirst, archivedSeasons, onShowArchive }) {
         Map your garden
       </div>
       <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 16 }}>
-        Add areas (e.g. "Back beds", "Front yard"), upload a photo of each, and tap to drop plant pins. Compare layouts year-over-year.
+        Add areas (e.g. "Back beds", "Front yard") — lay each out as a photo with plant pins, or as a grid of rows and columns. Compare layouts year-over-year.
       </div>
+      {/* GARDEN_GRID: grid early-access hint for non-supporters */}
+      {gridChoiceLocked && (
+        <div style={{
+          fontSize: 11, color: palette.inkSoft, lineHeight: 1.5,
+          marginBottom: 14, fontStyle: "italic",
+        }}>
+          🔒 The new grid layout is in early access for Supporters{gridPublicLabel ? ` — available to everyone on ${gridPublicLabel}` : ""}.
+        </div>
+      )}
       <button
         onClick={onCreateFirst}
         style={{
@@ -468,6 +537,21 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
     setShowCropPicker(null);
   };
 
+  // GARDEN_GRID: grid areas use a different placement surface. Render
+  // GridEditor and skip the photo editor entirely. Photo areas (mode
+  // "photo" or absent) fall through to the unchanged code below.
+  if (area.mode === "grid") {
+    return (
+      <GridEditor
+        area={area}
+        areaIdx={areaIdx}
+        update={update}
+        onRenameArea={onRenameArea}
+        onDeleteArea={onDeleteArea}
+      />
+    );
+  }
+
   return (
     <div>
       {/* Area header — name + actions */}
@@ -642,6 +726,156 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
       )}
 
       {/* Crop picker */}
+      {showCropPicker && (
+        <CropPicker
+          onPick={placePin}
+          onCancel={() => setShowCropPicker(null)}
+        />
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// GARDEN_GRID: GRID EDITOR — rows x cols placement surface for grid areas
+// ----------------------------------------------------------------------------
+// A grid area's pins carry { row, col } instead of { x, y }. Empty-cell tap
+// opens the shared CropPicker; planted-cell tap opens the shared
+// PinInfoPanel. Resize: grow adds empty cells; shrink warns-and-discards
+// any plantings outside the new bounds.
+// ============================================================================
+function GridEditor({ area, areaIdx, update, onRenameArea, onDeleteArea }) {
+  const [activePin, setActivePin] = useState(null);
+  const [showCropPicker, setShowCropPicker] = useState(null); // { row, col }
+
+  const rows = Math.max(1, Number(area.rows) || 1);
+  const cols = Math.max(1, Number(area.cols) || 1);
+  const pins = Array.isArray(area.pins) ? area.pins : [];
+
+  // Quick lookup: "row,col" -> pin
+  const pinAt = {};
+  pins.forEach((p) => {
+    if (typeof p.row === "number" && typeof p.col === "number") {
+      pinAt[p.row + "," + p.col] = p;
+    }
+  });
+
+  const placePin = (cropId, customName) => {
+    if (!showCropPicker) return;
+    const { row, col } = showCropPicker;
+    const newPin = { id: newId(), row, col, cropId, plantedDate: todayStr(), note: "" };
+    if (cropId === "other" && customName) newPin.customName = customName;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === "garden");
+      const a = h?.currentSeason?.gardenMap?.areas?.[areaIdx];
+      if (!a) return d;
+      if (!Array.isArray(a.pins)) a.pins = [];
+      // Guard: never two pins in one cell.
+      if (a.pins.some((p) => p.row === row && p.col === col)) return d;
+      a.pins.push(newPin);
+      return d;
+    });
+    setShowCropPicker(null);
+  };
+
+  const resizeGrid = () => {
+    const r = parseInt(window.prompt("Rows? (1-20)", String(rows)), 10);
+    if (!Number.isFinite(r) || r < 1 || r > 20) { window.alert("Rows must be 1-20."); return; }
+    const c = parseInt(window.prompt("Columns? (1-20)", String(cols)), 10);
+    if (!Number.isFinite(c) || c < 1 || c > 20) { window.alert("Columns must be 1-20."); return; }
+    if (r === rows && c === cols) return;
+    // Warn-and-discard: any planted cell outside the new bounds is removed.
+    const orphaned = pins.filter((p) => p.row >= r || p.col >= c);
+    if (orphaned.length > 0) {
+      const ok = window.confirm(
+        "Resizing to " + r + " x " + c + " will remove " + orphaned.length + " " +
+        (orphaned.length === 1 ? "planting" : "plantings") +
+        " that fall outside the new grid. Continue?"
+      );
+      if (!ok) return;
+    }
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === "garden");
+      const a = h?.currentSeason?.gardenMap?.areas?.[areaIdx];
+      if (!a) return d;
+      a.rows = r; a.cols = c;
+      a.pins = (Array.isArray(a.pins) ? a.pins : []).filter((p) => p.row < r && p.col < c);
+      return d;
+    });
+  };
+
+  // Cell size: fit cols across the ~520px-wide modal body, clamped so a
+  // big grid stays tappable (min 28px) and a small grid is not huge
+  // (max 64px). The grid container scrolls if it overflows.
+  const cellSize = Math.max(28, Math.min(64, Math.floor(520 / cols)));
+
+  return (
+    <div>
+      {/* Area header — name + actions (mirrors the photo AreaEditor) */}
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+          {area.name}
+        </div>
+        <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+          <button onClick={resizeGrid} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, fontSize: 11, textDecoration: "underline", padding: 4 }} title="Resize grid">
+            Resize
+          </button>
+          <button onClick={onRenameArea} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }} title="Rename area">
+            <Edit3 size={14} />
+          </button>
+          <button onClick={onDeleteArea} style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4 }} title="Delete area">
+            <Trash2 size={14} />
+          </button>
+        </div>
+      </div>
+
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+        {rows} x {cols} grid. Tap an empty cell to plant; tap a planted cell to view or edit.
+      </div>
+
+      {/* The grid */}
+      <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "max-content" }}>
+          {Array.from({ length: rows }).map((_, r) => (
+            <div key={r} style={{ display: "flex", gap: 3 }}>
+              {Array.from({ length: cols }).map((_, c) => {
+                const pin = pinAt[r + "," + c];
+                const disp = pin ? pinDisplay(pin) : null;
+                return (
+                  <button
+                    key={c}
+                    onClick={() => {
+                      if (pin) { setActivePin(pin); setShowCropPicker(null); }
+                      else { setShowCropPicker({ row: r, col: c }); setActivePin(null); }
+                    }}
+                    title={pin ? disp.name : "Empty cell"}
+                    style={{
+                      width: cellSize, height: cellSize, flexShrink: 0,
+                      border: `1.5px solid ${palette.line}`, borderRadius: 6,
+                      cursor: "pointer", padding: 0,
+                      background: pin ? colorForCrop(pin.cropId) : palette.card,
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                      fontSize: Math.max(12, Math.floor(cellSize * 0.42)),
+                    }}
+                  >
+                    {pin ? disp.emoji : ""}
+                  </button>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Shared edit panel / crop picker — same components the photo editor uses */}
+      {activePin && (
+        <PinInfoPanel
+          pin={activePin}
+          areaIdx={areaIdx}
+          update={update}
+          onClose={() => setActivePin(null)}
+        />
+      )}
       {showCropPicker && (
         <CropPicker
           onPick={placePin}
