@@ -286,11 +286,30 @@ export async function saveHomestead(user, data, cloudReady = true) {
       }
       const result = await safeWriteCloudHomestead(homesteadId, data);
       if (result.skipped) {
-        return { ok: false, location: 'local', skipped: true };
+        // Pass the skip reason through so the caller can tell a benign
+        // clobber-guard skip apart from a read-failed skip (the latter is
+        // the refresh-token-bug signature and should surface to the user).
+        return { ok: false, location: 'local', skipped: true, reason: result.reason };
       }
       return { ok: true, location: 'cloud' };
     } catch (e) {
-      return { ok: false, location: 'local', error: e };
+      // Classify the failure. An auth/session error (dead refresh token) is
+      // the bug we care about surfacing — distinguish it from generic
+      // network/server errors so the UI can prompt re-authentication only
+      // when that's actually the problem.
+      const msg = String((e && (e.message || e.error_description || e.name)) || '').toLowerCase();
+      const isAuth =
+        msg.includes('refresh token') ||
+        msg.includes('jwt') ||
+        msg.includes('not authenticated') ||
+        msg.includes('access control') ||
+        (e && (e.status === 401 || e.status === 403));
+      if (isAuth) {
+        console.warn('[SAVE] cloud save failed — auth/session error (likely dead refresh token):', e);
+      } else {
+        console.warn('[SAVE] cloud save failed — non-auth error:', e);
+      }
+      return { ok: false, location: 'local', error: e, reason: isAuth ? 'auth' : 'error' };
     }
   }
   return { ok: true, location: 'local' };

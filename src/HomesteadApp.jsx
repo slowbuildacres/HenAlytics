@@ -2823,9 +2823,26 @@ export default function HomesteadApp() {
     saveImmediateRef.current = false; // one-shot
     const fire = async () => {
       const result = await saveHomestead(user, data);
-      setSyncStatus((result.ok || result.skipped) ? "saved" : "error");
+      // A *skipped* cloud write is NOT a successful save. Previously this
+      // line treated `skipped` the same as `ok`, so when the refresh token
+      // had silently died the cloud write was correctly skipped — but the
+      // sync indicator lit up green "saved" anyway, hiding the failure. The
+      // data is in localStorage, but the cloud (and any other device, or a
+      // farmhand's view) never got it. Now:
+      //   - ok            → "saved"   (genuinely reached the cloud)
+      //   - skipped/fail  → "error"   (local only — surfaces the problem)
+      // For a signed-in user, "error" is honest: their save did not sync.
+      // For a local-only user (no account) saveHomestead returns ok:true,
+      // so this never false-alarms them.
+      setSyncStatus(result.ok ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
+      } else if (result.skipped && (result.reason === "read-failed" || result.reason === "auth")) {
+        // A skip caused by a failed cloud read / dead session is the
+        // signature of the refresh-token bug. Surface the signed-out
+        // banner so the user knows to re-authenticate — their recent
+        // changes are saved locally but not synced.
+        setSignedOutRemotely(true);
       }
     };
     if (immediate) {
