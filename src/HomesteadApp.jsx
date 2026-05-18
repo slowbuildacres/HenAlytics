@@ -4359,6 +4359,7 @@ function QuickLogTiles({ hobby, setModal }) {
         <Tile icon={DollarSign} label="Sold Eggs" color={palette.accent} onClick={() => setModal({ type: "log", action: "sold_eggs" })} />
         <Tile icon={Archive} label="Bedding" color={palette.featherSoft} onClick={() => setModal({ type: "log", action: "bedding" })} />
         <Tile icon={NotebookPen} label="Broody" color={palette.maple || palette.yolkSoft} onClick={() => setModal({ type: "log", action: "broody" })} />
+        <Tile icon={Egg} label="Hatch Eggs" color={palette.leaf} onClick={() => setModal({ type: "hatchEggs", hobbyId: hobby.id })} />
         <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
         <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
@@ -6598,6 +6599,16 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
     return <NamedBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} user={user} onClose={close} />;
+  }
+  if (modal.type === "hatchEggs") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    // HatchEggsModal needs to know whether the Incubator hobby is hidden so
+    // its post-save step can offer to reveal it. We surface that as a
+    // transient _incubatorHidden field rather than passing the whole hobby.
+    const incHobby = data.hobbies.find(h => h.id === "incubator");
+    const hobbyWithFlag = { ...targetHobby, _incubatorHidden: !!(incHobby && incHobby.hidden) };
+    return <HatchEggsModal hobby={hobbyWithFlag} update={update} setModal={setModal} onClose={close} />;
   }
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -10662,6 +10673,185 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
 //                   existing death log)
 //   - Culled     → reduce flock + entry with reason (e.g. illness, euthanasia)
 //   - Other      → free-text reason
+// ============================================================================
+// HATCH EGGS MODAL — log a broody hen's hatch, create a brooder batch
+// ----------------------------------------------------------------------------
+// Opened from the egg-layer "Hatch Eggs" quick-log tile. When a broody hen
+// hatches eggs, those chicks need somewhere to go — this creates a brooder
+// batch on the Incubator hobby (the same batch shape produced by the
+// Incubator's own MoveToBrooderModal / AddBrooderModal, so every downstream
+// brooder feature works the same way).
+//
+// The Incubator hobby ALWAYS exists in data.hobbies (it's a default, added by
+// migration), but it may be hidden:true if the user hasn't "enabled" it. We
+// still write the batch there, and if it's hidden we offer to unhide it so
+// the user can actually navigate to the brooder they just created — a brooder
+// they can't see would be pointless.
+// ============================================================================
+function HatchEggsModal({ hobby, update, setModal, onClose }) {
+  // Pick the source flock — auto when there's only one, picker when several.
+  // Bird type comes from the flock so the brooder batch is typed correctly.
+  const flocks = (hobby.flocks || []);
+  const [selectedFlockId, setSelectedFlockId] = useState(() =>
+    flocks.length === 1 ? flocks[0].id : ""
+  );
+  const activeFlock = flocks.find((f) => f.id === selectedFlockId) || null;
+  const [count, setCount] = useState("");
+  const [date, setDate] = useState(todayStr());
+  const [notes, setNotes] = useState("");
+  // After a successful save we show a confirmation step. If the Incubator
+  // hobby is hidden, that step offers to unhide it so the user can navigate
+  // to the brooder they just created.
+  const [saved, setSaved] = useState(false);
+
+  const n = parseInt(count, 10);
+  const canSave = n > 0 && !!activeFlock;
+
+  const save = () => {
+    if (!canSave) return;
+    const birdType = activeFlock.birdType || "Chicken";
+    const brooderBatchId = newId();
+    // ~6 weeks (42 days) out: typical age chicks leave the heated brooder.
+    const start = new Date(date + "T00:00:00");
+    start.setDate(start.getDate() + 42);
+    const readyDate = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, "0")}-${String(start.getDate()).padStart(2, "0")}`;
+    const batchName = `${birdType} chicks from ${activeFlock.name || "flock"}`;
+
+    update((d) => {
+      // The incubator hobby always exists (default + migration). Write the
+      // brooder batch onto it.
+      const inc = d.hobbies.find((h) => h.id === "incubator");
+      if (!inc) return d; // defensive — should never happen
+      if (!Array.isArray(inc.brooderBatches)) inc.brooderBatches = [];
+      inc.brooderBatches.push({
+        id: brooderBatchId,
+        sourceBatchId: null,            // not from an incubation run
+        sourceFlockId: activeFlock.id,  // links back to the broody hen's flock
+        name: batchName,
+        startDate: date,
+        initialCount: n,
+        birdType,
+        variety: "",
+        source: `Broody hatch — ${activeFlock.name || "flock"}`,
+        notes: notes.trim(),
+        dispositions: [],
+        archived: false,
+        created: Date.now(),
+      });
+      // "Ready to move out" calendar reminder, same convention as the
+      // Incubator's own brooder flows.
+      if (!Array.isArray(d.calendarEvents)) d.calendarEvents = [];
+      d.calendarEvents.push({
+        id: newId(),
+        date: readyDate,
+        title: `🐥 Brooder ready: ${batchName}`,
+        type: "brooder_ready",
+        notes: `${n} ${birdType.toLowerCase()} chicks should be feathered enough to leave the brooder.`,
+        brooderBatchId,
+      });
+      // Also log a hatch entry on the egg-layer hobby so it shows in the
+      // flock's history and analytics.
+      if (!d.entries) d.entries = {};
+      if (!Array.isArray(d.entries[hobby.id])) d.entries[hobby.id] = [];
+      d.entries[hobby.id].push({
+        id: newId(),
+        date,
+        action: "hatched",
+        count: n,
+        flockId: activeFlock.id,
+        brooderBatchId,
+        notes: notes.trim(),
+        created: Date.now(),
+      });
+      return d;
+    });
+    setSaved(true);
+  };
+
+  // Unhide the Incubator hobby so the user can navigate to their new brooder.
+  const showIncubator = () => {
+    update((d) => {
+      const inc = d.hobbies.find((h) => h.id === "incubator");
+      if (inc) inc.hidden = false;
+      return d;
+    });
+    onClose();
+  };
+
+  // Post-save confirmation. If Incubator is hidden, offer to reveal it.
+  if (saved) {
+    const incHidden = !!(hobby && hobby._incubatorHidden);
+    return (
+      <Modal open onClose={onClose} title="🐥 Brooder created">
+        <div style={{ fontSize: 13, color: palette.ink, marginBottom: 14, lineHeight: 1.6 }}>
+          {n} chick{n === 1 ? "" : "s"} added as a brooder batch. You can track them, move them to a flock, or log losses from the Incubator hobby.
+        </div>
+        {incHidden ? (
+          <>
+            <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+              The Incubator hobby is currently hidden. Show it so you can get to your brooder?
+            </div>
+            <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+              <Btn variant="ghost" onClick={onClose}>Not now</Btn>
+              <Btn onClick={showIncubator}>Show Incubator</Btn>
+            </div>
+          </>
+        ) : (
+          <div style={{ display: "flex", justifyContent: "flex-end" }}>
+            <Btn onClick={onClose}>Done</Btn>
+          </div>
+        )}
+      </Modal>
+    );
+  }
+
+  return (
+    <Modal open onClose={onClose} title="🐣 Hatch eggs">
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        A broody hen hatched a clutch? Log it here — the chicks become a brooder batch in your Incubator hobby, where you can track them, move them to a flock, or record losses.
+      </div>
+
+      {flocks.length === 0 ? (
+        <div style={{ padding: 16, background: palette.bgAlt, borderRadius: 8, fontSize: 13, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 14 }}>
+          You don't have a flock yet. Add a flock first, then come back to log a hatch.
+        </div>
+      ) : (
+        <>
+          {flocks.length > 1 && (
+            <Field label="Which flock hatched them?">
+              <select style={inputStyle} value={selectedFlockId} onChange={(e) => setSelectedFlockId(e.target.value)}>
+                <option value="">— Select flock —</option>
+                {flocks.map((f) => (
+                  <option key={f.id} value={f.id}>{f.name || f.birdType || "Flock"}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+          <div style={{ display: "flex", gap: 12 }}>
+            <div style={{ flex: 1 }}>
+              <Field label="Chicks hatched">
+                <input type="number" min={1} inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
+              </Field>
+            </div>
+            <div style={{ flex: 1 }}>
+              <Field label="Hatch date">
+                <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+              </Field>
+            </div>
+          </div>
+          <Field label="Notes (optional)">
+            <textarea style={{ ...inputStyle, minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Which hen, breed mix, etc." />
+          </Field>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn onClick={save} disabled={!canSave}>Create brooder batch</Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
 function ButcherFlockModal({ hobby, flock, update, onClose }) {
   // Push 6 — when called from the top-level Butcher tile on the egg-layer
   // action grid, no flock is pre-selected. The user needs to pick which one.
