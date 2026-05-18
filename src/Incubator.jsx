@@ -549,6 +549,126 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
 }
 
 // ============================================================================
+// ADD BROODER MODAL — create a brooder batch directly, no hatch required
+// ----------------------------------------------------------------------------
+// Many keepers buy day-old chicks shipped from a hatchery — they never run an
+// incubation. This modal creates a brooder batch from scratch. The batch it
+// writes is IDENTICAL in shape to one created by MoveToBrooderModal, so every
+// downstream feature (disposition: sold / moved to flock / died / kept, the
+// BrooderBatchCard, survival analytics, the "ready to move out" calendar
+// reminder) works the same way — those operate on the batch data, not on how
+// it was created. The only differences vs. a hatch-created batch:
+//   - sourceBatchId is null (there's no originating run)
+//   - birdType is picked by the user instead of inherited from a run
+//   - a `source` field records where the chicks came from (the hatchery)
+// ============================================================================
+function AddBrooderModal({ hobbyId, update, onClose }) {
+  const [name, setName] = useState("");
+  const [birdType, setBirdType] = useState("Chicken");
+  const [initialCount, setInitialCount] = useState("");
+  const [startDate, setStartDate] = useState(todayStr());
+  const [source, setSource] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const canSave = parseInt(initialCount, 10) > 0;
+
+  const save = () => {
+    if (!canSave) return;
+    const count = parseInt(initialCount, 10);
+    const brooderBatchId = newId();
+    // ~6 weeks out: typical age chicks are feathered enough to leave the
+    // heated brooder. Same convention as the hatch-created flow.
+    const readyDate = addDays(startDate, 42);
+    const batchName = name.trim() || `${birdType} chicks`;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
+      h.brooderBatches.push({
+        id: brooderBatchId,
+        sourceBatchId: null,          // no originating run — added directly
+        name: batchName,
+        startDate,
+        initialCount: count,
+        birdType,
+        variety: "",
+        source: source.trim(),        // hatchery / where the chicks came from
+        notes: notes.trim(),
+        dispositions: [],
+        archived: false,
+        created: Date.now(),
+      });
+      if (!Array.isArray(d.calendarEvents)) d.calendarEvents = [];
+      const alreadyHas = d.calendarEvents.some(e => e.brooderBatchId === brooderBatchId);
+      if (!alreadyHas) {
+        d.calendarEvents.push({
+          id: newId(),
+          date: readyDate,
+          title: `🐥 Brooder ready: ${batchName}`,
+          type: "brooder_ready",
+          notes: `${count} ${birdType.toLowerCase()} chicks should be feathered enough to leave the brooder.`,
+          brooderBatchId,
+        });
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🐥 Add a brooder">
+      <div style={{ marginBottom: 14, padding: "10px 12px", background: palette.leafSoft, borderRadius: 8, fontSize: 13, color: palette.ink, lineHeight: 1.5 }}>
+        Got chicks without hatching them — shipped from a hatchery, or picked up locally? Add them as a brooder batch to track what happens next.
+      </div>
+      <Field label="Brooder batch name">
+        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 shipped chicks" autoFocus />
+      </Field>
+      <Field label="Bird type">
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+          {BIRD_TYPES.map(t => (
+            <button
+              key={t}
+              onClick={() => setBirdType(t)}
+              style={{
+                padding: "6px 12px", borderRadius: 8,
+                border: `1.5px solid ${birdType === t ? palette.ink : palette.line}`,
+                background: birdType === t ? palette.ink : palette.card,
+                color: birdType === t ? palette.bg : palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, cursor: "pointer",
+              }}
+            >
+              {(BIRD_EMOJI[t] || "🐣") + " " + t}
+            </button>
+          ))}
+        </div>
+      </Field>
+      <div style={{ display: "flex", gap: 12 }}>
+        <div style={{ flex: 1 }}>
+          <Field label="Chicks in brooder">
+            <input type="number" min={1} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
+          </Field>
+        </div>
+        <div style={{ flex: 1 }}>
+          <Field label="Start date">
+            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+          </Field>
+        </div>
+      </div>
+      <Field label="Source (optional)">
+        <input style={inputStyle} value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Murray McMurray Hatchery, local feed store" />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, breed mix, etc." />
+      </Field>
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Create brooder batch</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
 // EDIT BROODER BATCH MODAL
 // ============================================================================
 // Edit an existing brooder batch's core fields, delete it, or — if it was
@@ -1306,18 +1426,28 @@ function IncubatorHome({ hobby, update, setModal, data }) {
         ))
       )}
 
-      {/* BROODER SECTION — surfaces all batches with chicks still in them.
-          Sits between Active Runs and Completed so the user's workflow
-          flows top-to-bottom: incubating → brooding → completed. */}
-      {activeBrooders.length > 0 && (
-        <>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:10,marginTop:20 }}>
-            🐣 Brooder
+      {/* BROODER SECTION — always visible so the "New brooder" entry point
+          is reachable (chicks can be added directly, not just via a hatch).
+          Sits between Active Runs and Completed so the workflow flows
+          top-to-bottom: incubating → brooding → completed. */}
+      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,marginTop:20 }}>
+        <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>
+          🐣 Brooder
+        </div>
+        <Btn small variant="accent" onClick={() => setModal({ type:"addBrooder", hobbyId:hobby.id })}>
+          <Plus size={14} style={{ marginRight:4 }} />New brooder
+        </Btn>
+      </div>
+      {activeBrooders.length > 0 ? (
+        activeBrooders.map(batch => (
+          <BrooderBatchCard key={batch.id} batch={batch} hobbyId={hobby.id} data={data} update={update} setModal={setModal} />
+        ))
+      ) : (
+        <div style={{ padding:20,background:palette.card,border:`2px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft,marginBottom:14 }}>
+          <div style={{ fontSize:13,lineHeight:1.5 }}>
+            No chicks in the brooder. Hatch a run, or tap <strong>New brooder</strong> to add shipped or store-bought chicks.
           </div>
-          {activeBrooders.map(batch => (
-            <BrooderBatchCard key={batch.id} batch={batch} hobbyId={hobby.id} data={data} update={update} setModal={setModal} />
-          ))}
-        </>
+        </div>
       )}
 
       {completedRuns.length > 0 && (
@@ -1526,6 +1656,9 @@ function IncubatorModalRouter({ modal, hobby, data, update, setModal, onClose })
     const run = (hobby.runs||[]).find(r => r.id === modal.runId);
     if (!run) { onClose(); return null; }
     return <MoveToBrooderModal run={run} hobbyId={hobby.id} update={update} onClose={onClose} />;
+  }
+  if (modal.type === "addBrooder") {
+    return <AddBrooderModal hobbyId={hobby.id} update={update} onClose={onClose} />;
   }
   if (modal.type === "brooderDispose") {
     const batch = (hobby.brooderBatches||[]).find(b => b.id === modal.batchId);

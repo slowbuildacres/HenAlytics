@@ -5037,6 +5037,7 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
                         fontFamily: FONT_BODY,
                       }}
                     >
+                      <BirdProfileCircle bird={b} size={18} />
                       {b.bandColor && (
                         <span style={{
                           display: "inline-block", width: 10, height: 10, borderRadius: "50%",
