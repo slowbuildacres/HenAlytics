@@ -135,7 +135,7 @@ function migrateGardenMap(map) {
 // MAIN MODAL
 // ============================================================================
 
-export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false }) {
+export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false, /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport = null }) {
   const hobby = data.hobbies.find((h) => h.id === "garden");
   const season = hobby?.currentSeason;
   if (!season) {
@@ -298,6 +298,10 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
         {newAreaOpen && (
           <NewAreaModal
             gridChoiceOffered={gridChoiceOffered}
+            /* GARDEN_GRID_LOCKED_TILE */
+            gridChoiceLocked={gridChoiceLocked}
+            gridPublicLabel={gridPublicLabel}
+            onOpenSupport={onOpenSupport}
             onCancel={() => setNewAreaOpen(false)}
             onCreate={commitNewArea}
           />
@@ -315,7 +319,7 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
 // a name field, and — for a grid — rows/cols number fields. Create is
 // disabled until the form is valid.
 // ============================================================================
-function NewAreaModal({ gridChoiceOffered, onCancel, onCreate }) {
+function NewAreaModal({ gridChoiceOffered, onCancel, onCreate, /* GARDEN_GRID_LOCKED_TILE */ gridChoiceLocked = false, gridPublicLabel = "", onOpenSupport = null }) {
   // Default to "photo" — the always-available option. If the grid option
   // is not offered, the layout chooser is hidden and mode stays "photo".
   const [mode, setMode] = useState("photo");
@@ -385,6 +389,43 @@ function NewAreaModal({ gridChoiceOffered, onCancel, onCreate }) {
             <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
               {choiceTile("photo", "📷", "Photo", "Pins on a photo")}
               {choiceTile("grid", "▦", "Grid", "Rows & columns")}
+            </div>
+          </>
+        )}
+
+        {/* GARDEN_GRID_LOCKED_TILE: non-supporter inside the early-access window.
+            The Grid choice shows as a LOCKED tile next to Photo. The
+            public-availability date is shown ON the tile — lock + date
+            means "early access" (everyone gets it on that date), not a
+            permanent paywall. Tapping the locked tile opens Support. */}
+        {gridChoiceLocked && (
+          <>
+            <div style={{ fontSize: 11, fontWeight: 600, color: palette.inkSoft, marginBottom: 6, letterSpacing: 0.5, textTransform: "uppercase" }}>
+              Layout
+            </div>
+            <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+              {choiceTile("photo", "📷", "Photo", "Pins on a photo")}
+              {/* Locked Grid tile — not selectable; opens Support on tap. */}
+              <button
+                type="button"
+                onClick={() => { if (onOpenSupport) onOpenSupport(); }}
+                title="Grid layout is in early access for Supporters"
+                style={{
+                  flex: 1, padding: "12px 10px", borderRadius: 10, cursor: "pointer",
+                  textAlign: "center", fontFamily: FONT_BODY,
+                  border: `2px dashed ${palette.line}`,
+                  background: palette.bgAlt, color: palette.inkSoft,
+                }}
+              >
+                <div style={{ fontSize: 22, marginBottom: 2 }}>🔒</div>
+                <div style={{ fontWeight: 700, fontSize: 13 }}>Grid</div>
+                <div style={{ fontSize: 10, marginTop: 2 }}>
+                  Supporters get this early
+                </div>
+                <div style={{ fontSize: 10, marginTop: 1, fontWeight: 600 }}>
+                  {gridPublicLabel ? `Everyone on ${gridPublicLabel}` : "Coming soon"}
+                </div>
+              </button>
             </div>
           </>
         )}

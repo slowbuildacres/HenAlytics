@@ -7027,7 +7027,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "editCalendarEvent") return <EditCalendarEventModal data={data} update={update} eventId={modal.eventId} onClose={close} />;
   if (modal.type === "editZone") return <EditZoneModal data={data} update={update} onClose={close} />;
   if (modal.type === "viewDayEvents") return <ViewDayEventsModal data={data} update={update} date={modal.date} setModal={setModal} onClose={close} />;
-  if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} /* GARDEN_GRID */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />;
+  if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} /* GARDEN_GRID */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport={() => setModal({ type: "support" })} />;
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
