@@ -817,6 +817,103 @@ function HorseDeathModal({ horse, horses, onClose, onSave }) {
 }
 
 // ============ HORSES HOME PAGE ============
+
+// ============================================================================
+// HERD TALLY — count-only tracking that coexists with individual animals
+// ----------------------------------------------------------------------------
+// Lets users record a simple per-sex head count for horses they don't want to
+// track as individual records. Lives ALONGSIDE the individual animal list — it
+// does not replace it, and deliberately does NOT feed breeding, pedigree,
+// history, or sales (all of which stay individual-animal-only). Stored as
+// hobby.herdTally, an object keyed by these category labels.
+// ============================================================================
+function HerdTallySection({ hobby, update }) {
+  const HERD_TALLY_CATEGORIES = ["Mare","Stallion","Gelding","Foal","Unsexed"];
+  const [open, setOpen] = useState(false);
+  const tally = hobby.herdTally || {};
+  const total = HERD_TALLY_CATEGORIES.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const present = HERD_TALLY_CATEGORIES.filter(k => (Number(tally[k]) || 0) > 0);
+
+  // Local string state per category so inputs can be cleared while editing.
+  const [counts, setCounts] = useState(() => {
+    const init = {};
+    HERD_TALLY_CATEGORIES.forEach(k => { init[k] = String(Number(tally[k]) || 0); });
+    return init;
+  });
+  const openModal = () => {
+    const init = {};
+    HERD_TALLY_CATEGORIES.forEach(k => { init[k] = String(Number((hobby.herdTally || {})[k]) || 0); });
+    setCounts(init);
+    setOpen(true);
+  };
+  const previewTotal = HERD_TALLY_CATEGORIES.reduce((s, k) => s + (Number(counts[k]) || 0), 0);
+  const save = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      if (!h) return d;
+      const next = {};
+      HERD_TALLY_CATEGORIES.forEach(k => {
+        const n = Math.max(0, Math.floor(Number(counts[k]) || 0));
+        if (n > 0) next[k] = n;
+      });
+      h.herdTally = next;
+      return d;
+    });
+    setOpen(false);
+  };
+
+  return (
+    <>
+      <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, marginBottom: total > 0 ? 10 : 0 }}>
+          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1 }}>
+            Herd tally{total > 0 ? ` · ${total} head` : ""}
+          </div>
+          <Btn small variant="ghost" onClick={openModal}>{total > 0 ? "Edit tally" : "Set up tally"}</Btn>
+        </div>
+        {total > 0 ? (
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {present.map(k => (
+              <div key={k} style={{ display: "flex", alignItems: "baseline", gap: 6, background: palette.bgAlt, borderRadius: 8, padding: "6px 10px" }}>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1 }}>{Number(tally[k]) || 0}</span>
+                <span style={{ fontSize: 12, color: palette.inkSoft }}>{k}</span>
+              </div>
+            ))}
+          </div>
+        ) : (
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 6, lineHeight: 1.5 }}>
+            Got horses you don't want to name individually? Record a simple head count by sex here — separate from your named animals.
+          </div>
+        )}
+      </div>
+      {open && (
+        <Modal open onClose={() => setOpen(false)} title="Herd tally">
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+            Record a head count by sex for horses you don't want to track individually. Separate from your named animals — it doesn't affect breeding, history, or sales.
+          </div>
+          {HERD_TALLY_CATEGORIES.map(k => (
+            <Field key={k} label={k}>
+              <input
+                type="number" inputMode="numeric" min={0} style={inputStyle}
+                value={counts[k]}
+                onChange={e => setCounts(c => ({ ...c, [k]: e.target.value }))}
+                placeholder="0"
+              />
+            </Field>
+          ))}
+          <div style={{ fontSize: 13, color: palette.ink, marginBottom: 14 }}>
+            Total: <strong>{previewTotal}</strong> head
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <Btn variant="ghost" onClick={() => setOpen(false)}>Cancel</Btn>
+            <Btn variant="accent" onClick={save}>Save tally</Btn>
+          </div>
+        </Modal>
+      )}
+    </>
+  );
+}
+
 export default function HorsesPage({ hobby, data, update, setModal }) {
   const [horseModal, setHorseModal] = useState({ open: false, horse: null });
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
@@ -1056,6 +1153,7 @@ export default function HorsesPage({ hobby, data, update, setModal }) {
         {foalsBornThisYear > 0 && <StatCard label={`Foals ${new Date().getFullYear()}`} value={foalsBornThisYear} accent={palette.leaf} />}
         <StatCard label="Rides last 7d" value={ridesLast7.length} sub={`${minutesLast7} min`} accent={palette.yolk} />
       </div>
+      <HerdTallySection hobby={hobby} update={update}/>
 
       {/* Quick actions */}
       <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8,marginBottom:18 }}>

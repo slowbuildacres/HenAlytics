@@ -2972,7 +2972,7 @@ export default function HomesteadApp() {
       {signedOutRemotely && (
         <div
           data-no-keyboard-shift
-          onClick={() => setModal({ type: "auth" })}
+          onClick={() => setModal({ type: "signin" })}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
             background: "#C84B31", color: "#FAF5EA",
@@ -3117,21 +3117,45 @@ export default function HomesteadApp() {
         position: "sticky", top: 0, zIndex: 50,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end", maxWidth: 720, margin: "0 auto" }}>
-          <button
-            onClick={() => setModal({ type: "renameHomestead" })}
-            style={{
-              background: "none", border: "none", padding: 0, cursor: "pointer",
-              textAlign: "left", color: palette.ink,
-            }}
-            title="Rename homestead"
-          >
-            <div style={{ fontSize: 10, letterSpacing: 2, textTransform: "uppercase", color: palette.inkSoft, marginBottom: 2 }}>
-              {data.homesteadName ? "your homestead" : "tap to name your homestead"}
-            </div>
-            <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 32, margin: 0, color: palette.ink, lineHeight: 1 }}>
-              {data.homesteadName || "the homestead"}
-            </h1>
-          </button>
+          {(() => {
+            // The header's small label doubles as an auth-state indicator.
+            // Three cases:
+            //   - Supabase not configured  → no auth concept; behave as before
+            //     (label is just "your homestead", tap = rename).
+            //   - Signed in                → same as before.
+            //   - Not signed in            → label surfaces the signed-out
+            //     state and the tap opens the auth modal instead of rename.
+            //
+            // Note: the homestead NAME itself stays visible when signed out —
+            // it's local data and still valid offline / in local-only mode.
+            // Only the label and tap target change. We use "not signed in"
+            // rather than "signed out" so it reads correctly both for users
+            // who just signed out and users who never made an account.
+            const isSignedOut = isSupabaseConfigured && !user;
+            const labelText = isSignedOut
+              ? "not signed in · tap to sign in"
+              : (data.homesteadName ? "your homestead" : "tap to name your homestead");
+            return (
+              <button
+                onClick={() => setModal({ type: isSignedOut ? "signin" : "renameHomestead" })}
+                style={{
+                  background: "none", border: "none", padding: 0, cursor: "pointer",
+                  textAlign: "left", color: palette.ink,
+                }}
+                title={isSignedOut ? "Sign in" : "Rename homestead"}
+              >
+                <div style={{
+                  fontSize: 10, letterSpacing: 2, textTransform: "uppercase",
+                  color: isSignedOut ? "#C84B31" : palette.inkSoft, marginBottom: 2,
+                }}>
+                  {labelText}
+                </div>
+                <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 32, margin: 0, color: palette.ink, lineHeight: 1 }}>
+                  {data.homesteadName || "the homestead"}
+                </h1>
+              </button>
+            );
+          })()}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <SyncIndicator status={syncStatus} signedIn={!!user} />
             {/* Top-right Heart was here — moved to the bottom nav as a
@@ -4686,6 +4710,62 @@ function GardenSummary({ hobby, data, update, setModal }) {
           <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {totalHarvest.toFixed(1)} harvested · day {days}</div>
         </div>
       </div>
+
+      {/* Annuals list — what's planted this season, grouped by plant name.
+          Sourced from the same season-scoped "planted" entries as the count
+          above, so the list and the "N annuals" stat always agree. Tapping a
+          row opens that planting's log entry. Shown only when there's at
+          least one planting; an empty season just shows the stat card. */}
+      {(() => {
+        const plantedEntries = seasonEntries.filter((e) => e.action === "planted");
+        if (plantedEntries.length === 0) return null;
+        // Group by plant name (case-insensitive). Each group tracks total
+        // quantity and the most recent plant date for a subtitle.
+        const groups = {};
+        plantedEntries.forEach((e) => {
+          const name = (e.plant || "Unnamed").trim() || "Unnamed";
+          const key = name.toLowerCase();
+          if (!groups[key]) groups[key] = { name, qty: 0, lastDate: e.date, count: 0 };
+          groups[key].qty += Number(e.quantity) || 0;
+          groups[key].count += 1;
+          if (e.date > groups[key].lastDate) groups[key].lastDate = e.date;
+        });
+        const rows = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+        return (
+          <div style={{
+            background: palette.card, border: `1.5px solid ${palette.line}`,
+            borderRadius: 12, padding: 14, marginBottom: 10,
+          }}>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              Annuals this season
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {rows.map((r) => (
+                <div
+                  key={r.name}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "8px 10px", background: palette.bgAlt, borderRadius: 8,
+                  }}
+                >
+                  <Sprout size={15} color={palette.leaf} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: palette.ink }}>{r.name}</div>
+                    <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                      {r.count > 1 ? `${r.count} plantings · ` : ""}last {r.lastDate}
+                    </div>
+                  </div>
+                  {r.qty > 0 && (
+                    <span style={{ fontSize: 13, fontWeight: 600, color: palette.inkSoft, flexShrink: 0 }}>
+                      ×{r.qty}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Garden Map card — opens the photo-based visualizer */}
       <div
@@ -9147,6 +9227,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
       name: newName.trim(),
       bandColor: newBandColor,
       breed: resolvedBreed,
+      sex: "",
       notes: "",
     }]);
     setNewName("");
@@ -9292,6 +9373,41 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
                   <option key={c.hex || "none"} value={c.hex}>{c.label}</option>
                 ))}
               </select>
+              {/* Sex — hen / rooster / unknown. Three-way segmented control.
+                  Optional; defaults to unset. Kept independent of the flock-
+                  level females/males counts (those stay user-managed); this
+                  is per-named-bird identity only. */}
+              {(() => {
+                const SEX_OPTS = [
+                  { val: "", label: "—" },
+                  { val: "hen", label: "🐔 Hen" },
+                  { val: "rooster", label: "🐓 Rooster" },
+                ];
+                return (
+                  <div style={{ display: "flex", gap: 4, marginTop: 6 }}>
+                    {SEX_OPTS.map(opt => {
+                      const active = (b.sex || "") === opt.val;
+                      return (
+                        <button
+                          key={opt.val || "unset"}
+                          type="button"
+                          onClick={() => updateBird(b.id, { sex: opt.val })}
+                          style={{
+                            flex: 1, padding: "6px 4px",
+                            background: active ? palette.ink : "transparent",
+                            color: active ? palette.bg : palette.inkSoft,
+                            border: `1.5px solid ${active ? palette.ink : palette.line}`,
+                            borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+                            fontSize: 12, fontWeight: 600,
+                          }}
+                        >
+                          {opt.label}
+                        </button>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               {/* Breed editor — pre-populated for existing birds. We use the
                   same "Other" surface pattern as the add form: when the bird's
                   saved breed isn't in our preset list, show "Other" + a text

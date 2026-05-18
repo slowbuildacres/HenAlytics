@@ -55,6 +55,116 @@ function Modal({open,onClose,title,children}){
 function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1}}>{value}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
 function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{title}</div>{children}</div>;}
 
+// ============================================================================
+// HERD TALLY — count-only tracking that coexists with individual animals
+// ----------------------------------------------------------------------------
+// For users who don't want to create an individual record for every animal
+// (e.g. a meat herd), the herd tally lets them record simple per-sex counts.
+// It lives ALONGSIDE the individual animal list — it does not replace it, and
+// it deliberately does NOT feed breeding, pedigree, history, or sales, all of
+// which remain individual-animal-only. It's purely a headcount.
+//
+// Stored as hobby.herdTally — an object keyed by the hobby's own sex labels
+// (GOAT_SEXES here) plus an "Unsexed" catch-all bucket. Absent/empty means the
+// user hasn't used the feature; the card then shows a low-key prompt instead.
+// ============================================================================
+
+// The categories shown in the tally: this hobby's sexes plus an Unsexed bucket.
+const HERD_TALLY_CATEGORIES = [...GOAT_SEXES, "Unsexed"];
+
+// Sum a herdTally object safely (handles undefined / missing keys).
+function herdTallyTotal(tally){
+  if(!tally||typeof tally!=="object")return 0;
+  return HERD_TALLY_CATEGORIES.reduce((s,k)=>s+(Number(tally[k])||0),0);
+}
+
+function HerdTallyCard({hobby,setModal}){
+  const tally=hobby.herdTally||{};
+  const total=herdTallyTotal(tally);
+  // Only the categories with a positive count, for a compact summary line.
+  const present=HERD_TALLY_CATEGORIES.filter(k=>(Number(tally[k])||0)>0);
+  return (
+    <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:total>0?10:0}}>
+        <div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1}}>
+          Herd tally{total>0?` · ${total} head`:""}
+        </div>
+        <Btn small variant="ghost" onClick={()=>setModal({type:"herdTally",hobbyId:hobby.id})}>
+          {total>0?"Edit tally":"Set up tally"}
+        </Btn>
+      </div>
+      {total>0 ? (
+        <div style={{display:"flex",flexWrap:"wrap",gap:8}}>
+          {present.map(k=>(
+            <div key={k} style={{display:"flex",alignItems:"baseline",gap:6,background:palette.bgAlt,borderRadius:8,padding:"6px 10px"}}>
+              <span style={{fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink,lineHeight:1}}>{Number(tally[k])||0}</span>
+              <span style={{fontSize:12,color:palette.inkSoft}}>{k}</span>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{fontSize:12,color:palette.inkSoft,marginTop:6,lineHeight:1.5}}>
+          Got animals you don't want to name individually? Record a simple head count by sex here — separate from your named goats above.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function HerdTallyModal({hobby,update,onClose}){
+  const existing=hobby.herdTally||{};
+  // Local string state per category so the inputs can be cleared while editing.
+  const [counts,setCounts]=useState(()=>{
+    const init={};
+    HERD_TALLY_CATEGORIES.forEach(k=>{init[k]=String(Number(existing[k])||0);});
+    return init;
+  });
+  const setOne=(k,v)=>setCounts(c=>({...c,[k]:v}));
+  const previewTotal=HERD_TALLY_CATEGORIES.reduce((s,k)=>s+(Number(counts[k])||0),0);
+
+  const save=()=>{
+    update(d=>{
+      const h=d.hobbies.find(x=>x.id===hobby.id);
+      if(!h)return d;
+      const tally={};
+      HERD_TALLY_CATEGORIES.forEach(k=>{
+        const n=Math.max(0,Math.floor(Number(counts[k])||0));
+        if(n>0)tally[k]=n;
+      });
+      // Store the object; if everything is zero we still store {} so the
+      // feature reads as "set up but empty" consistently.
+      h.herdTally=tally;
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Herd tally">
+      <div style={{fontSize:13,color:palette.inkSoft,marginBottom:14,lineHeight:1.5}}>
+        Record a head count by sex for animals you don't want to track individually. This is separate from your named goats — it doesn't affect breeding, history, or sales.
+      </div>
+      {HERD_TALLY_CATEGORIES.map(k=>(
+        <Field key={k} label={k}>
+          <input
+            type="number" inputMode="numeric" min={0} style={inputStyle}
+            value={counts[k]}
+            onChange={e=>setOne(k,e.target.value)}
+            placeholder="0"
+          />
+        </Field>
+      ))}
+      <div style={{fontSize:13,color:palette.ink,marginBottom:14}}>
+        Total: <strong>{previewTotal}</strong> head
+      </div>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant="accent" onClick={save}>Save tally</Btn>
+      </div>
+    </Modal>
+  );
+}
+
 function AnimalModal({animal,hobbyId,animals,update,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
@@ -691,6 +801,7 @@ function GoatHome({hobby,entries,sales,update,setModal,customers=[]}){
           <Btn small variant="accent" onClick={()=>setModal({type:"addAnimal",hobbyId:hobby.id})}><Plus size={14} style={{marginRight:4}}/>Add goat</Btn>
         </div>
       </div>
+      <HerdTallyCard hobby={hobby} setModal={setModal}/>
       {upcomingKiddings.length>0 && (
         <div style={{padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,marginBottom:12,color:palette.ink}}>
           <div style={{fontSize:11,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,fontWeight:600,marginBottom:6}}>Upcoming kiddings</div>
@@ -798,6 +909,7 @@ function GoatModalRouter({modal,hobby,update,onClose}){
   if(!modal)return null;
   if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;
   if(modal.type==="editAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} update={update} onClose={onClose}/>;}
+  if(modal.type==="herdTally")return <HerdTallyModal hobby={hobby} update={update} onClose={onClose}/>;
   return null;
 }
 
