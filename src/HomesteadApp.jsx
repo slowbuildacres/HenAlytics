@@ -9173,6 +9173,31 @@ function AddFlockModal({ hobbyId, update, onClose }) {
 // leg band color. Doesn't replace birdCount on the flock — these are favorites
 // or otherwise notable birds the user wants to track by name.
 // ============================================================================
+// Small circular profile photo for a named bird, shown in the bird-row header
+// next to the name. Renders nothing if the bird has no photos yet (the band-
+// color dot already marks the row, so an empty circle would just be noise).
+function BirdProfileCircle({ bird, size = 26 }) {
+  const profile = animalProfilePhotoOf(bird);
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!profile) { setUrl(null); return; }
+    resolveAnimalPhotoUrl(profile.path).then((u) => {
+      if (!cancelled) setUrl(u || null);
+    });
+    return () => { cancelled = true; };
+  }, [profile && profile.path]);
+  if (!profile) return null;
+  return (
+    <span style={{
+      display: "inline-block", width: size, height: size, borderRadius: "50%",
+      flexShrink: 0, border: `1.5px solid ${palette.line}`, background: palette.bgAlt,
+      backgroundImage: url ? `url(${url})` : "none",
+      backgroundSize: "cover", backgroundPosition: "center",
+    }} />
+  );
+}
+
 // Resolves a storage path to a signed URL and renders a thumbnail. Signed
 // URLs are short-lived so we resolve fresh on mount rather than caching.
 function BirdPhotoThumb({ path, size = 52 }) {
@@ -9495,6 +9520,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
               borderRadius: 10,
             }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 8 }}>
+                <BirdProfileCircle bird={b} />
                 {b.bandColor && (
                   <span style={{
                     display: "inline-block", width: 14, height: 14, borderRadius: "50%",

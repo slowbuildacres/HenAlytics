@@ -736,6 +736,27 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
 // ANIMAL CARD — single rabbit row with action buttons, recent activity,
 // and pedigree button. Matches Pigs/Goats/Cows pattern.
 // ============================================================================
+// Small profile photo for a rabbit, shown in the card header where the emoji
+// is. Falls back to the 🐇 emoji when the rabbit has no photos yet.
+function RabbitProfileCircle({animal,size=20}){
+  const profile=profilePhotoOf(animal);
+  const[url,setUrl]=useState(null);
+  useEffect(()=>{
+    let cancelled=false;
+    if(!profile){setUrl(null);return;}
+    resolveAnimalPhotoUrl(profile.path).then(u=>{if(!cancelled)setUrl(u||null);});
+    return()=>{cancelled=true;};
+  },[profile&&profile.path]);
+  if(!profile||!url){
+    return <span style={{fontSize:18}}>🐇</span>;
+  }
+  return <span style={{
+    display:"inline-block",width:size,height:size,borderRadius:"50%",
+    flexShrink:0,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,
+    backgroundImage:`url(${url})`,backgroundSize:"cover",backgroundPosition:"center",
+  }}/>;
+}
+
 function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,hideHutchChip}){
   const[logAction,setLogAction]=useState(null);
   const[showPedigree,setShowPedigree]=useState(false);
@@ -788,7 +809,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
         <div>
           <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}>
-            <span style={{fontSize:18}}>🐇</span>
+            <RabbitProfileCircle animal={animal} />
             <span style={{fontWeight:700,fontSize:15,color:palette.ink}}>{animal.name}</span>
             {animal.breed && <span style={{fontSize:11,background:palette.bgAlt,padding:"2px 8px",borderRadius:4,color:palette.inkSoft}}>{animal.breed}</span>}
             <span style={{fontSize:11,background:palette.bgAlt,padding:"2px 8px",borderRadius:4,color:palette.inkSoft}}>{animal.sex}</span>
