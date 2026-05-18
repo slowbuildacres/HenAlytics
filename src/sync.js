@@ -60,13 +60,27 @@ async function ensureHomestead(userId) {
       return { membership: m, score };
     });
 
+    // 1. Honor the cached active homestead — the one the user was last on —
+    //    whenever it's still a homestead they actually belong to. This is the
+    //    user's "current context": for a farmhand who switched to a shared
+    //    homestead, the cache IS the shared homestead and must win.
+    //
+    //    The cache is honored REGARDLESS of score. The old code required
+    //    score > 0 here; that gate was the bug. A freshly-created shared
+    //    homestead can legitimately score 0, and when the gate failed the
+    //    code fell through to the owner-preference block below — silently
+    //    stranding the farmhand on their own private homestead and never
+    //    showing them the homestead they joined.
     if (cachedId) {
       const cachedMatch = scored.find((s) => s.membership.homestead_id === cachedId);
-      if (cachedMatch && cachedMatch.score > 0) {
+      if (cachedMatch) {
         return { id: cachedMatch.membership.homestead_id, role: cachedMatch.membership.role };
       }
     }
 
+    // 2. Cold start only (no cache, or cache pointed at a homestead the user
+    //    no longer belongs to): default to a homestead the user OWNS. Tie-break
+    //    by score, then earliest joined_at.
     const owned = scored.filter((s) => s.membership.role === 'owner');
     if (owned.length > 0) {
       owned.sort((a, b) => {
@@ -77,6 +91,8 @@ async function ensureHomestead(userId) {
       return { id: chosen.homestead_id, role: chosen.role };
     }
 
+    // 3. No owned homestead at all (a farmhand who never created their own):
+    //    fall back to the highest-scored shared homestead.
     scored.sort((a, b) => b.score - a.score);
     const chosen = scored[0].membership;
     return { id: chosen.homestead_id, role: chosen.role };
@@ -263,8 +279,26 @@ export async function loadHomestead(user) {
       }
       return { source: 'cloud-empty', data: null, homesteadId: id, role };
     } catch (e) {
-      console.warn('Falling back to local cache after cloud error', e);
-      return { source: 'local', data: readLocalHomestead() };
+      console.warn('[LOAD] cloud read failed — falling back to local cache', e);
+      // Distinguish a genuine cloud-read FAILURE (signed-in user, cloud
+      // unreachable / dead session) from the normal local path. The save
+      // path already surfaces auth failures; the read path previously did
+      // not — a signed-in user whose cloud read failed silently got a stale
+      // local snapshot with no indication it was stale. cloudFailed lets
+      // HomesteadApp surface the same "not synced" banner on load.
+      const msg = String((e && (e.message || e.error_description || e.name)) || '').toLowerCase();
+      const isAuth =
+        msg.includes('refresh token') ||
+        msg.includes('jwt') ||
+        msg.includes('not authenticated') ||
+        msg.includes('access control') ||
+        (e && (e.status === 401 || e.status === 403));
+      return {
+        source: 'local',
+        data: readLocalHomestead(),
+        cloudFailed: true,
+        reason: isAuth ? 'auth' : 'error',
+      };
     }
   }
   return { source: 'local', data: readLocalHomestead() };
@@ -452,6 +486,78 @@ export async function updateMemberChoreEmails(memberUserId, optIn) {
 
 export function getActiveHomesteadId() {
   return readActiveHomesteadId();
+}
+
+// List every homestead the user belongs to — both ones they own and ones
+// they're a farmhand on. Powers the homestead switcher UI. Returns an array
+// of { homesteadId, role, joinedAt, name, isActive } sorted owner-first.
+export async function listMyHomesteads(user) {
+  if (!user || !isSupabaseConfigured) return [];
+
+  const { data: memberships, error } = await supabase
+    .from('homestead_members')
+    .select('homestead_id, role, joined_at, homesteads(id, data)')
+    .eq('user_id', user.id)
+    .order('joined_at', { ascending: true });
+
+  if (error) {
+    console.error('listMyHomesteads failed', error);
+    throw new Error(error.message || 'Could not load your homesteads');
+  }
+
+  const activeId = readActiveHomesteadId();
+
+  return (memberships || [])
+    .map((m) => {
+      const data = (m.homesteads && m.homesteads.data) || {};
+      const name =
+        (typeof data.homesteadName === 'string' && data.homesteadName.trim()) ||
+        (m.role === 'owner' ? 'My Homestead' : 'Shared Homestead');
+      return {
+        homesteadId: m.homestead_id,
+        role: m.role,
+        joinedAt: m.joined_at,
+        name,
+        isActive: m.homestead_id === activeId,
+      };
+    })
+    .sort((a, b) => {
+      // Owned homesteads first, then by join order.
+      if (a.role !== b.role) return a.role === 'owner' ? -1 : 1;
+      return new Date(a.joinedAt) - new Date(b.joinedAt);
+    });
+}
+
+// Deliberately switch the active homestead. Validates that the target is a
+// homestead the user actually belongs to (so a stale or bad id can't strand
+// them), writes it to the cache, and clears the local data mirror so the
+// next loadHomestead() pulls fresh cloud data for the new homestead instead
+// of showing the previous homestead's cached rows.
+export async function setActiveHomestead(user, homesteadId) {
+  if (!user || !isSupabaseConfigured) throw new Error('Sign in first');
+  if (!homesteadId) throw new Error('No homestead specified');
+
+  const { data: membership, error } = await supabase
+    .from('homestead_members')
+    .select('homestead_id, role')
+    .eq('user_id', user.id)
+    .eq('homestead_id', homesteadId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('setActiveHomestead membership check failed', error);
+    throw new Error(error.message || 'Could not switch homestead');
+  }
+  if (!membership) {
+    throw new Error('You are not a member of that homestead.');
+  }
+
+  writeActiveHomesteadId(homesteadId);
+  // Drop the local mirror — it belongs to the old homestead. The caller
+  // should follow this with a loadHomestead() to repopulate from cloud.
+  try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
+
+  return { homesteadId, role: membership.role };
 }
 
 async function sendEmail(payload) {

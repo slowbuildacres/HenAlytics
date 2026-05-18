@@ -4,7 +4,7 @@ import {
   Skull, Bird, Home, BarChart3, X, ChevronDown, ChevronUp, Calendar, DollarSign, Sparkles,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
-  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
+  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle, Check,
   MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
@@ -69,6 +69,7 @@ import {
   loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
   sendFeedback, acceptInvite, deleteAccount,
+  listMyHomesteads, setActiveHomestead,
 } from "./sync.js";
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
@@ -2212,6 +2213,138 @@ function SyncIndicator({ status, signedIn }) {
   );
 }
 
+// ============ HOMESTEAD SWITCHER ============
+// Inline dropdown attached under the homestead name in the header. Only
+// renders its toggle arrow when the user belongs to 2+ homesteads (owns
+// their own AND/OR is a farmhand on others). Tapping the arrow expands an
+// inline panel listing every homestead; tapping one switches to it.
+function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhands }) {
+  const [open, setOpen] = useState(false);
+  const [homesteads, setHomesteads] = useState(null); // null = not loaded yet
+  const [switching, setSwitching] = useState(false);
+  const [error, setError] = useState("");
+
+  // Load the list once on mount. It's a single lightweight query and it's
+  // the only way to know whether to show the switcher at all — users with
+  // one homestead should see nothing. If the query fails we just render
+  // nothing (the switcher is non-essential; the header name still works).
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const list = await listMyHomesteads(user);
+        if (!cancelled) setHomesteads(list);
+      } catch (e) {
+        if (!cancelled) setHomesteads([]); // treat failure as "nothing to show"
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
+
+  const pick = async (h) => {
+    if (h.isActive || switching) return;
+    setSwitching(true);
+    setError("");
+    try {
+      await onSwitch(h.homesteadId);
+      setOpen(false);
+    } catch (e) {
+      setError(e.message || "Could not switch homestead");
+      setSwitching(false);
+    }
+  };
+
+  // Render nothing until we've confirmed the user has 2+ homesteads.
+  if (!homesteads || homesteads.length < 2) return null;
+
+  return (
+    <div style={{ position: "relative", marginTop: 3 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        aria-label="Switch homestead"
+        title="Switch homestead"
+        style={{
+          background: "none", border: "none", padding: "2px 4px", cursor: "pointer",
+          color: palette.inkSoft, display: "flex", alignItems: "center", gap: 3,
+          fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600,
+        }}
+      >
+        Switch homestead
+        <ChevronDown
+          size={13}
+          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
+        />
+      </button>
+
+      {open && (
+        <div style={{
+          position: "absolute", top: "100%", left: 0, marginTop: 4,
+          minWidth: 240, maxWidth: 300,
+          background: palette.card, border: `2px solid ${palette.ink}`,
+          borderRadius: 12, boxShadow: `4px 5px 0 ${palette.line}`,
+          zIndex: 60, overflow: "hidden",
+        }}>
+          {error && (
+            <div style={{
+              padding: 12, fontSize: 12, color: palette.accent, fontFamily: FONT_BODY,
+              lineHeight: 1.5,
+            }}>
+              {error}
+            </div>
+          )}
+
+          <div>
+            {homesteads.map((h) => (
+              <button
+                key={h.homesteadId}
+                onClick={() => pick(h)}
+                disabled={switching}
+                style={{
+                  display: "flex", alignItems: "center", gap: 8, width: "100%",
+                  padding: "11px 13px", background: h.isActive ? palette.bgAlt : "transparent",
+                  border: "none", borderBottom: `1px solid ${palette.line}`,
+                  cursor: h.isActive || switching ? "default" : "pointer",
+                  textAlign: "left", fontFamily: FONT_BODY,
+                  opacity: switching && !h.isActive ? 0.5 : 1,
+                }}
+              >
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{
+                    fontSize: 14, fontWeight: 600, color: palette.ink,
+                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+                  }}>
+                    {h.name}
+                  </div>
+                  <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                    {h.role === "owner" ? "Owner" : "Farmhand"}
+                  </div>
+                </div>
+                {h.isActive && <Check size={16} color={palette.leaf} style={{ flexShrink: 0 }} />}
+              </button>
+            ))}
+
+            {/* Manage farmhands — owner only. Sits at the bottom of the
+                panel so the common action (switching) stays on top. */}
+            {role === "owner" && (
+              <button
+                onClick={() => { setOpen(false); onManageFarmhands(); }}
+                style={{
+                  display: "flex", alignItems: "center", gap: 7, width: "100%",
+                  padding: "11px 13px", background: "transparent", border: "none",
+                  cursor: "pointer", textAlign: "left",
+                  fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.inkSoft,
+                }}
+              >
+                <UserPlus size={14} /> Manage farmhands
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ============ MAIN APP ============
 export default function HomesteadApp() {
   const [data, setData] = useState(null);
@@ -2253,6 +2386,9 @@ export default function HomesteadApp() {
   const [customEnd, setCustomEnd] = useState("");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
+  // Bumped by the homestead switcher to force the load effect to re-run and
+  // pull the newly-selected homestead's data from cloud.
+  const [homesteadReloadKey, setHomesteadReloadKey] = useState(0);
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
   // Password recovery flow:
   //
@@ -2624,7 +2760,13 @@ export default function HomesteadApp() {
   // "fix" it later by adding it to deps and breaking the intent.
 
   const [syncStatus, setSyncStatus] = useState("idle");
-  const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
+  // Drives the top "not synced" banner. true = show it. signedOutRemotely is
+  // the long-standing name; it now covers both a genuinely dead session and
+  // a failed cloud read. syncBannerReason refines the message:
+  //   "auth"    → session is dead, tapping should re-open sign-in
+  //   "network" → cloud unreachable, tapping should just retry/dismiss
+  const [signedOutRemotely, setSignedOutRemotely] = useState(false);
+  const [syncBannerReason, setSyncBannerReason] = useState("auth");
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
 
@@ -2869,6 +3011,23 @@ export default function HomesteadApp() {
       // Track the user's role on the active homestead (used by FarmhandModal)
       setRole(result.role || null);
 
+      // The cloud READ failed for a signed-in user — they're about to be
+      // shown a stale local snapshot. Previously this was silent: a farmhand
+      // whose cloud read failed saw their wife's homestead frozen at the last
+      // good sync and had no idea new entries weren't loading. The save path
+      // already surfaces auth failures; this gives the read path parity.
+      // Only flag it when the user IS signed in — a genuinely signed-out
+      // user has their own handling and shouldn't see "not synced".
+      if (user && result.cloudFailed) {
+        setSyncBannerReason(result.reason === "auth" ? "auth" : "network");
+        setSignedOutRemotely(true);
+      } else if (user && (result.source === "cloud" || result.source === "cloud-empty")) {
+        // Cloud read succeeded — if a "not synced" banner was up from an
+        // earlier failed read/retry, clear it. (A genuine SIGNED_OUT auth
+        // event re-sets it via its own listener, so this won't mask that.)
+        setSignedOutRemotely(false);
+      }
+
       const prevUser = prevUserRef.current;
 
       // Case 1: User just signed in (was null, now an object)
@@ -2905,7 +3064,7 @@ export default function HomesteadApp() {
       prevUserRef.current = user;
     })();
     return () => { cancelled = true; };
-  }, [user, authReady]);
+  }, [user, authReady, homesteadReloadKey]);
 
   // ---- Save with debouncing whenever data changes ----
   // We don't save on every keystroke — wait 500ms after the last change to coalesce edits.
@@ -3049,6 +3208,20 @@ export default function HomesteadApp() {
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
 
+  // ---- Switch the active homestead ----
+  // Called by the header HomesteadSwitcher. setActiveHomestead() updates the
+  // cached active-homestead id in sync.js and clears the local data mirror;
+  // bumping homesteadReloadKey then re-runs the load effect, which pulls the
+  // newly-selected homestead's data from cloud via the normal load path.
+  const switchHomestead = async (homesteadId) => {
+    if (!user) return;
+    // Skip the pending debounced save — it belongs to the homestead we're
+    // leaving and must not be written after the mirror is cleared.
+    skipNextSaveRef.current = true;
+    await setActiveHomestead(user, homesteadId);
+    setHomesteadReloadKey((k) => k + 1);
+  };
+
   if (!authReady || !data) {
     return null;
   }
@@ -3122,7 +3295,17 @@ export default function HomesteadApp() {
       {signedOutRemotely && (
         <div
           data-no-keyboard-shift
-          onClick={() => setModal({ type: "signin" })}
+          onClick={() => {
+            if (syncBannerReason === "auth") {
+              setModal({ type: "signin" });
+            } else {
+              // Network failure — re-opening sign-in won't help. Retry the
+              // load by bumping the reload key, and clear the banner; if the
+              // cloud is still unreachable the load effect will set it again.
+              setSignedOutRemotely(false);
+              setHomesteadReloadKey((k) => k + 1);
+            }
+          }}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
             background: "#C84B31", color: "#FAF5EA",
@@ -3134,7 +3317,9 @@ export default function HomesteadApp() {
             fontWeight: 600, fontSize: 14,
           }}
         >
-          ⚠️ You were signed out on this device — tap to sign back in
+          {syncBannerReason === "auth"
+            ? "⚠️ You're not synced — tap to sign back in"
+            : "⚠️ Can't reach the cloud — showing your last saved data. Tap to retry"}
         </div>
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
@@ -3321,6 +3506,20 @@ export default function HomesteadApp() {
                 }}>
                   🌱 Supporter
                 </span>
+              )}
+              {/* Homestead switcher — self-hides unless the user belongs to
+                  2+ homesteads. Given its own flex-basis:100% so it wraps
+                  onto its own line below the name + badge. */}
+              {!isSignedOut && user && (
+                <div style={{ flexBasis: "100%" }}>
+                  <HomesteadSwitcher
+                    user={user}
+                    currentName={data.homesteadName}
+                    role={role}
+                    onSwitch={switchHomestead}
+                    onManageFarmhands={() => setModal({ type: "farmhand" })}
+                  />
+                </div>
               )}
               </div>
             );
