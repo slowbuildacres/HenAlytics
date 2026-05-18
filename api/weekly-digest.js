@@ -61,6 +61,9 @@ export default async function handler(req, res) {
     const sent = [], skipped = [], failed = [];
 
     for (const h of homesteads) {
+     // WEEKLY_DIGEST_FIX: isolate each homestead. A throw here (e.g. malformed
+     // data) must not abort the digest for every homestead after it.
+     try {
       const data = h.data || {};
       if (!data.weeklyDigestOptIn) { skipped.push({ id: h.id, reason: 'not opted in' }); continue; }
       const ownerId = ownerByHomestead[h.id];
@@ -109,6 +112,11 @@ export default async function handler(req, res) {
 
       // Pace ourselves between recipients — keeps us safely under 5/sec
       await new Promise(r => setTimeout(r, 250));
+     } catch (perHomesteadErr) {
+       // WEEKLY_DIGEST_FIX: one homestead failing must not sink the rest.
+       console.error("Weekly digest: homestead", h.id, "failed:", perHomesteadErr);
+       failed.push({ id: h.id, error: String(perHomesteadErr) });
+     }
     }
 
     return res.status(200).json({ ok: true, sent: sent.length, skipped: skipped.length, failed: failed.length, details: { sent, skipped, failed } });
@@ -129,8 +137,11 @@ function computeWeeklyStats(data) {
 
   const hobbies = data.hobbies || [];
   const allEntries = [];
+  // WEEKLY_DIGEST_FIX: data.entries can be missing entirely on some
+  // homesteads. Without this guard, data.entries[h.id] throws TypeError.
+  const entriesMap = data.entries || {};
   hobbies.forEach((h) => {
-    const live = (data.entries[h.id] || []);
+    const live = (entriesMap[h.id] || []);
     live.forEach((e) => {
       if (e.date >= sevenDaysAgoIso) {
         allEntries.push({ ...e, hobbyType: h.type, hobbyName: h.name, hobbyHidden: h.hidden });
