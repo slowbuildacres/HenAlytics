@@ -66,7 +66,7 @@ function formatEarlyAccessDate(publicDate) {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
 }
 import {
-  loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
+  loadHomestead, saveHomestead, readLocalHomestead, readLocalHomesteadFor, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
   sendFeedback, acceptInvite, deleteAccount,
   listMyHomesteads, setActiveHomestead,
@@ -3037,9 +3037,14 @@ export default function HomesteadApp() {
           skipNextSaveRef.current = true;
           setData(migrateData(result.data));
         } else if (result.source === "cloud-empty") {
-          // No cloud data yet. If they have local data, use it as a starting
-          // point. The next user interaction will save it to cloud naturally.
-          const localData = readLocalHomestead();
+          // No cloud data yet for this account. If THIS user has local data
+          // (e.g. they used the app signed-out, then created an account),
+          // use it as a starting point. readLocalHomesteadFor returns null
+          // if the local mirror belongs to a *different* account — without
+          // that guard, a freshly-created account on a browser that was
+          // previously signed into another account would inherit that
+          // account's homestead (the account-bleed bug).
+          const localData = readLocalHomesteadFor(user.id);
           skipNextSaveRef.current = true;
           setData(migrateData(localData || {}));
         } else {

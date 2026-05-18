@@ -12,9 +12,44 @@ export function readLocalHomestead() {
   }
 }
 
-function writeLocalHomestead(data) {
+// Read local data ONLY if it's safe for the given user to use. The local
+// mirror is tagged with _ownerUserId on every write (see writeLocalHomestead).
+// Three cases:
+//   - tag matches userId      → it's this user's data, return it
+//   - tag is null (untagged)  → "unclaimed" data saved while signed-out;
+//                               safe to adopt (a signed-out user who then
+//                               creates an account keeps their work)
+//   - tag is a DIFFERENT user → another account's data; return null so the
+//                               caller uses defaults / cloud instead. This
+//                               is the account-bleed guard.
+// When userId is null (caller is signed-out) we likewise only return
+// untagged data — never a signed-in account's tagged mirror.
+export function readLocalHomesteadFor(userId) {
+  const local = readLocalHomestead();
+  if (!local) return null;
+  const tag = local._ownerUserId || null;
+  const want = userId || null;
+  if (tag === want) return local;          // exact match
+  if (tag === null) return local;          // untagged / unclaimed — safe to adopt
+  // tag belongs to a different account — do not return it.
+  console.warn('[LOAD] local cache belongs to a different account — ignoring it.');
+  return null;
+}
+
+function writeLocalHomestead(data, ownerUserId) {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    // Tag the mirror with its owning user so a later load by a different
+    // account can detect and reject it. When ownerUserId is omitted we
+    // preserve any tag already on the data (callers that just re-save the
+    // same object), defaulting to null for signed-out local-only data.
+    const tagged = {
+      ...data,
+      _ownerUserId:
+        ownerUserId !== undefined
+          ? ownerUserId
+          : (data && data._ownerUserId) || null,
+    };
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(tagged));
   } catch (e) {
     console.error('Local save failed', e);
   }
@@ -339,7 +374,9 @@ export async function loadHomestead(user) {
         // refreshed on every successful read, so a device that stays synced
         // always has a current baseline and writes normally.
         const stamped = { ...cloud, cloudBaselineAt: updatedAt || null };
-        writeLocalHomestead(stamped);
+        // Tag the local mirror with this user's id so a later load by a
+        // different account on this browser can't reuse it (account-bleed).
+        writeLocalHomestead(stamped, user.id);
         return { source: 'cloud', data: stamped, homesteadId: id, role };
       }
       return { source: 'cloud-empty', data: null, homesteadId: id, role };
@@ -358,19 +395,27 @@ export async function loadHomestead(user) {
         msg.includes('not authenticated') ||
         msg.includes('access control') ||
         (e && (e.status === 401 || e.status === 403));
+      // Owner-guarded read: only fall back to local data that actually
+      // belongs to THIS user. If the local mirror is a different account's
+      // (e.g. they switched accounts in the same browser), this returns
+      // null and the app shows defaults instead of the wrong homestead.
       return {
         source: 'local',
-        data: readLocalHomestead(),
+        data: readLocalHomesteadFor(user.id),
         cloudFailed: true,
         reason: isAuth ? 'auth' : 'error',
       };
     }
   }
-  return { source: 'local', data: readLocalHomestead() };
+  // Signed-out / local-only path. Only return local data that was saved
+  // while signed-out (untagged) — never another signed-in account's mirror.
+  return { source: 'local', data: readLocalHomesteadFor(user ? user.id : null) };
 }
 
 export async function saveHomestead(user, data, cloudReady = true) {
-  writeLocalHomestead(data);
+  // Tag the local mirror with the current user (null when signed out) so a
+  // later load by a different account can't reuse it (account-bleed bug).
+  writeLocalHomestead(data, user ? user.id : null);
 
   if (user && isSupabaseConfigured) {
     if (!cloudReady) {
@@ -397,7 +442,10 @@ export async function saveHomestead(user, data, cloudReady = true) {
       // flagged stale against the cloud state we just created.
       if (result.newBaselineAt) {
         try {
-          writeLocalHomestead({ ...data, cloudBaselineAt: result.newBaselineAt });
+          writeLocalHomestead(
+            { ...data, cloudBaselineAt: result.newBaselineAt },
+            user.id
+          );
         } catch (e) { /* local mirror is best-effort */ }
       }
       return { ok: true, location: 'cloud', newBaselineAt: result.newBaselineAt };
