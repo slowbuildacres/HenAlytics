@@ -1081,11 +1081,11 @@ function StandingsLockedCard({ onOpenSupport }) {
         position: "relative",
       }}
     >
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+      <div style={{ display: "flex", flexDirection: "column", alignItems: "center", textAlign: "center" }}>
         <div
           style={{
             fontSize: 30, lineHeight: 1, flexShrink: 0,
-            width: 52, height: 52, borderRadius: 12,
+            width: 52, height: 52, borderRadius: 12, marginBottom: 12,
             background: palette.yolkSoft,
             border: `1.5px solid ${palette.line}`,
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -1093,7 +1093,7 @@ function StandingsLockedCard({ onOpenSupport }) {
         >
           🔒
         </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ width: "100%" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, lineHeight: 1.15 }}>
             Homestead Standings
           </div>
@@ -1105,7 +1105,7 @@ function StandingsLockedCard({ onOpenSupport }) {
           <div
             style={{
               fontSize: 12, color: palette.inkSoft, marginTop: 10,
-              lineHeight: 1.5, fontStyle: "italic",
+              lineHeight: 1.5, fontStyle: "italic", textAlign: "left",
               background: palette.card, border: `1.5px solid ${palette.line}`,
               borderRadius: 8, padding: "9px 11px",
             }}
