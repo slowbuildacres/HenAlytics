@@ -46,17 +46,32 @@ export default async function handler(req, res) {
     const ownerByHomestead = {};
     owners.forEach((m) => { ownerByHomestead[m.homestead_id] = m.user_id; });
 
-    const usersRes = await fetch(`${SUPABASE}/auth/v1/admin/users?per_page=1000`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (!usersRes.ok) {
-      const errText = await usersRes.text();
-      return res.status(502).json({ error: 'Failed to fetch users', detail: errText });
-    }
-    const usersJson = await usersRes.json();
-    const userList = Array.isArray(usersJson) ? usersJson : (usersJson.users || []);
+    // WEEKLY_DIGEST_USER_PAGINATION: Supabase's admin users endpoint paginates. A single
+    // per_page=1000 fetch silently caps the digest at the first 1000
+    // users — every owner past that gets "no email for owner" and never
+    // receives a digest. Page through all users (mirrors the loop in
+    // send-chore-emails.js). MAX_PAGES is a 50,000-user safety brake.
     const emailByUser = {};
-    userList.forEach((u) => { emailByUser[u.id] = u.email; });
+    const USERS_PER_PAGE = 1000;
+    const MAX_PAGES = 50;
+    for (let page = 1; page <= MAX_PAGES; page++) {
+      const usersRes = await fetch(
+        `${SUPABASE}/auth/v1/admin/users?page=${page}&per_page=${USERS_PER_PAGE}`,
+        { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
+      );
+      if (!usersRes.ok) {
+        const errText = await usersRes.text();
+        return res.status(502).json({ error: 'Failed to fetch users', detail: errText, page });
+      }
+      const usersJson = await usersRes.json();
+      const list = Array.isArray(usersJson) ? usersJson : (usersJson.users || []);
+      list.forEach((u) => { if (u.id && u.email) emailByUser[u.id] = u.email; });
+      // A short page means we have reached the end.
+      if (list.length < USERS_PER_PAGE) break;
+      if (page === MAX_PAGES) {
+        console.warn('[weekly-digest] hit MAX_PAGES users cap; some users may be missing');
+      }
+    }
 
     const sent = [], skipped = [], failed = [];
 
