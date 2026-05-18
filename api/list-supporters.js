@@ -5,16 +5,33 @@
 // Used by the monthly thank-you modal in Henalytics to shout out who
 // chipped in to keep the app running.
 //
+// STEP 2B ADDITION — "Top Sponsor":
+//   The response now also includes a `topSponsors` array: the name(s) of the
+//   supporter(s) with the highest single contribution that month. Ties are
+//   ALL included (co-Top-Sponsors). This is computed server-side from
+//   amount_dollars so per-supporter amounts never leave the server.
+//
+//   "Highest single contribution" in practice = the highest amount_dollars
+//   among that month's active supporters. Note amount_dollars is the display-
+//   tier amount (1/3/5/10 for subs, 5 for the one-time tip), not the literal
+//   charge — the supporters table stores one row per subscription, not one
+//   row per payment, so a true per-payment maximum is not available. Highest
+//   amount_dollars is the closest faithful measure and is what was chosen.
+//
+//   Rows with a null amount_dollars (legacy Payment Link imports, unknown
+//   products) are EXCLUDED from topSponsors ranking — we will not crown a
+//   sponsor on an unknown amount — but they still appear in the normal list.
+//
 // Privacy / safety rules baked in:
 //   - Only returns homestead_name where homestead_name_visible = true
 //   - Skips rows where homestead_name_flagged = true (pending review)
 //   - Skips rows with null/empty homestead_name
-//   - Returns no Stripe IDs, no emails, no user_ids — just names
+//   - Returns no Stripe IDs, no emails, no user_ids, no amounts — just names
 //   - Anonymous endpoint (no auth required) — same names will show to all users
 //
-// "Active during month X" means the supporter row was started_at <= end of month
-// AND (canceled_at is null OR canceled_at >= start of month). One-time tips
-// satisfy this only for the month they were made in (started_at == end window).
+// "Active during month X" means the supporter row was started_at <= end of
+// month AND (canceled_at is null OR canceled_at >= start of month). One-time
+// tips satisfy this only for the month they were made in.
 //
 // Required env vars:
 //   SUPABASE_URL
@@ -95,12 +112,14 @@ export default async function handler(req, res) {
   //
   // We OR these two conditions so both groups appear. A monthly subscriber
   // who canceled mid-month still gets credit for that month — they paid for it.
-  let names;
+  //
+  // STEP 2B: amount_dollars is now selected too — needed to compute Top Sponsor.
+  let rows;
   try {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from('supporters')
-      .select('homestead_name, payment_type, started_at, canceled_at')
+      .select('homestead_name, payment_type, amount_dollars, started_at, canceled_at')
       .eq('homestead_name_visible', true)
       .eq('homestead_name_flagged', false)
       .not('homestead_name', 'is', null)
@@ -112,7 +131,7 @@ export default async function handler(req, res) {
       console.error('list-supporters query failed:', error);
       return res.status(500).json({ error: 'Could not load supporters.' });
     }
-    names = data || [];
+    rows = data || [];
   } catch (e) {
     console.error('list-supporters error:', e);
     return res.status(500).json({ error: 'Could not load supporters.' });
@@ -123,7 +142,7 @@ export default async function handler(req, res) {
   // shouldn't appear in March's list.) This is a post-query filter because
   // Postgres OR conditions don't compose cleanly with the date window above
   // when one branch needs a different started_at constraint.
-  names = names.filter(row => {
+  rows = rows.filter(row => {
     if (row.payment_type !== 'one_time') return true; // monthly already filtered correctly above
     const started = new Date(row.started_at);
     return started >= monthStart && started < monthEnd;
@@ -132,17 +151,52 @@ export default async function handler(req, res) {
   // Dedupe by homestead_name (case-insensitive). If someone has multiple
   // active subscriptions or a sub + one-time, they should only appear once.
   // Keep the oldest entry per name so the list orders by tenure.
+  //
+  // STEP 2B: while deduping, track the HIGHEST amount_dollars seen for each
+  // name. A person with a $10 sub and a $5 one-time tip ranks at $10.
+  // amount_dollars may be null (legacy/unknown rows) — treated as "no known
+  // amount" and never used to win Top Sponsor.
   const seen = new Set();
   const uniqueNames = [];
-  for (const row of names) {
+  const amountByName = new Map(); // lowercased name -> highest known amount (number) or null
+  for (const row of rows) {
     const key = row.homestead_name.trim().toLowerCase();
-    if (seen.has(key)) continue;
+    const amt = (typeof row.amount_dollars === 'number') ? row.amount_dollars : null;
+    if (seen.has(key)) {
+      // Already in the list — just update the tracked max amount.
+      const prev = amountByName.get(key);
+      if (amt !== null && (prev === null || prev === undefined || amt > prev)) {
+        amountByName.set(key, amt);
+      }
+      continue;
+    }
     seen.add(key);
+    amountByName.set(key, amt);
     uniqueNames.push({
       name: row.homestead_name.trim(),
       tier: row.payment_type === 'monthly' ? 'monthly' : 'one_time',
+      _key: key,
     });
   }
+
+  // STEP 2B: compute Top Sponsor(s) — the name(s) with the highest known
+  // amount_dollars this month. Null amounts are ignored entirely. Ties all
+  // win (co-Top-Sponsors). If nobody has a known amount, topSponsors is [].
+  let maxAmount = null;
+  for (const u of uniqueNames) {
+    const amt = amountByName.get(u._key);
+    if (amt === null || amt === undefined) continue;
+    if (maxAmount === null || amt > maxAmount) maxAmount = amt;
+  }
+  const topSponsors = (maxAmount === null)
+    ? []
+    : uniqueNames
+        .filter(u => amountByName.get(u._key) === maxAmount)
+        .map(u => u.name);
+
+  // Strip the internal _key before returning. The public list keeps name +
+  // tier exactly as before (no amounts exposed).
+  const supporters = uniqueNames.map(u => ({ name: u.name, tier: u.tier }));
 
   // Cache for 1 hour at the edge — supporter list changes at most a few
   // times per month, no need to hit Supabase on every modal open.
@@ -150,7 +204,8 @@ export default async function handler(req, res) {
 
   return res.status(200).json({
     month,
-    count: uniqueNames.length,
-    supporters: uniqueNames,
+    count: supporters.length,
+    supporters,
+    topSponsors, // STEP 2B: array of name(s); [] when no rankable amount exists
   });
 }

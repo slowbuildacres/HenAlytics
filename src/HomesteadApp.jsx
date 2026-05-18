@@ -11,6 +11,60 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import AuthModal from "./AuthModal.jsx";
 import FarmhandModal from "./FarmhandModal.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
+
+// STEP2A_EARLY_ACCESS: early-access gate helper.
+// Pure function. Decides whether a gated feature is visible, and to whom.
+// Returns one of: "public" | "supporter" | "early-locked" | "hidden" | "ungated".
+//   featureKey  — the key under app_config early_access .features
+//   config      — the parsed early_access config object (or null)
+//   isSupporter — is the current user a monthly supporter right now
+//   now         — Date (injectable for testing; defaults to new Date())
+// Fail-safety: on a missing/bad config we return "ungated" — the feature
+// behaves as if it was never gated. We never reveal a feature before its
+// publicDate due to a config error, and never permanently hide one past
+// its publicDate due to one (because "ungated" means the caller treats it
+// as normal/visible). The caller decides what "ungated" means for it.
+function earlyAccessState(featureKey, config, isSupporter, now) {
+  const today = now instanceof Date ? now : new Date();
+  if (!featureKey) return "ungated";
+  const features = config && config.features;
+  if (!features || typeof features !== "object") return "ungated";
+  const f = features[featureKey];
+  if (!f || typeof f !== "object" || !f.publicDate) return "ungated";
+
+  // publicDate is a YYYY-MM-DD string. Parse as local midnight.
+  const parts = String(f.publicDate).split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return "ungated";
+  const publicAt = new Date(parts[0], parts[1] - 1, parts[2], 0, 0, 0, 0);
+  if (isNaN(publicAt.getTime())) return "ungated";
+
+  // Past the public date — everyone gets it.
+  if (today.getTime() >= publicAt.getTime()) return "public";
+
+  // Before the public date. If early access is switched off for this
+  // feature, nobody gets it early — it is simply hidden until publicDate.
+  if (f.supporterEarlyAccess !== true) return "hidden";
+
+  // Compute the start of the supporter early-access window.
+  const days = Number(f.earlyAccessDays);
+  const windowDays = (Number.isFinite(days) && days > 0) ? days : 7;
+  const earlyAt = new Date(publicAt.getTime() - windowDays * 24 * 60 * 60 * 1000);
+
+  // Before the early window even opens — hidden from everyone.
+  if (today.getTime() < earlyAt.getTime()) return "hidden";
+
+  // Inside the early window: supporters get in, others see it locked.
+  return isSupporter ? "supporter" : "early-locked";
+}
+
+// STEP2A_EARLY_ACCESS: format a YYYY-MM-DD publicDate for display, e.g. "July 1".
+function formatEarlyAccessDate(publicDate) {
+  const parts = String(publicDate || "").split("-").map(Number);
+  if (parts.length !== 3 || parts.some(isNaN)) return "";
+  const d = new Date(parts[0], parts[1] - 1, parts[2]);
+  if (isNaN(d.getTime())) return "";
+  return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
+}
 import {
   loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
@@ -1132,9 +1186,11 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 40;
+const CURRENT_VERSION = 42;
 
 const WHATS_NEW = [
+  "🌱 Become a Supporter — the monthly membership now comes with real perks: early access to new hobbies and features about a week before everyone else, a Supporter badge next to your homestead name, and a spot on the supporter wall. Every tier gets the same perks — pick the amount that feels right. The one-time tip is still there too. (The app stays free for everyone, always — Supporters just help keep it that way.)",  // STEP2C_SUPPORTER_COPY
+  "⭐ Top Sponsor on the supporter wall — the monthly thank-you now highlights the supporter (or supporters, on a tie) who gave the most that month, in their own spot above the full supporter list. A small thank-you for the folks who go the extra mile to keep Henalytics free for everyone.",  // STEP2B_TOP_SPONSOR
   "💚 Tip button is now in the bottom nav — the heart icon used to live in the top-right corner where a lot of folks missed it. Now it sits in the main nav between Calendar and Sales. When you tip in a given month, the heart fills red so you can see your support at a glance.",
   "🎉 Growth milestone celebrations — when Henalytics hits a new user milestone (1,500, 3,000, 5,000 and up), you'll get a one-time celebration message after your next log entry. Includes an optional tip prompt; dismiss anytime, only shows once per milestone.",
   "🍎 Supporting Henalytics on iOS now uses Apple's In-App Purchase system — same tip tiers, same gratitude, but Apple handles the checkout natively. You can also restore prior purchases and manage your subscription right from the Support menu. (Web continues to use the existing checkout flow.)",
@@ -2175,6 +2231,13 @@ export default function HomesteadApp() {
   const [milestoneConfig, setMilestoneConfig] = useState(null);
   const [userCount, setUserCount] = useState(null);
   const [showMilestone, setShowMilestone] = useState(false);
+  // STEP2A_EARLY_ACCESS: early-access config (app_config row "early_access")
+  // and the current user's monthly-supporter status (/api/supporter-status).
+  // isSupporter starts false and is corrected once the fetch resolves; the
+  // gate treats "not yet known" the same as "not a supporter", which is
+  // the safe default (never grants early access it cannot confirm).
+  const [earlyAccessConfig, setEarlyAccessConfig] = useState(null);
+  const [isSupporter, setIsSupporter] = useState(false);
   const lastEntryCountRef = React.useRef(0);
   // Whether the current user has any supporter row created in the current
   // calendar month. Drives the Tip button visual: outlined heart by default,
@@ -2313,6 +2376,43 @@ export default function HomesteadApp() {
     fetchAll();
     return () => { cancelled = true; };
   }, []);
+  // STEP2A_EARLY_ACCESS: fetch early-access config + current supporter status.
+  // Config comes from the same app_config table the milestone popup uses.
+  // Supporter status comes from /api/supporter-status (JWT-authed). Both
+  // are best-effort: on failure the gate falls back to "ungated" / not a
+  // supporter, so a fetch failure can never wrongly reveal a gated feature.
+  // Re-runs when the signed-in user changes.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isSupabaseConfigured) return;
+      // Early-access config row.
+      try {
+        const { data, error } = await supabase
+          .from("app_config").select("value").eq("id", "early_access").maybeSingle();
+        if (!cancelled && !error && data && data.value && typeof data.value === "object") {
+          setEarlyAccessConfig(data.value);
+        }
+      } catch (e) {
+        if (!cancelled) console.warn("[early-access] config fetch failed:", e);
+      }
+      // Current supporter status — requires a signed-in user.
+      if (!user) { if (!cancelled) setIsSupporter(false); return; }
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.access_token) { if (!cancelled) setIsSupporter(false); return; }
+        const r = await fetch("/api/supporter-status", {
+          headers: { "Authorization": `Bearer ${session.access_token}` },
+        });
+        if (!r.ok) { if (!cancelled) setIsSupporter(false); return; }
+        const j = await r.json();
+        if (!cancelled) setIsSupporter(j.isSupporter === true);
+      } catch (e) {
+        if (!cancelled) { console.warn("[early-access] status fetch failed:", e); setIsSupporter(false); }
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [user]);
   // ---- Tipped this month ----
   // Drives the Tip button visual. Queries supporters table for any record
   // this user has created in the current calendar month. Re-runs when user
@@ -3185,6 +3285,11 @@ export default function HomesteadApp() {
               ? "not signed in · tap to sign in"
               : (data.homesteadName ? "your homestead" : "tap to name your homestead");
             return (
+              /* STEP2C_SUPPORTER_BADGE: wrap the rename button + supporter pill in a
+                 flex row. The pill is OUTSIDE the button so tapping it does
+                 nothing (the button is the rename tap target; the pill is
+                 not). The pill shows only for current monthly subscribers. */
+              <div style={{ display: "flex", alignItems: "flex-end", gap: 8, flexWrap: "wrap" }}>
               <button
                 onClick={() => setModal({ type: isSignedOut ? "signin" : "renameHomestead" })}
                 style={{
@@ -3203,6 +3308,20 @@ export default function HomesteadApp() {
                   {data.homesteadName || "the homestead"}
                 </h1>
               </button>
+              {/* STEP2C_SUPPORTER_BADGE: supporter badge — monthly subscribers only. */}
+              {isSupporter && (
+                <span style={{
+                  display: "inline-flex", alignItems: "center", gap: 3,
+                  fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700,
+                  color: palette.bg, background: palette.leaf,
+                  border: `1.5px solid ${palette.ink}`,
+                  borderRadius: 999, padding: "3px 9px",
+                  marginBottom: 3, whiteSpace: "nowrap",
+                }}>
+                  🌱 Supporter
+                </span>
+              )}
+              </div>
             );
           })()}
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -6801,7 +6920,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "setNewPassword") return <AuthModal onClose={close} initialMode="setNewPassword" />;
   if (modal.type === "firstSignIn") return <FirstSignInModal user={user} localData={modal.localData} onClose={close} onFreshStart={onFreshStart} />;
   if (modal.type === "addHobby") return <AddHobbyModal update={update} onClose={close} />;
-  if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} />
+  if (modal.type === "manageHobbies") return <ManageHobbiesModal data={data} update={update} onClose={close} setActiveHobby={setActiveHobby} setPage={setPage} setModal={setModal} /* STEP2A_EARLY_ACCESS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
   if (modal.type === "reorderHobbies") return <ReorderHobbiesModal data={data} update={update} onClose={close} />
   if (modal.type === "addFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -7891,7 +8010,7 @@ function AboutModal({ onClose }) {
         </figure>
 
         <p>
-          Henalytics is just me. No company, no investors, no ads. Between App Store fees and upgrading the tools and services that keep the app running for a growing community, it costs about $500/year to operate. Not terrible — but any community contribution is sincerely appreciated. Anything beyond the minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
+          Henalytics is just me. No company, no investors, no ads. Between the tools and services that keep the app running for a growing community, it costs around $3,000/year to operate. Not terrible — but any community contribution is sincerely appreciated. Anything beyond the minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
         </p>
 
         <p style={{
@@ -7934,28 +8053,46 @@ function SupportModal({ onClose }) {
         }}>
           🌾 Support Henalytics
         </div>
+        {/* STEP2C_SUPPORTER_COPY: intro reworked to introduce the Supporter
+            membership. Cost figure updated to ~$3,000/year. The donation-
+            framed lines are gone; the membership block below leads with
+            the value a subscriber receives. */}
         <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 18, fontStyle: "italic" }}>
-          This app is free, and it stays that way.
+          Free for every homestead — and kept that way by its supporters.
         </div>
 
         <p style={{ marginTop: 0 }}>
-          Between App Store fees and upgrading the tools and services that keep the app running for a growing community, it costs about $500/year to operate, plus my time. Not terrible — but any community contribution is sincerely appreciated. There's no company behind it, no investors, no ads. Just me — a homesteader in Kansas — building it in the evenings. Anything beyond the minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
+          Henalytics is just me — a homesteader in Kansas, building it in the evenings. No company, no investors, no ads. Between the tools and services that keep a growing app running for everyone, it now costs around $3,000/year to operate. Becoming a Supporter helps cover that — and gives you a few things in return.
         </p>
 
-        <p>
-          If Henalytics has been useful and you'd like to chip in a few dollars to help keep it running, I'd genuinely appreciate it. Even a few bucks goes a long way around here.
-        </p>
-
-        <p style={{ fontStyle: "italic", color: palette.inkSoft, fontSize: 13 }}>
-          But please don't feel any pressure. The app is and will stay free for everyone, whether or not you chip in.
-        </p>
-
-        {/* ---- MONTHLY TIERS (featured) ---- */}
+        {/* STEP2C_SUPPORTER_COPY: Supporter membership block. The perks list —
+            led by early access — establishes the ongoing value a monthly
+            subscriber receives. This value-forward framing is what makes
+            the auto-renewing subscription valid under Apple 3.1.2. */}
+        {/* ---- SUPPORTER MEMBERSHIP (monthly) ---- */}
         <div style={{
           marginTop: 20, marginBottom: 6,
+          fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink,
+        }}>
+          🌱 Become a Supporter
+        </div>
+        <div style={{
+          marginBottom: 12, padding: "12px 14px",
+          background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10,
+          fontSize: 13, lineHeight: 1.6, color: palette.ink,
+        }}>
+          <div style={{ marginBottom: 6 }}>A monthly Supporter membership gets you:</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
+            <div><strong>✨ Early access</strong> — new hobbies and features land for Supporters about a week before everyone else.</div>
+            <div><strong>🌱 A Supporter badge</strong> — a little pill next to your homestead name on the home screen.</div>
+            <div><strong>🌾 The supporter wall</strong> — your homestead name in the monthly thank-you, if you'd like it there.</div>
+          </div>
+        </div>
+        <div style={{
+          marginBottom: 6,
           fontSize: 11, letterSpacing: 1, color: palette.inkSoft, fontWeight: 600, textTransform: "uppercase",
         }}>
-          Monthly support
+          Pick a monthly amount — every tier gets the same perks
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           {[
@@ -8002,12 +8139,16 @@ function SupportModal({ onClose }) {
           ))}
         </div>
 
+        {/* STEP2C_SUPPORTER_COPY: one-time tip kept as-is — a compliant consumable,
+            never the 3.1.2 problem. Header reworded as a clear secondary
+            option beneath the membership. The early-access / badge perks
+            do NOT apply to a one-time tip — only to monthly membership. */}
         {/* ---- ONE-TIME TIP (secondary) ---- */}
         <div style={{
           marginTop: 20, marginBottom: 6,
           fontSize: 11, letterSpacing: 1, color: palette.inkSoft, fontWeight: 600, textTransform: "uppercase",
         }}>
-          Or, leave a one-time tip
+          Not ready for a membership? Leave a one-time tip
         </div>
         <button
           type="button"
@@ -8029,6 +8170,37 @@ function SupportModal({ onClose }) {
         >
           🌾 One-time $5 · Bag of feed
         </button>
+
+        {/* STEP2C_SUPPORTER_COPY: contact line — for sponsorship / custom
+            arrangements only. NOT a payment path; purchases go through
+            the in-app buttons above. */}
+        <div style={{
+          marginTop: 14, textAlign: "center", fontSize: 12, color: palette.inkSoft, lineHeight: 1.5,
+        }}>
+          Interested in sponsoring the app, or arranging something else?{" "}
+          <button
+            type="button"
+            onClick={() => openExternalUrl("mailto:slowbuildacres@gmail.com")}
+            style={{
+              fontSize: 12, color: palette.ink, textDecoration: "underline",
+              background: "none", border: "none", padding: 0, cursor: "pointer",
+              fontFamily: "inherit",
+            }}
+          >
+            Get in touch
+          </button>
+        </div>
+
+        {/* STEP2C_SUPPORTER_COPY: closing grace note. Placed AFTER the value is
+            established — the "keeps it free for everyone" sentiment is a
+            secondary note here, never the headline. */}
+        <div style={{
+          marginTop: 14, padding: "11px 14px",
+          background: palette.card, border: `1px solid ${palette.line}`, borderRadius: 10,
+          fontSize: 12, lineHeight: 1.6, color: palette.inkSoft, textAlign: "center",
+        }}>
+          Henalytics isn't a freemium app — there's no paywall, and there never will be. Supporters are simply the reason it stays free for every homesteader who can't chip in.
+        </div>
 
         {/* ---- Platform-aware checkout footer ---- */}
         {/* On IAP-enabled native, hide the "Stripe" line entirely — Apple
@@ -8967,7 +9139,7 @@ function AddHobbyModal({ update, onClose }) {
   );
 }
 
-function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal }) {
+function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal, /* STEP2A_EARLY_ACCESS */ earlyAccessConfig = null, isSupporter = false }) {
   const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
 
   // Category groups. Each group is a list of hobby types it contains.
@@ -9023,33 +9195,77 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
 
   // Render a single hobby row (toggle + name). Extracted so the same JSX
   // works inside groups and in the ungrouped flat list at the top.
-  const renderHobbyRow = (h) => (
-    <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
-      <div>
-        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
-        <div style={{ fontSize: 11, color: palette.inkSoft }}>{friendlyType[h.type] || h.type}</div>
+  // STEP2A_EARLY_ACCESS: gate-aware. A hobby with a `featureKey` is checked
+  // against the early-access config. "hidden" rows are filtered out before
+  // this is ever called (see gatedVisible below); "early-locked" rows show
+  // a lock + availability date instead of an Enable button. Hobbies with no
+  // featureKey are "ungated" and render exactly as they always have.
+  const renderHobbyRow = (h) => {
+    const gate = earlyAccessState(h.featureKey, earlyAccessConfig, isSupporter);
+    const f = (earlyAccessConfig && earlyAccessConfig.features && h.featureKey)
+      ? earlyAccessConfig.features[h.featureKey] : null;
+
+    if (gate === "early-locked") {
+      // Inside the supporter early window, but this user is not a monthly
+      // supporter. Show the hobby as locked with the public availability
+      // date. No Enable button — they cannot turn it on yet.
+      const when = f ? formatEarlyAccessDate(f.publicDate) : "";
+      return (
+        <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: palette.bgAlt, border: `1.5px dashed ${palette.line}`, borderRadius: 10, opacity: 0.85 }}>
+          <div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: palette.inkSoft }}>{h.name}</div>
+            <div style={{ fontSize: 11, color: palette.inkSoft }}>
+              🔒 Supporters have early access{when ? ` · everyone on ${when}` : ""}
+            </div>
+          </div>
+          <span style={{ padding: "8px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.card, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, whiteSpace: "nowrap" }}>
+            {when ? `Available ${when}` : "Coming soon"}
+          </span>
+        </div>
+      );
+    }
+
+    // "public", "supporter", and "ungated" all render the normal row.
+    return (
+      <div key={h.id} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "12px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+        <div>
+          <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{h.name}</div>
+          <div style={{ fontSize: 11, color: palette.inkSoft }}>
+            {friendlyType[h.type] || h.type}
+            {gate === "supporter" ? "  ·  ✨ Supporter early access" : ""}
+          </div>
+        </div>
+        <button
+          onClick={() => {
+            const wasHidden = h.hidden;
+            update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
+            if (wasHidden) jumpToHobby(h);
+          }}
+          style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.ink : palette.bgAlt, color: h.hidden ? palette.bg : palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
+        >
+          {h.hidden ? "Enable" : "Visible ✓"}
+        </button>
       </div>
-      <button
-        onClick={() => {
-          const wasHidden = h.hidden;
-          update(d => { const hob = d.hobbies.find(x => x.id === h.id); if (hob) hob.hidden = !hob.hidden; return d; });
-          if (wasHidden) jumpToHobby(h);
-        }}
-        style={{ padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: h.hidden ? palette.ink : palette.bgAlt, color: h.hidden ? palette.bg : palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}
-      >
-        {h.hidden ? "Enable" : "Visible ✓"}
-      </button>
-    </div>
-  );
+    );
+  };
+
+  // STEP2A_EARLY_ACCESS: a hobby in "hidden" gate state is not shown at all —
+  // it is before its early-access window even for supporters. Ungated
+  // hobbies (no featureKey) always pass. Apply this filter wherever the
+  // hobby lists are built below.
+  const gatedVisible = (h) =>
+    earlyAccessState(h.featureKey, earlyAccessConfig, isSupporter) !== "hidden";
 
   // Partition the hobbies list. Flat = uncategorized; groupedHobbies maps
   // group id → array of hobbies in that group, preserving the original
   // data.hobbies order so the user's mental layout is stable.
-  const flatHobbies = data.hobbies.filter(h => !typeToGroup[h.type]);
+  // STEP2A_EARLY_ACCESS: also drop hobbies whose early-access window has not opened.
+  const flatHobbies = data.hobbies.filter(h => !typeToGroup[h.type] && gatedVisible(h));
   const groupedHobbies = {};
   GROUPS.forEach(g => { groupedHobbies[g.id] = []; });
   data.hobbies.forEach(h => {
-    if (typeToGroup[h.type]) groupedHobbies[typeToGroup[h.type]].push(h);
+    // STEP2A_EARLY_ACCESS: skip hobbies still inside the pre-early-access window.
+    if (typeToGroup[h.type] && gatedVisible(h)) groupedHobbies[typeToGroup[h.type]].push(h);
   });
 
   return (
@@ -13430,7 +13646,7 @@ function OnboardingWizard({ update, onClose }) {
                 padding: "12px 14px", background: palette.bgAlt, borderRadius: 10,
                 marginBottom: 14, fontSize: 13, color: palette.ink, lineHeight: 1.6,
               }}>
-                <strong>Real costs, transparently:</strong> between App Store fees and upgrading the tools and services that run the app for a growing community, it costs about $500/year, plus my time. Not terrible — any community contribution is sincerely appreciated. Anything beyond minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
+                <strong>Real costs, transparently:</strong> between the tools and services that run the app for a growing community, it costs around $3,000/year, plus my time. Not terrible — any community contribution is sincerely appreciated. Anything beyond minimum maintenance fees goes back into improving the app. Anything beyond that, will get used to feed my chickens.
               </div>
 
               <p style={{ fontSize: 14, color: palette.ink, lineHeight: 1.65, marginBottom: 14 }}>
@@ -15216,6 +15432,10 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
   //   - Loading → show a small "loading…" line while the fetch runs
   const [supporterNames, setSupporterNames] = React.useState(null); // null = loading, [] = none, [...] = list
   const [priorMonthLabel, setPriorMonthLabel] = React.useState("");
+  // STEP2B_TOP_SPONSOR: name(s) of the highest single contributor(s) for the
+  // prior month. Computed server-side by /api/list-supporters. [] when
+  // there is no rankable amount (or the endpoint predates Step 2B).
+  const [topSponsors, setTopSponsors] = React.useState([]);
 
   React.useEffect(() => {
     const now = new Date();
@@ -15235,6 +15455,9 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
         if (cancelled) return;
         const list = Array.isArray(j.supporters) ? j.supporters.map(s => s.name).filter(Boolean) : [];
         setSupporterNames(list);
+        // STEP2B_TOP_SPONSOR: topSponsors is a names array from the endpoint.
+        // Older endpoint builds omit it — default to [] so nothing breaks.
+        setTopSponsors(Array.isArray(j.topSponsors) ? j.topSponsors.filter(Boolean) : []);
       } catch (_) {
         if (!cancelled) setSupporterNames([]);
       }
@@ -15273,6 +15496,44 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
           {supporterNames === null && (
             <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",margin:"0 0 14px" }}>
               Loading this month's supporter list…
+            </div>
+          )}
+          {/* STEP2B_TOP_SPONSOR: Top Sponsor(s) — highlighted above the full
+              supporter list. Renders only when the endpoint returned at
+              least one top sponsor. Heading pluralizes on ties. */}
+          {Array.isArray(topSponsors) && topSponsors.length > 0 && (
+            <div style={{
+              margin:"4px 0 12px",
+              padding:"14px 16px",
+              background:palette.yolk,
+              border:`2px solid ${palette.ink}`,
+              borderRadius:12,
+              boxShadow:`2px 2px 0 ${palette.line}`,
+            }}>
+              <div style={{
+                fontFamily:FONT_DISPLAY,fontSize:15,color:palette.ink,
+                marginBottom:8,textAlign:"center",
+              }}>
+                ⭐ {topSponsors.length > 1 ? "Top Sponsors" : "Top Sponsor"}
+              </div>
+              <div style={{
+                display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",
+              }}>
+                {topSponsors.map((n, i) => (
+                  <span key={i} style={{
+                    fontSize:13,fontWeight:700,color:palette.ink,
+                    background:palette.bg,
+                    border:`2px solid ${palette.ink}`,
+                    borderRadius:999,padding:"5px 12px",
+                  }}>{n}</span>
+                ))}
+              </div>
+              <div style={{
+                fontSize:11,color:palette.ink,textAlign:"center",
+                marginTop:10,fontStyle:"italic",opacity:0.8,
+              }}>
+                {priorMonthLabel ? `Most generous in ${priorMonthLabel}` : "Most generous this month"} 💛
+              </div>
             </div>
           )}
           {Array.isArray(supporterNames) && supporterNames.length > 0 && (
