@@ -6129,6 +6129,114 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
   );
 }
 
+// COOP_PAYOFF: "how long until the coop pays for itself?" — a
+// half-serious reality check for the Egg Layers hobby. Pure functions.
+const COOP_PAYOFF_DEFAULT_PRICE = 4.0; // $/dozen fallback
+
+// A real fun fact about a span of `years`. Every branch is genuinely
+// true; the final branch is a safe generic fallback for huge values.
+function coopPayoffFunFact(years) {
+  if (years < 1) {
+    return "That’s quicker than a pumpkin grows from seed to jack-o’-lantern — your coop is pulling its weight.";
+  }
+  if (years < 2) {
+    return "In that time, an asparagus crown would just be reaching its first full harvest — patience either way.";
+  }
+  if (years < 4) {
+    return "That’s about how long a newly planted apple tree takes to bear its first fruit.";
+  }
+  if (years < 8) {
+    return "An oak grown from an acorn would produce its very first acorns right around then.";
+  }
+  if (years < 15) {
+    return "That’s roughly how long a hand-planted walnut tree takes to give a real nut harvest.";
+  }
+  if (years < 30) {
+    return "In that span a sapling becomes a full shade tree — your coop is a long-term relationship.";
+  }
+  if (years < 75) {
+    return "That’s many times the lifespan of a laying hen — this coop is a family heirloom now.";
+  }
+  return "That’s longer than most people keep a house — at this point the coop is less an investment, more a monument. 🐔";
+}
+
+// Resolve price per dozen from the user's own logged egg sales.
+// Returns { price, isDefault }.
+function coopPayoffPrice(allEntries) {
+  const sales = (allEntries || []).filter(
+    (e) => e.action === "sold_eggs" && Number(e.pricePerDozen) > 0
+  );
+  if (sales.length === 0) {
+    return { price: COOP_PAYOFF_DEFAULT_PRICE, isDefault: true };
+  }
+  const avg =
+    sales.reduce((s, e) => s + Number(e.pricePerDozen), 0) / sales.length;
+  if (!(avg > 0)) return { price: COOP_PAYOFF_DEFAULT_PRICE, isDefault: true };
+  return { price: avg, isDefault: false };
+}
+
+// The whole calculation, in one pass. eggEntries = laid-egg entries;
+// infraCost = coop infrastructure total; allEntries = the hobby's full
+// entry list (for price resolution). Returns null (nothing to show), a
+// { laborOfLove:true, message } object, or a complete result object.
+function computeCoopPayoff(eggEntries, infraCost, allEntries) {
+  if (!infraCost || infraCost <= 0) return null;
+  if (!Array.isArray(eggEntries) || eggEntries.length === 0) return null;
+
+  const totalEggs = eggEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
+
+  const dates = eggEntries.map((e) => e.date).filter(Boolean).sort();
+  let spanDays = 0;
+  if (dates.length >= 2) {
+    const first = new Date(dates[0] + "T00:00:00");
+    const last = new Date(dates[dates.length - 1] + "T00:00:00");
+    spanDays = Math.round((last.getTime() - first.getTime()) / 86400000);
+  }
+
+  // Need a couple of weeks of history and some eggs to estimate a rate.
+  if (spanDays < 14 || totalEggs <= 0) {
+    return {
+      laborOfLove: true,
+      message:
+        "Log a couple of weeks of eggs and we’ll work out how long the coop takes to pay for itself. (Spoiler: chickens are a labor of love, not an investment. 🐔)",
+    };
+  }
+
+  const eggsPerDay = totalEggs / spanDays;
+  const priceInfo = coopPayoffPrice(allEntries);
+  const price = priceInfo.price;
+  const valuePerYear = (eggsPerDay / 12) * price * 365;
+
+  if (!(valuePerYear > 0)) {
+    return {
+      laborOfLove: true,
+      message:
+        "At these numbers the coop never quite pays for itself — which makes it official: chickens are a labor of love, not an investment. 🐔",
+    };
+  }
+
+  const years = infraCost / valuePerYear;
+  let yearsText;
+  if (years < 1) {
+    const months = Math.max(1, Math.round(years * 12));
+    yearsText = months + " month" + (months === 1 ? "" : "s");
+  } else {
+    const y = years.toFixed(1);
+    yearsText = y + " year" + (y === "1.0" ? "" : "s");
+  }
+
+  return {
+    laborOfLove: false,
+    infraCost: infraCost,
+    pricePerDozen: price,
+    priceIsDefault: priceInfo.isDefault,
+    valuePerYear: valuePerYear,
+    years: years,
+    yearsText: yearsText,
+    funFact: coopPayoffFunFact(years),
+  };
+}
+
 function EggLayersAnalytics({ hobby, entries, spouseMode }) {
   if (!hobby) return <EmptyState text="Loading…" />;
   // Count both "eggs" (manual quick-tile) and "eggs_laid" (egg basket commits)
@@ -6198,6 +6306,47 @@ function EggLayersAnalytics({ hobby, entries, spouseMode }) {
           </div>
         </div>
       </ChartCard>
+
+      {/* COOP_PAYOFF: coop payoff fun stat. computeCoopPayoff returns
+          null (nothing to show), a laborOfLove message, or a full
+          result. The card handles all three. */}
+      {(() => {
+        const payoff = computeCoopPayoff(eggs, infraCost, entries);
+        if (!payoff) return null;
+        return (
+          <ChartCard title="🥚 Coop payoff">
+            <div style={{ padding: "4px 2px" }}>
+              {payoff.laborOfLove ? (
+                <div style={{ fontSize: 14, lineHeight: 1.6, color: palette.ink }}>
+                  {payoff.message}
+                </div>
+              ) : (
+                <>
+                  <div style={{ fontSize: 14, lineHeight: 1.6, color: palette.ink }}>
+                    At about <strong>{fmtMoney(payoff.pricePerDozen)}</strong> a dozen, your
+                    flock produces roughly <strong>{fmtMoney(payoff.valuePerYear)}</strong> of
+                    eggs a year. At that rate it would take{" "}
+                    <strong>{payoff.yearsText}</strong> for egg value to pay back the{" "}
+                    <strong>{fmtMoney(payoff.infraCost)}</strong> you’ve put into the coop.
+                  </div>
+                  <div style={{
+                    marginTop: 10, padding: "10px 12px", background: palette.bgAlt,
+                    borderRadius: 8, fontSize: 13, lineHeight: 1.5, color: palette.inkSoft,
+                  }}>
+                    {payoff.funFact}
+                  </div>
+                </>
+              )}
+              <div style={{ marginTop: 8, fontSize: 11, color: palette.inkSoft, lineHeight: 1.5 }}>
+                {payoff.priceIsDefault
+                  ? "Assumes ~$4.00/dozen — log an egg sale to use your own price."
+                  : "Based on your own average egg-sale price."}
+                {" "}Counts coop infrastructure only, not feed — so real life takes a little longer. 🐔
+              </div>
+            </div>
+          </ChartCard>
+        );
+      })()}
 
       {eggTrend.length > 0 && (
         <ChartCard title="Egg production">
