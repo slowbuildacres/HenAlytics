@@ -3464,16 +3464,16 @@ export default function HomesteadApp() {
           <IncubatorPage hobby={data.hobbies.find(h=>h.id==="incubator")} data={data} update={update} setModal={setModal} />
         )}
         {page === "goats" && (
-          <GoatsPage hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} />
+          <GoatsPage hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "cows" && (
-          <CowsPage hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} />
+          <CowsPage hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "pigs" && (
-          <PigsPage hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} />
+          <PigsPage hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "rabbits" && (
-          <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
+          <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "farmstand" && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
@@ -3506,19 +3506,19 @@ export default function HomesteadApp() {
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tea" />
         )}
         {page === "sheep" && (
-          <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
+          <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "dogs" && (
-          <DogsPage hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} />
+          <DogsPage hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "cats" && (
-          <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} />
+          <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "maple_syrup" && (
           <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} />
         )}
         {page === "horses" && (
-          <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} />
+          <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "sourdough" && (
           <SourdoughPage hobby={data.hobbies.find(h=>h.id==="sourdough")} data={data} update={update} setModal={setModal} />
