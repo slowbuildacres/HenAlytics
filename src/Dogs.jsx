@@ -27,11 +27,12 @@
 // Dog gestation = 58–68 days. Default expected whelp = +63 days.
 // ============================================================================
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -178,7 +179,187 @@ const DOG_BREEDS = [
   "Labrador Retriever", "Golden Retriever", "Mixed", "Other",
 ];
 
-function DogModal({ dog, dogs, onSave, onDelete, onClose }) {
+// ============================================================================
+// ANIMAL PHOTOS — profile pic + dated timeline, per individual animal
+// ----------------------------------------------------------------------------
+// Uploads go through the shared Supabase Storage helpers (animalPhotos.js,
+// which wraps sync.js). Photos are stored as paths on animal.photos; the
+// images themselves live in the `photos` storage bucket, never in the data
+// blob. Each photo write happens immediately via update() — it does NOT wait
+// for the modal's Save button — so a photo can't be lost by closing without
+// saving. For that reason the section only appears on an already-saved
+// animal (a brand-new unsaved animal has no record to attach a photo to yet).
+// ============================================================================
+
+// Resolves a storage path to a signed URL on mount and renders the thumbnail.
+// Signed URLs are short-lived, so we resolve fresh each time the component
+// mounts rather than caching a URL in the data.
+function PhotoThumb({ path, size = 64, onClick }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    resolveAnimalPhotoUrl(path).then((u) => {
+      if (cancelled) return;
+      if (u) setUrl(u); else setFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+  return (
+    <div
+      onClick={onClick}
+      style={{
+        width: size, height: size, borderRadius: 8, flexShrink: 0,
+        border: `1.5px solid ${palette.line}`, background: palette.bgAlt,
+        backgroundImage: url ? `url(${url})` : "none",
+        backgroundSize: "cover", backgroundPosition: "center",
+        cursor: onClick ? "pointer" : "default",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        fontSize: 10, color: palette.inkSoft, textAlign: "center", overflow: "hidden",
+      }}
+    >
+      {!url && (failed ? "image\nunavailable" : "…")}
+    </div>
+  );
+}
+
+function AnimalPhotoSection({ animal, hobbyId, update, user }) {
+  const photos = timelineOf(animal);          // chronological, oldest first
+  const profile = profilePhotoOf(animal);
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+
+  // findAnimal locates the live animal object inside an update() draft.
+  const findAnimal = (d) => {
+    const h = d.hobbies.find((x) => x.id === hobbyId);
+    return h ? (h.animals || []).find((a) => a.id === animal.id) : null;
+  };
+
+  const onPick = async (e) => {
+    const file = e.target.files && e.target.files[0];
+    e.target.value = ""; // reset so the same file can be re-picked later
+    if (!file) return;
+    if (!user) { setErr("You must be signed in to add photos."); return; }
+    setErr("");
+    setBusy(true);
+    try {
+      await addPhotoToAnimal({ user, animalId: animal.id, file, update, findAnimal });
+    } catch (e2) {
+      // Upload failed — surface it. Given the known refresh-token bug, a
+      // silent failure here would be the worst outcome, so we show it.
+      setErr("Photo upload failed. Check your connection and that you're signed in, then try again.");
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const removeOne = async (path) => {
+    setErr("");
+    try {
+      await removePhotoFromAnimal({ path, update, findAnimal });
+    } catch (e2) {
+      setErr("Could not remove photo.");
+    }
+  };
+
+  const makeProfile = (path) => {
+    update((d) => {
+      const a = findAnimal(d);
+      if (a) a.photos = withProfileSet(a, path);
+      return d;
+    });
+  };
+
+  const editDate = (path, date) => {
+    update((d) => {
+      const a = findAnimal(d);
+      if (a) a.photos = withPhotoEdited(a, path, { date });
+      return d;
+    });
+  };
+
+  return (
+    <div style={{ marginBottom: 14, padding: 12, background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, marginBottom: 8 }}>
+        Photos {photos.length > 0 ? `· ${photos.length}` : ""}
+      </div>
+
+      {photos.length === 0 && (
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
+          Add a profile photo, then keep adding over time — the journal shows them as a timeline so you can see how this goat has grown.
+        </div>
+      )}
+
+      {/* Timeline — oldest first. Each photo shows its date and quick actions. */}
+      {photos.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 8 }}>
+          {photos.map((p) => {
+            const isProfile = profile && profile.path === p.path;
+            return (
+              <div key={p.path} style={{ display: "flex", gap: 10, alignItems: "center" }}>
+                <PhotoThumb path={p.path} size={56} />
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <input
+                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    value={p.date || ""}
+                    onChange={(e) => editDate(p.path, e.target.value)}
+                  />
+                  <div style={{ display: "flex", gap: 10, marginTop: 4 }}>
+                    {isProfile ? (
+                      <span style={{ fontSize: 11, color: palette.leaf, fontWeight: 600 }}>★ Profile photo</span>
+                    ) : (
+                      <button onClick={() => makeProfile(p.path)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: palette.inkSoft, textDecoration: "underline" }}>
+                        Set as profile
+                      </button>
+                    )}
+                    <button onClick={() => removeOne(p.path)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 11, color: palette.accent, textDecoration: "underline" }}>
+                      Remove
+                    </button>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {err && <div style={{ fontSize: 12, color: palette.accent, marginBottom: 8 }}>{err}</div>}
+
+      <label style={{
+        display: "inline-block", padding: "8px 14px", borderRadius: 8,
+        background: busy ? palette.bgAlt : palette.yolk,
+        border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink,
+      }}>
+        {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another photo")}
+        <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
+      </label>
+    </div>
+  );
+}
+
+// Small profile photo for the animal-card header. Falls back to the given
+// emoji when the animal has no photos yet.
+function LivestockProfileCircle({animal,emoji,size=20}){
+  const profile=profilePhotoOf(animal);
+  const[url,setUrl]=useState(null);
+  useEffect(()=>{
+    let cancelled=false;
+    if(!profile){setUrl(null);return;}
+    resolveAnimalPhotoUrl(profile.path).then(u=>{if(!cancelled)setUrl(u||null);});
+    return()=>{cancelled=true;};
+  },[profile&&profile.path]);
+  if(!profile||!url){
+    return <span style={{fontSize:18}}>{emoji}</span>;
+  }
+  return <span style={{
+    display:"inline-block",width:size,height:size,borderRadius:"50%",
+    flexShrink:0,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,
+    backgroundImage:`url(${url})`,backgroundSize:"cover",backgroundPosition:"center",
+  }}/>;
+}
+
+function DogModal({ dog, dogs, onSave, onDelete, onClose, update, user, hobbyId }) {
   const [name, setName] = useState(dog?.name || "");
   const initBreed = (dog?.breed || "").trim();
   const initIsKnown = DOG_BREEDS.includes(initBreed);
@@ -222,6 +403,7 @@ function DogModal({ dog, dogs, onSave, onDelete, onClose }) {
       dam: dam.trim(),
       registryNumber: registryNumber.trim(),
       registryName: registryName.trim(),
+      photos: dog?.photos || [],
       archived: dog?.archived || false,
       created: dog?.created || Date.now(),
     });
@@ -364,6 +546,9 @@ function DogModal({ dog, dogs, onSave, onDelete, onClose }) {
           <Btn variant="primary" onClick={handleSave} disabled={!name.trim()}>Save</Btn>
         </div>
       </div>
+      {dog && update && (
+        <AnimalPhotoSection animal={dog} hobbyId={hobbyId} update={update} user={user} />
+      )}
     </ModalShell>
   );
 }
@@ -1126,7 +1311,7 @@ function HerdTallySection({ hobby, update }) {
   );
 }
 
-export default function DogsPage({ hobby, data, update, setModal }) {
+export default function DogsPage({ hobby, data, update, setModal, user }) {
   const [dogModal, setDogModal] = useState({ open: false, dog: null });
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [litterModal, setLitterModal] = useState({ open: false, litter: null });
@@ -1335,6 +1520,7 @@ export default function DogsPage({ hobby, data, update, setModal }) {
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 10 }}>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2, display: "flex", alignItems: "center", gap: 8 }}>
+                    <LivestockProfileCircle animal={d} emoji="🐕" size={20} />
                     {d.name}
                     {d.isLGD && <span style={{ fontSize: 11, padding: "2px 6px", background: palette.leafSoft, color: palette.ink, borderRadius: 999, fontFamily: FONT_BODY, fontWeight: 600 }}>🛡️ LGD</span>}
                   </div>
@@ -1472,6 +1658,9 @@ export default function DogsPage({ hobby, data, update, setModal }) {
           onSave={saveDog}
           onDelete={dogModal.dog ? deleteDog : null}
           onClose={() => setDogModal({ open: false, dog: null })}
+          update={update}
+          user={user}
+          hobbyId={hobby.id}
         />
       )}
       {breedingModal.open && (
