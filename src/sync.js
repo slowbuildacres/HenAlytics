@@ -139,16 +139,36 @@ async function readCloudHomestead(homesteadId) {
   return data ? data.data : null;
 }
 
+// Like readCloudHomestead, but also returns the row's updated_at so callers
+// can do recency comparisons (stale-write protection). Kept separate so the
+// existing readCloudHomestead callers are untouched.
+async function readCloudHomesteadMeta(homesteadId) {
+  const { data, error } = await supabase
+    .from('homesteads')
+    .select('data, updated_at')
+    .eq('id', homesteadId)
+    .maybeSingle();
+
+  if (error) {
+    console.error('Cloud read (meta) failed', error);
+    throw error;
+  }
+  if (!data) return { data: null, updatedAt: null };
+  return { data: data.data, updatedAt: data.updated_at || null };
+}
+
 async function writeCloudHomestead(homesteadId, data) {
+  const updatedAt = new Date().toISOString();
   const { error } = await supabase
     .from('homesteads')
-    .update({ data, updated_at: new Date().toISOString() })
+    .update({ data, updated_at: updatedAt })
     .eq('id', homesteadId);
 
   if (error) {
     console.error('Cloud save failed', error);
     throw error;
   }
+  return updatedAt;
 }
 
 function scoreData(data) {
@@ -240,9 +260,12 @@ function scoreData(data) {
 
 async function safeWriteCloudHomestead(homesteadId, newData) {
   let currentCloud = null;
+  let cloudUpdatedAt = null;
   let readFailed = false;
   try {
-    currentCloud = await readCloudHomestead(homesteadId);
+    const meta = await readCloudHomesteadMeta(homesteadId);
+    currentCloud = meta.data;
+    cloudUpdatedAt = meta.updatedAt;
   } catch (e) {
     console.warn('Cloud read failed during safe-write check; skipping save to avoid clobber.', e);
     readFailed = true;
@@ -250,6 +273,36 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
 
   if (readFailed) {
     return { skipped: true, reason: 'read-failed' };
+  }
+
+  // ---- Recency guard (stale-write protection) ----
+  // The score guard below only catches a write that REMOVES a lot of data.
+  // It cannot catch a stale device overwriting newer-but-similar-sized data
+  // — e.g. two devices on one homestead, one of them working from an old
+  // local copy. That's silent data loss (the May-16 farmhand bug).
+  //
+  // Rule: newData carries `cloudBaselineAt` — the cloud updated_at this
+  // device saw the last time it successfully READ the cloud. If the cloud's
+  // current updated_at is NEWER than that baseline, the cloud changed under
+  // this device since it last synced — writing now would clobber changes
+  // this device never saw. Reject and tell the caller to re-pull.
+  //
+  // Skipped only when we can actually compare. A first-ever save (no
+  // baseline) or a row with no updated_at falls through to the score guard.
+  const baseline = newData && newData.cloudBaselineAt;
+  if (baseline && cloudUpdatedAt) {
+    const cloudTime = new Date(cloudUpdatedAt).getTime();
+    const baseTime = new Date(baseline).getTime();
+    // Small slack (2s) absorbs clock skew / same-second writes.
+    if (Number.isFinite(cloudTime) && Number.isFinite(baseTime) &&
+        cloudTime > baseTime + 2000) {
+      console.warn(
+        `[STALE-WRITE] Cloud is newer than this device's baseline ` +
+        `(cloud=${cloudUpdatedAt}, baseline=${baseline}). Skipping save to ` +
+        `avoid clobbering unseen changes.`
+      );
+      return { skipped: true, reason: 'stale-baseline' };
+    }
   }
 
   const currentScore = scoreData(currentCloud);
@@ -262,8 +315,12 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
     return { skipped: true, reason: 'would-clobber' };
   }
 
-  await writeCloudHomestead(homesteadId, newData);
-  return { skipped: false };
+  const writtenAt = await writeCloudHomestead(homesteadId, newData);
+  // Return the new cloud updated_at so the caller can refresh this device's
+  // cloudBaselineAt — otherwise the very next save would see the cloud as
+  // "newer than baseline" (because we just advanced it) and falsely trip
+  // the stale-write guard.
+  return { skipped: false, newBaselineAt: writtenAt };
 }
 
 export async function loadHomestead(user) {
@@ -271,11 +328,19 @@ export async function loadHomestead(user) {
     try {
       const { id, role } = await ensureHomestead(user.id);
       writeActiveHomesteadId(id);
-      const cloud = await readCloudHomestead(id);
+      const { data: cloud, updatedAt } = await readCloudHomesteadMeta(id);
       const hasContent = cloud && Object.keys(cloud).length > 0;
       if (hasContent) {
-        writeLocalHomestead(cloud);
-        return { source: 'cloud', data: cloud, homesteadId: id, role };
+        // Stamp the cloud's updated_at onto the data as cloudBaselineAt.
+        // This records "the cloud state this device has actually seen".
+        // safeWriteCloudHomestead later compares the live cloud updated_at
+        // against this baseline and refuses a write if the cloud moved on
+        // since — that's the stale-write / clobber protection. The stamp is
+        // refreshed on every successful read, so a device that stays synced
+        // always has a current baseline and writes normally.
+        const stamped = { ...cloud, cloudBaselineAt: updatedAt || null };
+        writeLocalHomestead(stamped);
+        return { source: 'cloud', data: stamped, homesteadId: id, role };
       }
       return { source: 'cloud-empty', data: null, homesteadId: id, role };
     } catch (e) {
@@ -323,9 +388,19 @@ export async function saveHomestead(user, data, cloudReady = true) {
         // Pass the skip reason through so the caller can tell a benign
         // clobber-guard skip apart from a read-failed skip (the latter is
         // the refresh-token-bug signature and should surface to the user).
+        // 'stale-baseline' tells the caller this device is behind and should
+        // re-pull from cloud before its next save.
         return { ok: false, location: 'local', skipped: true, reason: result.reason };
       }
-      return { ok: true, location: 'cloud' };
+      // Write succeeded. Refresh this device's local cloudBaselineAt to the
+      // updated_at the cloud now holds, so the next save isn't falsely
+      // flagged stale against the cloud state we just created.
+      if (result.newBaselineAt) {
+        try {
+          writeLocalHomestead({ ...data, cloudBaselineAt: result.newBaselineAt });
+        } catch (e) { /* local mirror is best-effort */ }
+      }
+      return { ok: true, location: 'cloud', newBaselineAt: result.newBaselineAt };
     } catch (e) {
       // Classify the failure. An auth/session error (dead refresh token) is
       // the bug we care about surfacing — distinguish it from generic

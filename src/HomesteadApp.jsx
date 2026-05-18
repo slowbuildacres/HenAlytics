@@ -3097,6 +3097,31 @@ export default function HomesteadApp() {
       setSyncStatus(result.ok ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
+        // Absorb the refreshed cloud baseline into in-memory state so the
+        // next save compares against the cloud state we just created — not
+        // the stale baseline from the last load. setData is functional and
+        // skipNextSaveRef prevents this bookkeeping update from re-triggering
+        // the save effect into a loop.
+        if (result.newBaselineAt) {
+          skipNextSaveRef.current = true;
+          setData((prev) =>
+            prev && prev.cloudBaselineAt !== result.newBaselineAt
+              ? { ...prev, cloudBaselineAt: result.newBaselineAt }
+              : prev
+          );
+        }
+      } else if (result.skipped && result.reason === "stale-baseline") {
+        // This device tried to save but the cloud has changes it never saw
+        // (another device — e.g. a farmhand — wrote more recently). Saving
+        // now would clobber those unseen changes, so the write was correctly
+        // refused. We do NOT silently re-pull: that would discard the edit
+        // the user just made. Instead surface the banner so the user can
+        // choose to refresh — their local edit is safe in localStorage and
+        // still on screen until they do.
+        console.warn("[SYNC] save skipped — cloud is ahead of this device.");
+        setSyncStatus("error");
+        setSyncBannerReason("stale");
+        setSignedOutRemotely(true);
       } else if (result.skipped && (result.reason === "read-failed" || result.reason === "auth")) {
         // A skip caused by a failed cloud read / dead session is the
         // signature of the refresh-token bug. Surface the signed-out
@@ -3298,6 +3323,20 @@ export default function HomesteadApp() {
           onClick={() => {
             if (syncBannerReason === "auth") {
               setModal({ type: "signin" });
+            } else if (syncBannerReason === "stale") {
+              // Cloud is ahead of this device. Refreshing pulls the newer
+              // cloud data — which discards the unsynced local edit that
+              // caused this. Confirm so the user makes that choice knowingly.
+              const ok = window.confirm(
+                "Another device has newer data for this homestead. " +
+                "Refresh to load it?\n\n" +
+                "Your most recent change on THIS device hasn't synced and " +
+                "will be replaced by the newer version."
+              );
+              if (ok) {
+                setSignedOutRemotely(false);
+                setHomesteadReloadKey((k) => k + 1);
+              }
             } else {
               // Network failure — re-opening sign-in won't help. Retry the
               // load by bumping the reload key, and clear the banner; if the
@@ -3319,6 +3358,8 @@ export default function HomesteadApp() {
         >
           {syncBannerReason === "auth"
             ? "⚠️ You're not synced — tap to sign back in"
+            : syncBannerReason === "stale"
+            ? "⚠️ Another device has newer data — tap to refresh"
             : "⚠️ Can't reach the cloud — showing your last saved data. Tap to retry"}
         </div>
       )}
