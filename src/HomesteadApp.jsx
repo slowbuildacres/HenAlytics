@@ -2900,7 +2900,32 @@ export default function HomesteadApp() {
       } catch (_) { /* best-effort — nothing we can do if it throws */ }
     };
     const onVisibility = () => {
-      if (typeof document !== "undefined" && document.visibilityState === "hidden") flush();
+      if (typeof document === "undefined") return;
+      if (document.visibilityState === "hidden") {
+        flush();
+        return;
+      }
+      // App became VISIBLE again. On mobile / Capacitor the webview is
+      // suspended while backgrounded, so Supabase's auto-refresh timer
+      // doesn't fire on schedule — the access token can expire and the
+      // refresh never happens, leaving a dead session that looks signed in.
+      // Calling getSession() here forces the client to revalidate (and
+      // refresh) the token NOW, while the app is awake. If that fails, it's
+      // the refresh-token bug — surface the signed-out banner so the user
+      // can re-authenticate instead of silently saving to local only.
+      if (isSupabaseConfigured && latestUserRef.current) {
+        supabase.auth.getSession()
+          .then(({ data, error }) => {
+            if (error || !data?.session) {
+              console.warn("[AUTH] session revalidation on resume failed — session is dead:", error);
+              setSignedOutRemotely(true);
+            }
+          })
+          .catch((e) => {
+            console.warn("[AUTH] session revalidation on resume threw:", e);
+            setSignedOutRemotely(true);
+          });
+      }
     };
     document.addEventListener("visibilitychange", onVisibility);
     window.addEventListener("pagehide", flush);
