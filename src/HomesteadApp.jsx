@@ -4004,6 +4004,179 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
 }
 
 // ============================================================================
+// ============================================================================
+// JOURNAL SCRAPBOOK — named animals with their photo timelines
+// ----------------------------------------------------------------------------
+// Surfaces, inside the Journal, every individual animal that has photos —
+// drawn from BOTH data shapes: hobby.animals (livestock + rabbits) and
+// flock.namedBirds (egg layers). Each animal shows as a card with its profile
+// photo; tapping opens a timeline of all its photos, oldest first, each with
+// the date it was added — a scrapbook of how the animal has grown over time.
+//
+// Respects the Journal's hobby filter. Renders nothing when no animal in
+// scope has photos, so the section never clutters an empty journal.
+// ============================================================================
+
+// Gather { animal, hobby, hobbyLabel } for every photographed animal in scope.
+function collectPhotographedAnimals(data, hobbyFilter) {
+  const out = [];
+  for (const h of data.hobbies || []) {
+    if (h.hidden) continue;
+    if (hobbyFilter !== "all" && hobbyFilter !== h.id) continue;
+    // Livestock + rabbits: individual animal records on hobby.animals.
+    if (Array.isArray(h.animals)) {
+      for (const a of h.animals) {
+        if (animalPhotosOf(a).length > 0) {
+          out.push({ animal: a, hobby: h, hobbyLabel: h.name });
+        }
+      }
+    }
+    // Egg layers: named birds live inside each flock.
+    if (Array.isArray(h.flocks)) {
+      for (const fl of h.flocks) {
+        for (const b of (fl.namedBirds || [])) {
+          if (animalPhotosOf(b).length > 0) {
+            out.push({ animal: b, hobby: h, hobbyLabel: `${h.name} \u00b7 ${fl.name || "flock"}` });
+          }
+        }
+      }
+    }
+  }
+  return out;
+}
+
+// Resolves a storage path to a signed URL and renders it as a covered box.
+function ScrapbookPhoto({ path, height = 200 }) {
+  const [url, setUrl] = useState(null);
+  const [failed, setFailed] = useState(false);
+  useEffect(() => {
+    let cancelled = false;
+    resolveAnimalPhotoUrl(path).then((u) => {
+      if (cancelled) return;
+      if (u) setUrl(u); else setFailed(true);
+    });
+    return () => { cancelled = true; };
+  }, [path]);
+  return (
+    <div style={{
+      width: "100%", height, borderRadius: 10, background: palette.bgAlt,
+      border: `1.5px solid ${palette.line}`,
+      backgroundImage: url ? `url(${url})` : "none",
+      backgroundSize: "cover", backgroundPosition: "center",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      color: palette.inkSoft, fontSize: 12,
+    }}>
+      {!url && (failed ? "image unavailable" : "\u2026")}
+    </div>
+  );
+}
+
+// Small circular profile thumbnail for a scrapbook card.
+function ScrapbookCircle({ animal, size = 44 }) {
+  const profile = animalProfilePhotoOf(animal);
+  const [url, setUrl] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    if (!profile) { setUrl(null); return; }
+    resolveAnimalPhotoUrl(profile.path).then((u) => { if (!cancelled) setUrl(u || null); });
+    return () => { cancelled = true; };
+  }, [profile && profile.path]);
+  return (
+    <div style={{
+      width: size, height: size, borderRadius: "50%", flexShrink: 0,
+      border: `1.5px solid ${palette.line}`, background: palette.bgAlt,
+      backgroundImage: url ? `url(${url})` : "none",
+      backgroundSize: "cover", backgroundPosition: "center",
+    }} />
+  );
+}
+
+// Date formatter for scrapbook captions. Falls back gracefully on bad input.
+function fmtJournalDate(s) {
+  try {
+    const [y, m, d] = String(s).split("-").map(Number);
+    const dt = new Date(y, (m || 1) - 1, d || 1);
+    return dt.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+  } catch (e) {
+    return String(s);
+  }
+}
+
+// Full-screen timeline viewer for one animal's photos.
+function AnimalScrapbookModal({ animal, hobbyLabel, onClose }) {
+  const photos = animalTimelineOf(animal);  // oldest first
+  return (
+    <Modal open onClose={onClose} title={`${animal.name || "Animal"} \u2014 photo timeline`}>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14 }}>
+        {hobbyLabel}{photos.length > 0 ? ` \u00b7 ${photos.length} photo${photos.length === 1 ? "" : "s"}` : ""}
+      </div>
+      {photos.length === 0 ? (
+        <div style={{ fontSize: 13, color: palette.inkSoft }}>No photos yet.</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+          {photos.map((p) => (
+            <div key={p.path}>
+              <ScrapbookPhoto path={p.path} />
+              <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 6, textAlign: "center" }}>
+                {p.date ? fmtJournalDate(p.date) : "undated"}
+                {p.caption ? ` \u00b7 ${p.caption}` : ""}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// The scrapbook section rendered inside JournalPage.
+function JournalScrapbook({ data, hobbyFilter }) {
+  const [openAnimal, setOpenAnimal] = useState(null);
+  const animals = React.useMemo(
+    () => collectPhotographedAnimals(data, hobbyFilter),
+    [data.hobbies, hobbyFilter]
+  );
+  if (animals.length === 0) return null;
+
+  return (
+    <div style={{ marginBottom: 22 }}>
+      {openAnimal && (
+        <AnimalScrapbookModal
+          animal={openAnimal.animal}
+          hobbyLabel={openAnimal.hobbyLabel}
+          onClose={() => setOpenAnimal(null)}
+        />
+      )}
+      <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600, marginBottom: 10 }}>
+        📷 Animal scrapbook
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+        {animals.map(({ animal, hobby, hobbyLabel }) => (
+          <button
+            key={`${hobby.id}-${animal.id}`}
+            onClick={() => setOpenAnimal({ animal, hobbyLabel })}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "8px 12px 8px 8px", borderRadius: 999,
+              background: palette.card, border: `1.5px solid ${palette.line}`,
+              cursor: "pointer", fontFamily: FONT_BODY, color: palette.ink,
+              boxShadow: "2px 2px 0 " + palette.line,
+            }}
+          >
+            <ScrapbookCircle animal={animal} />
+            <span style={{ display: "flex", flexDirection: "column", alignItems: "flex-start" }}>
+              <span style={{ fontWeight: 700, fontSize: 14 }}>{animal.name || "Unnamed"}</span>
+              <span style={{ fontSize: 11, color: palette.inkSoft }}>
+                {animalPhotosOf(animal).length} photo{animalPhotosOf(animal).length === 1 ? "" : "s"}
+              </span>
+            </span>
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 // JOURNAL PAGE
 // ----------------------------------------------------------------------------
 // Full historical entry browser, grouped by season. Sorted newest-first.
@@ -4183,6 +4356,9 @@ function JournalPage({ data, update, setModal }) {
           ))}
         </div>
       )}
+
+      {/* ANIMAL SCRAPBOOK — named animals with photos, respects hobby filter */}
+      <JournalScrapbook data={data} hobbyFilter={hobbyFilter} />
 
       {/* EMPTY STATE */}
       {totalEntries === 0 && (
