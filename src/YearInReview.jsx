@@ -6,6 +6,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
 import { fmtMoney, fmtTemp } from "./units.js";
+import { supabase, isSupabaseConfigured } from "./supabase.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -109,7 +110,7 @@ const fmtTractorDistance = (totalFeet) => {
     : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
 };
 
-export default function YearInReviewPage({ data }) {
+export default function YearInReviewPage({ data, isSupporter = false, onOpenSupport }) {
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
   const [year, setYear] = useState(() => {
@@ -172,11 +173,18 @@ export default function YearInReviewPage({ data }) {
         )}
       </div>
 
+      {/* Homestead Standings — locked teaser shown to non-supporters at the
+          very top. This is intentionally NOT gating anything necessary: the
+          rest of Year in Review below is fully available to everyone. */}
+      {!isSupporter && hasAnyData && <StandingsLockedCard onOpenSupport={onOpenSupport} />}
+
       {!hasAnyData ? (
         <EmptyYear year={year} />
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
+          {isSupporter && <BadgesCard stats={stats} />}
+          {isSupporter && <CommunityPanels stats={stats} year={year} />}
           <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} horsesEnabled={horsesEnabled} farmstandEnabled={farmstandEnabled} bakingEnabled={bakingEnabled} canningEnabled={canningEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
@@ -1056,6 +1064,527 @@ function FooterCard({ year }) {
   );
 }
 
+// ============================================================================
+// StandingsLockedCard — shown at the top of Year in Review to non-supporters.
+// ----------------------------------------------------------------------------
+// Deliberately framed as optional and appreciation-based, not as a feature
+// being withheld. The app and all of Year in Review work fully without it.
+// ============================================================================
+function StandingsLockedCard({ onOpenSupport }) {
+  return (
+    <Card
+      accent={palette.bgAlt}
+      style={{
+        marginBottom: 14,
+        borderStyle: "dashed",
+        borderWidth: 2,
+        position: "relative",
+      }}
+    >
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 14 }}>
+        <div
+          style={{
+            fontSize: 30, lineHeight: 1, flexShrink: 0,
+            width: 52, height: 52, borderRadius: 12,
+            background: palette.yolkSoft,
+            border: `1.5px solid ${palette.line}`,
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}
+        >
+          🔒
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, lineHeight: 1.15 }}>
+            Homestead Standings
+          </div>
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginTop: 6, lineHeight: 1.5 }}>
+            Earn badges and milestones for everything your homestead produced
+            this year, see how the whole Henalytics community is doing, and
+            find where your homestead stands — measured kindly, never ranked.
+          </div>
+          <div
+            style={{
+              fontSize: 12, color: palette.inkSoft, marginTop: 10,
+              lineHeight: 1.5, fontStyle: "italic",
+              background: palette.card, border: `1.5px solid ${palette.line}`,
+              borderRadius: 8, padding: "9px 11px",
+            }}
+          >
+            This isn't a feature you need — the whole app and the rest of your
+            Year in Review work without it. It's a small thank-you for monthly
+            Supporters, the folks who help keep Henalytics free for everyone.
+            Standings is part of the monthly membership, not one-time tips —
+            the ongoing membership is what gives an auto-renewing subscription
+            its value.
+          </div>
+          <button
+            type="button"
+            onClick={onOpenSupport}
+            disabled={!onOpenSupport}
+            style={{
+              marginTop: 12,
+              display: "inline-flex", alignItems: "center", gap: 7,
+              padding: "9px 14px", borderRadius: 9,
+              background: palette.accent, color: palette.bg,
+              fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+              border: `1.5px solid ${palette.accent}`,
+              cursor: onOpenSupport ? "pointer" : "default",
+              boxShadow: "2px 2px 0 " + palette.line,
+            }}
+          >
+            🌾 Become a monthly Supporter to unlock
+          </button>
+        </div>
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================================
+// BadgesCard — the unlocked Homestead Standings panel (Supporters only).
+// Renders earned badges and the next milestone to chase for each tracked
+// hobby. Purely local: reads `stats`, checks thresholds, no network.
+// ============================================================================
+function BadgesCard({ stats }) {
+  const badges = useMemo(() => {
+    return BADGE_DEFS
+      .filter((def) => def.enabled(stats))
+      .map((def) => ({ def, ...evalBadge(def, stats) }))
+      // Earned badges first, then by how close to the next tier.
+      .sort((a, b) => {
+        const ae = a.earnedIdx >= 0 ? 1 : 0;
+        const be = b.earnedIdx >= 0 ? 1 : 0;
+        if (ae !== be) return be - ae;
+        return b.progress - a.progress;
+      });
+  }, [stats]);
+
+  if (badges.length === 0) return null;
+
+  const earnedCount = badges.filter((b) => b.earnedIdx >= 0).length;
+
+  return (
+    <Card accent={palette.card}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 20 }}>🏅</span>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
+          Homestead Standings
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 16 }}>
+        {earnedCount} {earnedCount === 1 ? "badge" : "badges"} earned this year ·
+        keep logging to reach the next tier
+      </div>
+
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+        {badges.map(({ def, value, earnedIdx, earnedTier, nextTier, maxed, progress }) => {
+          const earned = earnedIdx >= 0;
+          return (
+            <div
+              key={def.key}
+              style={{
+                padding: 13, borderRadius: 10,
+                background: earned ? palette.bgAlt : palette.bg,
+                border: `1.5px solid ${palette.line}`,
+                borderLeft: `4px solid ${earned ? palette.yolk : palette.line}`,
+                opacity: earned ? 1 : 0.85,
+              }}
+            >
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <span style={{ fontSize: 22, lineHeight: 1 }}>{def.icon}</span>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink }}>
+                    {def.label}
+                  </div>
+                  <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 1 }}>
+                    {value.toLocaleString()} {def.unit}
+                  </div>
+                </div>
+                {earned && (
+                  <div
+                    style={{
+                      fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
+                      textTransform: "uppercase", color: palette.ink,
+                      background: palette.yolk, borderRadius: 6,
+                      padding: "4px 8px", border: `1.5px solid ${palette.line}`,
+                    }}
+                  >
+                    {tierName(earnedIdx)}
+                  </div>
+                )}
+              </div>
+
+              {/* Progress toward next tier, or a "maxed" note. */}
+              {maxed ? (
+                <div style={{ fontSize: 11, color: palette.leaf, fontWeight: 600, marginTop: 8 }}>
+                  ✓ Top tier reached — every one
+                </div>
+              ) : (
+                <div style={{ marginTop: 8 }}>
+                  <div
+                    style={{
+                      height: 7, borderRadius: 4, background: palette.bg,
+                      border: `1px solid ${palette.line}`, overflow: "hidden",
+                    }}
+                  >
+                    <div
+                      style={{
+                        height: "100%",
+                        width: `${Math.round(progress * 100)}%`,
+                        background: earned ? palette.yolk : palette.leafSoft,
+                      }}
+                    />
+                  </div>
+                  <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 4 }}>
+                    {(nextTier - value).toLocaleString()} {def.unit} to{" "}
+                    {tierName(earnedIdx + 1)} ({nextTier.toLocaleString()})
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      <div
+        style={{
+          fontSize: 11, color: palette.inkSoft, marginTop: 14,
+          fontStyle: "italic", lineHeight: 1.5, textAlign: "center",
+        }}
+      >
+        Thank you for being a Supporter — you help keep Henalytics free for
+        every homesteader.
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================================
+// useCommunityStats — manages opt-in state, writes the user's contribution
+// row, and reads the published community_summary. All best-effort: any
+// Supabase failure leaves the feature gracefully absent rather than breaking
+// Year in Review. Inherits the app's known refresh-token flakiness — if a
+// write silently fails, the worst case is the user's numbers feed the
+// aggregate a day late.
+// ============================================================================
+function useCommunityStats(stats, year) {
+  const [optedIn, setOptedIn] = useState(false);
+  const [optinLoaded, setOptinLoaded] = useState(false);
+  const [summary, setSummary] = useState(null);   // { totals, percentiles, homestead_count }
+  const [busy, setBusy] = useState(false);
+
+  // Load the user's opt-in row once.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isSupabaseConfigured) { setOptinLoaded(true); return; }
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user) { if (!cancelled) setOptinLoaded(true); return; }
+        const { data, error } = await supabase
+          .from("community_stats_optin")
+          .select("opted_in")
+          .eq("user_id", session.user.id)
+          .maybeSingle();
+        if (cancelled) return;
+        if (!error && data) setOptedIn(data.opted_in === true);
+        setOptinLoaded(true);
+      } catch {
+        if (!cancelled) setOptinLoaded(true);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  // When opted in, fetch the published summary for the selected year.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!isSupabaseConfigured || !optedIn) { setSummary(null); return; }
+      try {
+        const { data, error } = await supabase
+          .from("community_summary")
+          .select("totals, percentiles, homestead_count")
+          .eq("year", year)
+          .maybeSingle();
+        if (!cancelled && !error) setSummary(data || null);
+      } catch {
+        if (!cancelled) setSummary(null);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [optedIn, year]);
+
+  // When opted in, push the user's own contribution row for the year.
+  // Runs whenever the computed metrics change. Fire-and-forget.
+  useEffect(() => {
+    if (!isSupabaseConfigured || !optedIn) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (!session?.user || cancelled) return;
+        await supabase
+          .from("community_contributions")
+          .upsert({
+            user_id: session.user.id,
+            year,
+            metrics: extractCommunityMetrics(stats),
+            updated_at: new Date().toISOString(),
+          }, { onConflict: "user_id,year" });
+      } catch {
+        /* best-effort — see hook comment */
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [optedIn, year, stats]);
+
+  // Toggle opt-in. On opt-out we also delete the contribution row so the
+  // user's numbers leave the aggregate on the next nightly run.
+  const toggle = async (next) => {
+    if (!isSupabaseConfigured || busy) return;
+    setBusy(true);
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.user) { setBusy(false); return; }
+      const uid = session.user.id;
+      const { error } = await supabase
+        .from("community_stats_optin")
+        .upsert({
+          user_id: uid,
+          opted_in: next,
+          opted_in_at: next ? new Date().toISOString() : null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "user_id" });
+      if (!error) {
+        setOptedIn(next);
+        if (!next) {
+          // Remove this year's contribution row on opt-out.
+          await supabase
+            .from("community_contributions")
+            .delete()
+            .eq("user_id", uid)
+            .eq("year", year);
+          setSummary(null);
+        }
+      }
+    } catch {
+      /* best-effort */
+    }
+    setBusy(false);
+  };
+
+  return { optedIn, optinLoaded, summary, busy, toggle };
+}
+
+// Small palette-styled on/off switch — no shared component existed to reuse.
+function MiniToggle({ on, busy, onClick }) {
+  return (
+    <button
+      onClick={onClick}
+      disabled={busy}
+      aria-pressed={on}
+      style={{
+        width: 46, height: 26, borderRadius: 13, flexShrink: 0,
+        border: `1.5px solid ${palette.line}`,
+        background: on ? palette.leaf : palette.bgAlt,
+        position: "relative", cursor: busy ? "default" : "pointer",
+        opacity: busy ? 0.6 : 1, transition: "background 150ms ease",
+        padding: 0,
+      }}
+    >
+      <span
+        style={{
+          position: "absolute", top: 2,
+          left: on ? 22 : 2,
+          width: 20, height: 20, borderRadius: "50%",
+          background: palette.card, border: `1.5px solid ${palette.line}`,
+          transition: "left 150ms ease",
+        }}
+      />
+    </button>
+  );
+}
+
+// ============================================================================
+// CommunityPanels — the opt-in toggle plus, when opted in, the Community
+// Totals and Where You Stand panels. Supporters only (rendered alongside
+// BadgesCard). The toggle lives here, inside Year in Review, per design.
+// ============================================================================
+function CommunityPanels({ stats, year }) {
+  const { optedIn, optinLoaded, summary, busy, toggle } =
+    useCommunityStats(stats, year);
+  const myMetrics = useMemo(() => extractCommunityMetrics(stats), [stats]);
+
+  if (!isSupabaseConfigured || !optinLoaded) return null;
+
+  // Opt-in invitation card — shown when the user hasn't joined yet.
+  if (!optedIn) {
+    return (
+      <Card accent={palette.card}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 20 }}>🌾</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
+            Join the Community Stats
+          </div>
+        </div>
+        <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.55, marginBottom: 12 }}>
+          See how the whole Henalytics community is doing — total eggs collected,
+          jars canned, birds raised — and where your homestead stands. Your
+          individual numbers are never shown to anyone; only anonymous totals
+          and broad percentile bands are shared.
+        </div>
+        <div style={{
+          display: "flex", alignItems: "center", justifyContent: "space-between",
+          gap: 12, padding: "11px 13px", borderRadius: 10,
+          background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+        }}>
+          <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink }}>
+            Share my totals with the community
+          </div>
+          <MiniToggle on={false} busy={busy} onClick={() => toggle(true)} />
+        </div>
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 9, fontStyle: "italic", lineHeight: 1.5 }}>
+          Opt out anytime — your contribution is removed on the next update.
+        </div>
+      </Card>
+    );
+  }
+
+  // Opted in — render totals + percentiles (or a friendly "gathering data"
+  // state if the nightly aggregate hasn't produced a row yet).
+  const totals = summary?.totals || {};
+  const percentiles = summary?.percentiles || {};
+  const homesteadCount = summary?.homestead_count || 0;
+  const hasSummary = summary && Object.keys(totals).length > 0;
+
+  // Metrics this homestead actually has activity in.
+  const myActiveKeys = COMMUNITY_METRIC_KEYS.filter((k) => (myMetrics[k] || 0) > 0);
+
+  return (
+    <>
+      {/* Community Totals */}
+      <Card accent={palette.leafSoft}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+          <span style={{ fontSize: 20 }}>🌍</span>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
+            The Henalytics Community
+          </div>
+        </div>
+        {!hasSummary ? (
+          <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.55 }}>
+            You're in! Community totals are gathered once a day — check back
+            tomorrow and you'll see how every homestead is doing together.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14 }}>
+              Across {homesteadCount.toLocaleString()}{" "}
+              {homesteadCount === 1 ? "homestead" : "homesteads"} in {year}
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 10 }}>
+              {COMMUNITY_METRIC_KEYS
+                .filter((k) => (totals[k] || 0) > 0)
+                .map((k) => {
+                  const meta = COMMUNITY_METRIC_META[k];
+                  const mine = myMetrics[k] || 0;
+                  return (
+                    <div key={k} style={{
+                      flex: "1 1 140px", padding: 13, borderRadius: 10,
+                      background: palette.card, border: `1.5px solid ${palette.line}`,
+                    }}>
+                      <div style={{ fontSize: 18 }}>{meta.icon}</div>
+                      <div style={{
+                        fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink,
+                        lineHeight: 1.1, marginTop: 2,
+                      }}>
+                        {Math.round(totals[k]).toLocaleString()}
+                      </div>
+                      <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                        {meta.label.toLowerCase()}
+                      </div>
+                      {mine > 0 && (
+                        <div style={{ fontSize: 10, color: palette.leaf, fontWeight: 600, marginTop: 5 }}>
+                          you added {mine.toLocaleString()} {meta.noun}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+            </div>
+          </>
+        )}
+      </Card>
+
+      {/* Where You Stand */}
+      {hasSummary && myActiveKeys.length > 0 && (
+        <Card accent={palette.card}>
+          <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+            <span style={{ fontSize: 20 }}>📊</span>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
+              Where You Stand
+            </div>
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14 }}>
+            How your homestead compares — measured kindly, never ranked
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+            {myActiveKeys.map((k) => {
+              const meta = COMMUNITY_METRIC_META[k];
+              const standing = standingFor(myMetrics[k], percentiles[k]);
+              if (!standing) return null;
+              const accent =
+                standing.tier === "top10" ? palette.yolk :
+                standing.tier === "top25" ? palette.leaf :
+                standing.tier === "top50" ? palette.leafSoft :
+                palette.line;
+              return (
+                <div key={k} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: 12, borderRadius: 10,
+                  background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+                  borderLeft: `4px solid ${accent}`,
+                }}>
+                  <span style={{ fontSize: 20 }}>{meta.icon}</span>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink }}>
+                      {meta.label}
+                    </div>
+                    <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                      {standing.text}
+                    </div>
+                  </div>
+                  {(standing.tier === "top10" || standing.tier === "top25") && (
+                    <span style={{ fontSize: 16 }}>
+                      {standing.tier === "top10" ? "🏆" : "⭐"}
+                    </span>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 12, lineHeight: 1.5 }}>
+            Percentiles favor what every homestead can do well — there's no
+            bottom of a list here, just where you fit among friends.
+          </div>
+        </Card>
+      )}
+
+      {/* Opt-out control */}
+      <div style={{
+        display: "flex", alignItems: "center", justifyContent: "space-between",
+        gap: 12, padding: "11px 15px", borderRadius: 10,
+        background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+      }}>
+        <div style={{ fontSize: 12, color: palette.inkSoft }}>
+          Sharing my totals with the community
+        </div>
+        <MiniToggle on={true} busy={busy} onClick={() => toggle(false)} />
+      </div>
+    </>
+  );
+}
+
 function CountUp({ number, suffix, big }) {
   const [shown, setShown] = useState(0);
   useEffect(() => {
@@ -1156,6 +1685,200 @@ function collectYears(data) {
     });
   });
   return Array.from(years).filter((y) => !isNaN(y)).sort((a, b) => b - a);
+}
+
+// ============================================================================
+// HOMESTEAD STANDINGS — Badges & Milestones
+// ----------------------------------------------------------------------------
+// A purely local feature: reads the user's own computed `stats` for the
+// selected year and checks tiered thresholds. No backend, no other
+// homesteads' data, no privacy surface. This is the "set in stone" piece —
+// once the thresholds are fixed, the only thing that can change is the math.
+//
+// This panel is shown UNLOCKED only to monthly Supporters. Non-supporters
+// see a locked teaser. Important: this is NOT a necessary feature — the
+// whole app and all of Year in Review works without it. It exists purely
+// as a small thank-you for Supporters who help keep Henalytics free.
+//
+// Each badge definition:
+//   { key, icon, label, unit, tiers: [n,n,...], value: (stats)=>number,
+//     enabled: (stats)=>boolean }
+// `enabled` keeps a badge out of the list entirely if the user doesn't do
+// that hobby at all (no value, no zero-state clutter).
+// ============================================================================
+const BADGE_DEFS = [
+  {
+    key: "eggs", icon: "🥚", label: "Eggs Collected", unit: "eggs",
+    tiers: [100, 500, 1000, 5000, 10000, 25000],
+    value: (s) => s.eggsCollected,
+    enabled: (s) => s.eggsCollected > 0,
+  },
+  {
+    key: "dozens_sold", icon: "🧺", label: "Dozens Sold", unit: "eggs sold",
+    tiers: [50, 250, 1000, 5000],
+    value: (s) => s.eggsSold,
+    enabled: (s) => s.eggsSold > 0,
+  },
+  {
+    key: "meat_birds", icon: "🍗", label: "Meat Birds Raised", unit: "birds",
+    tiers: [25, 50, 100, 250, 500],
+    value: (s) => s.birdsRaised,
+    enabled: (s) => s.birdsRaised > 0,
+  },
+  {
+    key: "hatched", icon: "🐣", label: "Eggs Hatched", unit: "chicks",
+    tiers: [10, 50, 100, 250],
+    value: (s) => s.incubatorEggsHatched,
+    enabled: (s) => s.incubatorEggsHatched > 0,
+  },
+  {
+    key: "harvest", icon: "🥕", label: "Garden Harvest", unit: "lbs",
+    tiers: [25, 100, 250, 500, 1000],
+    value: (s) => Math.round(s.totalHarvestLbs),
+    enabled: (s) => s.totalHarvestLbs > 0,
+  },
+  {
+    key: "preserving", icon: "🥫", label: "Things Preserved", unit: "batches",
+    tiers: [5, 25, 50, 100],
+    // Canning batches + freeze-dry + dehydrate + ferments finished
+    value: (s) => s.canningBatches + s.fdBatches + s.dehyBatches + s.fermFinishedCount,
+    enabled: (s) => (s.canningBatches + s.fdBatches + s.dehyBatches + s.fermFinishedCount) > 0,
+  },
+  {
+    key: "jars", icon: "🫙", label: "Jars Canned", unit: "jars",
+    tiers: [25, 100, 250, 500],
+    value: (s) => s.canningJarsMade,
+    enabled: (s) => s.canningJarsMade > 0,
+  },
+  {
+    key: "milk", icon: "🥛", label: "Milk Collected", unit: "gallons",
+    tiers: [10, 50, 150, 365],
+    value: (s) => Math.round(s.cowMilkGal + s.goatMilkOz / 128 + s.sheepMilkGal),
+    enabled: (s) => (s.cowMilkGal + s.goatMilkOz + s.sheepMilkGal) > 0,
+  },
+  {
+    key: "honey", icon: "🍯", label: "Honey Harvested", unit: "lbs",
+    tiers: [5, 25, 75, 150],
+    value: (s) => Math.round(s.honeyHarvestedLbs),
+    enabled: (s) => s.honeyHarvestedLbs > 0,
+  },
+  {
+    key: "litters", icon: "🐾", label: "Litters Born", unit: "litters",
+    tiers: [1, 5, 15, 30],
+    value: (s) => s.dogLitters + s.catLitters + s.totalLitters + s.pigLitters,
+    enabled: (s) => (s.dogLitters + s.catLitters + s.totalLitters + s.pigLitters) > 0,
+  },
+  {
+    key: "streak", icon: "🔥", label: "Longest Logging Streak", unit: "days",
+    tiers: [7, 30, 90, 180, 365],
+    value: (s) => s.longestStreak,
+    enabled: (s) => s.longestStreak > 0,
+  },
+  {
+    key: "entries", icon: "📓", label: "Entries Logged", unit: "entries",
+    tiers: [50, 250, 500, 1000, 2500],
+    value: (s) => s.totalEntries,
+    enabled: (s) => s.totalEntries > 0,
+  },
+  {
+    key: "active_days", icon: "📅", label: "Active Days", unit: "days",
+    tiers: [30, 100, 200, 300],
+    value: (s) => s.activeDays,
+    enabled: (s) => s.activeDays > 0,
+  },
+];
+
+// Compute, for one badge def, the earned tier index and progress to next.
+function evalBadge(def, stats) {
+  const value = Math.max(0, Math.round(def.value(stats) || 0));
+  let earnedIdx = -1;
+  for (let i = 0; i < def.tiers.length; i++) {
+    if (value >= def.tiers[i]) earnedIdx = i;
+  }
+  const earnedTier = earnedIdx >= 0 ? def.tiers[earnedIdx] : null;
+  const nextTier = earnedIdx + 1 < def.tiers.length ? def.tiers[earnedIdx + 1] : null;
+  const maxed = nextTier == null && earnedIdx === def.tiers.length - 1;
+  // Progress fraction toward the next tier (from the current earned tier).
+  let progress = 1;
+  if (nextTier != null) {
+    const floor = earnedTier || 0;
+    progress = Math.min(1, Math.max(0, (value - floor) / (nextTier - floor)));
+  }
+  return { value, earnedIdx, earnedTier, nextTier, maxed, progress };
+}
+
+// Roman-numeral-ish tier label so "Eggs Collected" at tier 3 reads nicely.
+const TIER_NAMES = ["Bronze", "Silver", "Gold", "Platinum", "Diamond", "Legend"];
+function tierName(idx) {
+  return TIER_NAMES[Math.min(idx, TIER_NAMES.length - 1)] || "";
+}
+
+// ============================================================================
+// HOMESTEAD STANDINGS — Community (totals + percentiles)
+// ----------------------------------------------------------------------------
+// Opt-in only. The client computes its own per-year totals from `stats`
+// (computeStats is the single source of truth — see community_stats_migration.sql,
+// "Option B"), writes ~10 numbers to community_contributions, and reads ONE
+// aggregate row from community_summary. It never reads another homestead's data.
+//
+// COMMUNITY_METRIC_KEYS must stay in sync with metric_keys in the SQL function
+// recompute_community_summary(). If you add a metric, add it in both places.
+// ============================================================================
+const COMMUNITY_METRIC_KEYS = [
+  "eggs", "dozens_sold", "meat_birds", "hatched", "harvest",
+  "preserving", "jars", "milk", "honey", "litters",
+];
+
+// Human labels + the noun shown after a number, per metric.
+const COMMUNITY_METRIC_META = {
+  eggs:        { label: "Eggs collected",   noun: "eggs",     icon: "🥚" },
+  dozens_sold: { label: "Eggs sold",        noun: "eggs",     icon: "🧺" },
+  meat_birds:  { label: "Meat birds raised", noun: "birds",   icon: "🍗" },
+  hatched:     { label: "Eggs hatched",     noun: "chicks",   icon: "🐣" },
+  harvest:     { label: "Garden harvest",   noun: "lbs",      icon: "🥕" },
+  preserving:  { label: "Batches preserved", noun: "batches", icon: "🥫" },
+  jars:        { label: "Jars canned",      noun: "jars",     icon: "🫙" },
+  milk:        { label: "Milk collected",   noun: "gallons",  icon: "🥛" },
+  honey:       { label: "Honey harvested",  noun: "lbs",      icon: "🍯" },
+  litters:     { label: "Litters born",     noun: "litters",  icon: "🐾" },
+};
+
+// Derive the flat metric object the client writes to community_contributions.
+// Mirrors the badge values so the two surfaces always agree.
+function extractCommunityMetrics(stats) {
+  return {
+    eggs:        Math.max(0, Math.round(stats.eggsCollected || 0)),
+    dozens_sold: Math.max(0, Math.round(stats.eggsSold || 0)),
+    meat_birds:  Math.max(0, Math.round(stats.birdsRaised || 0)),
+    hatched:     Math.max(0, Math.round(stats.incubatorEggsHatched || 0)),
+    harvest:     Math.max(0, Math.round(stats.totalHarvestLbs || 0)),
+    preserving:  Math.max(0, Math.round(
+      (stats.canningBatches || 0) + (stats.fdBatches || 0) +
+      (stats.dehyBatches || 0) + (stats.fermFinishedCount || 0)
+    )),
+    jars:        Math.max(0, Math.round(stats.canningJarsMade || 0)),
+    milk:        Math.max(0, Math.round(
+      (stats.cowMilkGal || 0) + (stats.goatMilkOz || 0) / 128 + (stats.sheepMilkGal || 0)
+    )),
+    honey:       Math.max(0, Math.round(stats.honeyHarvestedLbs || 0)),
+    litters:     Math.max(0, Math.round(
+      (stats.dogLitters || 0) + (stats.catLitters || 0) +
+      (stats.totalLitters || 0) + (stats.pigLitters || 0)
+    )),
+  };
+}
+
+// Given a user's own value and the {p50,p75,p90} band, return a friendly
+// standing string — or null if there isn't enough community data / the user
+// didn't do this metric. Never produces a "bottom" message: below p50 reads
+// as "right in the mix", which is honest and kind.
+function standingFor(value, band) {
+  if (!band || value <= 0) return null;
+  const { p50 = 0, p75 = 0, p90 = 0 } = band;
+  if (p90 > 0 && value >= p90) return { tier: "top10", text: "Top 10% of homesteads" };
+  if (p75 > 0 && value >= p75) return { tier: "top25", text: "Top 25% of homesteads" };
+  if (p50 > 0 && value >= p50) return { tier: "top50", text: "Above the median homestead" };
+  return { tier: "mix", text: "Right in the mix with most homesteads" };
 }
 
 function computeStats(data, year) {

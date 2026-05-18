@@ -3624,7 +3624,7 @@ export default function HomesteadApp() {
           <PhotoLibraryPage data={data} user={user} />
         )}
         {page === "year" && (
-          <YearInReviewPage data={data} />
+          <YearInReviewPage data={data} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
         )}
         {page === "bees" && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
@@ -8086,7 +8086,18 @@ function SupportModal({ onClose }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <div><strong>✨ Early access</strong> — new hobbies and features land for Supporters about a week before everyone else.</div>
             <div><strong>🌱 A Supporter badge</strong> — a little pill next to your homestead name on the home screen.</div>
+            <div><strong>🏅 Homestead Standings</strong> — badges, community totals, and percentile standings in your Year in Review.</div>
             <div><strong>🌾 The supporter wall</strong> — your homestead name in the monthly thank-you, if you'd like it there.</div>
+          </div>
+          <div style={{
+            marginTop: 10, paddingTop: 9,
+            borderTop: `1px solid ${palette.line}`,
+            fontSize: 11.5, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.55,
+          }}>
+            These perks come with the monthly membership, not one-time tips —
+            the ongoing membership is what gives an auto-renewing subscription
+            its value. A one-time tip is still hugely appreciated and helps
+            just as much; it simply doesn't carry the membership perks.
           </div>
         </div>
         <div style={{
