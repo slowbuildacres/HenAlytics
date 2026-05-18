@@ -3733,7 +3733,7 @@ export default function HomesteadApp() {
       </nav>
 
       {/* MODALS */}
-      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} onFreshStart={() => setData(defaultData())} />
+      <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} onFreshStart={() => setData(defaultData())} /* GARDEN_GRID_SCOPE_FIX */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
     </div>
   );
 }
@@ -6899,7 +6899,7 @@ function PhotoTile({ photo }) {
 }
 
 // ============ MODAL ROUTER & FORMS ============
-function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, setActiveHobby, setPage, onFreshStart }) {
+function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, setActiveHobby, setPage, onFreshStart, /* GARDEN_GRID_SCOPE_FIX */ earlyAccessConfig = null, isSupporter = false }) {
   const close = () => setModal(null);
   if (!modal) return null;
 
