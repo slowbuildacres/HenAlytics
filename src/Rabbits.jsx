@@ -832,6 +832,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
         ))}
         <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
         <button onClick={()=>setShowHistory(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>📜 History</button>
+        <button onClick={()=>setModal({type:"moveRabbit",hobbyId,animalId:animal.id})} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>↔️ Move</button>
       </div>
       {recentEntries.length>0 && (
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -1036,6 +1037,72 @@ function HerdTallySection({ hobby, update }) {
   );
 }
 
+// ============================================================================
+// MOVE RABBIT MODAL — reassign a rabbit's hutch without the full edit form
+// ----------------------------------------------------------------------------
+// Rabbits group by the `hutch` text field. This is a quick, typo-proof way to
+// move a rabbit: pick an existing hutch from the dropdown (so you don't
+// accidentally split a group with a misspelling), choose "Unassigned", or
+// pick "+ New hutch…" to type a fresh one. Writes only animal.hutch.
+// ============================================================================
+function MoveRabbitModal({ animal, hobby, hobbyId, update, onClose }) {
+  // Existing hutch labels across all rabbits, for the dropdown.
+  const existing = Array.from(
+    new Set((hobby.animals || []).map(a => (a.hutch || "").trim()).filter(Boolean))
+  ).sort((a, b) => a.localeCompare(b));
+
+  const current = (animal?.hutch || "").trim();
+  // Selection: "" = Unassigned, a label = that hutch, "__new__" = type a new one.
+  const [choice, setChoice] = useState(current || "");
+  const [newName, setNewName] = useState("");
+
+  const save = () => {
+    let target;
+    if (choice === "__new__") {
+      target = newName.trim();
+      if (!target) return; // nothing typed — don't save an empty new hutch
+    } else {
+      target = choice; // "" (unassigned) or an existing label
+    }
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const a = (h.animals || []).find(x => x.id === animal.id);
+      if (a) a.hutch = target;
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Move ${animal?.name || "rabbit"}`}>
+      <Field label="Hutch">
+        <select style={inputStyle} value={choice} onChange={e => setChoice(e.target.value)} autoFocus>
+          <option value="">— Unassigned —</option>
+          {existing.map(label => (
+            <option key={label} value={label}>{label}</option>
+          ))}
+          <option value="__new__">+ New hutch…</option>
+        </select>
+      </Field>
+      {choice === "__new__" && (
+        <Field label="New hutch name">
+          <input
+            style={inputStyle}
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            placeholder="e.g. Hutch 3, West run, Colony B"
+          />
+        </Field>
+      )}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+        <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
+        <button onClick={save} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Move</button>
+      </div>
+    </Modal>
+  );
+}
+
 function RabbitsModalRouter({modal,hobby,update,user,onClose}){
   if(!modal)return null;
   if(modal.type==="addAnimal")return <AnimalModal hobbyId={hobby.id} animals={hobby.animals||[]} update={update} user={user} onClose={onClose}/>;
@@ -1043,6 +1110,11 @@ function RabbitsModalRouter({modal,hobby,update,user,onClose}){
     const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);
     if(!animal){onClose();return null;}
     return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} update={update} user={user} onClose={onClose}/>;
+  }
+  if(modal.type==="moveRabbit"){
+    const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);
+    if(!animal){onClose();return null;}
+    return <MoveRabbitModal animal={animal} hobby={hobby} hobbyId={hobby.id} update={update} onClose={onClose}/>;
   }
   return null;
 }
