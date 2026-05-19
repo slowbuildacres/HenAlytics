@@ -2,6 +2,11 @@ import React, { useState } from "react";
 import { X, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -654,7 +659,7 @@ function BeeEntryRow({ entry, onDelete, onEdit }) {
 }
 
 // ============ STATS — exported for AnalyticsPage ============
-export function BeesAnalytics({ hobby, entries }) {
+export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const hives = hobby.hives || [];
 
   const allInspections = entries.filter(e=>e.action==="inspect");
@@ -786,6 +791,53 @@ export function BeesAnalytics({ hobby, entries }) {
           </div>
         </ChartCard>
       )}
+
+      {/* ADV_ANALYTICS: gated block — honey by month line, best harvest month,
+          harvest vs. prior period. Harvest entries carry a date. */}
+      {(() => {
+        const advAll = allEntries || entries;
+        const advHarvests = advAll.filter(e => e.action === "harvest");
+        if (advHarvests.length === 0) return null;
+        const honeyMonthlyRaw = monthlySeries(advHarvests, e => e.date, e => Number(e.lbs) || 0);
+        const honeyMonthly = honeyMonthlyRaw.map(p => ({
+          month: p.month, lbs: Number(p.value.toFixed(1)),
+          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+        }));
+        const honeyRecord = personalRecord(honeyMonthlyRaw);
+        const prior = priorDateRange(dateRange);
+        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+        const priorHoney = prior ? advHarvests.filter(e => inR(e.date, prior)).reduce((s, e) => s + (Number(e.lbs) || 0), 0) : null;
+        const honeyDelta = prior ? computeDelta(totalHarvestLbs, priorHoney) : null;
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
+                {honeyRecord && <StatCard label="Best harvest month" value={`${honeyRecord.value.toFixed(1)} lbs`} sub={honeyRecord.label} accent={palette.honey} />}
+                {honeyDelta && (
+                  <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
+                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Harvest vs. prior period</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.honey,lineHeight:1.1 }}>{totalHarvestLbs.toFixed(1)} lbs</div>
+                    <div style={{ marginTop:4 }}><StatTrend delta={honeyDelta} palette={palette} fonts={pFonts} /></div>
+                  </div>
+                )}
+              </div>
+              {honeyMonthly.length > 1 && (
+                <ChartCard title="🍯 Honey by month">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={honeyMonthly}>
+                      <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                      <YAxis stroke={palette.inkSoft} fontSize={11} />
+                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} lbs`, "Honey"]} />
+                      <Line type="monotone" dataKey="lbs" stroke={palette.honey} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </ChartCard>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
     </div>
   );
 }

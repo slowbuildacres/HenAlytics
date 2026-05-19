@@ -24,8 +24,12 @@
 
 import React, { useState } from "react";
 import { X, Edit3, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -567,7 +571,7 @@ export default function TeaPage({ hobby, data, update }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function TeaAnalytics({ hobby, entries }) {
+export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;
   const totalWeightOz = batches.reduce((s, b) => s + (Number(b.totalWeightOz) || 0), 0);
@@ -584,6 +588,15 @@ export function TeaAnalytics({ hobby, entries }) {
     .sort((a, b) => b.oz - a.oz)
     .slice(0, 8);
 
+  // ── ADV_ANALYTICS ── blends made by month line + busiest month record.
+  const blendMonthlyRaw = monthlySeries(batches, b => b.madeDate, () => 1);
+  const blendMonthly = blendMonthlyRaw.map(p => ({
+    month: p.month, blends: p.value,
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const blendRecord = personalRecord(blendMonthlyRaw);
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -592,6 +605,30 @@ export function TeaAnalytics({ hobby, entries }) {
         {totalSachetsMade > 0 && <StatCard label="Sachets made" value={totalSachetsMade} accent={palette.feather} />}
         {totalCost > 0 && <StatCard label="Ingredients spent" value={fmtMoney(totalCost)} accent={palette.accent} />}
       </div>
+
+      {blendMonthlyRaw.length > 0 && (
+        <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+          <div>
+            {blendRecord && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <StatCard label="Busiest month" value={`${blendRecord.value} blends`} sub={blendRecord.label} accent={palette.leaf} />
+              </div>
+            )}
+            {blendMonthly.length > 1 && (
+              <ChartCard title="🍵 Blends made by month">
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={blendMonthly}>
+                    <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                    <YAxis stroke={palette.inkSoft} fontSize={11} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [`${v} blends`, "Made"]} />
+                    <Line type="monotone" dataKey="blends" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+          </div>
+        </LockedStatOverlay>
+      )}
 
       {chart.length > 1 && (
         <ChartCard title="🍵 Blends by weight">

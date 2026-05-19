@@ -24,6 +24,12 @@ import { fmtMoney } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1492,7 +1498,7 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
 // ============================================================================
 // HORSES ANALYTICS
 // ============================================================================
-export function HorsesAnalytics({ hobby, sales = [] }) {
+export function HorsesAnalytics({ hobby, sales = [], /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   if (!hobby) {
     return <div style={{ padding:40,textAlign:"center",color:palette.inkSoft }}>Loading…</div>;
   }
@@ -1584,6 +1590,56 @@ export function HorsesAnalytics({ hobby, sales = [] }) {
           );
         })}
       </div>
+
+      {/* ADV_ANALYTICS: gated block — ride hours by month line, best riding
+          month, rides vs. prior period. Rides carry a date + durationMinutes. */}
+      {(() => {
+        if (rides.length === 0) return null;
+        const hoursMonthlyRaw = monthlySeries(rides, r => r.date, r => (Number(r.durationMinutes) || 0) / 60);
+        const hoursMonthly = hoursMonthlyRaw.map(p => ({
+          month: p.month, hours: Number(p.value.toFixed(1)),
+          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+        }));
+        const hoursRecord = personalRecord(hoursMonthlyRaw);
+        const prior = priorDateRange(dateRange);
+        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+        const curRides = dateRange && (dateRange.start || dateRange.end)
+          ? rides.filter(r => inR(r.date, dateRange)).length
+          : rides.length;
+        const priorRides = prior ? rides.filter(r => inR(r.date, prior)).length : null;
+        const ridesDelta = prior ? computeDelta(curRides, priorRides) : null;
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>📈 Riding trend</h3>
+              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
+                {hoursRecord && <StatCard label="Best riding month" value={`${hoursRecord.value.toFixed(1)} hrs`} sub={hoursRecord.label} accent={palette.yolk} />}
+                {ridesDelta && (
+                  <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
+                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Rides vs. prior period</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.yolk,lineHeight:1.1 }}>{curRides} rides</div>
+                    <div style={{ marginTop:4 }}><StatTrend delta={ridesDelta} palette={palette} fonts={pFonts} /></div>
+                  </div>
+                )}
+              </div>
+              {hoursMonthly.length > 1 && (
+                <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:18 }}>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🐴 Ride hours by month</div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={hoursMonthly}>
+                      <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                      <YAxis stroke={palette.inkSoft} fontSize={11} />
+                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} hrs`, "Riding"]} />
+                      <Line type="monotone" dataKey="hours" stroke={palette.yolk} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
     </div>
   );
 }

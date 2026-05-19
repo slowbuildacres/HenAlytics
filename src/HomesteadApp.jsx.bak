@@ -4,15 +4,10 @@ import {
   Skull, Bird, Home, BarChart3, X, ChevronDown, ChevronUp, Calendar, DollarSign, Sparkles,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
-  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle, Check,
+  Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle,
   MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
-// ADV_ANALYTICS: shared advanced-analytics layer (leaf module — see analytics.js).
-import {
-  ADV_ANALYTICS_FEATURE_KEY, priorDateRange, computeDelta, StatTrend,
-  personalRecord, monthlySeries, LockedStatOverlay,
-} from "./analytics.js";
 import AuthModal from "./AuthModal.jsx";
 import FarmhandModal from "./FarmhandModal.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
@@ -71,10 +66,9 @@ function formatEarlyAccessDate(publicDate) {
   return d.toLocaleDateString("en-US", { month: "long", day: "numeric" });
 }
 import {
-  loadHomestead, saveHomestead, readLocalHomestead, readLocalHomesteadFor, clearLocalHomestead,
+  loadHomestead, saveHomestead, readLocalHomestead, clearLocalHomestead,
   uploadPhoto, getPhotoUrl, deletePhoto,
   sendFeedback, acceptInvite, deleteAccount,
-  listMyHomesteads, setActiveHomestead,
 } from "./sync.js";
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
@@ -188,8 +182,6 @@ const defaultData = () => ({
   freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
   appStoreFundDismissedMonth: null, // "YYYY-MM" of last dismissed app-store-fundraiser popup
-  appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time)
-  accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
@@ -214,12 +206,6 @@ function migrateData(data) {
   }
   if (typeof data.appStoreFundDismissedMonth !== "string" && data.appStoreFundDismissedMonth !== null) {
     data.appStoreFundDismissedMonth = null;
-  }
-  if (typeof data.appStoreLaunchDismissed !== "boolean") {
-    data.appStoreLaunchDismissed = false;
-  }
-  if (typeof data.accountNudgeDismissed !== "boolean") {
-    data.accountNudgeDismissed = false;
   }
   if (typeof data.weeklyChoreEmailOptIn !== "boolean") {
     data.weeklyChoreEmailOptIn = false;
@@ -492,41 +478,6 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
         p.category = /\btree\b/i.test(p.name || "") ? "tree" : "plant";
       }
       if (!Array.isArray(p.actions)) p.actions = [];
-    });
-  }
-
-  // ---- Annuals indexing ----
-  // Annual records are a VIEW/INDEX over the existing `planted` entries, not
-  // a separate data store. Plantings and harvests stay as garden entries
-  // (untouched, the source of truth); an annual record is a lightweight
-  // object keyed by plant-name + seasonId that owns only its `actions[]`
-  // log. This means a bug here can never lose data — records are always
-  // rebuildable from the entries below.
-  //
-  // Idempotent: re-running only appends records for name+season pairs that
-  // don't already have one, so it never duplicates and is safe to force.
-  if (gardenHobby) {
-    if (!Array.isArray(gardenHobby.annuals)) gardenHobby.annuals = [];
-    const gardenEntries = (data.entries && data.entries.garden) || [];
-    const existingKeys = new Set(
-      gardenHobby.annuals.map(
-        (a) => `${String(a.name || "").toLowerCase()}|${a.seasonId || ""}`
-      )
-    );
-    gardenEntries.forEach((e) => {
-      if (!e || e.action !== "planted") return;
-      const name = (e.plant || "Unnamed").trim() || "Unnamed";
-      const seasonId = e.seasonId || "";
-      const key = `${name.toLowerCase()}|${seasonId}`;
-      if (existingKeys.has(key)) return;
-      existingKeys.add(key);
-      gardenHobby.annuals.push({
-        id: newId(),
-        name,
-        seasonId,
-        actions: [],
-        created: Date.now(),
-      });
     });
   }
   if (typeof data.lastSeenVersion !== "number") data.lastSeenVersion = 0;
@@ -889,49 +840,7 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   return data;
 }
 
-// ============ HARVEST SUMMARY HELPERS ============
-// Harvest entries each carry their own `unit` (lbs, oz, each, count, cups,
-// pints, quarts, bunch). You cannot sum across units — 3 cups + 2 lbs is not
-// "5" of anything. These helpers group a list of harvest entries by unit so
-// totals are reported per-unit. Entries with no unit are treated as "lbs"
-// (every harvest logged before the unit picker existed was implicitly lbs).
-const HARVEST_UNIT_LABELS = {
-  lbs: "lbs", oz: "oz", each: "each", count: "count",
-  cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches",
-  // Singular aliases — perennial harvest records historically stored these.
-  quart: "quarts", pint: "pints",
-};
-
-// Returns a map of { unit: totalQuantity } for the given harvest entries.
-// Accepts both `quantity` (annual garden entries) and `qty` (perennial
-// harvest records) as the amount field.
-function harvestTotalsByUnit(harvestEntries) {
-  const totals = {};
-  (harvestEntries || []).forEach((e) => {
-    const unit = e && e.unit ? e.unit : "lbs";
-    const raw = e && (e.quantity != null ? e.quantity : e.qty);
-    const qty = Number(raw) || 0;
-    totals[unit] = (totals[unit] || 0) + qty;
-  });
-  return totals;
-}
-
-// Returns a human display string like "12.5 lbs · 8 each · 3 cups".
-// Falls back to "0 lbs" when there are no harvests.
-function harvestSummary(harvestEntries) {
-  const totals = harvestTotalsByUnit(harvestEntries);
-  const parts = Object.keys(totals).map((unit) => {
-    const n = totals[unit];
-    const label = HARVEST_UNIT_LABELS[unit] || unit;
-    // Whole numbers for count-like units, one decimal for weight/volume.
-    const isWhole = unit === "each" || unit === "count" || unit === "bunch";
-    const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
-    return `${num} ${label}`;
-  });
-  return parts.length ? parts.join(" · ") : "0 lbs";
-}
-
-
+// ============ PHOTO HELPERS ============
 // Backwards compatibility: old entries use `entry.photoPath` (single string),
 // new entries use `entry.photoPaths` (array). This helper returns a unified array
 // of photo paths for any entry, regardless of which shape it has.
@@ -1280,7 +1189,6 @@ const newId = () => {
 const CURRENT_VERSION = 43;
 
 const WHATS_NEW = [
-  "🌱 Annual plants now have their own pages — tap any annual in your garden's Annuals list to open its detail view. See every planting and harvest for that plant this season, and log actions like spray, fertilize, weed, thin, or transplant — each one dated and saved to that plant's history. Works just like perennials and orchard trees. Your existing plantings were automatically organized into annual records.",
   "🌱 New garden layout: grid view — when you add a Garden Map area you can now lay it out as a grid of rows and columns (great for raised beds and square-foot gardening), instead of pinning plants on a photo. Tap a cell to plant it, tap again to log dates and notes. This is a Supporter early-access feature — Supporters have it now; it opens to everyone soon.",  // GARDEN_GRID
   "🌱 Become a Supporter — the monthly membership now comes with real perks: early access to new hobbies and features about a week before everyone else, a Supporter badge next to your homestead name, and a spot on the supporter wall. Every tier gets the same perks — pick the amount that feels right. The one-time tip is still there too. (The app stays free for everyone, always — Supporters just help keep it that way.)",  // STEP2C_SUPPORTER_COPY
   "⭐ Top Sponsor on the supporter wall — the monthly thank-you now highlights the supporter (or supporters, on a tie) who gave the most that month, in their own spot above the full supporter list. A small thank-you for the folks who go the extra mile to keep Henalytics free for everyone.",  // STEP2B_TOP_SPONSOR
@@ -2304,144 +2212,6 @@ function SyncIndicator({ status, signedIn }) {
   );
 }
 
-// ============ HOMESTEAD SWITCHER ============
-// Inline dropdown attached under the homestead name in the header. Only
-// renders its toggle arrow when the user belongs to 2+ homesteads (owns
-// their own AND/OR is a farmhand on others). Tapping the arrow expands an
-// inline panel listing every homestead; tapping one switches to it.
-function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhands }) {
-  const [open, setOpen] = useState(false);
-  const [homesteads, setHomesteads] = useState(null); // null = not loaded yet
-  const [switching, setSwitching] = useState(false);
-  const [error, setError] = useState("");
-
-  // Load the list once on mount. It's a single lightweight query and it's
-  // the only way to know whether to show the switcher at all — users with
-  // one homestead should see nothing. If the query fails we just render
-  // nothing (the switcher is non-essential; the header name still works).
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const list = await listMyHomesteads(user);
-        if (!cancelled) setHomesteads(list);
-      } catch (e) {
-        if (!cancelled) setHomesteads([]); // treat failure as "nothing to show"
-      }
-    })();
-    return () => { cancelled = true; };
-  }, [user]);
-
-  const pick = async (h) => {
-    if (h.isActive || switching) return;
-    setSwitching(true);
-    setError("");
-    try {
-      await onSwitch(h.homesteadId);
-      setOpen(false);
-    } catch (e) {
-      setError(e.message || "Could not switch homestead");
-    } finally {
-      // Always clear the switching flag — including on success. Previously
-      // success left `switching` stuck true, so the FIRST switch worked but
-      // every switch after it was silently a no-op (the guard at the top of
-      // pick() returned early) until the user reloaded the page.
-      setSwitching(false);
-    }
-  };
-
-  // Render nothing until we've confirmed the user has 2+ homesteads.
-  if (!homesteads || homesteads.length < 2) return null;
-
-  return (
-    <div style={{ position: "relative", marginTop: 3 }}>
-      <button
-        onClick={() => setOpen((o) => !o)}
-        aria-label="Switch homestead"
-        title="Switch homestead"
-        style={{
-          background: "none", border: "none", padding: "2px 4px", cursor: "pointer",
-          color: palette.inkSoft, display: "flex", alignItems: "center", gap: 3,
-          fontFamily: FONT_BODY, fontSize: 11, fontWeight: 600,
-        }}
-      >
-        Switch homestead
-        <ChevronDown
-          size={13}
-          style={{ transform: open ? "rotate(180deg)" : "none", transition: "transform 0.15s" }}
-        />
-      </button>
-
-      {open && (
-        <div style={{
-          position: "absolute", top: "100%", left: 0, marginTop: 4,
-          minWidth: 240, maxWidth: 300,
-          background: palette.card, border: `2px solid ${palette.ink}`,
-          borderRadius: 12, boxShadow: `4px 5px 0 ${palette.line}`,
-          zIndex: 60, overflow: "hidden",
-        }}>
-          {error && (
-            <div style={{
-              padding: 12, fontSize: 12, color: palette.accent, fontFamily: FONT_BODY,
-              lineHeight: 1.5,
-            }}>
-              {error}
-            </div>
-          )}
-
-          <div>
-            {homesteads.map((h) => (
-              <button
-                key={h.homesteadId}
-                onClick={() => pick(h)}
-                disabled={switching}
-                style={{
-                  display: "flex", alignItems: "center", gap: 8, width: "100%",
-                  padding: "11px 13px", background: h.isActive ? palette.bgAlt : "transparent",
-                  border: "none", borderBottom: `1px solid ${palette.line}`,
-                  cursor: h.isActive || switching ? "default" : "pointer",
-                  textAlign: "left", fontFamily: FONT_BODY,
-                  opacity: switching && !h.isActive ? 0.5 : 1,
-                }}
-              >
-                <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{
-                    fontSize: 14, fontWeight: 600, color: palette.ink,
-                    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
-                  }}>
-                    {h.name}
-                  </div>
-                  <div style={{ fontSize: 11, color: palette.inkSoft }}>
-                    {(h.role === "owner" ? "Owner" : "Farmhand")}
-                    {h.hint ? ` · ${h.hint}` : ""}
-                  </div>
-                </div>
-                {h.isActive && <Check size={16} color={palette.leaf} style={{ flexShrink: 0 }} />}
-              </button>
-            ))}
-
-            {/* Manage farmhands — owner only. Sits at the bottom of the
-                panel so the common action (switching) stays on top. */}
-            {role === "owner" && (
-              <button
-                onClick={() => { setOpen(false); onManageFarmhands(); }}
-                style={{
-                  display: "flex", alignItems: "center", gap: 7, width: "100%",
-                  padding: "11px 13px", background: "transparent", border: "none",
-                  cursor: "pointer", textAlign: "left",
-                  fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.inkSoft,
-                }}
-              >
-                <UserPlus size={14} /> Manage farmhands
-              </button>
-            )}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ============ MAIN APP ============
 export default function HomesteadApp() {
   const [data, setData] = useState(null);
@@ -2449,16 +2219,9 @@ export default function HomesteadApp() {
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
-  // Onboarding wizard step is hoisted here (rather than living inside
-  // OnboardingWizard) because the wizard unmounts whenever a modal opens —
-  // e.g. when the account-choice step opens AuthModal. Without hoisting,
-  // the wizard would remount back at step 0 after the user finishes signup.
-  const [onboardingStep, setOnboardingStep] = useState(0);
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
-  const [showAppStoreLaunch, setShowAppStoreLaunch] = useState(false);
-  const [showAccountNudge, setShowAccountNudge] = useState(false);
   const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   // Milestone popup — fetched from Supabase app_config table. Lets Riley
   // celebrate growth milestones (e.g. "nearly 2,000 users") and ask for
@@ -2490,9 +2253,6 @@ export default function HomesteadApp() {
   const [customEnd, setCustomEnd] = useState("");
   const [user, setUser] = useState(null);
   const [role, setRole] = useState(null); // "owner" | "member" | null
-  // Bumped by the homestead switcher to force the load effect to re-run and
-  // pull the newly-selected homestead's data from cloud.
-  const [homesteadReloadKey, setHomesteadReloadKey] = useState(0);
   const [authReady, setAuthReady] = useState(!isSupabaseConfigured); // if Supabase isn't configured, "ready" immediately
   // Password recovery flow:
   //
@@ -2526,59 +2286,6 @@ export default function HomesteadApp() {
     const timer = setTimeout(() => setShowWhatsNew(true), 1500);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
-
-  // ---- "We're on the App Store" launch popup (one-time, web users only) ----
-  // Native users are already in the app — showing them a "download the app"
-  // popup would be confusing — so this is gated to web (!isNativeApp()).
-  // Shown once per account, tracked by data.appStoreLaunchDismissed. It waits
-  // behind the What's New popup and the tutorial so popups never stack, and
-  // holds off until the user has had the app at least a day — a brand-new
-  // user hasn't formed a relationship with Henalytics yet, so the "get the
-  // app" pitch lands better once they've actually used it a bit.
-  const appStoreLaunchShownRef = React.useRef(false);
-  useEffect(() => {
-    if (appStoreLaunchShownRef.current) return;
-    if (isNativeApp()) return;                   // native users already have the app
-    if (!data?.onboardedAt) return;              // don't interrupt onboarding
-    if (data?.appStoreLaunchDismissed) return;   // already seen + dismissed
-    // Hold off until the account is at least two days old. Note this means
-    // the popup appears on the first app open AFTER the 2-day mark, not
-    // exactly 48h later — it needs the user to come back, which is fine
-    // (engaged returning users are exactly who should see it). Two days
-    // also keeps the popup clear of the day-one tutorial entirely.
-    const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
-    if (Date.now() - (data.onboardedAt || 0) < TWO_DAYS) return;
-    if (passwordRecoveryPending) return;
-    if (showWhatsNew) return;                    // let What's New finish first
-    if (showTutorial || showTutorialPrompt) return; // let the tutorial finish first
-    appStoreLaunchShownRef.current = true;
-    const timer = setTimeout(() => setShowAppStoreLaunch(true), 1800);
-    return () => clearTimeout(timer);
-  }, [data?.onboardedAt, data?.appStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
-
-  // ---- "Create an account" nudge for signed-out users ----
-  // A gentle, one-time, dismissible prompt. Fires once a signed-out user has
-  // logged enough entries (~10) to have real data worth backing up. Never
-  // shown to signed-in users (they already have cloud sync). Waits behind
-  // onboarding and the other popups so it never stacks.
-  // Total entries across all hobbies — declared here, before the effect that
-  // depends on it (a const must precede any code that references it).
-  const totalEntryCount = Object.values((data && data.entries) || {}).reduce(
-    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0
-  );
-  const accountNudgeShownRef = React.useRef(false);
-  useEffect(() => {
-    if (accountNudgeShownRef.current) return;
-    if (user) return;                            // signed-in users already sync
-    if (!data?.onboardedAt) return;              // don't interrupt onboarding
-    if (data?.accountNudgeDismissed) return;     // already seen + dismissed
-    if (totalEntryCount < 10) return;            // wait until there's real data
-    if (passwordRecoveryPending) return;
-    if (showWhatsNew || showAppStoreLaunch) return; // don't stack popups
-    accountNudgeShownRef.current = true;
-    const timer = setTimeout(() => setShowAccountNudge(true), 1600);
-    return () => clearTimeout(timer);
-  }, [user, data?.onboardedAt, data?.accountNudgeDismissed, totalEntryCount, passwordRecoveryPending, showWhatsNew, showAppStoreLaunch]);
 
   // ---- Native tutorial prompt (once-per-account) ----
   // Web-completed users coming over to the iOS/Android app deserve to see the
@@ -2917,18 +2624,7 @@ export default function HomesteadApp() {
   // "fix" it later by adding it to deps and breaking the intent.
 
   const [syncStatus, setSyncStatus] = useState("idle");
-  // Drives the top "not synced" banner. true = show it. signedOutRemotely is
-  // the long-standing name; it now covers both a genuinely dead session and
-  // a failed cloud read. syncBannerReason refines the message:
-  //   "auth"    → session is dead, tapping should re-open sign-in
-  //   "network" → cloud unreachable, tapping should just retry/dismiss
-  const [signedOutRemotely, setSignedOutRemotely] = useState(false);
-  const [syncBannerReason, setSyncBannerReason] = useState("auth");
-  // Controls the in-app "another device has newer data" confirm modal.
-  // We use a real modal instead of window.confirm() because window.confirm
-  // is unreliable in the Capacitor native webview (it can be silently
-  // suppressed) — which is why tapping the stale banner did nothing.
-  const [showStaleConfirm, setShowStaleConfirm] = useState(false);
+  const [signedOutRemotely, setSignedOutRemotely] = useState(false); // idle | saving | saved | error
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
 
@@ -3173,23 +2869,6 @@ export default function HomesteadApp() {
       // Track the user's role on the active homestead (used by FarmhandModal)
       setRole(result.role || null);
 
-      // The cloud READ failed for a signed-in user — they're about to be
-      // shown a stale local snapshot. Previously this was silent: a farmhand
-      // whose cloud read failed saw their wife's homestead frozen at the last
-      // good sync and had no idea new entries weren't loading. The save path
-      // already surfaces auth failures; this gives the read path parity.
-      // Only flag it when the user IS signed in — a genuinely signed-out
-      // user has their own handling and shouldn't see "not synced".
-      if (user && result.cloudFailed) {
-        setSyncBannerReason(result.reason === "auth" ? "auth" : "network");
-        setSignedOutRemotely(true);
-      } else if (user && (result.source === "cloud" || result.source === "cloud-empty")) {
-        // Cloud read succeeded — if a "not synced" banner was up from an
-        // earlier failed read/retry, clear it. (A genuine SIGNED_OUT auth
-        // event re-sets it via its own listener, so this won't mask that.)
-        setSignedOutRemotely(false);
-      }
-
       const prevUser = prevUserRef.current;
 
       // Case 1: User just signed in (was null, now an object)
@@ -3199,14 +2878,9 @@ export default function HomesteadApp() {
           skipNextSaveRef.current = true;
           setData(migrateData(result.data));
         } else if (result.source === "cloud-empty") {
-          // No cloud data yet for this account. If THIS user has local data
-          // (e.g. they used the app signed-out, then created an account),
-          // use it as a starting point. readLocalHomesteadFor returns null
-          // if the local mirror belongs to a *different* account — without
-          // that guard, a freshly-created account on a browser that was
-          // previously signed into another account would inherit that
-          // account's homestead (the account-bleed bug).
-          const localData = readLocalHomesteadFor(user.id);
+          // No cloud data yet. If they have local data, use it as a starting
+          // point. The next user interaction will save it to cloud naturally.
+          const localData = readLocalHomestead();
           skipNextSaveRef.current = true;
           setData(migrateData(localData || {}));
         } else {
@@ -3231,7 +2905,7 @@ export default function HomesteadApp() {
       prevUserRef.current = user;
     })();
     return () => { cancelled = true; };
-  }, [user, authReady, homesteadReloadKey]);
+  }, [user, authReady]);
 
   // ---- Save with debouncing whenever data changes ----
   // We don't save on every keystroke — wait 500ms after the last change to coalesce edits.
@@ -3264,31 +2938,6 @@ export default function HomesteadApp() {
       setSyncStatus(result.ok ? "saved" : "error");
       if (result.ok) {
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
-        // Absorb the refreshed cloud baseline into in-memory state so the
-        // next save compares against the cloud state we just created — not
-        // the stale baseline from the last load. setData is functional and
-        // skipNextSaveRef prevents this bookkeeping update from re-triggering
-        // the save effect into a loop.
-        if (result.newBaselineAt) {
-          skipNextSaveRef.current = true;
-          setData((prev) =>
-            prev && prev.cloudBaselineAt !== result.newBaselineAt
-              ? { ...prev, cloudBaselineAt: result.newBaselineAt }
-              : prev
-          );
-        }
-      } else if (result.skipped && result.reason === "stale-baseline") {
-        // This device tried to save but the cloud has changes it never saw
-        // (another device — e.g. a farmhand — wrote more recently). Saving
-        // now would clobber those unseen changes, so the write was correctly
-        // refused. We do NOT silently re-pull: that would discard the edit
-        // the user just made. Instead surface the banner so the user can
-        // choose to refresh — their local edit is safe in localStorage and
-        // still on screen until they do.
-        console.warn("[SYNC] save skipped — cloud is ahead of this device.");
-        setSyncStatus("error");
-        setSyncBannerReason("stale");
-        setSignedOutRemotely(true);
       } else if (result.skipped && (result.reason === "read-failed" || result.reason === "auth")) {
         // A skip caused by a failed cloud read / dead session is the
         // signature of the refresh-token bug. Surface the signed-out
@@ -3400,20 +3049,6 @@ export default function HomesteadApp() {
     setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
   };
 
-  // ---- Switch the active homestead ----
-  // Called by the header HomesteadSwitcher. setActiveHomestead() updates the
-  // cached active-homestead id in sync.js and clears the local data mirror;
-  // bumping homesteadReloadKey then re-runs the load effect, which pulls the
-  // newly-selected homestead's data from cloud via the normal load path.
-  const switchHomestead = async (homesteadId) => {
-    if (!user) return;
-    // Skip the pending debounced save — it belongs to the homestead we're
-    // leaving and must not be written after the mirror is cleared.
-    skipNextSaveRef.current = true;
-    await setActiveHomestead(user, homesteadId);
-    setHomesteadReloadKey((k) => k + 1);
-  };
-
   if (!authReady || !data) {
     return null;
   }
@@ -3487,23 +3122,7 @@ export default function HomesteadApp() {
       {signedOutRemotely && (
         <div
           data-no-keyboard-shift
-          onClick={() => {
-            if (syncBannerReason === "auth") {
-              setModal({ type: "signin" });
-            } else if (syncBannerReason === "stale") {
-              // Cloud is ahead of this device. Refreshing pulls the newer
-              // cloud data — which discards the unsynced local edit that
-              // caused this. Open an in-app confirm modal (not
-              // window.confirm, which is unreliable in the native webview).
-              setShowStaleConfirm(true);
-            } else {
-              // Network failure — re-opening sign-in won't help. Retry the
-              // load by bumping the reload key, and clear the banner; if the
-              // cloud is still unreachable the load effect will set it again.
-              setSignedOutRemotely(false);
-              setHomesteadReloadKey((k) => k + 1);
-            }
-          }}
+          onClick={() => setModal({ type: "signin" })}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
             background: "#C84B31", color: "#FAF5EA",
@@ -3515,69 +3134,7 @@ export default function HomesteadApp() {
             fontWeight: 600, fontSize: 14,
           }}
         >
-          {syncBannerReason === "auth"
-            ? "⚠️ You're not synced — tap to sign back in"
-            : syncBannerReason === "stale"
-            ? "⚠️ Another device has newer data — tap to refresh"
-            : "⚠️ Can't reach the cloud — showing your last saved data. Tap to retry"}
-        </div>
-      )}
-
-      {/* In-app confirm modal for the "another device has newer data" banner.
-          Replaces window.confirm so it works in the Capacitor native app. */}
-      {showStaleConfirm && (
-        <div
-          onClick={() => setShowStaleConfirm(false)}
-          style={{
-            position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-            zIndex: 300, padding: 16,
-          }}
-        >
-          <div
-            onClick={(e) => e.stopPropagation()}
-            style={{
-              background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
-              border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
-              padding: 20,
-            }}
-          >
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 10 }}>
-              Newer data on another device
-            </div>
-            <div style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 18 }}>
-              Another device has newer data for this homestead. Refreshing loads
-              it — but your most recent change on this device hasn't synced yet
-              and will be replaced by the newer version.
-            </div>
-            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
-              <button
-                onClick={() => setShowStaleConfirm(false)}
-                style={{
-                  padding: "10px 16px", borderRadius: 8, background: palette.card,
-                  border: `1.5px solid ${palette.line}`, cursor: "pointer",
-                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.ink,
-                }}
-              >
-                Keep my version
-              </button>
-              <button
-                onClick={() => {
-                  setShowStaleConfirm(false);
-                  setSignedOutRemotely(false);
-                  setHomesteadReloadKey((k) => k + 1);
-                }}
-                style={{
-                  padding: "10px 16px", borderRadius: 8, background: palette.accent,
-                  border: `1.5px solid ${palette.ink}`, cursor: "pointer",
-                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg,
-                  boxShadow: `2px 2px 0 ${palette.line}`,
-                }}
-              >
-                Refresh &amp; load newer
-              </button>
-            </div>
-          </div>
+          ⚠️ You were signed out on this device — tap to sign back in
         </div>
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
@@ -3590,9 +3147,6 @@ export default function HomesteadApp() {
       {shouldShowWizard && (
         <OnboardingWizard
           update={update}
-          setModal={setModal}
-          step={onboardingStep}
-          setStep={setOnboardingStep}
           onClose={() => {
             update((d) => {
               d.onboardedAt = Date.now();
@@ -3621,31 +3175,6 @@ export default function HomesteadApp() {
           setShowWhatsNew(false);
           update(d => { d.lastSeenVersion = CURRENT_VERSION; return d; });
         }} />
-      )}
-
-      {/* "We're on the App Store" launch popup — web users only, one-time */}
-      {showAppStoreLaunch && !showWhatsNew && (
-        <AppStoreLaunchModal
-          onClose={() => {
-            setShowAppStoreLaunch(false);
-            update(d => { d.appStoreLaunchDismissed = true; return d; });
-          }}
-        />
-      )}
-
-      {/* "Create an account" nudge — signed-out users, one-time, ~10 entries */}
-      {showAccountNudge && !showWhatsNew && !showAppStoreLaunch && (
-        <AccountNudgeModal
-          onCreateAccount={() => {
-            setShowAccountNudge(false);
-            update(d => { d.accountNudgeDismissed = true; return d; });
-            setModal({ type: "signup" });
-          }}
-          onClose={() => {
-            setShowAccountNudge(false);
-            update(d => { d.accountNudgeDismissed = true; return d; });
-          }}
-        />
       )}
 
       {/* Monthly supporter thank-you popup (9th-11th of each month) */}
@@ -3792,20 +3321,6 @@ export default function HomesteadApp() {
                 }}>
                   🌱 Supporter
                 </span>
-              )}
-              {/* Homestead switcher — self-hides unless the user belongs to
-                  2+ homesteads. Given its own flex-basis:100% so it wraps
-                  onto its own line below the name + badge. */}
-              {!isSignedOut && user && (
-                <div style={{ flexBasis: "100%" }}>
-                  <HomesteadSwitcher
-                    user={user}
-                    currentName={data.homesteadName}
-                    role={role}
-                    onSwitch={switchHomestead}
-                    onManageFarmhands={() => setModal({ type: "farmhand" })}
-                  />
-                </div>
               )}
               </div>
             );
@@ -4027,89 +3542,89 @@ export default function HomesteadApp() {
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data}>
             <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "bees" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data}>
             <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "incubator" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="incubator")} entries={data.entries["incubator"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="incubator")} entries={data.entries["incubator"] || []} data={data}>
             <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "goats" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data}>
             <GoatsAnalytics hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "cows" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} data={data}>
             <CowsAnalytics hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "pigs" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} data={data}>
             <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "sheep" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data}>
             <SheepAnalytics hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "dogs" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dogs")} entries={data.entries["dogs"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dogs")} entries={data.entries["dogs"] || []} data={data}>
             <DogsAnalytics hobby={data.hobbies.find(h=>h.id==="dogs")} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "cats" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cats")} entries={data.entries["cats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cats")} entries={data.entries["cats"] || []} data={data}>
             <CatsAnalytics hobby={data.hobbies.find(h=>h.id==="cats")} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "maple_syrup" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data}>
             <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "horses" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data}>
             <HorsesAnalytics hobby={data.hobbies.find(h=>h.id==="horses")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "sourdough" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data}>
             <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} entries={data.entries?.["sourdough"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "farmstand" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data}>
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "baking" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data}>
             <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
-          <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
         )}
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
-          <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
-          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
         )}
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
         )}
         {page === "year" && (
-          <YearInReviewPage data={data} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
+          <YearInReviewPage data={data} />
         )}
         {page === "bees" && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
@@ -4293,7 +3808,7 @@ function PreservingPage({ data, update, setModal, initialSubType }) {
 // Each tab renders that sub-type's existing Analytics component wrapped in
 // AnalyticsShareWrapper, identical to how the standalone blocks worked.
 // ============================================================================
-function PreservingAnalyticsPage({ data, initialSubType, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
+function PreservingAnalyticsPage({ data, initialSubType, spouseMode }) {
   const [activeSub, setActiveSub] = useState(initialSubType || "canning");
 
   const canningHobby = data.hobbies.find(h => h.type === "canning");
@@ -4335,22 +3850,22 @@ function PreservingAnalyticsPage({ data, initialSubType, spouseMode, /* ADV_ANAL
       </div>
 
       {activeSub === "canning" && canningHobby && (
-        <AnalyticsShareWrapper hobby={canningHobby} entries={data.entries?.["canning"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={canningHobby} entries={data.entries?.["canning"] || []} data={data}>
           <CanningAnalytics hobby={canningHobby} entries={data.entries?.["canning"] || []} sales={data.sales || []} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "freeze_drying" && freezeDryingHobby && (
-        <AnalyticsShareWrapper hobby={freezeDryingHobby} entries={data.entries?.["freeze_drying"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={freezeDryingHobby} entries={data.entries?.["freeze_drying"] || []} data={data}>
           <FreezeDryingAnalytics hobby={freezeDryingHobby} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "dehydrating" && dehydratingHobby && (
-        <AnalyticsShareWrapper hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} data={data}>
           <DehydratingAnalytics hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "fermentation" && fermentationHobby && (
-        <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data}>
           <FermentationAnalytics hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} />
         </AnalyticsShareWrapper>
       )}
@@ -4452,7 +3967,7 @@ function ComingSoonSubHobby({ name, emoji }) {
 
 // Herbalism analytics wrapper — same pattern as PreservingAnalyticsPage.
 // Each sub-type's analytics component renders independently inside its tab.
-function HerbalismAnalyticsPage({ data, initialSubType, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
+function HerbalismAnalyticsPage({ data, initialSubType, spouseMode }) {
   const [activeSub, setActiveSub] = useState(initialSubType || "tincture");
 
   const tinctureHobby = data.hobbies.find(h => h.type === "tincture");
@@ -4493,22 +4008,22 @@ function HerbalismAnalyticsPage({ data, initialSubType, spouseMode, /* ADV_ANALY
         ))}
       </div>
       {activeSub === "tincture" && tinctureHobby && (
-        <AnalyticsShareWrapper hobby={tinctureHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={tinctureHobby} data={data} spouseMode={spouseMode}>
           <TinctureAnalytics hobby={tinctureHobby} entries={data.entries?.["tincture"] || []} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "oil_infusion" && oilHobby && (
-        <AnalyticsShareWrapper hobby={oilHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={oilHobby} data={data} spouseMode={spouseMode}>
           <OilInfusionAnalytics hobby={oilHobby} entries={data.entries?.["oil_infusion"] || []} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "salve" && salveHobby && (
-        <AnalyticsShareWrapper hobby={salveHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={salveHobby} data={data} spouseMode={spouseMode}>
           <SalveAnalytics hobby={salveHobby} entries={data.entries?.["salve"] || []} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "tea" && teaHobby && (
-        <AnalyticsShareWrapper hobby={teaHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+        <AnalyticsShareWrapper hobby={teaHobby} data={data} spouseMode={spouseMode}>
           <TeaAnalytics hobby={teaHobby} entries={data.entries?.["tea"] || []} />
         </AnalyticsShareWrapper>
       )}
@@ -5462,220 +4977,6 @@ function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, set
   );
 }
 
-// ============ ANNUAL SECTION (collapsible) ============
-// Annuals are records — one per plant-name per season — that index the
-// season's `planted` / `harvested` entries and own their own `actions[]`
-// log. Modeled on PerennialSection. Tapping a row opens AnnualDetailModal.
-function AnnualSection({ hobby, season, seasonEntries, setModal }) {
-  const [open, setOpen] = useState(true);
-  // Annual records for the current season.
-  const annuals = (hobby.annuals || []).filter(
-    (a) => a.seasonId === (season && season.id)
-  );
-  // Subtitle data per record: gather this plant's planted/harvested entries.
-  const rowsData = annuals
-    .map((a) => {
-      const nameKey = String(a.name || "").toLowerCase();
-      const plantings = seasonEntries.filter(
-        (e) => e.action === "planted" &&
-          (e.plant || "Unnamed").trim().toLowerCase() === nameKey
-      );
-      const harvests = seasonEntries.filter(
-        (e) => e.action === "harvested" &&
-          (e.plant || "").trim().toLowerCase() === nameKey
-      );
-      const lastAction = (a.actions || []).slice(-1)[0];
-      return { record: a, plantings, harvests, lastAction };
-    })
-    .sort((x, y) => x.record.name.localeCompare(y.record.name));
-
-  return (
-    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10 }}>
-      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom: open ? 10 : 0 }}>
-        <button
-          onClick={() => setOpen(o => !o)}
-          style={{ background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink }}
-          aria-expanded={open}
-        >
-          <span style={{ fontSize:12,display:"inline-block",transform: open ? "rotate(90deg)" : "rotate(0deg)",transition:"transform 0.15s" }}>▶</span>
-          🌱 Annuals
-          <span style={{ fontSize:12,color:palette.inkSoft,fontFamily:FONT_BODY,fontWeight:400 }}>
-            {rowsData.length > 0 ? `(${rowsData.length})` : ""}
-          </span>
-        </button>
-      </div>
-      {open && (
-        <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-          {rowsData.length === 0 ? (
-            <div style={{ fontSize:12,color:palette.inkSoft,padding:"6px 4px",fontStyle:"italic" }}>
-              Plant an annual to start tracking it here.
-            </div>
-          ) : rowsData.map(({ record, plantings, harvests, lastAction }) => {
-            const subtitle =
-              lastAction ? `Last: ${lastAction.type} · ${lastAction.date}` :
-              harvests.length ? `${harvestSummary(harvests)} harvested` :
-              plantings.length ? `${plantings.length} planting${plantings.length === 1 ? "" : "s"}` :
-              "No activity yet";
-            return (
-              <button
-                key={record.id}
-                onClick={() => setModal({ type:"annualDetail",hobbyId:hobby.id,annualId:record.id })}
-                style={{ display:"flex",alignItems:"center",gap:8,padding:"10px",background:palette.bgAlt,borderRadius:8,border:"none",cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FONT_BODY }}
-              >
-                <Sprout size={15} color={palette.leaf} strokeWidth={1.8} style={{ flexShrink:0 }} />
-                <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>{record.name}</div>
-                  <div style={{ fontSize:11,color:palette.inkSoft }}>{subtitle}</div>
-                </div>
-                <span style={{ fontSize:14,color:palette.inkSoft,flexShrink:0 }}>›</span>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ============ ANNUAL DETAIL MODAL ============
-// Shows one annual's plantings + harvests (gathered from garden entries) and
-// its action log. Modeled on PerennialDetailModal.
-function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose }) {
-  const nameKey = String(annual.name || "").toLowerCase();
-  const gardenEntries = (data.entries && data.entries.garden) || [];
-  const scoped = gardenEntries.filter(
-    (e) => e.seasonId === annual.seasonId
-  );
-  const plantings = scoped
-    .filter((e) => e.action === "planted" &&
-      (e.plant || "Unnamed").trim().toLowerCase() === nameKey)
-    .sort((a,b) => (b.date || "").localeCompare(a.date || ""));
-  const harvests = scoped
-    .filter((e) => e.action === "harvested" &&
-      (e.plant || "").trim().toLowerCase() === nameKey)
-    .sort((a,b) => (b.date || "").localeCompare(a.date || ""));
-  const actions = [...(annual.actions || [])]
-    .sort((a,b) => (b.date || "").localeCompare(a.date || ""));
-
-  const removeAction = (id) => update(d => {
-    const h = d.hobbies.find(x => x.id === hobbyId);
-    if (!h) return d;
-    const a = (h.annuals || []).find(x => x.id === annual.id);
-    if (a) a.actions = (a.actions || []).filter(x => x.id !== id);
-    return d;
-  });
-
-  const rowStyle = { padding:"8px 10px",background:palette.bgAlt,borderRadius:8,fontSize:12,color:palette.ink };
-  const sectionLabel = { fontSize:11,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600,margin:"14px 0 6px" };
-
-  return (
-    <Modal open onClose={onClose} title={annual.name}>
-      <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:12 }}>
-        🌱 Annual
-        {harvests.length ? ` · ${harvestSummary(harvests)} harvested` : ""}
-      </div>
-
-      <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:4 }}>
-        <Btn variant="primary" onClick={() => setModal({ type:"logAnnualAction",hobbyId,annualId:annual.id })}>
-          + Log action
-        </Btn>
-      </div>
-
-      {actions.length > 0 && (
-        <>
-          <div style={sectionLabel}>Action log ({actions.length})</div>
-          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-            {actions.map(a => (
-              <div key={a.id} style={{ ...rowStyle,display:"flex",alignItems:"center",gap:8 }}>
-                <div style={{ flex:1,minWidth:0 }}>
-                  <div style={{ fontWeight:600 }}>{a.type}</div>
-                  <div style={{ fontSize:11,color:palette.inkSoft }}>
-                    {a.date}{a.notes ? ` · ${a.notes}` : ""}
-                  </div>
-                </div>
-                <button
-                  onClick={() => removeAction(a.id)}
-                  style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4,fontSize:12 }}
-                >
-                  Remove
-                </button>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {plantings.length > 0 && (
-        <>
-          <div style={sectionLabel}>Plantings ({plantings.length})</div>
-          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-            {plantings.map(e => (
-              <div key={e.id} style={rowStyle}>
-                {e.date}{e.quantity ? ` · ${e.quantity} planted` : ""}{e.bed ? ` · ${e.bed}` : ""}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {harvests.length > 0 && (
-        <>
-          <div style={sectionLabel}>Harvests ({harvests.length})</div>
-          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-            {harvests.map(e => (
-              <div key={e.id} style={rowStyle}>
-                {e.date} · {e.quantity || 0} {HARVEST_UNIT_LABELS[e.unit] || e.unit || "lbs"}
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {actions.length === 0 && plantings.length === 0 && harvests.length === 0 && (
-        <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",padding:"8px 0" }}>
-          No history yet. Log an action, or log a planting/harvest from the garden home.
-        </div>
-      )}
-    </Modal>
-  );
-}
-
-// ============ LOG ANNUAL ACTION MODAL ============
-const ANNUAL_ACTION_TYPES = ["Spray","Fertilize","Weed","Thin","Treat (pest/disease)","Inspect","Water","Transplant","Other"];
-
-function LogAnnualActionModal({ hobbyId, annual, update, onClose }) {
-  const [type, setType] = useState("Spray");
-  const [date, setDate] = useState(todayStr());
-  const [notes, setNotes] = useState("");
-  return (
-    <Modal open onClose={onClose} title={`Log action — ${annual.name}`}>
-      <Field label="Action">
-        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
-          {ANNUAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
-        </select>
-      </Field>
-      <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
-      </Field>
-      <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how much you thinned, etc." />
-      </Field>
-      <Btn variant="primary" onClick={() => {
-        update(d => {
-          const h = d.hobbies.find(x => x.id === hobbyId);
-          if (!h) return d;
-          const a = (h.annuals || []).find(x => x.id === annual.id);
-          if (!a) return d;
-          a.actions = a.actions || [];
-          a.actions.push({ id: newId(), type, date, notes });
-          return d;
-        });
-        onClose();
-      }}>Log action</Btn>
-    </Modal>
-  );
-}
-
 // ============ HOBBY SUMMARIES ============
 function GardenSummary({ hobby, data, update, setModal }) {
   // Perennials section shown at bottom of garden home regardless of season
@@ -5752,19 +5053,65 @@ function GardenSummary({ hobby, data, update, setModal }) {
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.leafSoft, lineHeight: 1 }}>{plantings}</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {harvestSummary(harvests)} harvested · day {days}</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {totalHarvest.toFixed(1)} harvested · day {days}</div>
         </div>
       </div>
 
-      {/* Annuals — collapsible section. Each annual is a record (one per
-          plant-name per season) with its own action log; tapping one opens
-          its detail view. See AnnualSection / AnnualDetailModal. */}
-      <AnnualSection
-        hobby={hobby}
-        season={season}
-        seasonEntries={seasonEntries}
-        setModal={setModal}
-      />
+      {/* Annuals list — what's planted this season, grouped by plant name.
+          Sourced from the same season-scoped "planted" entries as the count
+          above, so the list and the "N annuals" stat always agree. Tapping a
+          row opens that planting's log entry. Shown only when there's at
+          least one planting; an empty season just shows the stat card. */}
+      {(() => {
+        const plantedEntries = seasonEntries.filter((e) => e.action === "planted");
+        if (plantedEntries.length === 0) return null;
+        // Group by plant name (case-insensitive). Each group tracks total
+        // quantity and the most recent plant date for a subtitle.
+        const groups = {};
+        plantedEntries.forEach((e) => {
+          const name = (e.plant || "Unnamed").trim() || "Unnamed";
+          const key = name.toLowerCase();
+          if (!groups[key]) groups[key] = { name, qty: 0, lastDate: e.date, count: 0 };
+          groups[key].qty += Number(e.quantity) || 0;
+          groups[key].count += 1;
+          if (e.date > groups[key].lastDate) groups[key].lastDate = e.date;
+        });
+        const rows = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
+        return (
+          <div style={{
+            background: palette.card, border: `1.5px solid ${palette.line}`,
+            borderRadius: 12, padding: 14, marginBottom: 10,
+          }}>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
+              Annuals this season
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {rows.map((r) => (
+                <div
+                  key={r.name}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 8,
+                    padding: "8px 10px", background: palette.bgAlt, borderRadius: 8,
+                  }}
+                >
+                  <Sprout size={15} color={palette.leaf} strokeWidth={1.8} style={{ flexShrink: 0 }} />
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13, color: palette.ink }}>{r.name}</div>
+                    <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                      {r.count > 1 ? `${r.count} plantings · ` : ""}last {r.lastDate}
+                    </div>
+                  </div>
+                  {r.qty > 0 && (
+                    <span style={{ fontSize: 13, fontWeight: 600, color: palette.inkSoft, flexShrink: 0 }}>
+                      ×{r.qty}
+                    </span>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Garden Map card — opens the photo-based visualizer */}
       <div
@@ -5979,15 +5326,6 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
           {flock.startDate && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2, marginLeft: 26 }}>Since {flock.startDate}</div>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
-          {(hobby.flocks || []).length > 1 && (
-            <button
-              onClick={() => setModal({ type: "moveFlockBirds", hobbyId: hobby.id, flockId: flock.id })}
-              title="Move birds to another flock"
-              style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4, fontSize: 14 }}
-            >
-              ↔️
-            </button>
-          )}
           <button onClick={() => setModal({ type: "editFlock", hobbyId: hobby.id, flockId: flock.id })} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}><Edit3 size={14}/></button>
         </div>
       </div>
@@ -6528,7 +5866,7 @@ function EntryPhotoThumb({ path, size = 40 }) {
 }
 
 // ============ ANALYTICS PAGE ============
-function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
+function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
   // Defensive: hobby may be undefined for one render frame during transitions
   if (!hobby) return <EmptyState text="Loading…" />;
@@ -6566,8 +5904,8 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter,
         />
       </div>
 
-      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} /* ADV_ANALYTICS */ dateRange={range} allEntries={allEntries} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />}
-      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} dateRange={range} spouseMode={spouseMode} /* ADV_ANALYTICS */ allEntries={allEntries} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />}
+      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} />}
+      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} dateRange={range} spouseMode={spouseMode} />}
     </div>
   );
 }
@@ -6659,12 +5997,6 @@ function dateRangeLabel(range) {
   if (range.start) return `(since ${range.start})`;
   return `(through ${range.end})`;
 }
-
-// ADV_ANALYTICS: priorDateRange, computeDelta, StatTrend, personalRecord,
-// monthlySeries, LockedStatOverlay and ADV_ANALYTICS_FEATURE_KEY are imported
-// from ./analytics.js (leaf module) at the top of this file. StatTrend and
-// LockedStatOverlay take this file's `palette`/fonts as props — see usage in
-// the per-hobby Stats sections.
 
 function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
@@ -6762,7 +6094,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Annuals planted" value={plantings} accent={palette.leaf} />
-        <StatCard label="Total Harvest" value={harvestSummary(harvests)} accent={palette.leaf} />
+        <StatCard label="Total Harvest" value={totalHarvest.toFixed(1)} sub="lbs / units" accent={palette.leaf} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
         <StatCard label="Waterings" value={waterings} accent="#3F7CAC" />
         {fertilizations > 0 && <StatCard label="Fertilizations" value={fertilizations} accent={palette.leafSoft || "#A8C078"} />}
@@ -6797,115 +6129,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
   );
 }
 
-// COOP_PAYOFF: "how long until the coop pays for itself?" — a
-// half-serious reality check for the Egg Layers hobby. Pure functions.
-const COOP_PAYOFF_DEFAULT_PRICE = 4.0; // $/dozen fallback
-
-// A real fun fact about a span of `years`. Every branch is genuinely
-// true; the final branch is a safe generic fallback for huge values.
-function coopPayoffFunFact(years) {
-  if (years < 1) {
-    return "That’s quicker than a pumpkin grows from seed to jack-o’-lantern — your coop is pulling its weight.";
-  }
-  if (years < 2) {
-    return "In that time, an asparagus crown would just be reaching its first full harvest — patience either way.";
-  }
-  if (years < 4) {
-    return "That’s about how long a newly planted apple tree takes to bear its first fruit.";
-  }
-  if (years < 8) {
-    return "An oak grown from an acorn would produce its very first acorns right around then.";
-  }
-  if (years < 15) {
-    return "That’s roughly how long a hand-planted walnut tree takes to give a real nut harvest.";
-  }
-  if (years < 30) {
-    return "In that span a sapling becomes a full shade tree — your coop is a long-term relationship.";
-  }
-  if (years < 75) {
-    return "That’s many times the lifespan of a laying hen — this coop is a family heirloom now.";
-  }
-  return "That’s longer than most people keep a house — at this point the coop is less an investment, more a monument. 🐔";
-}
-
-// Resolve price per dozen from the user's own logged egg sales.
-// Returns { price, isDefault }.
-function coopPayoffPrice(allEntries) {
-  const sales = (allEntries || []).filter(
-    (e) => e.action === "sold_eggs" && Number(e.pricePerDozen) > 0
-  );
-  if (sales.length === 0) {
-    return { price: COOP_PAYOFF_DEFAULT_PRICE, isDefault: true };
-  }
-  const avg =
-    sales.reduce((s, e) => s + Number(e.pricePerDozen), 0) / sales.length;
-  if (!(avg > 0)) return { price: COOP_PAYOFF_DEFAULT_PRICE, isDefault: true };
-  return { price: avg, isDefault: false };
-}
-
-// The whole calculation, in one pass. eggEntries = laid-egg entries;
-// infraCost = coop infrastructure total; allEntries = the hobby's full
-// entry list (for price resolution). Returns null (nothing to show), a
-// { laborOfLove:true, message } object, or a complete result object.
-function computeCoopPayoff(eggEntries, infraCost, allEntries) {
-  if (!infraCost || infraCost <= 0) return null;
-  if (!Array.isArray(eggEntries) || eggEntries.length === 0) return null;
-
-  const totalEggs = eggEntries.reduce((s, e) => s + (Number(e.count) || 0), 0);
-
-  const dates = eggEntries.map((e) => e.date).filter(Boolean).sort();
-  let spanDays = 0;
-  if (dates.length >= 2) {
-    const first = new Date(dates[0] + "T00:00:00");
-    const last = new Date(dates[dates.length - 1] + "T00:00:00");
-    spanDays = Math.round((last.getTime() - first.getTime()) / 86400000);
-  }
-
-  // Need a couple of weeks of history and some eggs to estimate a rate.
-  if (spanDays < 14 || totalEggs <= 0) {
-    return {
-      laborOfLove: true,
-      message:
-        "Log a couple of weeks of eggs and we’ll work out how long the coop takes to pay for itself. (Spoiler: chickens are a labor of love, not an investment. 🐔)",
-    };
-  }
-
-  const eggsPerDay = totalEggs / spanDays;
-  const priceInfo = coopPayoffPrice(allEntries);
-  const price = priceInfo.price;
-  const valuePerYear = (eggsPerDay / 12) * price * 365;
-
-  if (!(valuePerYear > 0)) {
-    return {
-      laborOfLove: true,
-      message:
-        "At these numbers the coop never quite pays for itself — which makes it official: chickens are a labor of love, not an investment. 🐔",
-    };
-  }
-
-  const years = infraCost / valuePerYear;
-  let yearsText;
-  if (years < 1) {
-    const months = Math.max(1, Math.round(years * 12));
-    yearsText = months + " month" + (months === 1 ? "" : "s");
-  } else {
-    const y = years.toFixed(1);
-    yearsText = y + " year" + (y === "1.0" ? "" : "s");
-  }
-
-  return {
-    laborOfLove: false,
-    infraCost: infraCost,
-    pricePerDozen: price,
-    priceIsDefault: priceInfo.isDefault,
-    valuePerYear: valuePerYear,
-    years: years,
-    yearsText: yearsText,
-    funFact: coopPayoffFunFact(years),
-  };
-}
-
-function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
+function EggLayersAnalytics({ hobby, entries, spouseMode }) {
   if (!hobby) return <EmptyState text="Loading…" />;
   // Count both "eggs" (manual quick-tile) and "eggs_laid" (egg basket commits)
   const eggs = entries.filter((e) => e.action === "eggs" || e.action === "eggs_laid");
@@ -6974,95 +6198,6 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
           </div>
         </div>
       </ChartCard>
-
-      {/* COOP_PAYOFF: coop payoff fun stat. computeCoopPayoff returns
-          null (nothing to show), a laborOfLove message, or a full
-          result. The card handles all three. */}
-      {(() => {
-        const payoff = computeCoopPayoff(eggs, infraCost, entries);
-        if (!payoff) return null;
-        return (
-          <ChartCard title="🥚 Coop payoff">
-            <div style={{ padding: "4px 2px" }}>
-              {payoff.laborOfLove ? (
-                <div style={{ fontSize: 14, lineHeight: 1.6, color: palette.ink }}>
-                  {payoff.message}
-                </div>
-              ) : (
-                <>
-                  <div style={{ fontSize: 14, lineHeight: 1.6, color: palette.ink }}>
-                    At about <strong>{fmtMoney(payoff.pricePerDozen)}</strong> a dozen, your
-                    flock produces roughly <strong>{fmtMoney(payoff.valuePerYear)}</strong> of
-                    eggs a year. At that rate it would take{" "}
-                    <strong>{payoff.yearsText}</strong> for egg value to pay back the{" "}
-                    <strong>{fmtMoney(payoff.infraCost)}</strong> you’ve put into the coop.
-                  </div>
-                  <div style={{
-                    marginTop: 10, padding: "10px 12px", background: palette.bgAlt,
-                    borderRadius: 8, fontSize: 13, lineHeight: 1.5, color: palette.inkSoft,
-                  }}>
-                    {payoff.funFact}
-                  </div>
-                </>
-              )}
-              <div style={{ marginTop: 8, fontSize: 11, color: palette.inkSoft, lineHeight: 1.5 }}>
-                {payoff.priceIsDefault
-                  ? "Assumes ~$4.00/dozen — log an egg sale to use your own price."
-                  : "Based on your own average egg-sale price."}
-                {" "}Counts coop infrastructure only, not feed — so real life takes a little longer. 🐔
-              </div>
-            </div>
-          </ChartCard>
-        );
-      })()}
-
-      {/* ADV_ANALYTICS: gated block — eggs by month line, best egg month,
-          eggs vs. prior period. Chart/record use unfiltered allEntries; the
-          delta respects the Stats date filter. */}
-      {(() => {
-        const advAll = allEntries || entries;
-        const advEggs = advAll.filter(e => e.action === "eggs" || e.action === "eggs_laid");
-        const eggMonthlyRaw = monthlySeries(advEggs, e => e.date, e => Number(e.count) || 0);
-        const eggMonthly = eggMonthlyRaw.map(p => ({
-          month: p.month, eggs: p.value,
-          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
-        }));
-        const eggRecord = personalRecord(eggMonthlyRaw);
-        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
-        const prior = priorDateRange(dateRange);
-        const priorEggs = prior ? advEggs.filter(e => inR(e.date, prior)).reduce((s, e) => s + (Number(e.count) || 0), 0) : null;
-        const eggDelta = prior ? computeDelta(totalEggsRaw, priorEggs) : null;
-        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
-        if (eggMonthlyRaw.length === 0) return null;
-        return (
-          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
-            <div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-                {eggRecord && <StatCard label="Best egg month" value={`${spouseProd(eggRecord.value, spouseMode)} eggs`} sub={eggRecord.label} accent={palette.yolk} />}
-                {eggDelta && (
-                  <div style={{ flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
-                    <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Eggs vs. prior period</div>
-                    <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1.1 }}>{totalEggs} eggs</div>
-                    <div style={{ marginTop: 4 }}><StatTrend delta={eggDelta} palette={palette} fonts={pFonts} /></div>
-                  </div>
-                )}
-              </div>
-              {eggMonthly.length > 1 && (
-                <ChartCard title="🥚 Eggs by month">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={eggMonthly}>
-                      <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
-                      <YAxis stroke={palette.inkSoft} fontSize={11} />
-                      <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [`${v} eggs`, "Laid"]} />
-                      <Line type="monotone" dataKey="eggs" stroke={palette.yolk} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-              )}
-            </div>
-          </LockedStatOverlay>
-        );
-      })()}
 
       {eggTrend.length > 0 && (
         <ChartCard title="Egg production">
@@ -7335,64 +6470,6 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode }) {
           />
         )}
       </div>
-
-      {/* ADV_ANALYTICS: gated block — finished-weight by batch line + heaviest
-          batch record + butchered-count vs prior period. Built from the FULL
-          batch list (not the date-filtered `batches`), so the chart and record
-          stay stable; the delta uses the date filter explicitly. */}
-      {(() => {
-        const allBatches = [...(hobby.archivedBatches || []), ...(hobby.currentBatches || [])];
-        // Total finished weight per batch, keyed by endDate (or startDate).
-        const batchWeights = allBatches.map(b => {
-          const w = (b.butchered || []).reduce((s, bu) => s + (bu.count || 0) * (bu.avgWeight || 0), 0);
-          const cnt = (b.butchered || []).reduce((s, bu) => s + (bu.count || 0), 0);
-          return { name: b.name || "Batch", weight: w, count: cnt, date: b.endDate || b.startDate };
-        }).filter(x => x.weight > 0);
-        if (batchWeights.length === 0) return null;
-        const weightChart = batchWeights
-          .slice()
-          .sort((a, b) => (a.date || "").localeCompare(b.date || ""))
-          .map(x => ({ name: (x.name || "").slice(0, 12), weight: Number(x.weight.toFixed(1)) }));
-        // Heaviest single batch.
-        let heaviest = null;
-        batchWeights.forEach(x => { if (heaviest == null || x.weight > heaviest.weight) heaviest = x; });
-        // Butchered-count delta: this filter window vs. the prior one.
-        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
-        const prior = priorDateRange(dateRange);
-        const priorButchered = prior
-          ? batchWeights.filter(x => inR(x.date, prior)).reduce((s, x) => s + x.count, 0)
-          : null;
-        const countDelta = prior ? computeDelta(totalButchered, priorButchered) : null;
-        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
-        return (
-          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
-            <div>
-              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
-                {heaviest && <StatCard label="Heaviest batch" value={fmtWeight(heaviest.weight)} sub={heaviest.name} accent={palette.leaf} />}
-                {countDelta && (
-                  <div style={{ flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
-                    <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Butchered vs. prior period</div>
-                    <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{adjButchered} birds</div>
-                    <div style={{ marginTop: 4 }}><StatTrend delta={countDelta} palette={palette} fonts={pFonts} /></div>
-                  </div>
-                )}
-              </div>
-              {weightChart.length > 1 && (
-                <ChartCard title="🍗 Finished weight by batch">
-                  <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={weightChart}>
-                      <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
-                      <YAxis stroke={palette.inkSoft} fontSize={11} />
-                      <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [fmtWeight(Number(v) || 0), "Weight"]} />
-                      <Line type="monotone" dataKey="weight" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
-                    </LineChart>
-                  </ResponsiveContainer>
-                </ChartCard>
-              )}
-            </div>
-          </LockedStatOverlay>
-        );
-      })()}
 
       {(totalChickCost > 0 || totalInfraCost > 0) && (
         <ChartCard title="📊 Cost breakdown">
@@ -7856,11 +6933,6 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     if (!targetHobby) { close(); return null; }
     return <EditFlockModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} setModal={setModal} />;
   }
-  if (modal.type === "moveFlockBirds") {
-    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
-    if (!targetHobby) { close(); return null; }
-    return <MoveFlockBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} />;
-  }
   if (modal.type === "namedBirds") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
@@ -7929,20 +7001,6 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const perennial = (gardenHobby.perennials||[]).find(p => p.id === modal.perennialId);
     if (!perennial) { close(); return null; }
     return <LogPerennialActionModal hobbyId={modal.hobbyId} perennial={perennial} update={update} onClose={close} />;
-  }
-  if (modal.type === "annualDetail") {
-    const gardenHobby = data.hobbies.find(h => h.type === "garden");
-    if (!gardenHobby) { close(); return null; }
-    const annual = (gardenHobby.annuals||[]).find(a => a.id === modal.annualId);
-    if (!annual) { close(); return null; }
-    return <AnnualDetailModal hobbyId={modal.hobbyId} annual={annual} data={data} update={update} setModal={setModal} onClose={close} />;
-  }
-  if (modal.type === "logAnnualAction") {
-    const gardenHobby = data.hobbies.find(h => h.type === "garden");
-    if (!gardenHobby) { close(); return null; }
-    const annual = (gardenHobby.annuals||[]).find(a => a.id === modal.annualId);
-    if (!annual) { close(); return null; }
-    return <LogAnnualActionModal hobbyId={modal.hobbyId} annual={annual} update={update} onClose={close} />;
   }
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
@@ -9028,18 +8086,7 @@ function SupportModal({ onClose }) {
           <div style={{ display: "flex", flexDirection: "column", gap: 5 }}>
             <div><strong>✨ Early access</strong> — new hobbies and features land for Supporters about a week before everyone else.</div>
             <div><strong>🌱 A Supporter badge</strong> — a little pill next to your homestead name on the home screen.</div>
-            <div><strong>🏅 Homestead Standings</strong> — badges, community totals, and percentile standings in your Year in Review.</div>
             <div><strong>🌾 The supporter wall</strong> — your homestead name in the monthly thank-you, if you'd like it there.</div>
-          </div>
-          <div style={{
-            marginTop: 10, paddingTop: 9,
-            borderTop: `1px solid ${palette.line}`,
-            fontSize: 11.5, color: palette.inkSoft, fontStyle: "italic", lineHeight: 1.55,
-          }}>
-            These perks come with the monthly membership, not one-time tips —
-            the ongoing membership is what gives an auto-renewing subscription
-            its value. A one-time tip is still hugely appreciated and helps
-            just as much; it simply doesn't carry the membership perks.
           </div>
         </div>
         <div style={{
@@ -11292,179 +10339,6 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
   );
 }
 
-// ============================================================================
-// MOVE FLOCK BIRDS MODAL — move birds from one flock to another
-// ----------------------------------------------------------------------------
-// Two modes:
-//   "named" — move an individual named bird: splice it out of the source
-//             flock's namedBirds[] and into the destination's. Does NOT
-//             change birdCount on either flock (named birds are tracked
-//             on top of the headcount, not inside it).
-//   "count" — move N birds of headcount: decrement source flock.birdCount,
-//             increment destination's. If the source has a females/males
-//             split, move them proportionally so the split stays sane.
-// Past egg entries are tagged with flockId at log time and are NOT moved —
-// those eggs were laid in the source flock and stay in its analytics.
-// ============================================================================
-function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
-  const flocks = (hobby.flocks || []);
-  const source = flocks.find(f => f.id === flockId);
-  const others = flocks.filter(f => f.id !== flockId);
-  const namedBirds = source ? (source.namedBirds || []).filter(b => !b.archived) : [];
-
-  const [mode, setMode] = useState("count");
-  const [destId, setDestId] = useState(others[0] ? others[0].id : "");
-  const [birdId, setBirdId] = useState(namedBirds[0] ? namedBirds[0].id : "");
-  const [count, setCount] = useState("1");
-  const [error, setError] = useState("");
-
-  if (!source) { onClose(); return null; }
-
-  const sourceCount = Number(source.birdCount) || 0;
-
-  const doMove = () => {
-    setError("");
-    if (!destId) { setError("Pick a destination flock."); return; }
-
-    if (mode === "named") {
-      if (!birdId) { setError("Pick a bird to move."); return; }
-      update(d => {
-        const h = d.hobbies.find(x => x.id === hobbyId);
-        if (!h) return d;
-        const src = (h.flocks || []).find(f => f.id === flockId);
-        const dst = (h.flocks || []).find(f => f.id === destId);
-        if (!src || !dst) return d;
-        const idx = (src.namedBirds || []).findIndex(b => b.id === birdId);
-        if (idx === -1) return d;
-        const [bird] = src.namedBirds.splice(idx, 1);
-        if (!Array.isArray(dst.namedBirds)) dst.namedBirds = [];
-        dst.namedBirds.push(bird);
-        return d;
-      });
-      onClose();
-      return;
-    }
-
-    // count mode
-    const n = Math.floor(Number(count) || 0);
-    if (n <= 0) { setError("Enter how many birds to move."); return; }
-    if (n > sourceCount) { setError(`This flock only has ${sourceCount} bird${sourceCount === 1 ? "" : "s"}.`); return; }
-    update(d => {
-      const h = d.hobbies.find(x => x.id === hobbyId);
-      if (!h) return d;
-      const src = (h.flocks || []).find(f => f.id === flockId);
-      const dst = (h.flocks || []).find(f => f.id === destId);
-      if (!src || !dst) return d;
-      const srcTotal = Number(src.birdCount) || 0;
-      const moveN = Math.min(n, srcTotal);
-      // Proportionally move the female/male split if the source tracks it.
-      const sf = Number(src.females) || 0;
-      const sm = Number(src.males) || 0;
-      let mf = 0, mm = 0;
-      if (sf + sm > 0) {
-        mf = Math.round(moveN * (sf / (sf + sm)));
-        mf = Math.min(mf, sf);
-        mm = Math.min(moveN - mf, sm);
-      }
-      src.birdCount = srcTotal - moveN;
-      if (sf + sm > 0) { src.females = sf - mf; src.males = sm - mm; }
-      dst.birdCount = (Number(dst.birdCount) || 0) + moveN;
-      if (typeof dst.females === "number" || typeof dst.males === "number" || (mf + mm > 0)) {
-        dst.females = (Number(dst.females) || 0) + mf;
-        dst.males = (Number(dst.males) || 0) + mm;
-      }
-      return d;
-    });
-    onClose();
-  };
-
-  const destOptions = others.map(f => (
-    <option key={f.id} value={f.id}>{f.name}</option>
-  ));
-
-  return (
-    <Modal open onClose={onClose} title={`Move birds — ${source.name}`}>
-      {others.length === 0 ? (
-        <div style={{ fontSize: 13, color: palette.inkSoft, padding: "6px 0" }}>
-          There's only one flock. Add another flock to move birds into it.
-        </div>
-      ) : (
-        <>
-          {/* Mode toggle */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <button
-              onClick={() => setMode("count")}
-              style={{
-                flex: 1, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
-                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
-                border: `1.5px solid ${mode === "count" ? palette.ink : palette.line}`,
-                background: mode === "count" ? palette.yolkSoft : palette.card,
-                color: palette.ink,
-              }}
-            >
-              Move a number of birds
-            </button>
-            <button
-              onClick={() => setMode("named")}
-              disabled={namedBirds.length === 0}
-              style={{
-                flex: 1, padding: "8px 10px", borderRadius: 8,
-                cursor: namedBirds.length === 0 ? "default" : "pointer",
-                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
-                border: `1.5px solid ${mode === "named" ? palette.ink : palette.line}`,
-                background: mode === "named" ? palette.yolkSoft : palette.card,
-                color: palette.ink, opacity: namedBirds.length === 0 ? 0.5 : 1,
-              }}
-            >
-              Move a named bird
-            </button>
-          </div>
-
-          {mode === "count" && (
-            <Field label={`How many birds (this flock has ${sourceCount})`}>
-              <input
-                type="number" inputMode="numeric" min={1} max={sourceCount}
-                style={inputStyle} value={count}
-                onChange={e => setCount(e.target.value)}
-              />
-            </Field>
-          )}
-
-          {mode === "named" && (
-            <Field label="Which bird">
-              <select style={inputStyle} value={birdId} onChange={e => setBirdId(e.target.value)}>
-                {namedBirds.map(b => (
-                  <option key={b.id} value={b.id}>{b.name}</option>
-                ))}
-              </select>
-            </Field>
-          )}
-
-          <Field label="Move to flock">
-            <select style={inputStyle} value={destId} onChange={e => setDestId(e.target.value)}>
-              {destOptions}
-            </select>
-          </Field>
-
-          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-            Past egg records stay with the flock they were logged under — only
-            the birds move.
-          </div>
-
-          {error && (
-            <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>{error}</div>
-          )}
-
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-            <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
-            <button onClick={doMove} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Move</button>
-          </div>
-        </>
-      )}
-    </Modal>
-  );
-}
-
 // Edit an existing flock-history entry. Lets the user fix typos in count, date, or cost.
 function EditFlockEntryModal({ hobby, index, update, onClose }) {
   const fh = (hobby.flockHistory || [])[index];
@@ -13063,7 +11937,7 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
           <strong>Season summary:</strong>
         </div>
         <div style={{ fontSize: 13, color: palette.inkSoft }}>
-          {seasonEntries.length} entries · {harvests.length} harvests · {harvestSummary(harvests)} total yield · {fmtMoney(totalCost)} costs
+          {seasonEntries.length} entries · {harvests.length} harvests · {totalHarvest.toFixed(1)} total yield · {fmtMoney(totalCost)} costs
         </div>
       </div>
 
@@ -13363,25 +12237,6 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             id: newId(), plant: cleanFields.plant, quantity: cleanFields.quantity,
             date, harvested: false,
           });
-          // Also ensure an annual record exists for this plant+season so it
-          // shows in the Annuals section immediately (without waiting for the
-          // next load's migrateData indexing pass). Idempotent — only creates
-          // one if this name+season pair doesn't already have a record.
-          const gh = d.hobbies.find(x => x.type === "garden");
-          if (gh) {
-            if (!Array.isArray(gh.annuals)) gh.annuals = [];
-            const nm = (cleanFields.plant || "Unnamed").trim() || "Unnamed";
-            const sid = entry.seasonId || "";
-            const exists = gh.annuals.some(
-              a => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
-                   (a.seasonId || "") === sid
-            );
-            if (!exists) {
-              gh.annuals.push({
-                id: newId(), name: nm, seasonId: sid, actions: [], created: Date.now(),
-              });
-            }
-          }
         }
 
         // egg layer death decrements flock by the quantity (default 1)
@@ -13756,11 +12611,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             <select style={inputStyle} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
               <option value="lbs">lbs</option>
               <option value="oz">oz</option>
-              <option value="each">each</option>
               <option value="count">count</option>
-              <option value="cups">cups</option>
-              <option value="pints">pints</option>
-              <option value="quarts">quarts</option>
               <option value="bunch">bunches</option>
             </select>
           </Field>
@@ -14351,7 +13202,8 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 // onboardedAt timestamp). Captures: homestead name, location (via zip code),
 // active hobbies. All three screens are skippable individually.
 // ============================================================================
-function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
+function OnboardingWizard({ update, onClose }) {
+  const [step, setStep] = useState(1);
   const [name, setName] = useState("");
   const [zip, setZip] = useState("");
   const [country, setCountry] = useState("us");
@@ -14448,69 +13300,18 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
         overscrollBehavior: "contain",
         padding: "28px 28px max(28px, env(safe-area-inset-bottom)) 28px",
       }}>
-        {/* Step indicator — hidden on step 0 (the account choice, which sits
-            before the numbered wizard steps). */}
-        {step >= 1 && (
-          <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
-            {[1, 2, 3, 4].map((i) => (
-              <div
-                key={i}
-                style={{
-                  flex: 1, height: 4, borderRadius: 2,
-                  background: i <= step ? palette.ink : palette.line,
-                }}
-              />
-            ))}
-          </div>
-        )}
-
-        {step === 0 && (
-          <>
-            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, margin: "0 0 6px", color: palette.ink, lineHeight: 1.1 }}>
-              Welcome to Henalytics 🌱
-            </h2>
-            <p style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.6, marginTop: 0, marginBottom: 20 }}>
-              The homestead notebook you'll actually use.
-            </p>
-
-            {/* PRIMARY — create account / sign in */}
-            <div style={{
-              background: palette.card, border: `1.5px solid ${palette.line}`,
-              borderRadius: 12, padding: 18, marginBottom: 14,
-            }}>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 8 }}>
-                Create an account
-              </div>
-              <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.7, marginBottom: 14 }}>
-                ✓ Syncs across all your devices<br />
-                ✓ Never lose your data<br />
-                ✓ Invite farmhands to help track
-              </div>
-              <Btn
-                variant="primary"
-                onClick={() => { if (setModal) setModal({ type: "signup" }); setStep(1); }}
-                style={{ width: "100%" }}
-              >
-                Create account / Sign in
-              </Btn>
-            </div>
-
-            {/* SECONDARY — continue without an account */}
-            <div style={{ textAlign: "center" }}>
-              <Btn
-                variant="ghost"
-                onClick={() => setStep(1)}
-                style={{ width: "100%" }}
-              >
-                Continue without an account
-              </Btn>
-              <p style={{ fontSize: 11, color: palette.inkSoft, lineHeight: 1.6, marginTop: 8, marginBottom: 0 }}>
-                Your homestead saves on this device only. You can create an
-                account later to sync it everywhere — your data comes with you.
-              </p>
-            </div>
-          </>
-        )}
+        {/* Step indicator */}
+        <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
+          {[1, 2, 3, 4].map((i) => (
+            <div
+              key={i}
+              style={{
+                flex: 1, height: 4, borderRadius: 2,
+                background: i <= step ? palette.ink : palette.line,
+              }}
+            />
+          ))}
+        </div>
 
         {step === 1 && (
           <>
@@ -15067,7 +13868,7 @@ function AddToHomeScreenModal({ onClose }) {
 // filter is a future enhancement; for now the date filter affects entry-based
 // numbers in those hobbies and leaves sales totals as-is.
 // ============================================================================
-function AnalyticsShareWrapper({ hobby, entries, data, children, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
+function AnalyticsShareWrapper({ hobby, entries, data, children }) {
   const [showShare, setShowShare] = useState(false);
   const [dateFilter, setDateFilter] = useState("all");
   const [customStart, setCustomStart] = useState("");
@@ -15082,17 +13883,8 @@ function AnalyticsShareWrapper({ hobby, entries, data, children, /* ADV_ANALYTIC
   // a prop (all 12 do today), this transparently replaces the all-entries
   // array with the filtered one. Components that ignore `entries` (e.g. ones
   // that read from data.sales only) are unaffected.
-  // ADV_ANALYTICS: also inject `dateRange` (so children can compute the prior
-  // comparable period), `allEntries` (unfiltered — personal records must scan
-  // all-time, not just the visible window), and the early-access gating props.
   const childWithFiltered = React.isValidElement(children)
-    ? React.cloneElement(children, {
-        entries: filteredEntries,
-        dateRange: range,
-        allEntries: entries || [],
-        earlyAccessConfig,
-        isSupporter,
-      })
+    ? React.cloneElement(children, { entries: filteredEntries })
     : children;
 
   return (
@@ -15220,13 +14012,14 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     }
     if (hobby.type === "garden") {
       const harvests = entries.filter(e => e.action === "harvested");
+      const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity)||0), 0);
       const plantings = entries.filter(e => e.action === "planted").length;
       const waterings = entries.filter(e => e.action === "watered").length;
       const seasonName = hobby.currentSeason ? hobby.currentSeason.name : "—";
       return {
         emoji: "🌱", label: "Garden",
         stats: [
-          { label: "Harvest", value: harvestSummary(harvests) },
+          { label: "Harvest", value: fmtWeight(totalHarvest) },
           { label: "Annuals", value: plantings },
           { label: "Waterings", value: waterings },
           { label: "Season", value: seasonName },
@@ -16245,7 +15038,7 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
         <div style={{ flex:1 }}>
           <Field label="Unit">
             <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
-              {["lbs","oz","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
+              {["lbs","oz","count","quart","pint","bunch"].map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
         </div>
@@ -16291,7 +15084,7 @@ function PerennialDetailModal({ hobbyId, perennial, update, setModal, onClose })
       <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:12 }}>
         {perennial.category === "tree" ? "🌳 Orchard tree" : "🌿 Perennial plant"}
         {perennial.plantDate ? ` · Planted ${perennial.plantDate}` : ""}
-        {harvests.length ? ` · ${harvestSummary(harvests)} lifetime` : ""}
+        {perennial.totalHarvest ? ` · ${fmtWeight(Number(perennial.totalHarvest) || 0)} lifetime` : ""}
       </div>
 
       <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:14 }}>
@@ -16380,283 +15173,6 @@ function LogPerennialActionModal({ hobbyId, perennial, update, onClose }) {
         onClose();
       }}>Log {type}</Btn>
     </Modal>
-  );
-}
-
-// ============================================================================
-// ACCOUNT NUDGE MODAL — gentle "create an account to back up" prompt
-// ----------------------------------------------------------------------------
-// Shown once to signed-out users after they've logged ~10 entries. Soft and
-// dismissible — never a hard interrupt. Creating an account migrates their
-// local data to the cloud (the load effect's cloud-empty branch adopts it).
-// ============================================================================
-function AccountNudgeModal({ onCreateAccount, onClose }) {
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 240, padding: 16,
-      }}
-    >
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
-          border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
-          padding: "26px 24px",
-          textAlign: "center",
-        }}
-      >
-        <div style={{ fontSize: 36, marginBottom: 8 }}>🌱</div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, marginBottom: 8, lineHeight: 1.15 }}>
-          You've been busy!
-        </div>
-        <div style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.6, marginBottom: 20 }}>
-          Henalytics is saving everything on this device. Create a free
-          account to back it up and sync across your devices — your data
-          comes with you.
-        </div>
-        <button
-          onClick={onCreateAccount}
-          style={{
-            width: "100%", padding: "12px 18px", borderRadius: 8,
-            background: palette.ink, color: palette.bg,
-            border: `1.5px solid ${palette.ink}`, cursor: "pointer",
-            fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
-            boxShadow: "2px 2px 0 " + palette.line, marginBottom: 10,
-          }}
-        >
-          Create account
-        </button>
-        <button
-          onClick={onClose}
-          style={{
-            width: "100%", padding: "10px", borderRadius: 8,
-            background: "transparent", border: `1.5px solid ${palette.line}`,
-            cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 600,
-            fontSize: 13, color: palette.inkSoft,
-          }}
-        >
-          Maybe later
-        </button>
-      </div>
-    </div>
-  );
-}
-
-// ============================================================================
-// APP STORE LAUNCH MODAL — "We're on the App Store!" celebration popup
-// ----------------------------------------------------------------------------
-// A one-time, web-users-only popup announcing the iOS launch. Distinct from
-// the standard What's New popup: blue celebratory background with animated
-// falling confetti, the official "Download on the App Store" badge, and a
-// "coming soon to Google Play" line. The confetti and badge are all inline
-// SVG/CSS — nothing external to host, sharp at any size.
-// ============================================================================
-function AppStoreLaunchModal({ onClose }) {
-  const APP_STORE_URL = "https://apps.apple.com/us/app/henalytics/id6768749008";
-
-  // Confetti pieces — randomized once on mount so each open looks lively but
-  // stable during the popup's lifetime.
-  const confetti = React.useMemo(() => {
-    const blues = ["#7FB5FF", "#A9D0FF", "#4A90E2", "#5BC0EB", "#CFE6FF"];
-    return Array.from({ length: 22 }, (_, i) => ({
-      id: i,
-      left: Math.random() * 100,
-      size: 8 + Math.random() * 12,
-      delay: Math.random() * 4,
-      duration: 3.5 + Math.random() * 3.5,
-      color: blues[i % blues.length],
-      radius: 2 + Math.random() * 6,
-    }));
-  }, []);
-
-  return (
-    <div
-      onClick={onClose}
-      style={{
-        position: "fixed", inset: 0, background: "rgba(20,30,60,0.55)",
-        display: "flex", alignItems: "center", justifyContent: "center",
-        zIndex: 250, padding: 16,
-      }}
-    >
-      {/* Keyframes for the falling confetti */}
-      <style>{`
-        @keyframes henAppStoreFall {
-          0%   { transform: translateY(-40px) rotate(0deg); opacity: 0; }
-          8%   { opacity: 1; }
-          92%  { opacity: 1; }
-          100% { transform: translateY(520px) rotate(720deg); opacity: 0; }
-        }
-        @keyframes henAppStoreSway {
-          0%, 100% { margin-left: -14px; }
-          50%      { margin-left: 14px; }
-        }
-        @keyframes henAppStorePop {
-          0%   { transform: scale(0.85); opacity: 0; }
-          100% { transform: scale(1); opacity: 1; }
-        }
-      `}</style>
-
-      <div
-        onClick={(e) => e.stopPropagation()}
-        style={{
-          position: "relative",
-          width: "100%", maxWidth: 380,
-          borderRadius: 22,
-          overflow: "hidden",
-          border: `2px solid ${palette.ink}`,
-          boxShadow: `8px 10px 0 rgba(20,30,60,0.35)`,
-          background: "linear-gradient(160deg, #2F6BD8 0%, #1E47B0 100%)",
-          animation: "henAppStorePop 0.32s ease-out",
-        }}
-      >
-        {/* Confetti layer */}
-        <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
-          {confetti.map((c) => (
-            <div
-              key={c.id}
-              style={{
-                position: "absolute",
-                left: `${c.left}%`,
-                top: 0,
-                animation: `henAppStoreFall ${c.duration}s linear ${c.delay}s infinite`,
-              }}
-            >
-              <div
-                style={{
-                  width: c.size, height: c.size,
-                  background: c.color,
-                  borderRadius: c.radius,
-                  animation: `henAppStoreSway ${(c.duration / 2).toFixed(2)}s ease-in-out ${c.delay}s infinite`,
-                }}
-              />
-            </div>
-          ))}
-        </div>
-
-        {/* Content */}
-        <div style={{ position: "relative", padding: "30px 24px 24px", textAlign: "center" }}>
-          {/* Close button */}
-          <button
-            onClick={onClose}
-            aria-label="Close"
-            style={{
-              position: "absolute", top: 12, right: 12,
-              background: "rgba(255,255,255,0.18)", border: "none",
-              borderRadius: 999, width: 30, height: 30, cursor: "pointer",
-              color: "#fff", fontSize: 16, lineHeight: 1,
-              display: "flex", alignItems: "center", justifyContent: "center",
-            }}
-          >
-            ✕
-          </button>
-
-          {/* Headline */}
-          <div style={{
-            fontFamily: FONT_DISPLAY, fontSize: 30, lineHeight: 1.1,
-            color: "#fff", marginBottom: 4, fontWeight: 400,
-          }}>
-            New launch alert.
-          </div>
-          <div style={{
-            fontFamily: FONT_DISPLAY, fontSize: 30, lineHeight: 1.1,
-            color: "#fff", marginBottom: 20, fontWeight: 400,
-          }}>
-            Ready. Set. Get.
-          </div>
-
-          {/* App icon — bird + book + leaf, recreated as SVG */}
-          <div style={{
-            width: 104, height: 104, margin: "0 auto 12px",
-            borderRadius: 24, background: "#F4EDE0",
-            border: `2px solid ${palette.ink}`,
-            boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
-            display: "flex", alignItems: "center", justifyContent: "center",
-          }}>
-            <svg width="66" height="66" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              {/* book */}
-              <path d="M14 44 L33 39 L52 44 L52 54 L33 50 L14 54 Z" fill="#2C1810"/>
-              <path d="M14 44 L33 39 L33 50 L14 54 Z" fill="#3D2418"/>
-              {/* leaf */}
-              <path d="M46 20 C54 22 56 32 50 39 C44 33 42 24 46 20 Z" fill="#2C1810"/>
-              <path d="M47 23 L50 36" stroke="#F4EDE0" strokeWidth="1.4" strokeLinecap="round"/>
-              {/* bird body */}
-              <ellipse cx="28" cy="29" rx="11" ry="9" fill="#2C1810"/>
-              {/* bird tail */}
-              <path d="M17 30 L8 33 L17 35 Z" fill="#2C1810"/>
-              {/* bird head */}
-              <circle cx="36" cy="22" r="6.5" fill="#2C1810"/>
-              {/* beak */}
-              <path d="M42 21 L47 22 L42 24 Z" fill="#2C1810"/>
-              {/* eye */}
-              <circle cx="37.5" cy="21" r="1.6" fill="#F4EDE0"/>
-              {/* legs */}
-              <path d="M26 38 L25 43 M31 38 L32 43" stroke="#2C1810" strokeWidth="1.6" strokeLinecap="round"/>
-            </svg>
-          </div>
-
-          <div style={{
-            fontFamily: FONT_BODY, fontSize: 16, fontWeight: 700,
-            color: "#fff", marginBottom: 18,
-          }}>
-            Henalytics
-          </div>
-
-          <div style={{
-            fontFamily: FONT_BODY, fontSize: 14, color: "rgba(255,255,255,0.92)",
-            lineHeight: 1.5, marginBottom: 18,
-          }}>
-            Henalytics is now on the App Store — get it on your iPhone or iPad
-            and take your homestead with you.
-          </div>
-
-          {/* Official "Download on the App Store" badge — inline SVG */}
-          <a
-            href={APP_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onClose}
-            style={{ display: "inline-block", textDecoration: "none", marginBottom: 14 }}
-          >
-            <svg width="170" height="56" viewBox="0 0 170 56" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Download on the App Store">
-              <rect x="1" y="1" width="168" height="54" rx="11" fill="#000" stroke="#A6A6A6" strokeWidth="1"/>
-              {/* Apple logo */}
-              <path d="M38.1 28.2c0-3.3 2.7-4.9 2.8-5-1.5-2.2-3.9-2.5-4.7-2.6-2-.2-3.9 1.2-4.9 1.2-1 0-2.6-1.2-4.2-1.1-2.2 0-4.2 1.3-5.3 3.2-2.3 3.9-.6 9.7 1.6 12.9 1.1 1.5 2.4 3.3 4 3.2 1.6-.1 2.2-1 4.1-1 1.9 0 2.5 1 4.2 1 1.7 0 2.8-1.6 3.9-3.1 1.2-1.8 1.7-3.5 1.7-3.6-.1 0-3.3-1.3-3.3-5.1z" fill="#fff"/>
-              <path d="M34.9 18.5c.9-1.1 1.5-2.5 1.3-4-1.3.1-2.8.9-3.7 1.9-.8.9-1.5 2.4-1.3 3.8 1.4.1 2.8-.7 3.7-1.7z" fill="#fff"/>
-              {/* text */}
-              <text x="56" y="24" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="9">Download on the</text>
-              <text x="56" y="42" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="19" fontWeight="600">App Store</text>
-            </svg>
-          </a>
-
-          {/* Coming soon to Google Play */}
-          <div style={{
-            fontFamily: FONT_BODY, fontSize: 12, color: "rgba(255,255,255,0.7)",
-            marginBottom: 18,
-          }}>
-            🤖 Coming soon to Google Play
-          </div>
-
-          {/* Dismiss */}
-          <div>
-            <button
-              onClick={onClose}
-              style={{
-                background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.4)",
-                color: "#fff", borderRadius: 10, padding: "9px 22px",
-                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
-              }}
-            >
-              Maybe later
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
   );
 }
 

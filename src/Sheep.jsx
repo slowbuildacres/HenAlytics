@@ -19,11 +19,16 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1842,7 +1847,7 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
 // ============================================================================
 // SHEEP ANALYTICS
 // ============================================================================
-export function SheepAnalytics({ hobby, entries = [] }) {
+export function SheepAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   if (!hobby) {
     return <div style={{ padding:40,textAlign:"center",color:palette.inkSoft }}>Loading…</div>;
   }
@@ -1929,6 +1934,56 @@ export function SheepAnalytics({ hobby, entries = [] }) {
           </div>
         </>
       )}
+
+      {/* ADV_ANALYTICS: gated block — milk by month line, best milk month,
+          milk vs. prior period. Milk entries carry a date so monthly
+          bucketing works; lambing/wool records have no per-event dates. */}
+      {(() => {
+        const advAll = allEntries || entries;
+        const advMilk = advAll.filter(e => e.action === "milk");
+        if (advMilk.length === 0) return null;
+        const milkMonthlyRaw = monthlySeries(advMilk, e => e.date, e => Number(e.oz) || 0);
+        const milkMonthly = milkMonthlyRaw.map(p => ({
+          month: p.month, gal: Number((p.value / 128).toFixed(2)),
+          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+        }));
+        const milkRecord = personalRecord(milkMonthlyRaw);
+        const prior = priorDateRange(dateRange);
+        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+        const priorMilk = prior ? advMilk.filter(e => inR(e.date, prior)).reduce((s, e) => s + (Number(e.oz) || 0), 0) : null;
+        const milkDelta = prior ? computeDelta(milkOz, priorMilk) : null;
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>📈 Milk trend</h3>
+              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
+                {milkRecord && <StatCard label="Best milk month" value={fmtVolume(milkRecord.value / 128)} sub={milkRecord.label} accent={palette.leaf} />}
+                {milkDelta && (
+                  <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
+                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Milk vs. prior period</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.leaf,lineHeight:1.1 }}>{fmtVolume(milkOz / 128)}</div>
+                    <div style={{ marginTop:4 }}><StatTrend delta={milkDelta} palette={palette} fonts={pFonts} /></div>
+                  </div>
+                )}
+              </div>
+              {milkMonthly.length > 1 && (
+                <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:18 }}>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>🥛 Milk by month</div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={milkMonthly}>
+                      <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                      <YAxis stroke={palette.inkSoft} fontSize={11} />
+                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} gal`, "Milk"]} />
+                      <Line type="monotone" dataKey="gal" stroke={palette.leaf} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
     </div>
   );
 }

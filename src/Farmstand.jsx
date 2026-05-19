@@ -14,8 +14,13 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Edit3 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -996,7 +1001,7 @@ function ArchivedItemsList({ hobby, update }) {
 // ============================================================================
 // FARMSTAND ANALYTICS — rendered under the Stats tab when farmstand is active
 // ============================================================================
-export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode = false }) {
+export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   // Defensive: hobby may be undefined if data is mid-load or migration hasn't
   // applied yet. Treat that as an empty state rather than crashing.
   const farmstandSales = useMemo(
@@ -1147,6 +1152,55 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
           </div>
         </>
       )}
+
+      {/* ADV_ANALYTICS: gated block — revenue by month line, best sales month,
+          revenue vs. prior period. Built from farmstandSales' date field. */}
+      {(() => {
+        const revMonthlyRaw = monthlySeries(farmstandSales, s => s.date, s => fudge(Number(s.totalRevenue) || 0));
+        const revMonthly = revMonthlyRaw.map(p => ({
+          month: p.month, revenue: Number(p.value.toFixed(2)),
+          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+        }));
+        const revRecord = personalRecord(revMonthlyRaw);
+        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+        const prior = priorDateRange(dateRange);
+        const curRev = dateRange && (dateRange.start || dateRange.end)
+          ? farmstandSales.filter(s => inR(s.date, dateRange)).reduce((s2, s) => s2 + fudge(Number(s.totalRevenue) || 0), 0)
+          : totalRevenue;
+        const priorRev = prior ? farmstandSales.filter(s => inR(s.date, prior)).reduce((s2, s) => s2 + fudge(Number(s.totalRevenue) || 0), 0) : null;
+        const revDelta = prior ? computeDelta(curRev, priorRev) : null;
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        if (revMonthlyRaw.length === 0) return null;
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
+                {revRecord && <StatCard label="Best sales month" value={fmtMoney(revRecord.value)} sub={revRecord.label} accent={palette.leaf} />}
+                {revDelta && (
+                  <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
+                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Revenue vs. prior period</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.leaf,lineHeight:1.1 }}>{fmtMoney(curRev)}</div>
+                    <div style={{ marginTop:4 }}><StatTrend delta={revDelta} palette={palette} fonts={pFonts} /></div>
+                  </div>
+                )}
+              </div>
+              {revMonthly.length > 1 && (
+                <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:18 }}>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>🥕 Revenue trend by month</div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <LineChart data={revMonthly}>
+                      <XAxis dataKey="label" tick={{ fontSize: 11, fill: palette.inkSoft }} />
+                      <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => `$${v}`} />
+                      <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ background: palette.bg, border: `1px solid ${palette.line}`, borderRadius: 8 }} />
+                      <Line type="monotone" dataKey="revenue" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
     </div>
   );
 }

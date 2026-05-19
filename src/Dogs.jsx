@@ -29,10 +29,14 @@
 
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1736,7 +1740,7 @@ export default function DogsPage({ hobby, data, update, setModal, user }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function DogsAnalytics({ hobby }) {
+export function DogsAnalytics({ hobby, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const dogs = (hobby?.animals || []).filter(a => !a.archived);
   const lgds = dogs.filter(d => d.isLGD);
   const attacks = hobby?.attacks || [];
@@ -1847,6 +1851,58 @@ export function DogsAnalytics({ hobby }) {
           </div>
         </div>
       )}
+
+      {/* ADV_ANALYTICS: gated block — puppies born by month line + biggest
+          litter record. Litters are sparse and not a rolling window, so no
+          period-vs-period delta here. */}
+      {(() => {
+        if (litters.length === 0) return null;
+        const litterMonthlyRaw = monthlySeries(
+          litters,
+          l => l.whelpDate,
+          l => Number(l.totalBorn || (l.puppies?.length || 0)) || 0
+        );
+        const litterMonthly = litterMonthlyRaw.map(p => ({
+          month: p.month, puppies: p.value,
+          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+        }));
+        // Biggest single litter (not monthly sum) — scan litters directly.
+        let biggest = null;
+        litters.forEach(l => {
+          const n = Number(l.totalBorn || (l.puppies?.length || 0)) || 0;
+          if (biggest == null || n > biggest.n) biggest = { n, date: l.whelpDate };
+        });
+        const bigLabel = biggest && biggest.date
+          ? (() => { const pr = String(biggest.date).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, pr[2] || 1); return isNaN(d) ? "" : d.toLocaleDateString("en-US", { month: "short", year: "numeric" }); })()
+          : "";
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div style={{ marginTop: 14 }}>
+              {biggest && biggest.n > 0 && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                  <StatCard label="Biggest litter" value={`${biggest.n} puppies`} sub={bigLabel || null} accent={palette.yolk} />
+                </div>
+              )}
+              {litterMonthly.length > 1 && (
+                <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>🐶 Puppies born by month</div>
+                  <div style={{ height: 200 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={litterMonthly}>
+                        <XAxis dataKey="label" style={{ fontSize: 11 }} />
+                        <YAxis style={{ fontSize: 11 }} allowDecimals={false} />
+                        <Tooltip formatter={v => [`${v} puppies`, "Born"]} />
+                        <Line type="monotone" dataKey="puppies" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
     </div>
   );
 }

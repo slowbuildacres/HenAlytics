@@ -3,11 +3,16 @@
 // ============================================================================
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -1200,7 +1205,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
   );
 }
 
-export function CowsAnalytics({hobby,entries}){
+export function CowsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=null,dateRange=null,earlyAccessConfig=null,isSupporter=false}){
   const animals=(hobby.animals||[]).filter(a=>!a.archived);
   const milkEntries=entries.filter(e=>e.action==="milk");
   const feedEntries=entries.filter(e=>e.action==="fed");
@@ -1218,6 +1223,19 @@ export function CowsAnalytics({hobby,entries}){
   const milkByAnimal={};
   milkEntries.forEach(e=>{milkByAnimal[e.animalName||e.animalId]=(milkByAnimal[e.animalName||e.animalId]||0)+(Number(e.gallons)||0);});
   const milkChart=Object.entries(milkByAnimal).map(([name,gal])=>({name,gal:Number(gal.toFixed(1))})).sort((a,b)=>b.gal-a.gal);
+
+  // ── ADV_ANALYTICS ── monthly milk line + record (all-time) + period delta.
+  const advAll=allEntries||entries;
+  const advAllMilk=advAll.filter(e=>e.action==="milk");
+  const milkMonthlyRaw=monthlySeries(advAllMilk,e=>e.date,e=>Number(e.gallons)||0);
+  const milkMonthly=milkMonthlyRaw.map(p=>({month:p.month,gal:Number(p.value.toFixed(2)),
+    label:(()=>{const pr=String(p.month).split("-").map(Number);const d=new Date(pr[0],pr[1]-1,1);return isNaN(d)?p.month:d.toLocaleDateString("en-US",{month:"short",year:"2-digit"});})()}));
+  const milkRecord=personalRecord(milkMonthlyRaw);
+  const prior=priorDateRange(dateRange);
+  const priorMilk=prior?advAllMilk.filter(e=>e.date&&(!prior.start||e.date>=prior.start)&&(!prior.end||e.date<=prior.end)).reduce((s,e)=>s+(Number(e.gallons)||0),0):null;
+  const milkDelta=prior?computeDelta(totalMilkGal,priorMilk):null;
+  const pFonts={body:FONT_BODY,display:FONT_DISPLAY};
+
   return(
     <div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
@@ -1228,6 +1246,23 @@ export function CowsAnalytics({hobby,entries}){
         {butcherEntries.length>0&&<StatCard label="Butchered" value={butcherEntries.length} sub={fmtWeight(totalMeatLbs)} accent={palette.accent}/>}
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
       </div>
+
+      <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+        <div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
+            {milkRecord&&<StatCard label="Best milk month" value={fmtVolume(milkRecord.value)} sub={milkRecord.label} accent={palette.leaf}/>}
+            {milkDelta&&(
+              <div style={{flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14}}>
+                <div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Milk vs. prior period</div>
+                <div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:palette.leaf,lineHeight:1.1}}>{fmtVolume(totalMilkGal)}</div>
+                <div style={{marginTop:4}}><StatTrend delta={milkDelta} palette={palette} fonts={pFonts}/></div>
+              </div>
+            )}
+          </div>
+          {milkMonthly.length>1&&<ChartCard title="🥛 Milk by month"><ResponsiveContainer width="100%" height={200}><LineChart data={milkMonthly}><XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[fmtVolume(Number(v)||0),"Milk"]}/><Line type="monotone" dataKey="gal" stroke={palette.leaf} strokeWidth={3} dot={{fill:palette.accent,r:4}}/></LineChart></ResponsiveContainer></ChartCard>}
+        </div>
+      </LockedStatOverlay>
+
       {milkTrend.length>1&&<ChartCard title={`🥛 Daily milk (${volumeUnitLabel()})`}><ResponsiveContainer width="100%" height={180}><BarChart data={milkTrend}><XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[fmtVolume(Number(v)||0),"Milk"]}/><Bar dataKey="gal" fill={palette.leaf} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>}
       {milkChart.length>1&&<ChartCard title="🐄 Milk by animal"><div style={{display:"flex",flexDirection:"column",gap:6}}>{milkChart.map(a=><div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><span>🐄 {a.name}</span><strong>{fmtVolume(Number(a.gal)||0)}</strong></div>)}</div></ChartCard>}
       {animals.length===0&&<div style={{padding:24,textAlign:"center",color:palette.inkSoft,fontSize:13}}>No cow entries yet.</div>}

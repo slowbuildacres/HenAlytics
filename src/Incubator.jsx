@@ -3,7 +3,11 @@
 // ============================================================================
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Trash2, Plus, Calendar } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1479,7 +1483,7 @@ function IncubatorHome({ hobby, update, setModal, data }) {
 // ============================================================================
 // INCUBATOR STATS (exported for AnalyticsPage)
 // ============================================================================
-export function IncubatorAnalytics({ hobby }) {
+export function IncubatorAnalytics({ hobby, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const runs = hobby.runs || [];
   const completed = runs.filter(r => r.eggsHatched != null);
   const totalSet = runs.reduce((s,r) => s+(r.eggsSet||0), 0);
@@ -1607,6 +1611,49 @@ export function IncubatorAnalytics({ hobby }) {
               </ChartCard>
             )}
           </>
+        );
+      })()}
+
+      {/* ADV_ANALYTICS: gated block — hatch rate trend over runs (a line, vs.
+          the existing per-run bar) + best-ever hatch rate run. Runs are not a
+          rolling date window, so no period-vs-period delta here. */}
+      {(() => {
+        const dated = completed
+          .filter(r => r.eggsSet > 0 && r.dateSet)
+          .slice()
+          .sort((a, b) => (a.dateSet || "").localeCompare(b.dateSet || ""));
+        if (dated.length < 2) return null;
+        const trend = dated.map(r => ({
+          name: (r.name || "").slice(0, 12),
+          rate: Number(((r.eggsHatched / r.eggsSet) * 100).toFixed(1)),
+        }));
+        // Best single run by hatch rate.
+        let best = null;
+        dated.forEach(r => {
+          const rate = (r.eggsHatched / r.eggsSet) * 100;
+          if (best == null || rate > best.rate) best = { rate, name: r.name };
+        });
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              {best && (
+                <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
+                  <StatCard label="Best hatch rate" value={`${best.rate.toFixed(0)}%`} sub={best.name ? `${best.name} — your best run` : "your best run"} accent={palette.leaf} />
+                </div>
+              )}
+              <ChartCard title="🐣 Hatch rate trend">
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={trend}>
+                    <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
+                    <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={v=>`${v}%`} domain={[0,100]} />
+                    <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v=>[`${v}%`,"Hatch rate"]} />
+                    <Line type="monotone" dataKey="rate" stroke={palette.leaf} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            </div>
+          </LockedStatOverlay>
         );
       })()}
 

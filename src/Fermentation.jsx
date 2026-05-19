@@ -26,6 +26,11 @@
 import React, { useState, useMemo } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
+import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -746,13 +751,23 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function FermentationAnalytics({ hobby, entries = [] }) {
+export function FermentationAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const ferments = hobby?.ferments || [];
   const recipes = hobby?.recipes || [];
   const active = ferments.filter(f => !f.archived);
   const completed = ferments.filter(f => f.archived);
   const totalLogs = ferments.reduce((s, f) => s + (f.stages?.length || 0), 0);
   const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+
+  // ── ADV_ANALYTICS ── ferments started by month line + best month record.
+  // Ferments are sparse and not a rolling window, so no period delta.
+  const fermentMonthlyRaw = monthlySeries(ferments, f => f.startDate, () => 1);
+  const fermentMonthly = fermentMonthlyRaw.map(p => ({
+    month: p.month, count: p.value,
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const fermentRecord = personalRecord(fermentMonthlyRaw);
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
 
   return (
     <div style={{ paddingBottom: 80 }}>
@@ -764,6 +779,34 @@ export function FermentationAnalytics({ hobby, entries = [] }) {
         <StatCard label="Recipes" value={recipes.length} accent={palette.accent} />
         {infraTotal > 0 && <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} />}
       </div>
+
+      {fermentMonthlyRaw.length > 0 && (
+        <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+          <div style={{ marginBottom: 14 }}>
+            {fermentRecord && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <StatCard label="Busiest month" value={`${fermentRecord.value} started`} sub={fermentRecord.label} accent={palette.leaf} />
+              </div>
+            )}
+            {fermentMonthly.length > 1 && (
+              <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>🫙 Ferments started by month</div>
+                <div style={{ height: 200 }}>
+                  <ResponsiveContainer width="100%" height="100%">
+                    <LineChart data={fermentMonthly}>
+                      <XAxis dataKey="label" style={{ fontSize: 11 }} />
+                      <YAxis style={{ fontSize: 11 }} allowDecimals={false} />
+                      <Tooltip formatter={v => [`${v} started`, "Ferments"]} />
+                      <Line type="monotone" dataKey="count" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                    </LineChart>
+                  </ResponsiveContainer>
+                </div>
+              </div>
+            )}
+          </div>
+        </LockedStatOverlay>
+      )}
+
       {completed.length > 0 && (
         <div style={{
           background: palette.card, border: `1.5px solid ${palette.line}`,

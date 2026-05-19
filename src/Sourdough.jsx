@@ -17,8 +17,13 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2, ChevronDown } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -553,7 +558,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // SOURDOUGH ANALYTICS
 // ============================================================================
-export function SourdoughAnalytics({ hobby, sales = [], entries = [] }) {
+export function SourdoughAnalytics({ hobby, sales = [], entries = [], /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   if (!hobby) {
     return <div style={{ padding:40,textAlign:"center",color:palette.inkSoft }}>Loading…</div>;
   }
@@ -629,6 +634,57 @@ export function SourdoughAnalytics({ hobby, sales = [], entries = [] }) {
           return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
         })()}
       </div>
+
+      {/* ADV_ANALYTICS: gated block — loaves by month line (all-time, vs. the
+          existing last-12 bar), best baking month, loaves vs. prior period. */}
+      {(() => {
+        const loavesMonthlyRaw = monthlySeries(bakes, b => b.date, b => Number(b.loafCount) || 0);
+        const loavesMonthly = loavesMonthlyRaw.map(p => ({
+          month: p.month, loaves: p.value,
+          label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+        }));
+        const loavesRecord = personalRecord(loavesMonthlyRaw);
+        const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+        const prior = priorDateRange(dateRange);
+        const curLoaves = dateRange && (dateRange.start || dateRange.end)
+          ? bakes.filter(b => inR(b.date, dateRange)).reduce((s, b) => s + (Number(b.loafCount) || 0), 0)
+          : totalLoaves;
+        const priorLoaves = prior ? bakes.filter(b => inR(b.date, prior)).reduce((s, b) => s + (Number(b.loafCount) || 0), 0) : null;
+        const loavesDelta = prior ? computeDelta(curLoaves, priorLoaves) : null;
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        if (loavesMonthlyRaw.length === 0) return null;
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
+                {loavesRecord && <StatCard label="Best baking month" value={`${loavesRecord.value} loaves`} sub={loavesRecord.label} accent={palette.yolk} />}
+                {loavesDelta && (
+                  <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
+                    <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Loaves vs. prior period</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.yolk,lineHeight:1.1 }}>{curLoaves} loaves</div>
+                    <div style={{ marginTop:4 }}><StatTrend delta={loavesDelta} palette={palette} fonts={pFonts} /></div>
+                  </div>
+                )}
+              </div>
+              {loavesMonthly.length > 1 && (
+                <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:18 }}>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:14,color:palette.ink,marginBottom:10 }}>🍞 Loaves by month — all time</div>
+                  <div style={{ width:"100%",height:200 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={loavesMonthly} margin={{ top:10,right:8,left:-10,bottom:0 }}>
+                        <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                        <YAxis stroke={palette.inkSoft} fontSize={11} allowDecimals={false} />
+                        <Tooltip contentStyle={{ background:palette.bg,border:`1.5px solid ${palette.line}`,borderRadius:8,fontFamily:FONT_BODY,fontSize:13 }} />
+                        <Line type="monotone" dataKey="loaves" stroke={palette.yolk} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
 
       {/* Monthly bake chart */}
       {monthlyBakes.some(m => m.loaves > 0) && (

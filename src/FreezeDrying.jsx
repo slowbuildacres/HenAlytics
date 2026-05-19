@@ -19,8 +19,13 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -323,7 +328,7 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS — basic counts and trend chart
 // ============================================================================
-export function FreezeDryingAnalytics({ hobby, spouseMode = false }) {
+export function FreezeDryingAnalytics({ hobby, spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = (hobby?.batches || []).filter(b => !b.archived);
   const totalOz = batches.reduce((s, b) => s + (b.outputOz || 0), 0);
   const totalCost = batches.reduce((s, b) => s + (b.ingredientsCost || 0), 0);
@@ -342,6 +347,25 @@ export function FreezeDryingAnalytics({ hobby, spouseMode = false }) {
     return Object.values(map).sort((a, b) => a.month.localeCompare(b.month)).slice(-12);
   }, [batches]);
 
+  // ── ADV_ANALYTICS ── output by month line + best output month + period delta.
+  const ozMonthlyRaw = useMemo(
+    () => monthlySeries(batches, b => b.date, b => Number(b.outputOz) || 0),
+    [batches]
+  );
+  const ozMonthly = ozMonthlyRaw.map(p => ({
+    month: p.month, oz: Number(p.value.toFixed(1)),
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const ozRecord = personalRecord(ozMonthlyRaw);
+  const inR = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+  const prior = priorDateRange(dateRange);
+  const curOz = dateRange && (dateRange.start || dateRange.end)
+    ? batches.filter(b => inR(b.date, dateRange)).reduce((s, b) => s + (Number(b.outputOz) || 0), 0)
+    : totalOz;
+  const priorOz = prior ? batches.filter(b => inR(b.date, prior)).reduce((s, b) => s + (Number(b.outputOz) || 0), 0) : null;
+  const ozDelta = prior ? computeDelta(curOz, priorOz) : null;
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+
   return (
     <div style={{ paddingBottom: 80 }}>
       <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 14px", color: palette.ink }}>❄️ Freeze Drying Stats</h1>
@@ -351,6 +375,36 @@ export function FreezeDryingAnalytics({ hobby, spouseMode = false }) {
         <StatCard label="Run hours" value={totalHours.toFixed(1)} accent={palette.yolk} />
         {!spouseMode && <StatCard label="Cost" value={fmtMoney(totalCost)} accent={palette.accent} />}
       </div>
+
+      <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+        <div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+            {ozRecord && <StatCard label="Best output month" value={`${ozRecord.value.toFixed(1)} oz`} sub={ozRecord.label} accent={palette.feather} />}
+            {ozDelta && (
+              <div style={{ flex: "1 1 130px", minWidth: 130, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Output vs. prior period</div>
+                <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.feather, lineHeight: 1.1 }}>{curOz.toFixed(1)} oz</div>
+                <div style={{ marginTop: 4 }}><StatTrend delta={ozDelta} palette={palette} fonts={pFonts} /></div>
+              </div>
+            )}
+          </div>
+          {ozMonthly.length > 1 && (
+            <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>❄️ Output by month</div>
+              <div style={{ height: 200 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <LineChart data={ozMonthly}>
+                    <XAxis dataKey="label" style={{ fontSize: 11 }} />
+                    <YAxis style={{ fontSize: 11 }} />
+                    <Tooltip formatter={v => [`${v} oz`, "Output"]} />
+                    <Line type="monotone" dataKey="oz" stroke={palette.feather} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+        </div>
+      </LockedStatOverlay>
 
       {byMonth.length > 0 && (
         <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>

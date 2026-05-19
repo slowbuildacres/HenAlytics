@@ -27,8 +27,12 @@
 
 import React, { useState } from "react";
 import { X, Edit3, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -714,7 +718,7 @@ export default function OilInfusionPage({ hobby, data, update }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function OilInfusionAnalytics({ hobby, entries }) {
+export function OilInfusionAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;
   const infusingCount = batches.filter(b => b.status === "infusing").length;
@@ -735,6 +739,15 @@ export function OilInfusionAnalytics({ hobby, entries }) {
     .slice(0, 8)
     .map(([herb, stats]) => ({ name: herb.length > 12 ? herb.slice(0, 12) + "…" : herb, batches: stats.batches }));
 
+  // ── ADV_ANALYTICS ── bottles made by month line + best bottling month.
+  const bottlesMonthlyRaw = monthlySeries(batches, b => b.startDate, b => Number(b.bottlesMade) || 0);
+  const bottlesMonthly = bottlesMonthlyRaw.map(p => ({
+    month: p.month, bottles: p.value,
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const bottlesRecord = personalRecord(bottlesMonthlyRaw);
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -744,6 +757,30 @@ export function OilInfusionAnalytics({ hobby, entries }) {
         <StatCard label="Ingredients spent" value={totalCost > 0 ? fmtMoney(totalCost) : "—"} accent={palette.accent} />
         {totalYieldOz > 0 && <StatCard label="Total yield" value={`${totalYieldOz.toFixed(1)} oz`} accent={palette.ink} />}
       </div>
+
+      {bottlesMonthlyRaw.length > 0 && (
+        <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+          <div>
+            {bottlesRecord && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <StatCard label="Best bottling month" value={`${bottlesRecord.value} bottles`} sub={bottlesRecord.label} accent={palette.leaf} />
+              </div>
+            )}
+            {bottlesMonthly.length > 1 && (
+              <ChartCard title="🫒 Bottles made by month">
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={bottlesMonthly}>
+                    <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                    <YAxis stroke={palette.inkSoft} fontSize={11} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [`${v} bottles`, "Made"]} />
+                    <Line type="monotone" dataKey="bottles" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+          </div>
+        </LockedStatOverlay>
+      )}
 
       {herbChart.length > 1 && (
         <ChartCard title="🫒 Batches by herb">

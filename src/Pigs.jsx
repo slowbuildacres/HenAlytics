@@ -8,6 +8,11 @@ import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
@@ -589,7 +594,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
   );
 }
 
-export function PigsAnalytics({hobby,entries}){
+export function PigsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=null,dateRange=null,earlyAccessConfig=null,isSupporter=false}){
   const animals=(hobby.animals||[]).filter(a=>!a.archived);
   const feedEntries=entries.filter(e=>e.action==="fed");
   const butcherEntries=entries.filter(e=>e.action==="butcher");
@@ -605,6 +610,22 @@ export function PigsAnalytics({hobby,entries}){
     if(!weightByAnimal[e.animalName||e.animalId])weightByAnimal[e.animalName||e.animalId]=[];
     weightByAnimal[e.animalName||e.animalId].push({date:e.date,weight:Number(e.weight)||0});
   });
+
+  // ── ADV_ANALYTICS ── meat produced by month (line) + record, plus a
+  // feed-cost period delta (invertColor: falling cost is the good direction).
+  const advAll=advAllOf(allEntries,entries);
+  const advButcher=advAll.filter(e=>e.action==="butcher");
+  const advFeed=advAll.filter(e=>e.action==="fed");
+  const meatMonthlyRaw=monthlySeries(advButcher,e=>e.date,e=>Number(e.weight)||0);
+  const meatMonthly=meatMonthlyRaw.map(p=>({month:p.month,lbs:Number(p.value.toFixed(1)),
+    label:mLabel(p.month)}));
+  const meatRecord=personalRecord(meatMonthlyRaw);
+  const prior=priorDateRange(dateRange);
+  const inR=(d,r)=>d&&(!r.start||d>=r.start)&&(!r.end||d<=r.end);
+  const priorFeedCost=prior?advFeed.filter(e=>inR(e.date,prior)).reduce((s,e)=>s+(Number(e.cost)||0),0):null;
+  const feedDelta=prior?computeDelta(totalFeedCost,priorFeedCost):null;
+  const pFonts={body:FONT_BODY,display:FONT_DISPLAY};
+
   return(
     <div>
       <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:16}}>
@@ -615,6 +636,23 @@ export function PigsAnalytics({hobby,entries}){
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
         {costPerLb!=="—"&&<StatCard label="Feed cost / lb" value={`$${costPerLb}`} accent={palette.accent}/>}
       </div>
+
+      <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+        <div>
+          <div style={{display:"flex",gap:10,flexWrap:"wrap",marginBottom:12}}>
+            {meatRecord&&<StatCard label="Best butcher month" value={fmtWeight(meatRecord.value)} sub={meatRecord.label} accent={palette.leaf}/>}
+            {feedDelta&&(
+              <div style={{flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14}}>
+                <div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>Feed cost vs. prior period</div>
+                <div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:palette.feather,lineHeight:1.1}}>{fmtMoney(totalFeedCost)}</div>
+                <div style={{marginTop:4}}><StatTrend delta={feedDelta} invertColor palette={palette} fonts={pFonts}/></div>
+              </div>
+            )}
+          </div>
+          {meatMonthly.length>1&&<ChartCard title="🥓 Meat produced by month"><ResponsiveContainer width="100%" height={200}><LineChart data={meatMonthly}><XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[fmtWeight(Number(v)||0),"Meat"]}/><Line type="monotone" dataKey="lbs" stroke={palette.leaf} strokeWidth={3} dot={{fill:palette.accent,r:4}}/></LineChart></ResponsiveContainer></ChartCard>}
+        </div>
+      </LockedStatOverlay>
+
       {Object.keys(weightByAnimal).length>0&&(
         <ChartCard title="⚖️ Weight by animal">
           <div style={{display:"flex",flexDirection:"column",gap:6}}>
@@ -631,6 +669,10 @@ export function PigsAnalytics({hobby,entries}){
     </div>
   );
 }
+
+// ADV_ANALYTICS helpers shared within this file.
+function advAllOf(allEntries,entries){return allEntries||entries;}
+function mLabel(month){const pr=String(month).split("-").map(Number);const d=new Date(pr[0],pr[1]-1,1);return isNaN(d)?month:d.toLocaleDateString("en-US",{month:"short",year:"2-digit"});}
 
 
 // ============================================================================

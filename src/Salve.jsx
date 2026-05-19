@@ -22,8 +22,12 @@
 
 import React, { useState } from "react";
 import { X, Edit3, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -540,7 +544,7 @@ export default function SalvePage({ hobby, data, update }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function SalveAnalytics({ hobby, entries }) {
+export function SalveAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;
   const totalTinsMade = batches.reduce((s, b) => s + (Number(b.tinsMade) || 0), 0);
@@ -561,6 +565,15 @@ export function SalveAnalytics({ hobby, entries }) {
     .slice(0, 8)
     .map(([name, stats]) => ({ name: name.length > 14 ? name.slice(0, 14) + "…" : name, tins: stats.tins, sold: stats.sold }));
 
+  // ── ADV_ANALYTICS ── tins made by month line + best tin month record.
+  const tinsMonthlyRaw = monthlySeries(batches, b => b.pouredDate, b => Number(b.tinsMade) || 0);
+  const tinsMonthly = tinsMonthlyRaw.map(p => ({
+    month: p.month, tins: p.value,
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const tinsRecord = personalRecord(tinsMonthlyRaw);
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -571,6 +584,30 @@ export function SalveAnalytics({ hobby, entries }) {
         {totalBeeswax > 0 && <StatCard label="Beeswax used" value={`${totalBeeswax.toFixed(1)} oz`} accent={palette.ink} />}
         {totalCost > 0 && <StatCard label="Ingredients spent" value={fmtMoney(totalCost)} accent={palette.accent} />}
       </div>
+
+      {tinsMonthlyRaw.length > 0 && (
+        <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+          <div>
+            {tinsRecord && (
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+                <StatCard label="Best tin month" value={`${tinsRecord.value} tins`} sub={tinsRecord.label} accent={palette.leaf} />
+              </div>
+            )}
+            {tinsMonthly.length > 1 && (
+              <ChartCard title="🪻 Tins made by month">
+                <ResponsiveContainer width="100%" height={200}>
+                  <LineChart data={tinsMonthly}>
+                    <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                    <YAxis stroke={palette.inkSoft} fontSize={11} allowDecimals={false} />
+                    <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [`${v} tins`, "Made"]} />
+                    <Line type="monotone" dataKey="tins" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                  </LineChart>
+                </ResponsiveContainer>
+              </ChartCard>
+            )}
+          </div>
+        </LockedStatOverlay>
+      )}
 
       {chart.length > 1 && (
         <ChartCard title="🪻 Tins by salve">
