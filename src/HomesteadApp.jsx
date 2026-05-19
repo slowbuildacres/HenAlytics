@@ -2250,6 +2250,11 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
       setOpen(false);
     } catch (e) {
       setError(e.message || "Could not switch homestead");
+    } finally {
+      // Always clear the switching flag — including on success. Previously
+      // success left `switching` stuck true, so the FIRST switch worked but
+      // every switch after it was silently a no-op (the guard at the top of
+      // pick() returned early) until the user reloaded the page.
       setSwitching(false);
     }
   };
@@ -2316,7 +2321,8 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
                     {h.name}
                   </div>
                   <div style={{ fontSize: 11, color: palette.inkSoft }}>
-                    {h.role === "owner" ? "Owner" : "Farmhand"}
+                    {(h.role === "owner" ? "Owner" : "Farmhand")}
+                    {h.hint ? ` · ${h.hint}` : ""}
                   </div>
                 </div>
                 {h.isActive && <Check size={16} color={palette.leaf} style={{ flexShrink: 0 }} />}
@@ -2767,6 +2773,11 @@ export default function HomesteadApp() {
   //   "network" → cloud unreachable, tapping should just retry/dismiss
   const [signedOutRemotely, setSignedOutRemotely] = useState(false);
   const [syncBannerReason, setSyncBannerReason] = useState("auth");
+  // Controls the in-app "another device has newer data" confirm modal.
+  // We use a real modal instead of window.confirm() because window.confirm
+  // is unreliable in the Capacitor native webview (it can be silently
+  // suppressed) — which is why tapping the stale banner did nothing.
+  const [showStaleConfirm, setShowStaleConfirm] = useState(false);
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
 
@@ -3331,17 +3342,9 @@ export default function HomesteadApp() {
             } else if (syncBannerReason === "stale") {
               // Cloud is ahead of this device. Refreshing pulls the newer
               // cloud data — which discards the unsynced local edit that
-              // caused this. Confirm so the user makes that choice knowingly.
-              const ok = window.confirm(
-                "Another device has newer data for this homestead. " +
-                "Refresh to load it?\n\n" +
-                "Your most recent change on THIS device hasn't synced and " +
-                "will be replaced by the newer version."
-              );
-              if (ok) {
-                setSignedOutRemotely(false);
-                setHomesteadReloadKey((k) => k + 1);
-              }
+              // caused this. Open an in-app confirm modal (not
+              // window.confirm, which is unreliable in the native webview).
+              setShowStaleConfirm(true);
             } else {
               // Network failure — re-opening sign-in won't help. Retry the
               // load by bumping the reload key, and clear the banner; if the
@@ -3366,6 +3369,64 @@ export default function HomesteadApp() {
             : syncBannerReason === "stale"
             ? "⚠️ Another device has newer data — tap to refresh"
             : "⚠️ Can't reach the cloud — showing your last saved data. Tap to retry"}
+        </div>
+      )}
+
+      {/* In-app confirm modal for the "another device has newer data" banner.
+          Replaces window.confirm so it works in the Capacitor native app. */}
+      {showStaleConfirm && (
+        <div
+          onClick={() => setShowStaleConfirm(false)}
+          style={{
+            position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 300, padding: 16,
+          }}
+        >
+          <div
+            onClick={(e) => e.stopPropagation()}
+            style={{
+              background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
+              border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+              padding: 20,
+            }}
+          >
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 10 }}>
+              Newer data on another device
+            </div>
+            <div style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 18 }}>
+              Another device has newer data for this homestead. Refreshing loads
+              it — but your most recent change on this device hasn't synced yet
+              and will be replaced by the newer version.
+            </div>
+            <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
+              <button
+                onClick={() => setShowStaleConfirm(false)}
+                style={{
+                  padding: "10px 16px", borderRadius: 8, background: palette.card,
+                  border: `1.5px solid ${palette.line}`, cursor: "pointer",
+                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.ink,
+                }}
+              >
+                Keep my version
+              </button>
+              <button
+                onClick={() => {
+                  setShowStaleConfirm(false);
+                  setSignedOutRemotely(false);
+                  setHomesteadReloadKey((k) => k + 1);
+                }}
+                style={{
+                  padding: "10px 16px", borderRadius: 8, background: palette.accent,
+                  border: `1.5px solid ${palette.ink}`, cursor: "pointer",
+                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg,
+                  boxShadow: `2px 2px 0 ${palette.line}`,
+                }}
+              >
+                Refresh &amp; load newer
+              </button>
+            </div>
+          </div>
         </div>
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}

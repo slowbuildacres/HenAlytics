@@ -636,11 +636,29 @@ export async function listMyHomesteads(user) {
       const name =
         (typeof data.homesteadName === 'string' && data.homesteadName.trim()) ||
         (m.role === 'owner' ? 'My Homestead' : 'Shared Homestead');
+      // A content hint so the switcher can tell apart homesteads that share
+      // a name (e.g. two unnamed homesteads both showing "My Homestead").
+      // Counts logged entries across all entry buckets; falls back to a
+      // short id suffix when there's nothing logged yet.
+      let entryCount = 0;
+      const entries = data && data.entries;
+      if (entries && typeof entries === 'object') {
+        for (const k of Object.keys(entries)) {
+          if (Array.isArray(entries[k])) entryCount += entries[k].length;
+        }
+      }
+      const idTail = String(m.homestead_id || '').slice(0, 4);
+      const hint =
+        entryCount > 0
+          ? `${entryCount} ${entryCount === 1 ? 'entry' : 'entries'}`
+          : `empty · ${idTail}`;
       return {
         homesteadId: m.homestead_id,
         role: m.role,
         joinedAt: m.joined_at,
         name,
+        hint,
+        entryCount,
         isActive: m.homestead_id === activeId,
       };
     })
