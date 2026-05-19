@@ -841,7 +841,49 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   return data;
 }
 
-// ============ PHOTO HELPERS ============
+// ============ HARVEST SUMMARY HELPERS ============
+// Harvest entries each carry their own `unit` (lbs, oz, each, count, cups,
+// pints, quarts, bunch). You cannot sum across units — 3 cups + 2 lbs is not
+// "5" of anything. These helpers group a list of harvest entries by unit so
+// totals are reported per-unit. Entries with no unit are treated as "lbs"
+// (every harvest logged before the unit picker existed was implicitly lbs).
+const HARVEST_UNIT_LABELS = {
+  lbs: "lbs", oz: "oz", each: "each", count: "count",
+  cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches",
+  // Singular aliases — perennial harvest records historically stored these.
+  quart: "quarts", pint: "pints",
+};
+
+// Returns a map of { unit: totalQuantity } for the given harvest entries.
+// Accepts both `quantity` (annual garden entries) and `qty` (perennial
+// harvest records) as the amount field.
+function harvestTotalsByUnit(harvestEntries) {
+  const totals = {};
+  (harvestEntries || []).forEach((e) => {
+    const unit = e && e.unit ? e.unit : "lbs";
+    const raw = e && (e.quantity != null ? e.quantity : e.qty);
+    const qty = Number(raw) || 0;
+    totals[unit] = (totals[unit] || 0) + qty;
+  });
+  return totals;
+}
+
+// Returns a human display string like "12.5 lbs · 8 each · 3 cups".
+// Falls back to "0 lbs" when there are no harvests.
+function harvestSummary(harvestEntries) {
+  const totals = harvestTotalsByUnit(harvestEntries);
+  const parts = Object.keys(totals).map((unit) => {
+    const n = totals[unit];
+    const label = HARVEST_UNIT_LABELS[unit] || unit;
+    // Whole numbers for count-like units, one decimal for weight/volume.
+    const isWhole = unit === "each" || unit === "count" || unit === "bunch";
+    const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
+    return `${num} ${label}`;
+  });
+  return parts.length ? parts.join(" · ") : "0 lbs";
+}
+
+
 // Backwards compatibility: old entries use `entry.photoPath` (single string),
 // new entries use `entry.photoPaths` (array). This helper returns a unified array
 // of photo paths for any entry, regardless of which shape it has.
@@ -5359,7 +5401,7 @@ function GardenSummary({ hobby, data, update, setModal }) {
         </div>
         <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.leafSoft, lineHeight: 1 }}>{plantings}</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {totalHarvest.toFixed(1)} harvested · day {days}</div>
+          <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {harvestSummary(harvests)} harvested · day {days}</div>
         </div>
       </div>
 
@@ -6400,7 +6442,7 @@ function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Annuals planted" value={plantings} accent={palette.leaf} />
-        <StatCard label="Total Harvest" value={totalHarvest.toFixed(1)} sub="lbs / units" accent={palette.leaf} />
+        <StatCard label="Total Harvest" value={harvestSummary(harvests)} accent={palette.leaf} />
         <StatCard label="Total Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
         <StatCard label="Waterings" value={waterings} accent="#3F7CAC" />
         {fertilizations > 0 && <StatCard label="Fertilizations" value={fertilizations} accent={palette.leafSoft || "#A8C078"} />}
@@ -12403,7 +12445,7 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
           <strong>Season summary:</strong>
         </div>
         <div style={{ fontSize: 13, color: palette.inkSoft }}>
-          {seasonEntries.length} entries · {harvests.length} harvests · {totalHarvest.toFixed(1)} total yield · {fmtMoney(totalCost)} costs
+          {seasonEntries.length} entries · {harvests.length} harvests · {harvestSummary(harvests)} total yield · {fmtMoney(totalCost)} costs
         </div>
       </div>
 
@@ -13077,7 +13119,11 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             <select style={inputStyle} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
               <option value="lbs">lbs</option>
               <option value="oz">oz</option>
+              <option value="each">each</option>
               <option value="count">count</option>
+              <option value="cups">cups</option>
+              <option value="pints">pints</option>
+              <option value="quarts">quarts</option>
               <option value="bunch">bunches</option>
             </select>
           </Field>
@@ -14478,14 +14524,13 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     }
     if (hobby.type === "garden") {
       const harvests = entries.filter(e => e.action === "harvested");
-      const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity)||0), 0);
       const plantings = entries.filter(e => e.action === "planted").length;
       const waterings = entries.filter(e => e.action === "watered").length;
       const seasonName = hobby.currentSeason ? hobby.currentSeason.name : "—";
       return {
         emoji: "🌱", label: "Garden",
         stats: [
-          { label: "Harvest", value: fmtWeight(totalHarvest) },
+          { label: "Harvest", value: harvestSummary(harvests) },
           { label: "Annuals", value: plantings },
           { label: "Waterings", value: waterings },
           { label: "Season", value: seasonName },
@@ -15504,7 +15549,7 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
         <div style={{ flex:1 }}>
           <Field label="Unit">
             <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
-              {["lbs","oz","count","quart","pint","bunch"].map(u=><option key={u}>{u}</option>)}
+              {["lbs","oz","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
         </div>
@@ -15550,7 +15595,7 @@ function PerennialDetailModal({ hobbyId, perennial, update, setModal, onClose })
       <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:12 }}>
         {perennial.category === "tree" ? "🌳 Orchard tree" : "🌿 Perennial plant"}
         {perennial.plantDate ? ` · Planted ${perennial.plantDate}` : ""}
-        {perennial.totalHarvest ? ` · ${fmtWeight(Number(perennial.totalHarvest) || 0)} lifetime` : ""}
+        {harvests.length ? ` · ${harvestSummary(harvests)} lifetime` : ""}
       </div>
 
       <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:14 }}>
