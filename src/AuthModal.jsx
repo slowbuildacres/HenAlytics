@@ -69,15 +69,15 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
       if (!email.trim()) { setError("Please enter your email address."); return; }
       setLoading(true);
       try {
-        // Redirect URL must point to a place the OS can deliver the reset
-        // token to. On web we use the henalytics.com origin (handles the
-        // hash fragment via the in-app password recovery flow). On native
-        // we use the henalytics:// scheme so iOS/Android hand the URL
-        // directly to the installed app via Capacitor's appUrlOpen event.
-        // Without this, native users get bounced to Safari and the reset
-        // dies on a page that doesn't know what to do with the token.
-        const isNative = !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform());
-        const redirectTo = isNative ? "henalytics://reset" : window.location.origin;
+        // Password reset always routes through the web (henalytics.com).
+        // Native users tapping the email link open it in their browser,
+        // reset there using the working web recovery flow, then return to
+        // the app and sign in with the new password. This deliberately
+        // avoids the henalytics:// custom-scheme deep link — that hand-off
+        // proved unreliable (the recovery token was lost between the email
+        // link, the browser, and the app). The web origin handles the
+        // recovery hash fragment directly and reliably on every platform.
+        const redirectTo = window.location.origin;
         const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), {
           redirectTo,
         });
