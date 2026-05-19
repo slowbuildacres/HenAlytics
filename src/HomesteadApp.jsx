@@ -184,6 +184,7 @@ const defaultData = () => ({
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
   appStoreFundDismissedMonth: null, // "YYYY-MM" of last dismissed app-store-fundraiser popup
   appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time)
+  accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
@@ -211,6 +212,9 @@ function migrateData(data) {
   }
   if (typeof data.appStoreLaunchDismissed !== "boolean") {
     data.appStoreLaunchDismissed = false;
+  }
+  if (typeof data.accountNudgeDismissed !== "boolean") {
+    data.accountNudgeDismissed = false;
   }
   if (typeof data.weeklyChoreEmailOptIn !== "boolean") {
     data.weeklyChoreEmailOptIn = false;
@@ -2440,10 +2444,16 @@ export default function HomesteadApp() {
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
+  // Onboarding wizard step is hoisted here (rather than living inside
+  // OnboardingWizard) because the wizard unmounts whenever a modal opens —
+  // e.g. when the account-choice step opens AuthModal. Without hoisting,
+  // the wizard would remount back at step 0 after the user finishes signup.
+  const [onboardingStep, setOnboardingStep] = useState(0);
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [showAppStoreLaunch, setShowAppStoreLaunch] = useState(false);
+  const [showAccountNudge, setShowAccountNudge] = useState(false);
   const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   // Milestone popup — fetched from Supabase app_config table. Lets Riley
   // celebrate growth milestones (e.g. "nearly 2,000 users") and ask for
@@ -2529,6 +2539,25 @@ export default function HomesteadApp() {
     const timer = setTimeout(() => setShowAppStoreLaunch(true), 1800);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.appStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew]);
+
+  // ---- "Create an account" nudge for signed-out users ----
+  // A gentle, one-time, dismissible prompt. Fires once a signed-out user has
+  // logged enough entries (~10) to have real data worth backing up. Never
+  // shown to signed-in users (they already have cloud sync). Waits behind
+  // onboarding and the other popups so it never stacks.
+  const accountNudgeShownRef = React.useRef(false);
+  useEffect(() => {
+    if (accountNudgeShownRef.current) return;
+    if (user) return;                            // signed-in users already sync
+    if (!data?.onboardedAt) return;              // don't interrupt onboarding
+    if (data?.accountNudgeDismissed) return;     // already seen + dismissed
+    if (totalEntryCount < 10) return;            // wait until there's real data
+    if (passwordRecoveryPending) return;
+    if (showWhatsNew || showAppStoreLaunch) return; // don't stack popups
+    accountNudgeShownRef.current = true;
+    const timer = setTimeout(() => setShowAccountNudge(true), 1600);
+    return () => clearTimeout(timer);
+  }, [user, data?.onboardedAt, data?.accountNudgeDismissed, totalEntryCount, passwordRecoveryPending, showWhatsNew, showAppStoreLaunch]);
 
   // ---- Native tutorial prompt (once-per-account) ----
   // Web-completed users coming over to the iOS/Android app deserve to see the
@@ -3375,6 +3404,11 @@ export default function HomesteadApp() {
   const hasAnyEntries = Object.values(data.entries || {}).some(
     (arr) => Array.isArray(arr) && arr.length > 0
   );
+  // Total entries across all hobbies — used to trigger the account nudge
+  // for signed-out users once they've invested some logging effort.
+  const totalEntryCount = Object.values(data.entries || {}).reduce(
+    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0
+  );
   const hasNotOnboarded = !data.onboardedAt;
   const shouldShowWizard = hasNotOnboarded && !hasAnyEntries && !modal && role !== "member";
   // Note: we render the wizard inline below — only ONE wizard shows at a time,
@@ -3540,6 +3574,9 @@ export default function HomesteadApp() {
       {shouldShowWizard && (
         <OnboardingWizard
           update={update}
+          setModal={setModal}
+          step={onboardingStep}
+          setStep={setOnboardingStep}
           onClose={() => {
             update((d) => {
               d.onboardedAt = Date.now();
@@ -3576,6 +3613,21 @@ export default function HomesteadApp() {
           onClose={() => {
             setShowAppStoreLaunch(false);
             update(d => { d.appStoreLaunchDismissed = true; return d; });
+          }}
+        />
+      )}
+
+      {/* "Create an account" nudge — signed-out users, one-time, ~10 entries */}
+      {showAccountNudge && !showWhatsNew && !showAppStoreLaunch && (
+        <AccountNudgeModal
+          onCreateAccount={() => {
+            setShowAccountNudge(false);
+            update(d => { d.accountNudgeDismissed = true; return d; });
+            setModal({ type: "signup" });
+          }}
+          onClose={() => {
+            setShowAccountNudge(false);
+            update(d => { d.accountNudgeDismissed = true; return d; });
           }}
         />
       )}
@@ -14171,8 +14223,7 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
 // onboardedAt timestamp). Captures: homestead name, location (via zip code),
 // active hobbies. All three screens are skippable individually.
 // ============================================================================
-function OnboardingWizard({ update, onClose }) {
-  const [step, setStep] = useState(1);
+function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
   const [name, setName] = useState("");
   const [zip, setZip] = useState("");
   const [country, setCountry] = useState("us");
@@ -14269,18 +14320,69 @@ function OnboardingWizard({ update, onClose }) {
         overscrollBehavior: "contain",
         padding: "28px 28px max(28px, env(safe-area-inset-bottom)) 28px",
       }}>
-        {/* Step indicator */}
-        <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
-          {[1, 2, 3, 4].map((i) => (
-            <div
-              key={i}
-              style={{
-                flex: 1, height: 4, borderRadius: 2,
-                background: i <= step ? palette.ink : palette.line,
-              }}
-            />
-          ))}
-        </div>
+        {/* Step indicator — hidden on step 0 (the account choice, which sits
+            before the numbered wizard steps). */}
+        {step >= 1 && (
+          <div style={{ display: "flex", gap: 4, marginBottom: 18 }}>
+            {[1, 2, 3, 4].map((i) => (
+              <div
+                key={i}
+                style={{
+                  flex: 1, height: 4, borderRadius: 2,
+                  background: i <= step ? palette.ink : palette.line,
+                }}
+              />
+            ))}
+          </div>
+        )}
+
+        {step === 0 && (
+          <>
+            <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 30, margin: "0 0 6px", color: palette.ink, lineHeight: 1.1 }}>
+              Welcome to Henalytics 🌱
+            </h2>
+            <p style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.6, marginTop: 0, marginBottom: 20 }}>
+              The homestead notebook you'll actually use.
+            </p>
+
+            {/* PRIMARY — create account / sign in */}
+            <div style={{
+              background: palette.card, border: `1.5px solid ${palette.line}`,
+              borderRadius: 12, padding: 18, marginBottom: 14,
+            }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginBottom: 8 }}>
+                Create an account
+              </div>
+              <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.7, marginBottom: 14 }}>
+                ✓ Syncs across all your devices<br />
+                ✓ Never lose your data<br />
+                ✓ Invite farmhands to help track
+              </div>
+              <Btn
+                variant="primary"
+                onClick={() => { if (setModal) setModal({ type: "signup" }); setStep(1); }}
+                style={{ width: "100%" }}
+              >
+                Create account / Sign in
+              </Btn>
+            </div>
+
+            {/* SECONDARY — continue without an account */}
+            <div style={{ textAlign: "center" }}>
+              <Btn
+                variant="ghost"
+                onClick={() => setStep(1)}
+                style={{ width: "100%" }}
+              >
+                Continue without an account
+              </Btn>
+              <p style={{ fontSize: 11, color: palette.inkSoft, lineHeight: 1.6, marginTop: 8, marginBottom: 0 }}>
+                Your homestead saves on this device only. You can create an
+                account later to sync it everywhere — your data comes with you.
+              </p>
+            </div>
+          </>
+        )}
 
         {step === 1 && (
           <>
@@ -16141,6 +16243,70 @@ function LogPerennialActionModal({ hobbyId, perennial, update, onClose }) {
         onClose();
       }}>Log {type}</Btn>
     </Modal>
+  );
+}
+
+// ============================================================================
+// ACCOUNT NUDGE MODAL — gentle "create an account to back up" prompt
+// ----------------------------------------------------------------------------
+// Shown once to signed-out users after they've logged ~10 entries. Soft and
+// dismissible — never a hard interrupt. Creating an account migrates their
+// local data to the cloud (the load effect's cloud-empty branch adopts it).
+// ============================================================================
+function AccountNudgeModal({ onCreateAccount, onClose }) {
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 240, padding: 16,
+      }}
+    >
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
+          border: `2px solid ${palette.ink}`,
+          boxShadow: "6px 8px 0 " + palette.line,
+          padding: "26px 24px",
+          textAlign: "center",
+        }}
+      >
+        <div style={{ fontSize: 36, marginBottom: 8 }}>🌱</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, marginBottom: 8, lineHeight: 1.15 }}>
+          You've been busy!
+        </div>
+        <div style={{ fontSize: 14, color: palette.inkSoft, lineHeight: 1.6, marginBottom: 20 }}>
+          Henalytics is saving everything on this device. Create a free
+          account to back it up and sync across your devices — your data
+          comes with you.
+        </div>
+        <button
+          onClick={onCreateAccount}
+          style={{
+            width: "100%", padding: "12px 18px", borderRadius: 8,
+            background: palette.ink, color: palette.bg,
+            border: `1.5px solid ${palette.ink}`, cursor: "pointer",
+            fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
+            boxShadow: "2px 2px 0 " + palette.line, marginBottom: 10,
+          }}
+        >
+          Create account
+        </button>
+        <button
+          onClick={onClose}
+          style={{
+            width: "100%", padding: "10px", borderRadius: 8,
+            background: "transparent", border: `1.5px solid ${palette.line}`,
+            cursor: "pointer", fontFamily: FONT_BODY, fontWeight: 600,
+            fontSize: 13, color: palette.inkSoft,
+          }}
+        >
+          Maybe later
+        </button>
+      </div>
+    </div>
   );
 }
 
