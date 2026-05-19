@@ -183,6 +183,7 @@ const defaultData = () => ({
   freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
   appStoreFundDismissedMonth: null, // "YYYY-MM" of last dismissed app-store-fundraiser popup
+  appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time)
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
@@ -207,6 +208,9 @@ function migrateData(data) {
   }
   if (typeof data.appStoreFundDismissedMonth !== "string" && data.appStoreFundDismissedMonth !== null) {
     data.appStoreFundDismissedMonth = null;
+  }
+  if (typeof data.appStoreLaunchDismissed !== "boolean") {
+    data.appStoreLaunchDismissed = false;
   }
   if (typeof data.weeklyChoreEmailOptIn !== "boolean") {
     data.weeklyChoreEmailOptIn = false;
@@ -2439,6 +2443,7 @@ export default function HomesteadApp() {
   const [showTutorialPrompt, setShowTutorialPrompt] = useState(false);
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
+  const [showAppStoreLaunch, setShowAppStoreLaunch] = useState(false);
   const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   // Milestone popup — fetched from Supabase app_config table. Lets Riley
   // celebrate growth milestones (e.g. "nearly 2,000 users") and ask for
@@ -2506,6 +2511,24 @@ export default function HomesteadApp() {
     const timer = setTimeout(() => setShowWhatsNew(true), 1500);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
+
+  // ---- "We're on the App Store" launch popup (one-time, web users only) ----
+  // Native users are already in the app — showing them a "download the app"
+  // popup would be confusing — so this is gated to web (!isNativeApp()).
+  // Shown once per account, tracked by data.appStoreLaunchDismissed. It waits
+  // behind the What's New popup so the two never stack on the same open.
+  const appStoreLaunchShownRef = React.useRef(false);
+  useEffect(() => {
+    if (appStoreLaunchShownRef.current) return;
+    if (isNativeApp()) return;                   // native users already have the app
+    if (!data?.onboardedAt) return;              // don't interrupt onboarding
+    if (data?.appStoreLaunchDismissed) return;   // already seen + dismissed
+    if (passwordRecoveryPending) return;
+    if (showWhatsNew) return;                    // let What's New finish first
+    appStoreLaunchShownRef.current = true;
+    const timer = setTimeout(() => setShowAppStoreLaunch(true), 1800);
+    return () => clearTimeout(timer);
+  }, [data?.onboardedAt, data?.appStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew]);
 
   // ---- Native tutorial prompt (once-per-account) ----
   // Web-completed users coming over to the iOS/Android app deserve to see the
@@ -3545,6 +3568,16 @@ export default function HomesteadApp() {
           setShowWhatsNew(false);
           update(d => { d.lastSeenVersion = CURRENT_VERSION; return d; });
         }} />
+      )}
+
+      {/* "We're on the App Store" launch popup — web users only, one-time */}
+      {showAppStoreLaunch && !showWhatsNew && (
+        <AppStoreLaunchModal
+          onClose={() => {
+            setShowAppStoreLaunch(false);
+            update(d => { d.appStoreLaunchDismissed = true; return d; });
+          }}
+        />
       )}
 
       {/* Monthly supporter thank-you popup (9th-11th of each month) */}
@@ -16108,6 +16141,219 @@ function LogPerennialActionModal({ hobbyId, perennial, update, onClose }) {
         onClose();
       }}>Log {type}</Btn>
     </Modal>
+  );
+}
+
+// ============================================================================
+// APP STORE LAUNCH MODAL — "We're on the App Store!" celebration popup
+// ----------------------------------------------------------------------------
+// A one-time, web-users-only popup announcing the iOS launch. Distinct from
+// the standard What's New popup: blue celebratory background with animated
+// falling confetti, the official "Download on the App Store" badge, and a
+// "coming soon to Google Play" line. The confetti and badge are all inline
+// SVG/CSS — nothing external to host, sharp at any size.
+// ============================================================================
+function AppStoreLaunchModal({ onClose }) {
+  const APP_STORE_URL = "https://apps.apple.com/us/app/henalytics/id6768749008";
+
+  // Confetti pieces — randomized once on mount so each open looks lively but
+  // stable during the popup's lifetime.
+  const confetti = React.useMemo(() => {
+    const blues = ["#7FB5FF", "#A9D0FF", "#4A90E2", "#5BC0EB", "#CFE6FF"];
+    return Array.from({ length: 22 }, (_, i) => ({
+      id: i,
+      left: Math.random() * 100,
+      size: 8 + Math.random() * 12,
+      delay: Math.random() * 4,
+      duration: 3.5 + Math.random() * 3.5,
+      color: blues[i % blues.length],
+      radius: 2 + Math.random() * 6,
+    }));
+  }, []);
+
+  return (
+    <div
+      onClick={onClose}
+      style={{
+        position: "fixed", inset: 0, background: "rgba(20,30,60,0.55)",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        zIndex: 250, padding: 16,
+      }}
+    >
+      {/* Keyframes for the falling confetti */}
+      <style>{`
+        @keyframes henAppStoreFall {
+          0%   { transform: translateY(-40px) rotate(0deg); opacity: 0; }
+          8%   { opacity: 1; }
+          92%  { opacity: 1; }
+          100% { transform: translateY(520px) rotate(720deg); opacity: 0; }
+        }
+        @keyframes henAppStoreSway {
+          0%, 100% { margin-left: -14px; }
+          50%      { margin-left: 14px; }
+        }
+        @keyframes henAppStorePop {
+          0%   { transform: scale(0.85); opacity: 0; }
+          100% { transform: scale(1); opacity: 1; }
+        }
+      `}</style>
+
+      <div
+        onClick={(e) => e.stopPropagation()}
+        style={{
+          position: "relative",
+          width: "100%", maxWidth: 380,
+          borderRadius: 22,
+          overflow: "hidden",
+          border: `2px solid ${palette.ink}`,
+          boxShadow: `8px 10px 0 rgba(20,30,60,0.35)`,
+          background: "linear-gradient(160deg, #2F6BD8 0%, #1E47B0 100%)",
+          animation: "henAppStorePop 0.32s ease-out",
+        }}
+      >
+        {/* Confetti layer */}
+        <div style={{ position: "absolute", inset: 0, overflow: "hidden", pointerEvents: "none" }}>
+          {confetti.map((c) => (
+            <div
+              key={c.id}
+              style={{
+                position: "absolute",
+                left: `${c.left}%`,
+                top: 0,
+                animation: `henAppStoreFall ${c.duration}s linear ${c.delay}s infinite`,
+              }}
+            >
+              <div
+                style={{
+                  width: c.size, height: c.size,
+                  background: c.color,
+                  borderRadius: c.radius,
+                  animation: `henAppStoreSway ${(c.duration / 2).toFixed(2)}s ease-in-out ${c.delay}s infinite`,
+                }}
+              />
+            </div>
+          ))}
+        </div>
+
+        {/* Content */}
+        <div style={{ position: "relative", padding: "30px 24px 24px", textAlign: "center" }}>
+          {/* Close button */}
+          <button
+            onClick={onClose}
+            aria-label="Close"
+            style={{
+              position: "absolute", top: 12, right: 12,
+              background: "rgba(255,255,255,0.18)", border: "none",
+              borderRadius: 999, width: 30, height: 30, cursor: "pointer",
+              color: "#fff", fontSize: 16, lineHeight: 1,
+              display: "flex", alignItems: "center", justifyContent: "center",
+            }}
+          >
+            ✕
+          </button>
+
+          {/* Headline */}
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 30, lineHeight: 1.1,
+            color: "#fff", marginBottom: 4, fontWeight: 400,
+          }}>
+            New launch alert.
+          </div>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 30, lineHeight: 1.1,
+            color: "#fff", marginBottom: 20, fontWeight: 400,
+          }}>
+            Ready. Set. Get.
+          </div>
+
+          {/* App icon — bird + book + leaf, recreated as SVG */}
+          <div style={{
+            width: 104, height: 104, margin: "0 auto 12px",
+            borderRadius: 24, background: "#F4EDE0",
+            border: `2px solid ${palette.ink}`,
+            boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
+            display: "flex", alignItems: "center", justifyContent: "center",
+          }}>
+            <svg width="66" height="66" viewBox="0 0 66 66" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              {/* book */}
+              <path d="M14 44 L33 39 L52 44 L52 54 L33 50 L14 54 Z" fill="#2C1810"/>
+              <path d="M14 44 L33 39 L33 50 L14 54 Z" fill="#3D2418"/>
+              {/* leaf */}
+              <path d="M46 20 C54 22 56 32 50 39 C44 33 42 24 46 20 Z" fill="#2C1810"/>
+              <path d="M47 23 L50 36" stroke="#F4EDE0" strokeWidth="1.4" strokeLinecap="round"/>
+              {/* bird body */}
+              <ellipse cx="28" cy="29" rx="11" ry="9" fill="#2C1810"/>
+              {/* bird tail */}
+              <path d="M17 30 L8 33 L17 35 Z" fill="#2C1810"/>
+              {/* bird head */}
+              <circle cx="36" cy="22" r="6.5" fill="#2C1810"/>
+              {/* beak */}
+              <path d="M42 21 L47 22 L42 24 Z" fill="#2C1810"/>
+              {/* eye */}
+              <circle cx="37.5" cy="21" r="1.6" fill="#F4EDE0"/>
+              {/* legs */}
+              <path d="M26 38 L25 43 M31 38 L32 43" stroke="#2C1810" strokeWidth="1.6" strokeLinecap="round"/>
+            </svg>
+          </div>
+
+          <div style={{
+            fontFamily: FONT_BODY, fontSize: 16, fontWeight: 700,
+            color: "#fff", marginBottom: 18,
+          }}>
+            Henalytics
+          </div>
+
+          <div style={{
+            fontFamily: FONT_BODY, fontSize: 14, color: "rgba(255,255,255,0.92)",
+            lineHeight: 1.5, marginBottom: 18,
+          }}>
+            Henalytics is now on the App Store — get it on your iPhone or iPad
+            and take your homestead with you.
+          </div>
+
+          {/* Official "Download on the App Store" badge — inline SVG */}
+          <a
+            href={APP_STORE_URL}
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={onClose}
+            style={{ display: "inline-block", textDecoration: "none", marginBottom: 14 }}
+          >
+            <svg width="170" height="56" viewBox="0 0 170 56" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Download on the App Store">
+              <rect x="1" y="1" width="168" height="54" rx="11" fill="#000" stroke="#A6A6A6" strokeWidth="1"/>
+              {/* Apple logo */}
+              <path d="M38.1 28.2c0-3.3 2.7-4.9 2.8-5-1.5-2.2-3.9-2.5-4.7-2.6-2-.2-3.9 1.2-4.9 1.2-1 0-2.6-1.2-4.2-1.1-2.2 0-4.2 1.3-5.3 3.2-2.3 3.9-.6 9.7 1.6 12.9 1.1 1.5 2.4 3.3 4 3.2 1.6-.1 2.2-1 4.1-1 1.9 0 2.5 1 4.2 1 1.7 0 2.8-1.6 3.9-3.1 1.2-1.8 1.7-3.5 1.7-3.6-.1 0-3.3-1.3-3.3-5.1z" fill="#fff"/>
+              <path d="M34.9 18.5c.9-1.1 1.5-2.5 1.3-4-1.3.1-2.8.9-3.7 1.9-.8.9-1.5 2.4-1.3 3.8 1.4.1 2.8-.7 3.7-1.7z" fill="#fff"/>
+              {/* text */}
+              <text x="56" y="24" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="9">Download on the</text>
+              <text x="56" y="42" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="19" fontWeight="600">App Store</text>
+            </svg>
+          </a>
+
+          {/* Coming soon to Google Play */}
+          <div style={{
+            fontFamily: FONT_BODY, fontSize: 12, color: "rgba(255,255,255,0.7)",
+            marginBottom: 18,
+          }}>
+            🤖 Coming soon to Google Play
+          </div>
+
+          {/* Dismiss */}
+          <div>
+            <button
+              onClick={onClose}
+              style={{
+                background: "rgba(255,255,255,0.15)", border: "1.5px solid rgba(255,255,255,0.4)",
+                color: "#fff", borderRadius: 10, padding: "9px 22px",
+                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
+              }}
+            >
+              Maybe later
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
