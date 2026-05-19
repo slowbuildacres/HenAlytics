@@ -2995,7 +2995,12 @@ export default function HomesteadApp() {
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       // ===== TEMP DIAGNOSTIC — remove after debugging password reset =====
-      try { alert("AUTH EVENT: " + event + "\nhas session: " + (!!session)); } catch (_) {}
+      // Only alert on recovery-relevant events so INITIAL_SESSION doesn't spam.
+      try {
+        if (event === "PASSWORD_RECOVERY" || event === "USER_UPDATED" || event === "SIGNED_IN") {
+          alert("AUTH EVENT: " + event + "\nhas session: " + (!!session));
+        }
+      } catch (_) {}
       // ===== END TEMP DIAGNOSTIC =====
       if (event === "SIGNED_OUT") setSignedOutRemotely(true);
       if (event === "SIGNED_IN") setSignedOutRemotely(false);
