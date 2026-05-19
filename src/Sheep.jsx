@@ -325,7 +325,7 @@ function LivestockProfileCircle({animal,emoji,size=20}){
   }}/>;
 }
 
-function AnimalModal({ animal, animals, onSave, onDelete, onClose, update, user, hobbyId }) {
+function AnimalModal({ animal, animals, paddocks, onSave, onDelete, onClose, update, user, hobbyId }) {
   const [name, setName] = useState(animal?.name || "");
   // Breed: dropdown with common sheep breeds + "Other" → free-text input.
   // We init based on whether the saved breed matches a known option.
@@ -339,6 +339,7 @@ function AnimalModal({ animal, animals, onSave, onDelete, onClose, update, user,
   const [role, setRole] = useState(animal?.role || "ewe");
   const [purchaseCost, setPurchaseCost] = useState(animal?.purchaseCost ? String(animal.purchaseCost) : "");
   const [purchasedFrom, setPurchasedFrom] = useState(animal?.purchasedFrom || "");
+  const [paddockId, setPaddockId] = useState(animal?.paddockId || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
   // Push 7a — pedigree fields. Both ids and names are tracked; ids link to
@@ -378,6 +379,7 @@ function AnimalModal({ animal, animals, onSave, onDelete, onClose, update, user,
       role,
       purchaseCost: parseFloat(purchaseCost) || 0,
       purchasedFrom: purchasedFrom.trim(),
+      paddockId: paddockId || null,
       // Push 7a — pedigree fields. sireId/damId are null (not empty string)
       // when unset, so the SireDamPicker's "no parent" state round-trips
       // cleanly. sire/dam display names are always saved (trimmed) so the
@@ -445,6 +447,16 @@ function AnimalModal({ animal, animals, onSave, onDelete, onClose, update, user,
       <Field label="Where purchased (optional)">
         <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, auction, neighbor" />
       </Field>
+      {(paddocks || []).length > 0 && (
+        <Field label="Paddock (optional)">
+          <select style={inputStyle} value={paddockId} onChange={e=>setPaddockId(e.target.value)}>
+            <option value="">— Unassigned —</option>
+            {(paddocks || []).map(p => (
+              <option key={p.id} value={p.id}>{p.name}</option>
+            ))}
+          </select>
+        </Field>
+      )}
 
       {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers
           show only ewes (for dam) and rams (for sire) — lambs and wethers
@@ -1186,6 +1198,140 @@ function HerdTallySection({ hobby, update }) {
   );
 }
 
+// ============================================================================
+// PADDOCK MODAL — add / edit a paddock (a grouping for sheep)
+// ----------------------------------------------------------------------------
+// Modeled on the Cows pasture system. Deleting a paddock just unassigns its
+// sheep (sets paddockId to null) — it never deletes animals.
+// ============================================================================
+function PaddockModal({ paddock, hobbyId, update, onClose }) {
+  const isEdit = !!paddock;
+  const [name, setName] = useState(paddock?.name || "");
+  const [acreage, setAcreage] = useState(paddock?.acreage ? String(paddock.acreage) : "");
+  const [notes, setNotes] = useState(paddock?.notes || "");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const save = () => {
+    if (!name.trim()) return;
+    const id = paddock?.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 6));
+    const data = {
+      id,
+      name: name.trim(),
+      acreage: Number(acreage) || 0,
+      notes: notes.trim(),
+      created: paddock?.created || Date.now(),
+    };
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      if (!Array.isArray(h.paddocks)) h.paddocks = [];
+      if (isEdit) {
+        const idx = h.paddocks.findIndex(p => p.id === id);
+        if (idx !== -1) h.paddocks[idx] = data; else h.paddocks.push(data);
+      } else {
+        h.paddocks.push(data);
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  const del = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      // Unassign sheep in this paddock — never delete the animals.
+      (h.animals || []).forEach(a => {
+        if (a.paddockId === paddock.id) a.paddockId = null;
+      });
+      h.paddocks = (h.paddocks || []).filter(p => p.id !== paddock.id);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <ModalShell title={isEdit ? "Edit paddock" : "Add a paddock"} onClose={onClose}>
+      <Field label="Name">
+        <input
+          style={inputStyle}
+          value={name}
+          onChange={e => setName(e.target.value)}
+          placeholder="e.g. North Paddock, Lambing Pen"
+          autoFocus
+        />
+      </Field>
+      <Field label="Acreage (optional)">
+        <input
+          type="number" min={0} step="0.1" inputMode="decimal"
+          style={inputStyle}
+          value={acreage}
+          onChange={e => setAcreage(e.target.value)}
+          placeholder="0"
+        />
+      </Field>
+      <Field label="Notes (optional)">
+        <textarea
+          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          value={notes}
+          onChange={e => setNotes(e.target.value)}
+        />
+      </Field>
+      <div style={{ display: "flex", gap: 8, justifyContent: "space-between", marginTop: 4 }}>
+        {isEdit ? (
+          confirmDelete ? (
+            <Btn variant="danger" small onClick={del}>Confirm delete</Btn>
+          ) : (
+            <Btn variant="ghost" small onClick={() => setConfirmDelete(true)}>Delete</Btn>
+          )
+        ) : <span />}
+        <Btn onClick={save}>{isEdit ? "Save" : "Add paddock"}</Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
+// ============================================================================
+// MOVE SHEEP MODAL — reassign a sheep's paddock without the full edit form
+// ============================================================================
+function MoveSheepModal({ animal, paddocks, hobbyId, update, onClose }) {
+  const [paddockId, setPaddockId] = useState(animal?.paddockId || "");
+  const groups = paddocks || [];
+
+  const save = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const a = (h.animals || []).find(x => x.id === animal.id);
+      if (a) a.paddockId = paddockId || null;
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <ModalShell title={`Move ${animal?.name || "sheep"}`} onClose={onClose}>
+      <Field label="Paddock">
+        <select style={inputStyle} value={paddockId} onChange={e => setPaddockId(e.target.value)} autoFocus>
+          <option value="">— Unassigned —</option>
+          {groups.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </Field>
+      {groups.length === 0 && (
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8 }}>
+          No paddocks yet. Add one from the sheep page first.
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 4 }}>
+        <Btn variant="ghost" small onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save}>Move</Btn>
+      </div>
+    </ModalShell>
+  );
+}
+
 export default function SheepPage({ hobby, data, update, setModal, user }) {
   const [animalModal, setAnimalModal] = useState({ open: false, animal: null });
   // Push 7a — pedigree view state. The 🧬 chip on each animal row opens
@@ -1201,6 +1347,10 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
   // Shared modal for the broader entry types (weight, health/vet, death, note).
   // null when closed; one of the action strings when open.
   const [logEntryAction, setLogEntryAction] = useState(null);
+  // Paddock grouping: paddockModal holds {open, paddock} for add/edit;
+  // moveModal holds {open, animal} for the quick Move action.
+  const [paddockModal, setPaddockModal] = useState({ open: false, paddock: null });
+  const [moveModal, setMoveModal] = useState({ open: false, animal: null });
 
   const animals = (hobby?.animals || []).filter(a => !a.archived);
   const archived = (hobby?.animals || []).filter(a => a.archived);
@@ -1301,12 +1451,30 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
         <AnimalModal
           animal={animalModal.animal}
           animals={hobby?.animals || []}
+          paddocks={hobby?.paddocks || []}
           onClose={() => setAnimalModal({ open: false, animal: null })}
           onSave={saveAnimal}
           onDelete={deleteAnimal}
           update={update}
           user={user}
           hobbyId={hobby.id}
+        />
+      )}
+      {paddockModal.open && (
+        <PaddockModal
+          paddock={paddockModal.paddock}
+          hobbyId={hobby.id}
+          update={update}
+          onClose={() => setPaddockModal({ open: false, paddock: null })}
+        />
+      )}
+      {moveModal.open && (
+        <MoveSheepModal
+          animal={moveModal.animal}
+          paddocks={hobby?.paddocks || []}
+          hobbyId={hobby.id}
+          update={update}
+          onClose={() => setMoveModal({ open: false, animal: null })}
         />
       )}
       {/* Push 7a — Pedigree modal. Renders above everything else (its own
@@ -1458,11 +1626,14 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
         </div>
       )}
 
-      {/* Animals list */}
+      {/* Animals list — grouped by paddock when paddocks exist */}
       <div style={{ marginBottom:24 }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10 }}>
           <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:0,color:palette.ink }}>Your sheep</h3>
-          <Btn small onClick={() => setAnimalModal({ open: true, animal: null })}>+ Add sheep</Btn>
+          <div style={{ display:"flex",gap:6 }}>
+            <Btn small variant="ghost" onClick={() => setPaddockModal({ open: true, paddock: null })}>+ Paddock</Btn>
+            <Btn small onClick={() => setAnimalModal({ open: true, animal: null })}>+ Add sheep</Btn>
+          </div>
         </div>
         {animals.length === 0 ? (
           <div style={{ background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,padding:32,textAlign:"center" }}>
@@ -1471,53 +1642,121 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
             <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:14 }}>Add your first sheep to start tracking.</div>
             <Btn variant="accent" onClick={() => setAnimalModal({ open: true, animal: null })}>+ Add your first sheep</Btn>
           </div>
-        ) : (
-          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
-            {animals.map(a => {
-              const roleLabel = { ewe: "Ewe", ram: "Ram", lamb: "Lamb", wether: "Wether" }[a.role] || a.role;
-              return (
-                <div key={a.id}
-                  onClick={() => setAnimalModal({ open: true, animal: a })}
-                  style={{
-                    padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,
-                    borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:8,
-                  }}
-                >
-                  <div style={{ minWidth:0,flex:1 }}>
-                    <div style={{ fontWeight:600,fontSize:14,color:palette.ink,display:"flex",alignItems:"center",gap:6 }}>
-                      <LivestockProfileCircle animal={a} emoji="🐑" size={18} />
-                      <span>{a.name}</span>
-                    </div>
-                    <div style={{ fontSize:11,color:palette.inkSoft }}>
-                      {roleLabel}{a.breed ? ` · ${a.breed}` : ""}{a.birthdate ? ` · ${fmtAge(a.birthdate)}` : ""}
-                    </div>
+        ) : (() => {
+          // Render one sheep row.
+          const renderRow = (a) => {
+            const roleLabel = { ewe: "Ewe", ram: "Ram", lamb: "Lamb", wether: "Wether" }[a.role] || a.role;
+            return (
+              <div key={a.id}
+                onClick={() => setAnimalModal({ open: true, animal: a })}
+                style={{
+                  padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,
+                  borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer",gap:8,
+                }}
+              >
+                <div style={{ minWidth:0,flex:1 }}>
+                  <div style={{ fontWeight:600,fontSize:14,color:palette.ink,display:"flex",alignItems:"center",gap:6 }}>
+                    <LivestockProfileCircle animal={a} emoji="🐑" size={18} />
+                    <span>{a.name}</span>
                   </div>
-                  {/* Push 7a — pedigree pill. stopPropagation keeps the row's
-                      edit-on-click behavior intact for the rest of the row. */}
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setPedigreeAnimal(a); }}
-                    aria-label={`View pedigree for ${a.name}`}
-                    style={{
-                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
-                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
-                      flexShrink:0,
-                    }}
-                  >🧬 Pedigree</button>
-                  <button
-                    onClick={(e) => { e.stopPropagation(); setHistoryAnimal(a); }}
-                    aria-label={`View history for ${a.name}`}
-                    style={{
-                      padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
-                      border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
-                      flexShrink:0,
-                    }}
-                  >📜 History</button>
-                  <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>
+                    {roleLabel}{a.breed ? ` · ${a.breed}` : ""}{a.birthdate ? ` · ${fmtAge(a.birthdate)}` : ""}
+                  </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+                <button
+                  onClick={(e) => { e.stopPropagation(); setPedigreeAnimal(a); }}
+                  aria-label={`View pedigree for ${a.name}`}
+                  style={{
+                    padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                    border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                    flexShrink:0,
+                  }}
+                >🧬 Pedigree</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setHistoryAnimal(a); }}
+                  aria-label={`View history for ${a.name}`}
+                  style={{
+                    padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                    border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                    flexShrink:0,
+                  }}
+                >📜 History</button>
+                <button
+                  onClick={(e) => { e.stopPropagation(); setMoveModal({ open: true, animal: a }); }}
+                  aria-label={`Move ${a.name}`}
+                  style={{
+                    padding:"4px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                    border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink,
+                    flexShrink:0,
+                  }}
+                >↔️ Move</button>
+                <Edit3 size={14} style={{ color:palette.inkSoft,flexShrink:0 }} />
+              </div>
+            );
+          };
+
+          const paddocks = hobby.paddocks || [];
+          // No paddocks defined → flat list, same as before.
+          if (paddocks.length === 0) {
+            return (
+              <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+                {animals.map(renderRow)}
+              </div>
+            );
+          }
+          // Paddocks defined → bucket animals by paddockId, plus an Ungrouped
+          // bucket. Empty paddocks still show (so you can move sheep into them).
+          const buckets = paddocks.map(p => ({
+            paddock: p,
+            list: animals.filter(a => a.paddockId === p.id),
+          }));
+          const ungrouped = animals.filter(a => !a.paddockId || !paddocks.some(p => p.id === a.paddockId));
+          return (
+            <div style={{ display:"flex",flexDirection:"column",gap:14 }}>
+              {buckets.map(({ paddock, list }) => (
+                <div key={paddock.id}>
+                  <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6 }}>
+                    <div style={{ fontFamily:FONT_DISPLAY,fontSize:15,color:palette.ink }}>
+                      {paddock.name}
+                      <span style={{ fontSize:12,color:palette.inkSoft,fontFamily:FONT_BODY,marginLeft:6 }}>
+                        ({list.length})
+                      </span>
+                    </div>
+                    <button
+                      onClick={() => setPaddockModal({ open: true, paddock })}
+                      style={{
+                        padding:"3px 8px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                        border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.inkSoft,
+                      }}
+                    >Edit</button>
+                  </div>
+                  {list.length === 0 ? (
+                    <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",padding:"4px 2px" }}>
+                      No sheep in this paddock.
+                    </div>
+                  ) : (
+                    <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+                      {list.map(renderRow)}
+                    </div>
+                  )}
+                </div>
+              ))}
+              {ungrouped.length > 0 && (
+                <div>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:15,color:palette.ink,marginBottom:6 }}>
+                    Unassigned
+                    <span style={{ fontSize:12,color:palette.inkSoft,fontFamily:FONT_BODY,marginLeft:6 }}>
+                      ({ungrouped.length})
+                    </span>
+                  </div>
+                  <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+                    {ungrouped.map(renderRow)}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {/* Breeding records */}
