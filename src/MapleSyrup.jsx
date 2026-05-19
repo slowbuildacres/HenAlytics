@@ -28,8 +28,10 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Plus, Edit3, Trash2 } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import { personalRecord, LockedStatOverlay } from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -487,7 +489,7 @@ export default function MapleSyrupPage({ hobby, data, update }) {
 }
 
 // ============ ANALYTICS ============
-export function MapleSyrupAnalytics({ hobby, entries }) {
+export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const seasons = (hobby.seasons || []).slice().sort((a, b) => (a.year || 0) - (b.year || 0));
   const allEntries = entries || [];
 
@@ -508,6 +510,9 @@ export function MapleSyrupAnalytics({ hobby, entries }) {
         taps,
         cost: Number(cost.toFixed(2)),
         syrupPerTap: taps > 0 ? Number((syrup / taps).toFixed(3)) : 0,
+        // ADV_ANALYTICS: gallons of sap per gallon of syrup. Lower is better
+        // (richer sap). Only meaningful when both sap and syrup are logged.
+        ratio: (sap > 0 && syrup > 0) ? Number((sap / syrup).toFixed(1)) : null,
       };
     });
   }, [seasons, allEntries]);
@@ -550,6 +555,53 @@ export function MapleSyrupAnalytics({ hobby, entries }) {
           </div>
         </div>
       )}
+
+      {/* ADV_ANALYTICS: gated block — sap-to-syrup ratio trend + best-ratio
+          record. Maple is season-based (no rolling date window), so there is
+          no period-vs-period delta here — chart + record only. */}
+      {(() => {
+        const ratioSeasons = perSeason.filter(s => s.ratio != null);
+        if (ratioSeasons.length === 0) return null;
+        // Best ratio = lowest sap:syrup. personalRecord() finds the MAX, so
+        // feed it negated ratios, then read the season back by id.
+        const recNeg = personalRecord(ratioSeasons.map(s => ({ month: s.id, value: -s.ratio })));
+        const bestSeason = recNeg ? ratioSeasons.find(s => s.id === recNeg.month) : null;
+        const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+        return (
+          <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+            <div>
+              {bestSeason && (
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
+                  <StatCard
+                    label="Best sap-to-syrup ratio"
+                    value={`${bestSeason.ratio}:1`}
+                    sub={`${bestSeason.name} — your richest sap`}
+                    accent={palette.maple}
+                  />
+                </div>
+              )}
+              {ratioSeasons.length >= 2 && (
+                <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>📈 Sap-to-syrup ratio by year</div>
+                  <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, fontFamily: FONT_BODY }}>
+                    Gallons of sap boiled down per gallon of syrup. Lower means richer sap.
+                  </div>
+                  <div style={{ height: 220 }}>
+                    <ResponsiveContainer width="100%" height="100%">
+                      <LineChart data={ratioSeasons}>
+                        <XAxis dataKey="year" style={{ fontSize: 11 }} />
+                        <YAxis style={{ fontSize: 11 }} />
+                        <Tooltip formatter={(v) => [`${v}:1`, "Sap : Syrup"]} />
+                        <Line type="monotone" dataKey="ratio" stroke={palette.maple} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
+            </div>
+          </LockedStatOverlay>
+        );
+      })()}
 
       {perSeason.length > 0 && (
         <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 14 }}>

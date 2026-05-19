@@ -8,6 +8,11 @@ import {
   MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
+// ADV_ANALYTICS: shared advanced-analytics layer (leaf module — see analytics.js).
+import {
+  ADV_ANALYTICS_FEATURE_KEY, priorDateRange, computeDelta, StatTrend,
+  personalRecord, monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 import AuthModal from "./AuthModal.jsx";
 import FarmhandModal from "./FarmhandModal.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
@@ -4022,83 +4027,83 @@ export default function HomesteadApp() {
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "bees" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "incubator" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="incubator")} entries={data.entries["incubator"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="incubator")} entries={data.entries["incubator"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "goats" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <GoatsAnalytics hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "cows" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <CowsAnalytics hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "pigs" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "sheep" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SheepAnalytics hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "dogs" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dogs")} entries={data.entries["dogs"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dogs")} entries={data.entries["dogs"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <DogsAnalytics hobby={data.hobbies.find(h=>h.id==="dogs")} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "cats" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cats")} entries={data.entries["cats"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cats")} entries={data.entries["cats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <CatsAnalytics hobby={data.hobbies.find(h=>h.id==="cats")} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "maple_syrup" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "horses" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <HorsesAnalytics hobby={data.hobbies.find(h=>h.id==="horses")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "sourdough" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} entries={data.entries?.["sourdough"] || []} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "farmstand" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && activeHobby === "baking" && (
-          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data}>
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
         {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
-          <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
+          <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
-          <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} />
+          <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
-          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} />
+          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
@@ -4288,7 +4293,7 @@ function PreservingPage({ data, update, setModal, initialSubType }) {
 // Each tab renders that sub-type's existing Analytics component wrapped in
 // AnalyticsShareWrapper, identical to how the standalone blocks worked.
 // ============================================================================
-function PreservingAnalyticsPage({ data, initialSubType, spouseMode }) {
+function PreservingAnalyticsPage({ data, initialSubType, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const [activeSub, setActiveSub] = useState(initialSubType || "canning");
 
   const canningHobby = data.hobbies.find(h => h.type === "canning");
@@ -4330,22 +4335,22 @@ function PreservingAnalyticsPage({ data, initialSubType, spouseMode }) {
       </div>
 
       {activeSub === "canning" && canningHobby && (
-        <AnalyticsShareWrapper hobby={canningHobby} entries={data.entries?.["canning"] || []} data={data}>
+        <AnalyticsShareWrapper hobby={canningHobby} entries={data.entries?.["canning"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <CanningAnalytics hobby={canningHobby} entries={data.entries?.["canning"] || []} sales={data.sales || []} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "freeze_drying" && freezeDryingHobby && (
-        <AnalyticsShareWrapper hobby={freezeDryingHobby} entries={data.entries?.["freeze_drying"] || []} data={data}>
+        <AnalyticsShareWrapper hobby={freezeDryingHobby} entries={data.entries?.["freeze_drying"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <FreezeDryingAnalytics hobby={freezeDryingHobby} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "dehydrating" && dehydratingHobby && (
-        <AnalyticsShareWrapper hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} data={data}>
+        <AnalyticsShareWrapper hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <DehydratingAnalytics hobby={dehydratingHobby} entries={data.entries?.["dehydrating"] || []} spouseMode={spouseMode} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "fermentation" && fermentationHobby && (
-        <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data}>
+        <AnalyticsShareWrapper hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <FermentationAnalytics hobby={fermentationHobby} entries={data.entries?.["fermentation"] || []} />
         </AnalyticsShareWrapper>
       )}
@@ -4447,7 +4452,7 @@ function ComingSoonSubHobby({ name, emoji }) {
 
 // Herbalism analytics wrapper — same pattern as PreservingAnalyticsPage.
 // Each sub-type's analytics component renders independently inside its tab.
-function HerbalismAnalyticsPage({ data, initialSubType, spouseMode }) {
+function HerbalismAnalyticsPage({ data, initialSubType, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const [activeSub, setActiveSub] = useState(initialSubType || "tincture");
 
   const tinctureHobby = data.hobbies.find(h => h.type === "tincture");
@@ -4488,22 +4493,22 @@ function HerbalismAnalyticsPage({ data, initialSubType, spouseMode }) {
         ))}
       </div>
       {activeSub === "tincture" && tinctureHobby && (
-        <AnalyticsShareWrapper hobby={tinctureHobby} data={data} spouseMode={spouseMode}>
+        <AnalyticsShareWrapper hobby={tinctureHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <TinctureAnalytics hobby={tinctureHobby} entries={data.entries?.["tincture"] || []} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "oil_infusion" && oilHobby && (
-        <AnalyticsShareWrapper hobby={oilHobby} data={data} spouseMode={spouseMode}>
+        <AnalyticsShareWrapper hobby={oilHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <OilInfusionAnalytics hobby={oilHobby} entries={data.entries?.["oil_infusion"] || []} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "salve" && salveHobby && (
-        <AnalyticsShareWrapper hobby={salveHobby} data={data} spouseMode={spouseMode}>
+        <AnalyticsShareWrapper hobby={salveHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <SalveAnalytics hobby={salveHobby} entries={data.entries?.["salve"] || []} />
         </AnalyticsShareWrapper>
       )}
       {activeSub === "tea" && teaHobby && (
-        <AnalyticsShareWrapper hobby={teaHobby} data={data} spouseMode={spouseMode}>
+        <AnalyticsShareWrapper hobby={teaHobby} data={data} spouseMode={spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
           <TeaAnalytics hobby={teaHobby} entries={data.entries?.["tea"] || []} />
         </AnalyticsShareWrapper>
       )}
@@ -6523,7 +6528,7 @@ function EntryPhotoThumb({ path, size = 40 }) {
 }
 
 // ============ ANALYTICS PAGE ============
-function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode }) {
+function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const [showShare, setShowShare] = useState(false);
   // Defensive: hobby may be undefined for one render frame during transitions
   if (!hobby) return <EmptyState text="Loading…" />;
@@ -6561,8 +6566,8 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter,
         />
       </div>
 
-      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} />}
-      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} dateRange={range} spouseMode={spouseMode} />}
+      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} /* ADV_ANALYTICS */ dateRange={range} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />}
+      {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} dateRange={range} spouseMode={spouseMode} /* ADV_ANALYTICS */ allEntries={allEntries} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />}
     </div>
   );
 }
@@ -6654,6 +6659,12 @@ function dateRangeLabel(range) {
   if (range.start) return `(since ${range.start})`;
   return `(through ${range.end})`;
 }
+
+// ADV_ANALYTICS: priorDateRange, computeDelta, StatTrend, personalRecord,
+// monthlySeries, LockedStatOverlay and ADV_ANALYTICS_FEATURE_KEY are imported
+// from ./analytics.js (leaf module) at the top of this file. StatTrend and
+// LockedStatOverlay take this file's `palette`/fonts as props — see usage in
+// the per-hobby Stats sections.
 
 function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
@@ -14950,7 +14961,7 @@ function AddToHomeScreenModal({ onClose }) {
 // filter is a future enhancement; for now the date filter affects entry-based
 // numbers in those hobbies and leaves sales totals as-is.
 // ============================================================================
-function AnalyticsShareWrapper({ hobby, entries, data, children }) {
+function AnalyticsShareWrapper({ hobby, entries, data, children, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const [showShare, setShowShare] = useState(false);
   const [dateFilter, setDateFilter] = useState("all");
   const [customStart, setCustomStart] = useState("");
@@ -14965,8 +14976,17 @@ function AnalyticsShareWrapper({ hobby, entries, data, children }) {
   // a prop (all 12 do today), this transparently replaces the all-entries
   // array with the filtered one. Components that ignore `entries` (e.g. ones
   // that read from data.sales only) are unaffected.
+  // ADV_ANALYTICS: also inject `dateRange` (so children can compute the prior
+  // comparable period), `allEntries` (unfiltered — personal records must scan
+  // all-time, not just the visible window), and the early-access gating props.
   const childWithFiltered = React.isValidElement(children)
-    ? React.cloneElement(children, { entries: filteredEntries })
+    ? React.cloneElement(children, {
+        entries: filteredEntries,
+        dateRange: range,
+        allEntries: entries || [],
+        earlyAccessConfig,
+        isSupporter,
+      })
     : children;
 
   return (

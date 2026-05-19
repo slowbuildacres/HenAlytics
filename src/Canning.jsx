@@ -17,8 +17,13 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -775,7 +780,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
 // ANALYTICS
 // ============================================================================
 
-export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode = false }) {
+export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = Array.isArray(hobby?.batches) ? hobby.batches : [];
   const canningSales = useMemo(() => sales.filter(s => s.hobbyType === "canning"), [sales]);
 
@@ -798,6 +803,30 @@ export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode =
     .sort((a, b) => b[1] - a[1])
     .slice(0, 8)
     .map(([name, value]) => ({ name: name.length > 16 ? name.slice(0, 16) + "…" : name, value }));
+
+  // ── ADV_ANALYTICS ─────────────────────────────────────────────────────────
+  // Chart + record run over ALL batches (by their `date`), so they are stable
+  // regardless of the date filter. The delta compares jars made in batches
+  // dated within the current filter window vs. the prior equal-length window.
+  const jarsMonthlyRaw = useMemo(
+    () => monthlySeries(batches, b => b.date, b => Number(b.jarsMade) || 0),
+    [batches]
+  );
+  const jarsMonthly = jarsMonthlyRaw.map(p => ({
+    month: p.month, jars: p.value,
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const jarsRecord = personalRecord(jarsMonthlyRaw);
+  const inRange = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+  const prior = priorDateRange(dateRange);
+  const curJars = dateRange && (dateRange.start || dateRange.end)
+    ? batches.filter(b => inRange(b.date, dateRange)).reduce((s, b) => s + (Number(b.jarsMade) || 0), 0)
+    : totalJarsMade;
+  const priorJars = prior
+    ? batches.filter(b => inRange(b.date, prior)).reduce((s, b) => s + (Number(b.jarsMade) || 0), 0)
+    : null;
+  const jarsDelta = prior ? computeDelta(curJars, priorJars) : null;
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
 
   if (batches.length === 0 && canningSales.length === 0) {
     return (
@@ -822,6 +851,35 @@ export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode =
           return infraTotal > 0 ? <StatCard label="Infrastructure" value={fmtMoney(infraTotal)} accent={palette.feather} /> : null;
         })()}
       </div>
+
+      {/* ADV_ANALYTICS: gated advanced block — jars/month line, record, delta */}
+      <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+        <div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            {jarsRecord && <StatCard label="Best canning month" value={`${jarsRecord.value} jars`} sub={jarsRecord.label} accent={palette.leaf} />}
+            {jarsDelta && (
+              <div style={{ flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Jars vs. prior period</div>
+                <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.leaf, lineHeight: 1.1 }}>{curJars} jars</div>
+                <div style={{ marginTop: 4 }}><StatTrend delta={jarsDelta} palette={palette} fonts={pFonts} /></div>
+              </div>
+            )}
+          </div>
+          {jarsMonthly.length > 1 && (
+            <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>🫙 Jars made by month</div>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={jarsMonthly}>
+                  <XAxis dataKey="label" tick={{ fontSize: 11, fill: palette.inkSoft }} />
+                  <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} allowDecimals={false} />
+                  <Tooltip formatter={(v) => [`${v} jars`, "Made"]} />
+                  <Line type="monotone" dataKey="jars" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+        </div>
+      </LockedStatOverlay>
 
       {topData.length > 0 && (
         <div style={{

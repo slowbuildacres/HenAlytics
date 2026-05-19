@@ -23,8 +23,13 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+// ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
+import {
+  priorDateRange, computeDelta, StatTrend, personalRecord,
+  monthlySeries, LockedStatOverlay,
+} from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -755,7 +760,7 @@ export default function TincturePage({ hobby, data, update }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
-export function TinctureAnalytics({ hobby, entries }) {
+export function TinctureAnalytics({ hobby, entries, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const sales = []; // sales data lives on data.sales; analytics aggregates from hobby.batches.events
 
@@ -780,6 +785,27 @@ export function TinctureAnalytics({ hobby, entries }) {
     .slice(0, 8)
     .map(([herb, stats]) => ({ name: herb.length > 12 ? herb.slice(0, 12) + "…" : herb, batches: stats.batches, bottles: stats.bottles }));
 
+  // ── ADV_ANALYTICS ─────────────────────────────────────────────────────────
+  // Chart + record run over ALL batches by their `startDate`. The delta
+  // compares bottles made in batches started within the current filter
+  // window vs. the prior equal-length window.
+  const bottlesMonthlyRaw = monthlySeries(batches, b => b.startDate, b => Number(b.bottlesMade) || 0);
+  const bottlesMonthly = bottlesMonthlyRaw.map(p => ({
+    month: p.month, bottles: p.value,
+    label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
+  }));
+  const bottlesRecord = personalRecord(bottlesMonthlyRaw);
+  const inRange = (d, r) => d && (!r.start || d >= r.start) && (!r.end || d <= r.end);
+  const prior = priorDateRange(dateRange);
+  const curBottles = dateRange && (dateRange.start || dateRange.end)
+    ? batches.filter(b => inRange(b.startDate, dateRange)).reduce((s, b) => s + (Number(b.bottlesMade) || 0), 0)
+    : totalBottlesMade;
+  const priorBottles = prior
+    ? batches.filter(b => inRange(b.startDate, prior)).reduce((s, b) => s + (Number(b.bottlesMade) || 0), 0)
+    : null;
+  const bottlesDelta = prior ? computeDelta(curBottles, priorBottles) : null;
+  const pFonts = { body: FONT_BODY, display: FONT_DISPLAY };
+
   return (
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -791,6 +817,34 @@ export function TinctureAnalytics({ hobby, entries }) {
           <StatCard label="Total yield" value={`${totalYieldOz.toFixed(1)} oz`} accent={palette.ink} />
         )}
       </div>
+
+      {/* ADV_ANALYTICS: gated advanced block — bottles/month line, record, delta */}
+      <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
+        <div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+            {bottlesRecord && <StatCard label="Best bottling month" value={`${bottlesRecord.value} bottles`} sub={bottlesRecord.label} accent={palette.leaf} />}
+            {bottlesDelta && (
+              <div style={{ flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+                <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Bottles vs. prior period</div>
+                <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.leaf, lineHeight: 1.1 }}>{curBottles} bottles</div>
+                <div style={{ marginTop: 4 }}><StatTrend delta={bottlesDelta} palette={palette} fonts={pFonts} /></div>
+              </div>
+            )}
+          </div>
+          {bottlesMonthly.length > 1 && (
+            <ChartCard title="🍶 Bottles made by month">
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={bottlesMonthly}>
+                  <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
+                  <YAxis stroke={palette.inkSoft} fontSize={11} allowDecimals={false} />
+                  <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={(v) => [`${v} bottles`, "Made"]} />
+                  <Line type="monotone" dataKey="bottles" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            </ChartCard>
+          )}
+        </div>
+      </LockedStatOverlay>
 
       {herbChart.length > 1 && (
         <ChartCard title="🌿 Batches by herb">
