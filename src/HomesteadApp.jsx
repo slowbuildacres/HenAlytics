@@ -5878,6 +5878,15 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
           {flock.startDate && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2, marginLeft: 26 }}>Since {flock.startDate}</div>}
         </div>
         <div style={{ display: "flex", gap: 6 }}>
+          {(hobby.flocks || []).length > 1 && (
+            <button
+              onClick={() => setModal({ type: "moveFlockBirds", hobbyId: hobby.id, flockId: flock.id })}
+              title="Move birds to another flock"
+              style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4, fontSize: 14 }}
+            >
+              ↔️
+            </button>
+          )}
           <button onClick={() => setModal({ type: "editFlock", hobbyId: hobby.id, flockId: flock.id })} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}><Edit3 size={14}/></button>
         </div>
       </div>
@@ -7633,6 +7642,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
     return <EditFlockModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} setModal={setModal} />;
+  }
+  if (modal.type === "moveFlockBirds") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <MoveFlockBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} onClose={close} />;
   }
   if (modal.type === "namedBirds") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -11061,6 +11075,179 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
         {confirmDelete && <Btn variant="danger" onClick={remove}>Confirm delete</Btn>}
       </div>
       {confirmDelete && <div style={{ fontSize:12,color:palette.inkSoft,marginTop:8,fontStyle:"italic" }}>This will delete the flock but keep its egg entries.</div>}
+    </Modal>
+  );
+}
+
+// ============================================================================
+// MOVE FLOCK BIRDS MODAL — move birds from one flock to another
+// ----------------------------------------------------------------------------
+// Two modes:
+//   "named" — move an individual named bird: splice it out of the source
+//             flock's namedBirds[] and into the destination's. Does NOT
+//             change birdCount on either flock (named birds are tracked
+//             on top of the headcount, not inside it).
+//   "count" — move N birds of headcount: decrement source flock.birdCount,
+//             increment destination's. If the source has a females/males
+//             split, move them proportionally so the split stays sane.
+// Past egg entries are tagged with flockId at log time and are NOT moved —
+// those eggs were laid in the source flock and stay in its analytics.
+// ============================================================================
+function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
+  const flocks = (hobby.flocks || []);
+  const source = flocks.find(f => f.id === flockId);
+  const others = flocks.filter(f => f.id !== flockId);
+  const namedBirds = source ? (source.namedBirds || []).filter(b => !b.archived) : [];
+
+  const [mode, setMode] = useState("count");
+  const [destId, setDestId] = useState(others[0] ? others[0].id : "");
+  const [birdId, setBirdId] = useState(namedBirds[0] ? namedBirds[0].id : "");
+  const [count, setCount] = useState("1");
+  const [error, setError] = useState("");
+
+  if (!source) { onClose(); return null; }
+
+  const sourceCount = Number(source.birdCount) || 0;
+
+  const doMove = () => {
+    setError("");
+    if (!destId) { setError("Pick a destination flock."); return; }
+
+    if (mode === "named") {
+      if (!birdId) { setError("Pick a bird to move."); return; }
+      update(d => {
+        const h = d.hobbies.find(x => x.id === hobbyId);
+        if (!h) return d;
+        const src = (h.flocks || []).find(f => f.id === flockId);
+        const dst = (h.flocks || []).find(f => f.id === destId);
+        if (!src || !dst) return d;
+        const idx = (src.namedBirds || []).findIndex(b => b.id === birdId);
+        if (idx === -1) return d;
+        const [bird] = src.namedBirds.splice(idx, 1);
+        if (!Array.isArray(dst.namedBirds)) dst.namedBirds = [];
+        dst.namedBirds.push(bird);
+        return d;
+      });
+      onClose();
+      return;
+    }
+
+    // count mode
+    const n = Math.floor(Number(count) || 0);
+    if (n <= 0) { setError("Enter how many birds to move."); return; }
+    if (n > sourceCount) { setError(`This flock only has ${sourceCount} bird${sourceCount === 1 ? "" : "s"}.`); return; }
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const src = (h.flocks || []).find(f => f.id === flockId);
+      const dst = (h.flocks || []).find(f => f.id === destId);
+      if (!src || !dst) return d;
+      const srcTotal = Number(src.birdCount) || 0;
+      const moveN = Math.min(n, srcTotal);
+      // Proportionally move the female/male split if the source tracks it.
+      const sf = Number(src.females) || 0;
+      const sm = Number(src.males) || 0;
+      let mf = 0, mm = 0;
+      if (sf + sm > 0) {
+        mf = Math.round(moveN * (sf / (sf + sm)));
+        mf = Math.min(mf, sf);
+        mm = Math.min(moveN - mf, sm);
+      }
+      src.birdCount = srcTotal - moveN;
+      if (sf + sm > 0) { src.females = sf - mf; src.males = sm - mm; }
+      dst.birdCount = (Number(dst.birdCount) || 0) + moveN;
+      if (typeof dst.females === "number" || typeof dst.males === "number" || (mf + mm > 0)) {
+        dst.females = (Number(dst.females) || 0) + mf;
+        dst.males = (Number(dst.males) || 0) + mm;
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  const destOptions = others.map(f => (
+    <option key={f.id} value={f.id}>{f.name}</option>
+  ));
+
+  return (
+    <Modal open onClose={onClose} title={`Move birds — ${source.name}`}>
+      {others.length === 0 ? (
+        <div style={{ fontSize: 13, color: palette.inkSoft, padding: "6px 0" }}>
+          There's only one flock. Add another flock to move birds into it.
+        </div>
+      ) : (
+        <>
+          {/* Mode toggle */}
+          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+            <button
+              onClick={() => setMode("count")}
+              style={{
+                flex: 1, padding: "8px 10px", borderRadius: 8, cursor: "pointer",
+                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+                border: `1.5px solid ${mode === "count" ? palette.ink : palette.line}`,
+                background: mode === "count" ? palette.yolkSoft : palette.card,
+                color: palette.ink,
+              }}
+            >
+              Move a number of birds
+            </button>
+            <button
+              onClick={() => setMode("named")}
+              disabled={namedBirds.length === 0}
+              style={{
+                flex: 1, padding: "8px 10px", borderRadius: 8,
+                cursor: namedBirds.length === 0 ? "default" : "pointer",
+                fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+                border: `1.5px solid ${mode === "named" ? palette.ink : palette.line}`,
+                background: mode === "named" ? palette.yolkSoft : palette.card,
+                color: palette.ink, opacity: namedBirds.length === 0 ? 0.5 : 1,
+              }}
+            >
+              Move a named bird
+            </button>
+          </div>
+
+          {mode === "count" && (
+            <Field label={`How many birds (this flock has ${sourceCount})`}>
+              <input
+                type="number" inputMode="numeric" min={1} max={sourceCount}
+                style={inputStyle} value={count}
+                onChange={e => setCount(e.target.value)}
+              />
+            </Field>
+          )}
+
+          {mode === "named" && (
+            <Field label="Which bird">
+              <select style={inputStyle} value={birdId} onChange={e => setBirdId(e.target.value)}>
+                {namedBirds.map(b => (
+                  <option key={b.id} value={b.id}>{b.name}</option>
+                ))}
+              </select>
+            </Field>
+          )}
+
+          <Field label="Move to flock">
+            <select style={inputStyle} value={destId} onChange={e => setDestId(e.target.value)}>
+              {destOptions}
+            </select>
+          </Field>
+
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+            Past egg records stay with the flock they were logged under — only
+            the birds move.
+          </div>
+
+          {error && (
+            <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>{error}</div>
+          )}
+
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
+            <button onClick={doMove} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Move</button>
+          </div>
+        </>
+      )}
     </Modal>
   );
 }
