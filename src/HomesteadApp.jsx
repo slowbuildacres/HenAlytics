@@ -2526,19 +2526,30 @@ export default function HomesteadApp() {
   // Native users are already in the app — showing them a "download the app"
   // popup would be confusing — so this is gated to web (!isNativeApp()).
   // Shown once per account, tracked by data.appStoreLaunchDismissed. It waits
-  // behind the What's New popup so the two never stack on the same open.
+  // behind the What's New popup and the tutorial so popups never stack, and
+  // holds off until the user has had the app at least a day — a brand-new
+  // user hasn't formed a relationship with Henalytics yet, so the "get the
+  // app" pitch lands better once they've actually used it a bit.
   const appStoreLaunchShownRef = React.useRef(false);
   useEffect(() => {
     if (appStoreLaunchShownRef.current) return;
     if (isNativeApp()) return;                   // native users already have the app
     if (!data?.onboardedAt) return;              // don't interrupt onboarding
     if (data?.appStoreLaunchDismissed) return;   // already seen + dismissed
+    // Hold off until the account is at least two days old. Note this means
+    // the popup appears on the first app open AFTER the 2-day mark, not
+    // exactly 48h later — it needs the user to come back, which is fine
+    // (engaged returning users are exactly who should see it). Two days
+    // also keeps the popup clear of the day-one tutorial entirely.
+    const TWO_DAYS = 2 * 24 * 60 * 60 * 1000;
+    if (Date.now() - (data.onboardedAt || 0) < TWO_DAYS) return;
     if (passwordRecoveryPending) return;
     if (showWhatsNew) return;                    // let What's New finish first
+    if (showTutorial || showTutorialPrompt) return; // let the tutorial finish first
     appStoreLaunchShownRef.current = true;
     const timer = setTimeout(() => setShowAppStoreLaunch(true), 1800);
     return () => clearTimeout(timer);
-  }, [data?.onboardedAt, data?.appStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew]);
+  }, [data?.onboardedAt, data?.appStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
 
   // ---- "Create an account" nudge for signed-out users ----
   // A gentle, one-time, dismissible prompt. Fires once a signed-out user has
