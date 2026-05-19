@@ -2545,6 +2545,11 @@ export default function HomesteadApp() {
   // logged enough entries (~10) to have real data worth backing up. Never
   // shown to signed-in users (they already have cloud sync). Waits behind
   // onboarding and the other popups so it never stacks.
+  // Total entries across all hobbies — declared here, before the effect that
+  // depends on it (a const must precede any code that references it).
+  const totalEntryCount = Object.values((data && data.entries) || {}).reduce(
+    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0
+  );
   const accountNudgeShownRef = React.useRef(false);
   useEffect(() => {
     if (accountNudgeShownRef.current) return;
@@ -3403,11 +3408,6 @@ export default function HomesteadApp() {
   // so we never show them the wizard.
   const hasAnyEntries = Object.values(data.entries || {}).some(
     (arr) => Array.isArray(arr) && arr.length > 0
-  );
-  // Total entries across all hobbies — used to trigger the account nudge
-  // for signed-out users once they've invested some logging effort.
-  const totalEntryCount = Object.values(data.entries || {}).reduce(
-    (sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0
   );
   const hasNotOnboarded = !data.onboardedAt;
   const shouldShowWizard = hasNotOnboarded && !hasAnyEntries && !modal && role !== "member";
