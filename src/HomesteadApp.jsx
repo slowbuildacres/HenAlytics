@@ -481,6 +481,41 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       if (!Array.isArray(p.actions)) p.actions = [];
     });
   }
+
+  // ---- Annuals indexing ----
+  // Annual records are a VIEW/INDEX over the existing `planted` entries, not
+  // a separate data store. Plantings and harvests stay as garden entries
+  // (untouched, the source of truth); an annual record is a lightweight
+  // object keyed by plant-name + seasonId that owns only its `actions[]`
+  // log. This means a bug here can never lose data — records are always
+  // rebuildable from the entries below.
+  //
+  // Idempotent: re-running only appends records for name+season pairs that
+  // don't already have one, so it never duplicates and is safe to force.
+  if (gardenHobby) {
+    if (!Array.isArray(gardenHobby.annuals)) gardenHobby.annuals = [];
+    const gardenEntries = (data.entries && data.entries.garden) || [];
+    const existingKeys = new Set(
+      gardenHobby.annuals.map(
+        (a) => `${String(a.name || "").toLowerCase()}|${a.seasonId || ""}`
+      )
+    );
+    gardenEntries.forEach((e) => {
+      if (!e || e.action !== "planted") return;
+      const name = (e.plant || "Unnamed").trim() || "Unnamed";
+      const seasonId = e.seasonId || "";
+      const key = `${name.toLowerCase()}|${seasonId}`;
+      if (existingKeys.has(key)) return;
+      existingKeys.add(key);
+      gardenHobby.annuals.push({
+        id: newId(),
+        name,
+        seasonId,
+        actions: [],
+        created: Date.now(),
+      });
+    });
+  }
   if (typeof data.lastSeenVersion !== "number") data.lastSeenVersion = 0;
   const hasBees = data.hobbies.some(h => h.id === "bees");
   if (!hasBees) {
@@ -1232,6 +1267,7 @@ const newId = () => {
 const CURRENT_VERSION = 43;
 
 const WHATS_NEW = [
+  "🌱 Annual plants now have their own pages — tap any annual in your garden's Annuals list to open its detail view. See every planting and harvest for that plant this season, and log actions like spray, fertilize, weed, thin, or transplant — each one dated and saved to that plant's history. Works just like perennials and orchard trees. Your existing plantings were automatically organized into annual records.",
   "🌱 New garden layout: grid view — when you add a Garden Map area you can now lay it out as a grid of rows and columns (great for raised beds and square-foot gardening), instead of pinning plants on a photo. Tap a cell to plant it, tap again to log dates and notes. This is a Supporter early-access feature — Supporters have it now; it opens to everyone soon.",  // GARDEN_GRID
   "🌱 Become a Supporter — the monthly membership now comes with real perks: early access to new hobbies and features about a week before everyone else, a Supporter badge next to your homestead name, and a spot on the supporter wall. Every tier gets the same perks — pick the amount that feels right. The one-time tip is still there too. (The app stays free for everyone, always — Supporters just help keep it that way.)",  // STEP2C_SUPPORTER_COPY
   "⭐ Top Sponsor on the supporter wall — the monthly thank-you now highlights the supporter (or supporters, on a tie) who gave the most that month, in their own spot above the full supporter list. A small thank-you for the folks who go the extra mile to keep Henalytics free for everyone.",  // STEP2B_TOP_SPONSOR
@@ -5325,6 +5361,220 @@ function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, set
   );
 }
 
+// ============ ANNUAL SECTION (collapsible) ============
+// Annuals are records — one per plant-name per season — that index the
+// season's `planted` / `harvested` entries and own their own `actions[]`
+// log. Modeled on PerennialSection. Tapping a row opens AnnualDetailModal.
+function AnnualSection({ hobby, season, seasonEntries, setModal }) {
+  const [open, setOpen] = useState(true);
+  // Annual records for the current season.
+  const annuals = (hobby.annuals || []).filter(
+    (a) => a.seasonId === (season && season.id)
+  );
+  // Subtitle data per record: gather this plant's planted/harvested entries.
+  const rowsData = annuals
+    .map((a) => {
+      const nameKey = String(a.name || "").toLowerCase();
+      const plantings = seasonEntries.filter(
+        (e) => e.action === "planted" &&
+          (e.plant || "Unnamed").trim().toLowerCase() === nameKey
+      );
+      const harvests = seasonEntries.filter(
+        (e) => e.action === "harvested" &&
+          (e.plant || "").trim().toLowerCase() === nameKey
+      );
+      const lastAction = (a.actions || []).slice(-1)[0];
+      return { record: a, plantings, harvests, lastAction };
+    })
+    .sort((x, y) => x.record.name.localeCompare(y.record.name));
+
+  return (
+    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10 }}>
+      <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom: open ? 10 : 0 }}>
+        <button
+          onClick={() => setOpen(o => !o)}
+          style={{ background:"none",border:"none",padding:0,cursor:"pointer",display:"flex",alignItems:"center",gap:6,fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink }}
+          aria-expanded={open}
+        >
+          <span style={{ fontSize:12,display:"inline-block",transform: open ? "rotate(90deg)" : "rotate(0deg)",transition:"transform 0.15s" }}>▶</span>
+          🌱 Annuals
+          <span style={{ fontSize:12,color:palette.inkSoft,fontFamily:FONT_BODY,fontWeight:400 }}>
+            {rowsData.length > 0 ? `(${rowsData.length})` : ""}
+          </span>
+        </button>
+      </div>
+      {open && (
+        <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+          {rowsData.length === 0 ? (
+            <div style={{ fontSize:12,color:palette.inkSoft,padding:"6px 4px",fontStyle:"italic" }}>
+              Plant an annual to start tracking it here.
+            </div>
+          ) : rowsData.map(({ record, plantings, harvests, lastAction }) => {
+            const subtitle =
+              lastAction ? `Last: ${lastAction.type} · ${lastAction.date}` :
+              harvests.length ? `${harvestSummary(harvests)} harvested` :
+              plantings.length ? `${plantings.length} planting${plantings.length === 1 ? "" : "s"}` :
+              "No activity yet";
+            return (
+              <button
+                key={record.id}
+                onClick={() => setModal({ type:"annualDetail",hobbyId:hobby.id,annualId:record.id })}
+                style={{ display:"flex",alignItems:"center",gap:8,padding:"10px",background:palette.bgAlt,borderRadius:8,border:"none",cursor:"pointer",textAlign:"left",width:"100%",fontFamily:FONT_BODY }}
+              >
+                <Sprout size={15} color={palette.leaf} strokeWidth={1.8} style={{ flexShrink:0 }} />
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>{record.name}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>{subtitle}</div>
+                </div>
+                <span style={{ fontSize:14,color:palette.inkSoft,flexShrink:0 }}>›</span>
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============ ANNUAL DETAIL MODAL ============
+// Shows one annual's plantings + harvests (gathered from garden entries) and
+// its action log. Modeled on PerennialDetailModal.
+function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose }) {
+  const nameKey = String(annual.name || "").toLowerCase();
+  const gardenEntries = (data.entries && data.entries.garden) || [];
+  const scoped = gardenEntries.filter(
+    (e) => e.seasonId === annual.seasonId
+  );
+  const plantings = scoped
+    .filter((e) => e.action === "planted" &&
+      (e.plant || "Unnamed").trim().toLowerCase() === nameKey)
+    .sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+  const harvests = scoped
+    .filter((e) => e.action === "harvested" &&
+      (e.plant || "").trim().toLowerCase() === nameKey)
+    .sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+  const actions = [...(annual.actions || [])]
+    .sort((a,b) => (b.date || "").localeCompare(a.date || ""));
+
+  const removeAction = (id) => update(d => {
+    const h = d.hobbies.find(x => x.id === hobbyId);
+    if (!h) return d;
+    const a = (h.annuals || []).find(x => x.id === annual.id);
+    if (a) a.actions = (a.actions || []).filter(x => x.id !== id);
+    return d;
+  });
+
+  const rowStyle = { padding:"8px 10px",background:palette.bgAlt,borderRadius:8,fontSize:12,color:palette.ink };
+  const sectionLabel = { fontSize:11,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600,margin:"14px 0 6px" };
+
+  return (
+    <Modal open onClose={onClose} title={annual.name}>
+      <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:12 }}>
+        🌱 Annual
+        {harvests.length ? ` · ${harvestSummary(harvests)} harvested` : ""}
+      </div>
+
+      <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:4 }}>
+        <Btn variant="primary" onClick={() => setModal({ type:"logAnnualAction",hobbyId,annualId:annual.id })}>
+          + Log action
+        </Btn>
+      </div>
+
+      {actions.length > 0 && (
+        <>
+          <div style={sectionLabel}>Action log ({actions.length})</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            {actions.map(a => (
+              <div key={a.id} style={{ ...rowStyle,display:"flex",alignItems:"center",gap:8 }}>
+                <div style={{ flex:1,minWidth:0 }}>
+                  <div style={{ fontWeight:600 }}>{a.type}</div>
+                  <div style={{ fontSize:11,color:palette.inkSoft }}>
+                    {a.date}{a.notes ? ` · ${a.notes}` : ""}
+                  </div>
+                </div>
+                <button
+                  onClick={() => removeAction(a.id)}
+                  style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4,fontSize:12 }}
+                >
+                  Remove
+                </button>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {plantings.length > 0 && (
+        <>
+          <div style={sectionLabel}>Plantings ({plantings.length})</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            {plantings.map(e => (
+              <div key={e.id} style={rowStyle}>
+                {e.date}{e.quantity ? ` · ${e.quantity} planted` : ""}{e.bed ? ` · ${e.bed}` : ""}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {harvests.length > 0 && (
+        <>
+          <div style={sectionLabel}>Harvests ({harvests.length})</div>
+          <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+            {harvests.map(e => (
+              <div key={e.id} style={rowStyle}>
+                {e.date} · {e.quantity || 0} {HARVEST_UNIT_LABELS[e.unit] || e.unit || "lbs"}
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {actions.length === 0 && plantings.length === 0 && harvests.length === 0 && (
+        <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",padding:"8px 0" }}>
+          No history yet. Log an action, or log a planting/harvest from the garden home.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
+// ============ LOG ANNUAL ACTION MODAL ============
+const ANNUAL_ACTION_TYPES = ["Spray","Fertilize","Weed","Thin","Treat (pest/disease)","Inspect","Water","Transplant","Other"];
+
+function LogAnnualActionModal({ hobbyId, annual, update, onClose }) {
+  const [type, setType] = useState("Spray");
+  const [date, setDate] = useState(todayStr());
+  const [notes, setNotes] = useState("");
+  return (
+    <Modal open onClose={onClose} title={`Log action — ${annual.name}`}>
+      <Field label="Action">
+        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
+          {ANNUAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
+        </select>
+      </Field>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+      </Field>
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how much you thinned, etc." />
+      </Field>
+      <Btn variant="primary" onClick={() => {
+        update(d => {
+          const h = d.hobbies.find(x => x.id === hobbyId);
+          if (!h) return d;
+          const a = (h.annuals || []).find(x => x.id === annual.id);
+          if (!a) return d;
+          a.actions = a.actions || [];
+          a.actions.push({ id: newId(), type, date, notes });
+          return d;
+        });
+        onClose();
+      }}>Log action</Btn>
+    </Modal>
+  );
+}
+
 // ============ HOBBY SUMMARIES ============
 function GardenSummary({ hobby, data, update, setModal }) {
   // Perennials section shown at bottom of garden home regardless of season
@@ -5405,61 +5655,15 @@ function GardenSummary({ hobby, data, update, setModal }) {
         </div>
       </div>
 
-      {/* Annuals list — what's planted this season, grouped by plant name.
-          Sourced from the same season-scoped "planted" entries as the count
-          above, so the list and the "N annuals" stat always agree. Tapping a
-          row opens that planting's log entry. Shown only when there's at
-          least one planting; an empty season just shows the stat card. */}
-      {(() => {
-        const plantedEntries = seasonEntries.filter((e) => e.action === "planted");
-        if (plantedEntries.length === 0) return null;
-        // Group by plant name (case-insensitive). Each group tracks total
-        // quantity and the most recent plant date for a subtitle.
-        const groups = {};
-        plantedEntries.forEach((e) => {
-          const name = (e.plant || "Unnamed").trim() || "Unnamed";
-          const key = name.toLowerCase();
-          if (!groups[key]) groups[key] = { name, qty: 0, lastDate: e.date, count: 0 };
-          groups[key].qty += Number(e.quantity) || 0;
-          groups[key].count += 1;
-          if (e.date > groups[key].lastDate) groups[key].lastDate = e.date;
-        });
-        const rows = Object.values(groups).sort((a, b) => a.name.localeCompare(b.name));
-        return (
-          <div style={{
-            background: palette.card, border: `1.5px solid ${palette.line}`,
-            borderRadius: 12, padding: 14, marginBottom: 10,
-          }}>
-            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 8 }}>
-              Annuals this season
-            </div>
-            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-              {rows.map((r) => (
-                <div
-                  key={r.name}
-                  style={{
-                    display: "flex", alignItems: "center", gap: 8,
-                    padding: "8px 10px", background: palette.bgAlt, borderRadius: 8,
-                  }}
-                >
-                  <Sprout size={15} color={palette.leaf} strokeWidth={1.8} style={{ flexShrink: 0 }} />
-                  <div style={{ flex: 1, minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: palette.ink }}>{r.name}</div>
-                    <div style={{ fontSize: 11, color: palette.inkSoft }}>
-                      {r.count > 1 ? `${r.count} plantings · ` : ""}last {r.lastDate}
-                    </div>
-                  </div>
-                  {r.qty > 0 && (
-                    <span style={{ fontSize: 13, fontWeight: 600, color: palette.inkSoft, flexShrink: 0 }}>
-                      ×{r.qty}
-                    </span>
-                  )}
-                </div>
-              ))}
-            </div>
-          </div>
-        );
-      })()}
+      {/* Annuals — collapsible section. Each annual is a record (one per
+          plant-name per season) with its own action log; tapping one opens
+          its detail view. See AnnualSection / AnnualDetailModal. */}
+      <AnnualSection
+        hobby={hobby}
+        season={season}
+        seasonEntries={seasonEntries}
+        setModal={setModal}
+      />
 
       {/* Garden Map card — opens the photo-based visualizer */}
       <div
@@ -7498,6 +7702,20 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const perennial = (gardenHobby.perennials||[]).find(p => p.id === modal.perennialId);
     if (!perennial) { close(); return null; }
     return <LogPerennialActionModal hobbyId={modal.hobbyId} perennial={perennial} update={update} onClose={close} />;
+  }
+  if (modal.type === "annualDetail") {
+    const gardenHobby = data.hobbies.find(h => h.type === "garden");
+    if (!gardenHobby) { close(); return null; }
+    const annual = (gardenHobby.annuals||[]).find(a => a.id === modal.annualId);
+    if (!annual) { close(); return null; }
+    return <AnnualDetailModal hobbyId={modal.hobbyId} annual={annual} data={data} update={update} setModal={setModal} onClose={close} />;
+  }
+  if (modal.type === "logAnnualAction") {
+    const gardenHobby = data.hobbies.find(h => h.type === "garden");
+    if (!gardenHobby) { close(); return null; }
+    const annual = (gardenHobby.annuals||[]).find(a => a.id === modal.annualId);
+    if (!annual) { close(); return null; }
+    return <LogAnnualActionModal hobbyId={modal.hobbyId} annual={annual} update={update} onClose={close} />;
   }
   if (modal.type === "editBatch") {
     const targetHobby = data.hobbies.find((h) => h.id === modal.hobbyId);
@@ -12745,6 +12963,25 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             id: newId(), plant: cleanFields.plant, quantity: cleanFields.quantity,
             date, harvested: false,
           });
+          // Also ensure an annual record exists for this plant+season so it
+          // shows in the Annuals section immediately (without waiting for the
+          // next load's migrateData indexing pass). Idempotent — only creates
+          // one if this name+season pair doesn't already have a record.
+          const gh = d.hobbies.find(x => x.type === "garden");
+          if (gh) {
+            if (!Array.isArray(gh.annuals)) gh.annuals = [];
+            const nm = (cleanFields.plant || "Unnamed").trim() || "Unnamed";
+            const sid = entry.seasonId || "";
+            const exists = gh.annuals.some(
+              a => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
+                   (a.seasonId || "") === sid
+            );
+            if (!exists) {
+              gh.annuals.push({
+                id: newId(), name: nm, seasonId: sid, actions: [], created: Date.now(),
+              });
+            }
+          }
         }
 
         // egg layer death decrements flock by the quantity (default 1)
