@@ -2994,6 +2994,9 @@ export default function HomesteadApp() {
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      // ===== TEMP DIAGNOSTIC — remove after debugging password reset =====
+      try { alert("AUTH EVENT: " + event + "\nhas session: " + (!!session)); } catch (_) {}
+      // ===== END TEMP DIAGNOSTIC =====
       if (event === "SIGNED_OUT") setSignedOutRemotely(true);
       if (event === "SIGNED_IN") setSignedOutRemotely(false);
       if (event === "PASSWORD_RECOVERY") {
@@ -3049,6 +3052,16 @@ export default function HomesteadApp() {
   // hash on first load instead. On native, Supabase's reset email targets a
   // henalytics://reset?type=recovery&token=... URL which the OS hands to us.
   useNativeDeepLinks(React.useCallback((url) => {
+    // ===== TEMP DIAGNOSTIC — remove after debugging password reset =====
+    try {
+      let parsed = "(URL parse failed)";
+      try {
+        const p = new URL(url);
+        parsed = `proto=${p.protocol}\nhost=${p.host}\npath=${p.pathname}\nsearch=${p.search}\nhash=${p.hash}`;
+      } catch (_) {}
+      alert("DEEPLINK RECEIVED:\n\n" + url + "\n\n--- parsed ---\n" + parsed);
+    } catch (_) {}
+    // ===== END TEMP DIAGNOSTIC =====
     try {
       const u = new URL(url);
       // Supabase stuffs the recovery token in the URL hash (?type=recovery&...
