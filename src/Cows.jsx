@@ -181,7 +181,48 @@ function PastureModal({pasture,hobbyId,update,onClose}){
 }
 
 // ============================================================================
-// ANIMAL PHOTOS — profile pic + dated timeline, per individual animal
+// MOVE ANIMAL MODAL — reassign a cow's pasture without the full edit form
+// ----------------------------------------------------------------------------
+// A lightweight quick-action. Writes only animal.pastureId. The full
+// edit-cow form still has a pasture picker too; this is just the fast path.
+// ============================================================================
+function MoveAnimalModal({animal,hobbyId,pastures,update,onClose}){
+  const [pastureId, setPastureId] = useState(animal?.pastureId || "");
+  const groups = pastures || [];
+
+  const save = () => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      const a = (h.animals || []).find(x => x.id === animal.id);
+      if (a) a.pastureId = pastureId || null;
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`Move ${animal?.name || "animal"}`}>
+      <Field label="Pasture / herd">
+        <select style={inputStyle} value={pastureId} onChange={e=>setPastureId(e.target.value)} autoFocus>
+          <option value="">— Unassigned —</option>
+          {groups.map(p => (
+            <option key={p.id} value={p.id}>{p.name}</option>
+          ))}
+        </select>
+      </Field>
+      {groups.length === 0 && (
+        <div style={{fontSize:12,color:palette.inkSoft,marginTop:8,marginBottom:4}}>
+          No pastures or herds yet. Add one from the cows page first.
+        </div>
+      )}
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end",marginTop:14}}>
+        <button onClick={onClose} style={{padding:"9px 16px",borderRadius:8,background:palette.bgAlt,border:`1.5px solid ${palette.line}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink}}>Cancel</button>
+        <button onClick={save} style={{padding:"9px 16px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink}}>Move</button>
+      </div>
+    </Modal>
+  );
+}
 // ----------------------------------------------------------------------------
 // Uploads go through the shared Supabase Storage helpers (animalPhotos.js,
 // which wraps sync.js). Photos are stored as paths on animal.photos; the
@@ -1114,6 +1155,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
         {LOG_ACTIONS.map(a=><button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>)}
         <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
         <button onClick={()=>setShowHistory(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>📜 History</button>
+        <button onClick={()=>setModal({type:"moveAnimal",hobbyId,animalId:animal.id})} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>↔️ Move</button>
       </div>
       {recentEntries.length>0&&(
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
@@ -1493,6 +1535,7 @@ function CowModalRouter({modal,hobby,update,user,onClose}){
   if(modal.type==="editAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <AnimalModal animal={animal} hobbyId={hobby.id} animals={hobby.animals||[]} pastures={pastures} update={update} user={user} onClose={onClose}/>;}
   if(modal.type==="addPasture")return <PastureModal hobbyId={hobby.id} update={update} onClose={onClose}/>;
   if(modal.type==="editPasture"){const pasture=pastures.find(p=>p.id===modal.pastureId);if(!pasture){onClose();return null;}return <PastureModal pasture={pasture} hobbyId={hobby.id} update={update} onClose={onClose}/>;}
+  if(modal.type==="moveAnimal"){const animal=(hobby.animals||[]).find(a=>a.id===modal.animalId);if(!animal){onClose();return null;}return <MoveAnimalModal animal={animal} hobbyId={hobby.id} pastures={pastures} update={update} onClose={onClose}/>;}
   return null;
 }
 
