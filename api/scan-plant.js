@@ -445,10 +445,7 @@ export default async function handler(req, res) {
     // Refund the charge — user shouldn't pay for our infrastructure failures.
     await refundCharge(userId, charge.chargedFrom);
     console.error('[scan-plant] Kindwise call failed:', e);
-    return res.status(502).json({
-      error: 'Scan service unavailable, no scan charged',
-      _debug_error: e?.message || String(e),
-    });
+    return res.status(502).json({ error: 'Scan service unavailable, no scan charged' });
   }
 
   const result = shapeResult(plantIdRaw, cropHealthRaw);
@@ -491,11 +488,6 @@ export default async function handler(req, res) {
     charged_from: charge.chargedFrom,
     remaining_after: charge.remaining,
     result,
-    // TEMPORARY DEBUG — remove after verifying crop.health works.
-    _debug_crop_health_status: cropHealthRaw === null
-      ? 'crop_health_call_failed_or_skipped'
-      : (cropHealthRaw?.result ? Object.keys(cropHealthRaw.result) : 'no_result_key'),
-    _debug_disease_count: cropHealthRaw?.result?.disease?.suggestions?.length ?? null,
   });
 }
 
