@@ -27,6 +27,7 @@
 //   SUPABASE_SERVICE_ROLE_KEY   — bypasses RLS to read another user's quota row
 
 import { createClient } from '@supabase/supabase-js';
+import { getCorsOrigin } from './_cors.js';
 
 const SCAN_COST_DOLLARS = 0.10;
 const SUPPORTER_AVG_DOLLARS = 1.00;
@@ -64,6 +65,15 @@ async function getUserIdFromAuthHeader(authHeader) {
 }
 
 export default async function handler(req, res) {
+  // ---- CORS ----
+  const corsOrigin = getCorsOrigin(req);
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Vary', 'Origin');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   if (req.method !== 'GET') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
@@ -102,8 +112,8 @@ export default async function handler(req, res) {
 
       const activeCutoff = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
       const { count: activeUserCount } = await supabase
-        .from('homesteads')
-        .select('id', { count: 'exact', head: true })
+        .from('user_homestead')
+        .select('user_id', { count: 'exact', head: true })
         .gte('updated_at', activeCutoff);
 
       const totalPoolFunded = Math.floor((supporterCount || 0) / SCAN_COST_DOLLARS * SUPPORTER_AVG_DOLLARS);

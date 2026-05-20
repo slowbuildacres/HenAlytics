@@ -16,6 +16,7 @@
 // checkout.session.completed to /api/stripe-webhook, which credits scan_usage.
 
 import { createClient } from '@supabase/supabase-js';
+import { getCorsOrigin } from './_cors.js';
 
 const PACK_TO_PRICE_ENV = {
   '10': 'STRIPE_PRICE_SCAN_PACK_10',
@@ -45,6 +46,15 @@ async function getUserFromAuthHeader(authHeader) {
 }
 
 export default async function handler(req, res) {
+  // ---- CORS ----
+  const corsOrigin = getCorsOrigin(req);
+  res.setHeader('Access-Control-Allow-Origin', corsOrigin);
+  res.setHeader('Access-Control-Allow-Credentials', 'true');
+  res.setHeader('Access-Control-Allow-Methods', 'POST, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Authorization, Content-Type');
+  res.setHeader('Vary', 'Origin');
+  if (req.method === 'OPTIONS') return res.status(204).end();
+
   if (req.method !== 'POST') {
     return res.status(405).json({ error: 'Method not allowed' });
   }
