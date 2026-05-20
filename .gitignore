@@ -15,3 +15,4 @@ android/keystore.properties
 # Local patch scripts and backups (not for git)
 apply_*.py
 *.backup_*
+patch_*.py
