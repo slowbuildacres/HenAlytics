@@ -130,6 +130,7 @@ export default function PlantScannerModal({ onClose }) {
   const [result, setResult] = useState(null);
   const [purchasing, setPurchasing] = useState(false);
   const webInputRef = useRef(null);
+  const webLibraryInputRef = useRef(null);
 
   // ---- Load quota status on mount ----
   const refreshQuota = useCallback(async () => {
@@ -182,7 +183,8 @@ export default function PlantScannerModal({ onClose }) {
         setPhotoBase64(photo.base64);
         setPhotoDataUrl(photo.dataUrl);
       } else {
-        webInputRef.current?.click();
+        // Web: trigger the library-only input (no capture attribute, so no camera)
+        webLibraryInputRef.current?.click();
       }
     } catch (e) {
       setError(e.message || "Could not pick photo");
@@ -206,6 +208,7 @@ export default function PlantScannerModal({ onClose }) {
     setPhotoDataUrl(null);
     setResult(null);
     if (webInputRef.current) webInputRef.current.value = "";
+    if (webLibraryInputRef.current) webLibraryInputRef.current.value = "";
   };
 
   // ---- Submit scan ----
@@ -409,12 +412,19 @@ export default function PlantScannerModal({ onClose }) {
           )}
         </div>
 
-        {/* Hidden web file input */}
+        {/* Hidden web file inputs: camera with capture, library without */}
         <input
           ref={webInputRef}
           type="file"
           accept="image/jpeg,image/png,image/webp"
           capture="environment"
+          style={{ display: "none" }}
+          onChange={handleWebFileSelected}
+        />
+        <input
+          ref={webLibraryInputRef}
+          type="file"
+          accept="image/jpeg,image/png,image/webp"
           style={{ display: "none" }}
           onChange={handleWebFileSelected}
         />
