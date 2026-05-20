@@ -76,6 +76,7 @@ import {
   sendFeedback, acceptInvite, deleteAccount,
   listMyHomesteads, setActiveHomestead,
 } from "./sync.js";
+import { apiUrl } from './apiBase.js';
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
   timelineOf as animalTimelineOf, uploadAnimalPhoto, resolveAnimalPhotoUrl,
@@ -1681,7 +1682,7 @@ const startCheckout = async (tier) => {
       return;
     }
 
-    const res = await fetch("/api/create-checkout-session", {
+    const res = await fetch(apiUrl("/api/create-checkout-session"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
@@ -2695,7 +2696,7 @@ export default function HomesteadApp() {
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) { if (!cancelled) setIsSupporter(false); return; }
-        const r = await fetch("/api/supporter-status", {
+        const r = await fetch(apiUrl("/api/supporter-status"), {
           headers: { "Authorization": `Bearer ${session.access_token}` },
         });
         if (!r.ok) { if (!cancelled) setIsSupporter(false); return; }
@@ -16931,7 +16932,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
     let cancelled = false;
     (async () => {
       try {
-        const r = await fetch(`/api/list-supporters?month=${monthKey}`);
+        const r = await fetch(apiUrl(`/api/list-supporters?month=${monthKey}`));
         if (!r.ok) {
           if (!cancelled) setSupporterNames([]);
           return;

@@ -1,3 +1,4 @@
+import { getCorsOrigin } from './_cors.js';
 // Vercel serverless function: POST /api/send-email
 //
 // Hardened version with:
@@ -59,7 +60,7 @@ function getSupabaseAdmin() {
 // ============================================================================
 export default async function handler(req, res) {
   const origin = req.headers.origin;
-  const corsOrigin = ALLOWED_ORIGINS.has(origin) ? origin : 'https://henalytics.com';
+  const corsOrigin = getCorsOrigin(req);
 
   // CORS preflight
   if (req.method === 'OPTIONS') {

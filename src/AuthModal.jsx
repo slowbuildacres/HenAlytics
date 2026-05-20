@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { Mail, Lock, X, UserCircle, AlertCircle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabase.js';
+import { apiUrl } from './apiBase.js';
 
 const palette = {
   bg: "#F4EDE0",
@@ -106,7 +107,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
         const { data, error } = await supabase.auth.signUp({ email: email.trim(), password });
         if (error) throw error;
         try {
-          await fetch('/api/send-email', {
+          await fetch(apiUrl('/api/send-email'), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ kind: 'signup_notify', newUserEmail: email.trim() }),

@@ -1,3 +1,4 @@
+import { getCorsOrigin } from './_cors.js';
 // Vercel serverless function: POST /api/create-checkout-session
 //
 // Creates a Stripe Checkout Session and returns the redirect URL. The user's
@@ -74,7 +75,7 @@ function getSupabaseAdmin() {
 // ============================================================================
 export default async function handler(req, res) {
   const origin = req.headers.origin;
-  const corsOrigin = ALLOWED_ORIGINS.has(origin) ? origin : 'https://henalytics.com';
+  const corsOrigin = getCorsOrigin(req);
 
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', corsOrigin);

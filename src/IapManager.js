@@ -1,3 +1,4 @@
+import { apiUrl } from './apiBase.js';
 // ============================================================================
 // IAP MANAGER — RevenueCat wrapper for Apple In-App Purchases
 // ----------------------------------------------------------------------------
@@ -355,7 +356,7 @@ async function refreshSupporterStatus() {
     const jwt = data?.session?.access_token;
     if (!jwt) return;
 
-    await fetch("/api/supporter-status", {
+    await fetch(apiUrl("/api/supporter-status"), {
       method: "GET",
       cache: "no-store",
       headers: { Authorization: `Bearer ${jwt}` },

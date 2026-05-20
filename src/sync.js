@@ -1,5 +1,6 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { mergeUnsyncedEntries } from './mergeUnsynced.js';
+import { apiUrl } from './apiBase.js';
 
 const STORAGE_KEY = 'homestead_data_v1';
 const HOMESTEAD_ID_KEY = 'homestead_active_id_v1';
@@ -742,7 +743,7 @@ async function sendEmail(payload) {
       // Fall through — server will reject with 401, client handles it
     }
   }
-  const res = await fetch('/api/send-email', {
+  const res = await fetch(apiUrl('/api/send-email'), {
     method: 'POST',
     headers,
     body: JSON.stringify(payload),
@@ -821,7 +822,7 @@ export async function deleteAccount() {
     // Server will return 401 if no JWT — handled below
   }
 
-  const res = await fetch('/api/delete-account', {
+  const res = await fetch(apiUrl('/api/delete-account'), {
     method: 'POST',
     headers,
     body: JSON.stringify({ confirmation: 'DELETE' }),
