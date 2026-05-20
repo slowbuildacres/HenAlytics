@@ -1,4 +1,5 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
+import { mergeUnsyncedEntries } from './mergeUnsynced.js';
 
 const STORAGE_KEY = 'homestead_data_v1';
 const HOMESTEAD_ID_KEY = 'homestead_active_id_v1';
@@ -374,6 +375,30 @@ export async function loadHomestead(user) {
         // refreshed on every successful read, so a device that stays synced
         // always has a current baseline and writes normally.
         const stamped = { ...cloud, cloudBaselineAt: updatedAt || null };
+
+        // Before overwriting local with cloud, check whether local has
+        // unsynced entries cloud doesn't know about. If a previous save
+        // was skipped (stale-baseline guard, dead refresh token, etc.) the
+        // user's entries only exist in localStorage. Overwriting local with
+        // cloud would silently lose them. Merge instead: cloud is the base,
+        // any local entry whose id isn't in cloud gets appended. The next
+        // save effect cycle pushes the merged result up.
+        const existingLocal = readLocalHomesteadFor(user.id);
+        if (existingLocal) {
+          const { merged, mergedCount } = mergeUnsyncedEntries(stamped, existingLocal);
+          if (mergedCount > 0) {
+            console.warn(`[LOAD] preserved ${mergedCount} unsynced local entries during cloud load`);
+            writeLocalHomestead(merged, user.id);
+            return {
+              source: 'cloud-merged',
+              data: merged,
+              homesteadId: id,
+              role,
+              recoveredCount: mergedCount,
+            };
+          }
+        }
+
         // Tag the local mirror with this user's id so a later load by a
         // different account on this browser can't reuse it (account-bleed).
         writeLocalHomestead(stamped, user.id);
