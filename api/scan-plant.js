@@ -50,7 +50,7 @@ import { getCorsOrigin } from './_cors.js';
 
 const PLANT_ID_URL = 'https://api.plant.id/v3/identification';
 const CROP_HEALTH_URL = 'https://crop.kindwise.com/api/v1/identification';
-const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
+const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB raw (≈10.7MB base64)
 const SCAN_TIMEOUT_MS = 30_000;
 
 let _supabaseAdmin = null;
@@ -495,7 +495,7 @@ export default async function handler(req, res) {
 export const config = {
   api: {
     bodyParser: {
-      sizeLimit: '7mb', // 5MB raw image → ~6.7MB base64
+      sizeLimit: '12mb', // 8MB raw image → ~10.7MB base64 (small headroom)
     },
   },
 };

@@ -84,14 +84,15 @@ async function captureNativePhoto(source = "camera") {
   try {
     const mod = await import("@capacitor/camera");
     const { Camera } = mod;
-    // Use literal string values for source to avoid enum import issues
-    // ("CAMERA" for camera capture, "PHOTOS" for photo library picker).
+    // quality 70 + max width 1200 keeps payload well under 2MB. Plant.id
+    // doesn't need higher resolution — 1200px gives excellent identification
+    // accuracy and disease detection.
     const photo = await Camera.getPhoto({
-      quality: 80,
+      quality: 70,
       allowEditing: false,
       resultType: "base64",
       source: source === "camera" ? "CAMERA" : "PHOTOS",
-      width: 1600,
+      width: 1200,
     });
     return { base64: photo.base64String, dataUrl: `data:image/${photo.format || "jpeg"};base64,${photo.base64String}` };
   } catch (e) {
@@ -100,14 +101,48 @@ async function captureNativePhoto(source = "camera") {
   }
 }
 
-// Web fallback. Read a File from an <input>, return base64.
+// Web fallback. Reads a File from an <input> and returns base64.
+// Large images get downscaled to MAX_DIMENSION on the longest side and
+// re-encoded as JPEG at 0.85 quality. This keeps the upload payload small
+// and reduces Plant.id processing time.
+const MAX_DIMENSION = 1600;
+const COMPRESSION_QUALITY = 0.85;
+
 function readFileAsBase64(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
-      const dataUrl = reader.result;
-      const base64 = String(dataUrl).split(",")[1] || "";
-      resolve({ base64, dataUrl });
+      const originalDataUrl = String(reader.result || "");
+      // Load into an Image to check dimensions
+      const img = new Image();
+      img.onload = () => {
+        const { width, height } = img;
+        const longest = Math.max(width, height);
+
+        // If image is small enough, skip compression
+        if (longest <= MAX_DIMENSION && file.size < 4 * 1024 * 1024) {
+          const base64 = originalDataUrl.split(",")[1] || "";
+          resolve({ base64, dataUrl: originalDataUrl });
+          return;
+        }
+
+        // Downscale via canvas
+        const scale = longest > MAX_DIMENSION ? MAX_DIMENSION / longest : 1;
+        const newWidth = Math.round(width * scale);
+        const newHeight = Math.round(height * scale);
+
+        const canvas = document.createElement("canvas");
+        canvas.width = newWidth;
+        canvas.height = newHeight;
+        const ctx = canvas.getContext("2d");
+        ctx.drawImage(img, 0, 0, newWidth, newHeight);
+
+        const compressedDataUrl = canvas.toDataURL("image/jpeg", COMPRESSION_QUALITY);
+        const base64 = compressedDataUrl.split(",")[1] || "";
+        resolve({ base64, dataUrl: compressedDataUrl });
+      };
+      img.onerror = () => reject(new Error("Could not load image"));
+      img.src = originalDataUrl;
     };
     reader.onerror = () => reject(new Error("Could not read file"));
     reader.readAsDataURL(file);
