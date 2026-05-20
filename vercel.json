@@ -5,7 +5,8 @@
   ],
   "crons": [
     { "path": "/api/send-chore-emails", "schedule": "0 23 * * 0" },
-    { "path": "/api/weekly-digest", "schedule": "0 13 * * 0" }
+    { "path": "/api/weekly-digest", "schedule": "0 13 * * 0" },
+    { "path": "/api/recalc-scan-quota", "schedule": "0 0 1 * *" }
   ],
   "headers": [
     {
