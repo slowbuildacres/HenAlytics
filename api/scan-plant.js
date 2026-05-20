@@ -404,6 +404,10 @@ export default async function handler(req, res) {
     charged_from: charge.chargedFrom,
     remaining_after: charge.remaining,
     result,
+    // TEMPORARY DEBUG — to figure out Plant.id v3 response shape. Remove after.
+    _debug_raw_disease: raw?.result?.disease || null,
+    _debug_raw_health: raw?.result?.is_healthy || null,
+    _debug_raw_keys: raw?.result ? Object.keys(raw.result) : null,
   });
 }
 
