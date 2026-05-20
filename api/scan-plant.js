@@ -36,7 +36,8 @@
 // Required env vars:
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_ROLE_KEY
-//   PLANT_ID_API_KEY              — your Plant.id API key
+//   PLANT_ID_API_KEY              — your Plant.id API key (species identification)
+//   CROP_HEALTH_API_KEY           — your crop.health API key (disease detection)
 //
 // Cost guard:
 //   We refuse the request BEFORE calling Plant.id if quota is exhausted, so
@@ -47,7 +48,8 @@
 import { createClient } from '@supabase/supabase-js';
 import { getCorsOrigin } from './_cors.js';
 
-const PLANT_ID_URL = 'https://plant.id/api/v3/identification';
+const PLANT_ID_URL = 'https://api.plant.id/v3/identification';
+const CROP_HEALTH_URL = 'https://crop.kindwise.com/api/v1/identification';
 const MAX_IMAGE_BYTES = 5 * 1024 * 1024; // 5 MB
 const SCAN_TIMEOUT_MS = 30_000;
 
@@ -200,6 +202,19 @@ async function refundCharge(userId, chargedFrom) {
 // health=all. We request the details we'll display: common names, descriptions,
 // treatment options.
 // ============================================================================
+// ============================================================================
+// PLANT.ID + CROP.HEALTH PARALLEL CALL
+// ----------------------------------------------------------------------------
+// We call two Kindwise APIs in parallel:
+//   1. plant.id v3 → species identification (1 credit)
+//   2. crop.health v1 → disease/pest detection (1 credit)
+//
+// Total: 2 credits ≈ $0.10 per scan.
+//
+// They're called concurrently with Promise.all so total latency is max(a, b)
+// not a + b. If crop.health fails, we still return the plant ID result —
+// disease detection failures shouldn't break the whole feature.
+// ============================================================================
 async function callPlantId(imageBase64) {
   const apiKey = process.env.PLANT_ID_API_KEY;
   if (!apiKey) throw new Error('PLANT_ID_API_KEY not configured');
@@ -208,54 +223,129 @@ async function callPlantId(imageBase64) {
   const timeout = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${PLANT_ID_URL}?details=common_names,description,treatment&health=all`, {
+    const res = await fetch(`${PLANT_ID_URL}?details=common_names,description,url,classification&language=en`, {
       method: 'POST',
       headers: {
         'Api-Key': apiKey,
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        images: [imageBase64], // raw base64, no data: prefix
+        images: [imageBase64],
       }),
       signal: controller.signal,
     });
 
     if (!res.ok) {
       const text = await res.text();
-      console.error('[scan-plant] Plant.id error:', res.status, text);
-      throw new Error(`Plant.id ${res.status}: ${text.slice(0, 200)}`);
+      console.error('[scan-plant] plant.id error:', res.status, text);
+      throw new Error(`plant.id ${res.status}: ${text.slice(0, 200)}`);
     }
 
-    const data = await res.json();
-    return data;
+    return await res.json();
   } finally {
     clearTimeout(timeout);
   }
 }
 
-// Shape the Plant.id response into our compact result format. Plant.id v3
-// nests things under result.classification.suggestions and result.disease.suggestions.
-function shapeResult(raw) {
-  const result = raw?.result || {};
-  const isPlant = !!result.is_plant?.binary;
-  const isHealthy = !!result.is_healthy?.binary;
+async function callCropHealth(imageBase64) {
+  const apiKey = process.env.CROP_HEALTH_API_KEY;
+  if (!apiKey) {
+    // Missing key isn't fatal — log and return null so the feature still
+    // works (plant ID only) instead of erroring out entirely.
+    console.warn('[scan-plant] CROP_HEALTH_API_KEY not configured — skipping disease detection');
+    return null;
+  }
 
-  const topSpecies = result.classification?.suggestions?.[0] || null;
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
+
+  try {
+    const res = await fetch(`${CROP_HEALTH_URL}?details=common_names,description,treatment,url&language=en`, {
+      method: 'POST',
+      headers: {
+        'Api-Key': apiKey,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        images: [imageBase64],
+      }),
+      signal: controller.signal,
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      console.error('[scan-plant] crop.health error:', res.status, text);
+      // Non-fatal — return null so we still get plant ID results.
+      return null;
+    }
+
+    return await res.json();
+  } catch (e) {
+    console.error('[scan-plant] crop.health call failed:', e);
+    return null; // non-fatal
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
+// Run both calls in parallel, return both results.
+async function callKindwiseAPIs(imageBase64) {
+  const [plantIdRaw, cropHealthRaw] = await Promise.all([
+    callPlantId(imageBase64),   // throws if plant.id fails — that's fatal
+    callCropHealth(imageBase64), // returns null on failure — non-fatal
+  ]);
+  return { plantIdRaw, cropHealthRaw };
+}
+
+// Shape the combined plant.id + crop.health responses into our compact format.
+// plant.id v3: result.is_plant.binary, result.classification.suggestions[]
+// crop.health v1: result.is_plant.binary, result.crop?.suggestions[], result.disease?.suggestions[]
+function shapeResult(plantIdRaw, cropHealthRaw) {
+  const pidResult = plantIdRaw?.result || {};
+  const chResult = cropHealthRaw?.result || {};
+
+  const isPlant = !!pidResult.is_plant?.binary;
+
+  // Species from plant.id
+  const topSpecies = pidResult.classification?.suggestions?.[0] || null;
   const species = topSpecies ? {
     name: topSpecies.name,
     common_name: topSpecies.details?.common_names?.[0] || null,
     confidence: topSpecies.probability,
-    description: topSpecies.details?.description?.value || null,
+    description: topSpecies.details?.description?.value || topSpecies.details?.description || null,
   } : null;
 
-  const diseases = (result.disease?.suggestions || [])
-    .slice(0, 5) // cap to top 5 to keep payload small
+  // Diseases from crop.health. The disease suggestions array contains the
+  // pest/disease findings. Filter out very-low-probability noise.
+  const rawDiseases = chResult.disease?.suggestions || [];
+  const diseases = rawDiseases
+    .filter(s => (s.probability || 0) >= 0.05) // drop very low confidence noise
+    .filter(s => s.details?.is_harmful !== false) // drop explicitly non-harmful classes
+    .slice(0, 5)
     .map(s => ({
-      name: s.name,
+      name: s.details?.local_name || s.details?.common_names?.[0] || s.name,
+      scientific_name: s.name,
       probability: s.probability,
-      description: s.details?.description || null,
+      description: typeof s.details?.description === 'string'
+        ? s.details.description
+        : s.details?.description?.value || null,
       treatment: s.details?.treatment || null,
+      url: s.details?.url || null,
     }));
+
+  // is_healthy: prefer crop.health's signal. If crop.health didn't run, assume healthy.
+  // crop.health's is_healthy is the cleanest signal, but if we don't have it,
+  // we can derive it from whether we found any diseases.
+  let isHealthy;
+  if (chResult.is_healthy != null) {
+    isHealthy = !!chResult.is_healthy?.binary;
+  } else if (cropHealthRaw === null) {
+    // crop.health failed; we have no health signal — default to healthy/unknown
+    isHealthy = true;
+  } else {
+    // crop.health ran but didn't include is_healthy field — infer from diseases
+    isHealthy = diseases.length === 0;
+  }
 
   return { is_plant: isPlant, is_healthy: isHealthy, species, diseases };
 }
@@ -347,23 +437,21 @@ export default async function handler(req, res) {
     return res.status(500).json({ error: 'Charge failed' });
   }
 
-  // ---- Call Plant.id ----
-  let raw;
+  // ---- Call plant.id + crop.health in parallel ----
+  let plantIdRaw, cropHealthRaw;
   try {
-    raw = await callPlantId(cleanBase64);
+    ({ plantIdRaw, cropHealthRaw } = await callKindwiseAPIs(cleanBase64));
   } catch (e) {
     // Refund the charge — user shouldn't pay for our infrastructure failures.
     await refundCharge(userId, charge.chargedFrom);
-    console.error('[scan-plant] Plant.id call failed:', e);
-    // TEMPORARY: expose error details for debugging. Revert after.
+    console.error('[scan-plant] Kindwise call failed:', e);
     return res.status(502).json({
       error: 'Scan service unavailable, no scan charged',
       _debug_error: e?.message || String(e),
-      _debug_stack: e?.stack?.split('\n').slice(0, 3).join(' | '),
     });
   }
 
-  const result = shapeResult(raw);
+  const result = shapeResult(plantIdRaw, cropHealthRaw);
 
   // ---- Insert scan_history row ----
   const supabase = getSupabaseAdmin();
@@ -383,7 +471,7 @@ export default async function handler(req, res) {
     .insert({
       id: scanId,
       user_id: userId,
-      photo_url: photoPath, // storage path, not public URL
+      photo_url: photoPath,
       identified_species: result.species?.name || null,
       species_confidence: result.species?.confidence || null,
       is_plant: result.is_plant,
@@ -394,7 +482,6 @@ export default async function handler(req, res) {
     });
 
   if (historyErr) {
-    // Non-fatal — user got their scan, just no history row. Log it.
     console.error('[scan-plant] history insert failed:', historyErr);
   }
 
@@ -404,10 +491,11 @@ export default async function handler(req, res) {
     charged_from: charge.chargedFrom,
     remaining_after: charge.remaining,
     result,
-    // TEMPORARY DEBUG — to figure out Plant.id v3 response shape. Remove after.
-    _debug_raw_disease: raw?.result?.disease || null,
-    _debug_raw_health: raw?.result?.is_healthy || null,
-    _debug_raw_keys: raw?.result ? Object.keys(raw.result) : null,
+    // TEMPORARY DEBUG — remove after verifying crop.health works.
+    _debug_crop_health_status: cropHealthRaw === null
+      ? 'crop_health_call_failed_or_skipped'
+      : (cropHealthRaw?.result ? Object.keys(cropHealthRaw.result) : 'no_result_key'),
+    _debug_disease_count: cropHealthRaw?.result?.disease?.suggestions?.length ?? null,
   });
 }
 
