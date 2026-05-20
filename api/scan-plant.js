@@ -224,7 +224,7 @@ async function callPlantId(imageBase64) {
     if (!res.ok) {
       const text = await res.text();
       console.error('[scan-plant] Plant.id error:', res.status, text);
-      throw new Error(`Plant.id returned ${res.status}`);
+      throw new Error(`Plant.id ${res.status}: ${text.slice(0, 200)}`);
     }
 
     const data = await res.json();
@@ -356,7 +356,12 @@ export default async function handler(req, res) {
     // Refund the charge — user shouldn't pay for our infrastructure failures.
     await refundCharge(userId, charge.chargedFrom);
     console.error('[scan-plant] Plant.id call failed:', e);
-    return res.status(502).json({ error: 'Scan service unavailable, no scan charged' });
+    // TEMPORARY: expose error details for debugging. Revert after.
+    return res.status(502).json({
+      error: 'Scan service unavailable, no scan charged',
+      _debug_error: e?.message || String(e),
+      _debug_stack: e?.stack?.split('\n').slice(0, 3).join(' | '),
+    });
   }
 
   const result = shapeResult(raw);
