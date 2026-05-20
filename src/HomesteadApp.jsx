@@ -3045,7 +3045,7 @@ export default function HomesteadApp() {
       setAuthReady(true);
     });
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === "SIGNED_OUT") setSignedOutRemotely(true);
+      if (event === "SIGNED_OUT") { setSignedOutRemotely(true); setSyncBannerReason("auth"); }
       if (event === "SIGNED_IN") setSignedOutRemotely(false);
       if (event === "PASSWORD_RECOVERY") {
         setPasswordRecoveryPending(true);
@@ -3295,6 +3295,7 @@ export default function HomesteadApp() {
         // signature of the refresh-token bug. Surface the signed-out
         // banner so the user knows to re-authenticate — their recent
         // changes are saved locally but not synced.
+        setSyncBannerReason("auth");
         setSignedOutRemotely(true);
       }
     };
@@ -3371,11 +3372,13 @@ export default function HomesteadApp() {
           .then(({ data, error }) => {
             if (error || !data?.session) {
               console.warn("[AUTH] session revalidation on resume failed — session is dead:", error);
+              setSyncBannerReason("auth");
               setSignedOutRemotely(true);
             }
           })
           .catch((e) => {
             console.warn("[AUTH] session revalidation on resume threw:", e);
+            setSyncBannerReason("auth");
             setSignedOutRemotely(true);
           });
       }
