@@ -88,6 +88,21 @@ function tierMetaFromProductId(productId) {
   }
 }
 
+// ============================================================================
+// SCAN PACK PRODUCT MAPPING
+// ----------------------------------------------------------------------------
+// Scan packs are consumables (one-time purchases) that credit scan_usage
+// instead of supporters. Keep in sync with src/IapManager.js SCAN_PACK_PRODUCTS.
+// ============================================================================
+const SCAN_PACK_SCAN_COUNTS = {
+  'com.henalytics.app.consumable.scan_pack_10': 10,
+  'com.henalytics.app.consumable.scan_pack_30': 30,
+};
+
+function isScanPackProduct(productId) {
+  return Object.prototype.hasOwnProperty.call(SCAN_PACK_SCAN_COUNTS, productId);
+}
+
 // Map RC event_type → DB status
 function statusFromEventType(eventType) {
   switch (eventType) {
@@ -203,6 +218,19 @@ export default async function handler(req, res) {
     return res.status(400).json({ error: 'Missing required event fields' });
   }
 
+  // ---- Branch: scan pack consumable ----
+  // Scan packs are NON_RENEWING_PURCHASE events but should credit
+  // scan_usage.extra_remaining instead of writing to supporters.
+  if (isScanPackProduct(productId)) {
+    if (eventType !== 'NON_RENEWING_PURCHASE') {
+      // Scan packs are consumables — they only ever generate NON_RENEWING_PURCHASE.
+      // Other event types on these product IDs would be unexpected.
+      console.warn('[rc-webhook] unexpected event type for scan pack:', eventType, productId);
+      return res.status(200).json({ ok: true, ignored: eventType });
+    }
+    return await handleScanPackPurchase(res, userId, productId, originalTransactionId);
+  }
+
   const meta = tierMetaFromProductId(productId);
   const purchasedAt = purchasedAtMs ? new Date(purchasedAtMs).toISOString() : new Date().toISOString();
   const expirationAt = expirationAtMs ? new Date(expirationAtMs).toISOString() : null;
@@ -253,3 +281,100 @@ export const config = {
     bodyParser: true,
   },
 };
+
+// ============================================================================
+// SCAN PACK PURCHASE HANDLER
+// ----------------------------------------------------------------------------
+// When a user purchases a scan pack (consumable), credit their scan_usage row
+// with the appropriate number of scans. Idempotent on original_transaction_id —
+// if RevenueCat retries the webhook, we don't double-credit.
+//
+// Schema we touch:
+//   scan_usage (user_id, month, free_used, extra_remaining)
+//   scan_pack_purchases (idempotency table — see below)
+//
+// Idempotency: Apple/RC can resend NON_RENEWING_PURCHASE events. We keep a
+// scan_pack_purchases table keyed by transaction_id to detect replays.
+// ============================================================================
+async function handleScanPackPurchase(res, userId, productId, originalTransactionId) {
+  const scansToAdd = SCAN_PACK_SCAN_COUNTS[productId];
+  if (!scansToAdd) {
+    console.error('[rc-webhook] unknown scan pack product:', productId);
+    return res.status(400).json({ error: 'Unknown scan pack' });
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  // ---- Idempotency check ----
+  // Insert into scan_pack_purchases with unique constraint on transaction_id.
+  // If insert fails due to unique violation, this is a replay — return 200.
+  const { error: dedupeErr } = await supabase
+    .from('scan_pack_purchases')
+    .insert({
+      user_id: userId,
+      transaction_id: originalTransactionId,
+      product_id: productId,
+      scans_purchased: scansToAdd,
+      source: 'revenuecat',
+    });
+
+  if (dedupeErr) {
+    // Postgres unique violation code is 23505
+    if (dedupeErr.code === '23505') {
+      console.log('[rc-webhook] scan pack already processed:', originalTransactionId);
+      return res.status(200).json({ ok: true, dedup: true });
+    }
+    console.error('[rc-webhook] scan_pack_purchases insert failed:', dedupeErr);
+    return res.status(500).json({ error: 'Idempotency check failed' });
+  }
+
+  // ---- Credit the user's scan_usage row for current month ----
+  const month = firstOfMonthUTC();
+
+  // Read current row (if any) to know what to add to.
+  const { data: usageRow } = await supabase
+    .from('scan_usage')
+    .select('free_used, extra_remaining')
+    .eq('user_id', userId)
+    .eq('month', month)
+    .maybeSingle();
+
+  // If no current-month row, carry forward extra_remaining from most recent prior month.
+  let currentExtra = usageRow?.extra_remaining;
+  if (currentExtra == null) {
+    const { data: priorRow } = await supabase
+      .from('scan_usage')
+      .select('extra_remaining')
+      .eq('user_id', userId)
+      .gt('extra_remaining', 0)
+      .order('month', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    currentExtra = priorRow?.extra_remaining || 0;
+  }
+
+  const { error: upsertErr } = await supabase
+    .from('scan_usage')
+    .upsert({
+      user_id: userId,
+      month,
+      free_used: usageRow?.free_used || 0,
+      extra_remaining: currentExtra + scansToAdd,
+    }, { onConflict: 'user_id,month' });
+
+  if (upsertErr) {
+    console.error('[rc-webhook] scan_usage credit failed:', upsertErr);
+    // We already wrote to scan_pack_purchases — manual reconciliation may be needed.
+    // Returning 500 will trigger RC retry; the dedupe check will catch the replay.
+    return res.status(500).json({ error: 'Credit failed' });
+  }
+
+  console.log(`[rc-webhook] credited ${scansToAdd} scans to user ${userId.slice(0, 8)}...`);
+  return res.status(200).json({ ok: true, scans_credited: scansToAdd });
+}
+
+function firstOfMonthUTC(date = new Date()) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
+}

@@ -59,12 +59,23 @@ import { apiUrl } from './apiBase.js';
 //   - App Store Connect product setup
 //   - RevenueCat dashboard product setup
 //   - api/revenuecat-webhook.js tierMetaFromProductId switch
+//   - api/revenuecat-webhook.js SCAN_PACK_PRODUCT_IDS check (for scan packs)
 export const IAP_PRODUCTS = {
   TIP_ONE_TIME:    "com.henalytics.app.tip.one_time",
   SUB_SEEDLING:    "com.henalytics.app.sub.seedling",
   SUB_COFFEE:      "com.henalytics.app.sub.coffee",
   SUB_SUSTAINING:  "com.henalytics.app.sub.sustaining",
   SUB_GENEROUS:    "com.henalytics.app.sub.generous",
+  // Scan packs — consumables, credit scan_usage.extra_remaining (NOT supporters)
+  SCAN_PACK_10:    "com.henalytics.app.consumable.scan_pack_10",
+  SCAN_PACK_30:    "com.henalytics.app.consumable.scan_pack_30",
+};
+
+// Scan pack metadata — used by the scanner modal to display options and by
+// the RevenueCat webhook to know how many scans to credit per product.
+export const SCAN_PACK_PRODUCTS = {
+  [IAP_PRODUCTS.SCAN_PACK_10]: { scans: 10, priceDisplay: "$1.99" },
+  [IAP_PRODUCTS.SCAN_PACK_30]: { scans: 30, priceDisplay: "$4.99" },
 };
 
 // Map our existing Stripe tier strings → IAP product IDs.

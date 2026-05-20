@@ -60,6 +60,23 @@ function getTierFromPriceId(priceId) {
   return { amount: null, type: 'monthly' }; // fallback — webhook still works, amount is just unknown
 }
 
+// Map Stripe scan-pack price IDs → scans to credit. Scan packs are SEPARATE
+// from supporter products — they credit scan_usage instead of supporters.
+function getScanPackFromPriceId(priceId) {
+  if (priceId === process.env.STRIPE_PRICE_SCAN_PACK_10) return 10;
+  if (priceId === process.env.STRIPE_PRICE_SCAN_PACK_30) return 30;
+  return null;
+}
+
+// Detect if a checkout session is a scan pack purchase. We look at the
+// session metadata.type which we set when creating the checkout session
+// (see create-scan-pack-checkout endpoint). Falling back to checking the
+// line items' price IDs against our scan pack price IDs.
+function isScanPackSession(session) {
+  if (session.metadata?.type === 'scan_pack') return true;
+  return false;
+}
+
 let _supabaseAdmin = null;
 function getSupabaseAdmin() {
   if (_supabaseAdmin) return _supabaseAdmin;
@@ -201,6 +218,12 @@ export default async function handler(req, res) {
 //   This is where we create the supporter row.
 async function handleCheckoutCompleted(event) {
   const session = event.data.object;
+
+  // ---- Branch: scan pack purchase (not a supporter event) ----
+  if (isScanPackSession(session)) {
+    return await handleScanPackCheckout(session);
+  }
+
   const userId = session.client_reference_id || session.metadata?.user_id;
   const email = (session.customer_email || session.customer_details?.email || '').toLowerCase();
   const tier = session.metadata?.tier || null;
@@ -399,6 +422,114 @@ async function handlePaymentFailed(event) {
   if (error) {
     console.error('[invoice.payment_failed] update failed:', error);
   }
+}
+
+// ============================================================================
+// SCAN PACK PURCHASE HANDLER (web Stripe path)
+// ----------------------------------------------------------------------------
+// Mirrors handleScanPackPurchase in revenuecat-webhook.js but for web users
+// who pay via Stripe Checkout. Idempotent on session.id.
+//
+// The checkout session creator (create-scan-pack-checkout.js, to be added)
+// sets:
+//   session.client_reference_id = supabase user_id
+//   session.metadata.type = 'scan_pack'
+//   session.line_items[0].price = STRIPE_PRICE_SCAN_PACK_{10,30}
+// ============================================================================
+async function handleScanPackCheckout(session) {
+  const userId = session.client_reference_id || session.metadata?.user_id;
+  const sessionId = session.id;
+
+  if (!userId) {
+    console.error('[stripe-webhook] scan pack session missing user_id:', sessionId);
+    return;
+  }
+
+  // Fetch line items to determine which pack was bought
+  let priceId = null;
+  try {
+    const res = await fetch(`https://api.stripe.com/v1/checkout/sessions/${sessionId}/line_items?limit=1`, {
+      headers: { 'Authorization': `Bearer ${process.env.STRIPE_SECRET_KEY}` },
+    });
+    const data = await res.json();
+    priceId = data.data?.[0]?.price?.id || null;
+  } catch (e) {
+    console.error('[stripe-webhook] could not fetch line items for scan pack:', e);
+    return;
+  }
+
+  const scansToAdd = getScanPackFromPriceId(priceId);
+  if (!scansToAdd) {
+    console.error('[stripe-webhook] unknown scan pack price ID:', priceId);
+    return;
+  }
+
+  const supabase = getSupabaseAdmin();
+
+  // ---- Idempotency check ----
+  const { error: dedupeErr } = await supabase
+    .from('scan_pack_purchases')
+    .insert({
+      user_id: userId,
+      transaction_id: sessionId, // Stripe session ID acts as transaction ID
+      product_id: priceId,
+      scans_purchased: scansToAdd,
+      source: 'stripe',
+    });
+
+  if (dedupeErr) {
+    if (dedupeErr.code === '23505') {
+      console.log('[stripe-webhook] scan pack already processed:', sessionId);
+      return;
+    }
+    console.error('[stripe-webhook] scan_pack_purchases insert failed:', dedupeErr);
+    throw dedupeErr;
+  }
+
+  // ---- Credit scan_usage ----
+  const month = firstOfMonthUTC();
+
+  const { data: usageRow } = await supabase
+    .from('scan_usage')
+    .select('free_used, extra_remaining')
+    .eq('user_id', userId)
+    .eq('month', month)
+    .maybeSingle();
+
+  let currentExtra = usageRow?.extra_remaining;
+  if (currentExtra == null) {
+    const { data: priorRow } = await supabase
+      .from('scan_usage')
+      .select('extra_remaining')
+      .eq('user_id', userId)
+      .gt('extra_remaining', 0)
+      .order('month', { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    currentExtra = priorRow?.extra_remaining || 0;
+  }
+
+  const { error: upsertErr } = await supabase
+    .from('scan_usage')
+    .upsert({
+      user_id: userId,
+      month,
+      free_used: usageRow?.free_used || 0,
+      extra_remaining: currentExtra + scansToAdd,
+    }, { onConflict: 'user_id,month' });
+
+  if (upsertErr) {
+    console.error('[stripe-webhook] scan_usage credit failed:', upsertErr);
+    throw upsertErr;
+  }
+
+  console.log(`[stripe-webhook] credited ${scansToAdd} scans to user ${userId.slice(0, 8)}...`);
+}
+
+function firstOfMonthUTC(date = new Date()) {
+  const y = date.getUTCFullYear();
+  const m = String(date.getUTCMonth() + 1).padStart(2, '0');
+  return `${y}-${m}-01`;
 }
 
 // ============================================================================
