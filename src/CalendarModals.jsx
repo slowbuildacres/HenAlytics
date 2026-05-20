@@ -141,7 +141,7 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
 // PLAN CROP MODAL — pick a crop, pick a method, generate events
 // ============================================================================
 
-export function PlanCropModal({ data, update, onClose }) {
+export function PlanCropModal({ data, update, onClose, onConfirm }) {
   // Step flow:
   //   1   = pick crop
   //   2   = pick method (start-indoors / direct-sow / transplant)
@@ -309,13 +309,37 @@ export function PlanCropModal({ data, update, onClose }) {
         // copy of the plan we're about to re-create. Drop it.
         return false;
       });
-      d.calendarEvents.push(...generatedEvents.map((e) => ({
+      const finalEvents = generatedEvents.map((e) => ({
         ...e,
         date: getDate(e),   // use user's edited date if set
         planYear: year,
-      })));
+      }));
+      d.calendarEvents.push(...finalEvents);
       return d;
     });
+    // Compute the finalEvents again outside the update so we can pass them
+    // to onConfirm — update() runs inside a state setter so its locals don't
+    // escape. This is the same map as above; cheap to recompute.
+    const finalEvents = generatedEvents.map((e) => ({
+      ...e,
+      date: getDate(e),
+      planYear: year,
+    }));
+    // If caller provided onConfirm (e.g. quick-log Plant Annual), pass back
+    // the crop selection AND the generated events so they can pick the right
+    // date and create a planting record. Calendar's "Plan a crop" path
+    // doesn't provide this callback.
+    if (typeof onConfirm === 'function') {
+      onConfirm({
+        cropId,
+        cropName: crop?.name,
+        variety: selectedVariety,
+        method,
+        year,
+        events: finalEvents,
+        isCustom: false,
+      });
+    }
     onClose();
   };
 
@@ -446,6 +470,17 @@ export function PlanCropModal({ data, update, onClose }) {
                 });
                 return d;
               });
+              if (typeof onConfirm === 'function') {
+                onConfirm({
+                  cropId: "custom",
+                  cropName: name,
+                  variety: null,
+                  method: null,
+                  year: null,
+                  isCustom: true,
+                  customDate: otherDate,
+                });
+              }
               onClose();
             }}>Add to calendar</Btn>
             <Btn variant="ghost" onClick={() => setStep(1)}>Back</Btn>

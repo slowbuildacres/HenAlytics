@@ -473,6 +473,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
       title: `🌱 Start ${displayName} seeds indoors`,
       type: "garden",
       cropId,
+      kind: "indoor",
       ...varietyMeta,
       notes: crop.notes,
     });
@@ -486,6 +487,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
         title: `🌿 Transplant ${displayName} outdoors`,
         type: "garden",
         cropId,
+	kind: "transplant",
         ...varietyMeta,
         notes: "Harden off for 7-10 days first.",
       });
@@ -499,6 +501,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
           title: `🧺 ${displayName} should be ready to harvest`,
           type: "garden",
           cropId,
+	  kind: "harvest",
           ...varietyMeta,
           notes: `~${harvestDays} days from transplant.`,
         });
@@ -512,6 +515,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
       title: `🌱 Direct sow ${displayName}`,
       type: "garden",
       cropId,
+      kind: "direct",
       ...varietyMeta,
       notes: crop.notes,
     });
@@ -524,6 +528,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
         title: `🧺 ${displayName} should be ready to harvest`,
         type: "garden",
         cropId,
+	kind: "harvest",
         ...varietyMeta,
         notes: `~${harvestDays} days from direct sow.`,
       });
@@ -536,6 +541,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
       title: `🌿 Transplant ${displayName} (from store-bought starts)`,
       type: "garden",
       cropId,
+      kind: "transplant",
       ...varietyMeta,
       notes: crop.notes,
     });
@@ -548,6 +554,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
         title: `🧺 ${displayName} should be ready to harvest`,
         type: "garden",
         cropId,
+	kind: "harvest",
         ...varietyMeta,
         notes: `~${harvestDays} days from transplant.`,
       });

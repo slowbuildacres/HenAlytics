@@ -4544,6 +4544,66 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
     return { visible, hidden };
   }, [entries, data]);
   const recent = recentScope.visible;
+// Handler for the quick-log "Plant Annual" tile, which opens PlanCropModal
+  // and receives the user's crop selection + generated events via onConfirm.
+  // PlanCropModal handles pushing calendar events; we just need to mirror
+  // the legacy quick-log behavior of creating a plantings[] record and
+  // ensuring an annuals[] record exists for this crop+season.
+  const handlePlanAnnualConfirm = (payload) => {
+    if (!payload) return;
+    const { cropId, cropName, variety, method, events, isCustom, customDate } = payload;
+    // Pick the planting date based on what kind of event matches the method.
+    // Falls back to today if no matching event (defensive — shouldn't happen).
+    let plantingDate;
+    if (isCustom) {
+      plantingDate = customDate || todayStr();
+    } else if (Array.isArray(events) && events.length > 0) {
+      const matchKind = method === "indoor" ? "indoor"
+        : method === "direct" ? "direct"
+        : method === "transplant" ? "transplant"
+        : null;
+      const matchEvent = matchKind ? events.find(e => e.kind === matchKind) : null;
+      plantingDate = matchEvent ? matchEvent.date : todayStr();
+    } else {
+      plantingDate = todayStr();
+    }
+    // Display name for the planting record: variety name takes precedence,
+    // then the crop's display name, then the raw cropName fallback for custom.
+    const plantName = (variety && variety.name) || cropName || "Unknown";
+    update((d) => {
+      // Create planting record
+      d.plantings = d.plantings || [];
+      d.plantings.push({
+        id: newId(),
+        plant: plantName,
+        quantity: "",
+        date: plantingDate,
+        harvested: false,
+      });
+      // Ensure annual record exists for this plant in the current season.
+      // Mirrors the logic in the legacy quick-log "planted" save handler.
+      const gh = d.hobbies.find(x => x.type === "garden");
+      if (gh) {
+        if (!Array.isArray(gh.annuals)) gh.annuals = [];
+        const nm = plantName.trim() || "Unnamed";
+        const sid = gh.currentSeason?.id || "";
+        const exists = gh.annuals.some(
+          a => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
+               (a.seasonId || "") === sid
+        );
+        if (!exists) {
+          gh.annuals.push({
+            id: newId(),
+            name: nm,
+            seasonId: sid,
+            actions: [],
+            created: Date.now(),
+          });
+        }
+      }
+      return d;
+    });
+  };
 
   return (
     <div>
@@ -4564,7 +4624,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "24px 0 12px", color: palette.ink }}>
         quick log
       </h2>
-      <QuickLogTiles hobby={hobby} setModal={setModal} />
+      <QuickLogTiles hobby={hobby} setModal={setModal} onPlanAnnualConfirm={handlePlanAnnualConfirm} />
 
       {/* RECENT ACTIVITY */}
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "28px 0 12px", color: palette.ink }}>
@@ -5144,7 +5204,7 @@ function PillButton({ active, onClick, children }) {
   );
 }
 
-function QuickLogTiles({ hobby, setModal }) {
+function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
   const grid = { display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(110px, 1fr))", gap: 10 };
 
   if (hobby.type === "garden") {
@@ -5163,7 +5223,7 @@ function QuickLogTiles({ hobby, setModal }) {
       <div style={grid}>
         <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
         <Tile icon={Leaf} label="Fertilized" color={palette.leafSoft || "#A8C078"} onClick={() => setModal({ type: "log", action: "fertilized" })} />
-        <Tile icon={Sprout} label="Plant Annual" color={palette.leaf} onClick={() => setModal({ type: "log", action: "planted" })} />
+        <Tile icon={Sprout} label="Plant Annual" color={palette.leaf} onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })} />
         <Tile icon={Scissors} label="Harvested" color={palette.accent} onClick={() => setModal({ type: "log", action: "harvested" })} />
         <Tile icon={AlertTriangle} label="Report Issue" color={palette.yolk} onClick={() => setModal({ type: "log", action: "issue" })} />
         <Tile icon={NotebookPen} label="Note" color={palette.feather} onClick={() => setModal({ type: "log", action: "note" })} />
@@ -7966,7 +8026,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
       : hobby;
     return <LogModal hobby={targetHobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
   }
-  if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} />;
+  if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} onConfirm={modal.onConfirm} />;
   if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
   if (modal.type === "addCalendarEvent") return <AddCalendarEventModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
   if (modal.type === "planForDay") return <PlanForDayModal date={modal.date} setModal={setModal} onClose={close} />;
