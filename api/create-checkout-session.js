@@ -145,6 +145,15 @@ export default async function handler(req, res) {
   params.append('mode', mode);
   params.append('line_items[0][price]', priceId);
   params.append('line_items[0][quantity]', '1');
+  // For one-time tips, let users bump quantity on Stripe's checkout page.
+  // The $5 unit price stays the same; users can buy 1-100 of them.
+  // Subscriptions stay at quantity 1 (Stripe doesn't allow adjustable qty
+  // on recurring line items anyway).
+  if (tier === 'one_time') {
+    params.append('line_items[0][adjustable_quantity][enabled]', 'true');
+    params.append('line_items[0][adjustable_quantity][minimum]', '1');
+    params.append('line_items[0][adjustable_quantity][maximum]', '100');
+  }
   // client_reference_id lands in webhook event.data.object.client_reference_id
   params.append('client_reference_id', user.id);
   // metadata is the more flexible route — appears in webhook events for both
