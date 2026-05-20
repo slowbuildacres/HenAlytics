@@ -40,7 +40,7 @@
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
 	<key>NSCameraUsageDescription</key>
-	<string>Henalytics uses the camera to scan barcodes on cattle RFID tags so you don't have to type the number by hand.</string>
+	<string>Henalytics uses your camera to scan cattle RFID tags and to identify plants and detect diseases in your garden.</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
 	<string>Henalytics uses your location to look up weather, hardiness zone, and frost dates for your homestead. Your location is never shared with anyone.</string>
 	<key>NSPhotoLibraryAddUsageDescription</key>

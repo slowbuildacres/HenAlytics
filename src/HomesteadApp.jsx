@@ -97,6 +97,7 @@ import {
   PlanForDayModal,
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
+import PlantScannerModal from "./PlantScannerModal.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
 import SalesPage from "./Sales.jsx";
 import BeesPage, { BeesAnalytics } from "./Bees.jsx";
@@ -5470,6 +5471,66 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
     </div>
   );
 }
+// ============================================================================
+
+function PlantScannerSection({ setModal }) {
+  return (
+    <div style={{
+      background: palette.card,
+      border: `1.5px solid ${palette.line}`,
+      borderRadius: 12,
+      padding: "14px 16px",
+      marginBottom: 14,
+    }}>
+      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{
+          width: 44, height: 44, flexShrink: 0,
+          borderRadius: 10, background: palette.leafSoft || "#A8C078",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          border: `1.5px solid ${palette.leaf}`,
+        }}>
+          <Camera size={22} color={palette.bg} />
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{
+            fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink,
+            lineHeight: 1.2, marginBottom: 4,
+          }}>
+            Plant & Disease Scanner
+          </div>
+          <div style={{
+            fontSize: 13, color: palette.inkSoft, lineHeight: 1.5,
+            marginBottom: 10,
+          }}>
+            Snap a photo of any plant in your garden to identify the species
+            and check for diseases. AI-powered, results in seconds.
+          </div>
+          <button
+            onClick={() => setModal({ type: "plantScanner" })}
+            style={{
+              padding: "8px 16px",
+              borderRadius: 8,
+              background: palette.leaf,
+              color: palette.bg,
+              border: `1.5px solid ${palette.leaf}`,
+              fontFamily: FONT_BODY,
+              fontWeight: 600,
+              fontSize: 14,
+              cursor: "pointer",
+              boxShadow: "2px 2px 0 " + palette.line,
+              display: "inline-flex",
+              alignItems: "center",
+              gap: 6,
+            }}
+          >
+            <Camera size={14} />
+            Scan a Plant
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ============ PERENNIAL SECTION (collapsible) ============
 function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, setModal }) {
@@ -5782,6 +5843,7 @@ function GardenSummary({ hobby, data, update, setModal }) {
     : (season.gardenMap?.pins?.length || 0);
   return (
     <div>
+      <PlantScannerSection setModal={setModal} />
       {/* Perennials section — split into Plants and Orchard */}
       {perennials.length === 0 ? (
         <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"10px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
@@ -7900,6 +7962,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
   if (modal.type === "support") return <SupportModal onClose={close} />;
+  if (modal.type === "plantScanner") return <PlantScannerModal onClose={close} />;
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
