@@ -36,8 +36,7 @@
 // Required env vars:
 //   SUPABASE_URL
 //   SUPABASE_SERVICE_ROLE_KEY
-//   PLANT_ID_API_KEY              — your Plant.id API key (species identification)
-//   CROP_HEALTH_API_KEY           — your crop.health API key (disease detection)
+//   PLANT_ID_API_KEY              — Plant.id API key (handles both species + health)
 //
 // Cost guard:
 //   We refuse the request BEFORE calling Plant.id if quota is exhausted, so
@@ -49,7 +48,6 @@ import { createClient } from '@supabase/supabase-js';
 import { getCorsOrigin } from './_cors.js';
 
 const PLANT_ID_URL = 'https://api.plant.id/v3/identification';
-const CROP_HEALTH_URL = 'https://crop.kindwise.com/api/v1/identification';
 const MAX_IMAGE_BYTES = 8 * 1024 * 1024; // 8 MB raw (≈10.7MB base64)
 const SCAN_TIMEOUT_MS = 30_000;
 
@@ -203,17 +201,16 @@ async function refundCharge(userId, chargedFrom) {
 // treatment options.
 // ============================================================================
 // ============================================================================
-// PLANT.ID + CROP.HEALTH PARALLEL CALL
+// PLANT.ID v3 CALL — species + health in one request
 // ----------------------------------------------------------------------------
-// We call two Kindwise APIs in parallel:
-//   1. plant.id v3 → species identification (1 credit)
-//   2. crop.health v1 → disease/pest detection (1 credit)
+// Per Plant.id v3 docs (https://plant.id/docs), the `health` parameter goes in
+// the REQUEST BODY (not as a URL modifier). Setting health="all" returns both
+// species classification AND health assessment in one call.
 //
-// Total: 2 credits ≈ $0.10 per scan.
+// Total cost: 2 credits per scan (1 for taxa classification, 1 for health).
 //
-// They're called concurrently with Promise.all so total latency is max(a, b)
-// not a + b. If crop.health fails, we still return the plant ID result —
-// disease detection failures shouldn't break the whole feature.
+// We request "treatment" and "description" disease details so users get
+// actionable info, not just a diagnosis name.
 // ============================================================================
 async function callPlantId(imageBase64) {
   const apiKey = process.env.PLANT_ID_API_KEY;
@@ -223,7 +220,7 @@ async function callPlantId(imageBase64) {
   const timeout = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
 
   try {
-    const res = await fetch(`${PLANT_ID_URL}?details=common_names,description,url,classification&language=en`, {
+    const res = await fetch(`${PLANT_ID_URL}?details=common_names,description,url&language=en&disease_details=local_name,description,treatment,url,classification,common_names`, {
       method: 'POST',
       headers: {
         'Api-Key': apiKey,
@@ -231,6 +228,7 @@ async function callPlantId(imageBase64) {
       },
       body: JSON.stringify({
         images: [imageBase64],
+        health: 'all', // body param, NOT a URL modifier — returns species + disease together
       }),
       signal: controller.signal,
     });
@@ -247,67 +245,28 @@ async function callPlantId(imageBase64) {
   }
 }
 
-async function callCropHealth(imageBase64) {
-  const apiKey = process.env.CROP_HEALTH_API_KEY;
-  if (!apiKey) {
-    // Missing key isn't fatal — log and return null so the feature still
-    // works (plant ID only) instead of erroring out entirely.
-    console.warn('[scan-plant] CROP_HEALTH_API_KEY not configured — skipping disease detection');
-    return null;
-  }
-
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SCAN_TIMEOUT_MS);
-
-  try {
-    const res = await fetch(`${CROP_HEALTH_URL}?details=common_names,description,treatment,url&language=en`, {
-      method: 'POST',
-      headers: {
-        'Api-Key': apiKey,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        images: [imageBase64],
-      }),
-      signal: controller.signal,
-    });
-
-    if (!res.ok) {
-      const text = await res.text();
-      console.error('[scan-plant] crop.health error:', res.status, text);
-      // Non-fatal — return null so we still get plant ID results.
-      return null;
-    }
-
-    return await res.json();
-  } catch (e) {
-    console.error('[scan-plant] crop.health call failed:', e);
-    return null; // non-fatal
-  } finally {
-    clearTimeout(timeout);
-  }
-}
-
-// Run both calls in parallel, return both results.
+// Single API call now. Kept the name "callKindwiseAPIs" for compatibility with
+// the rest of the handler; just returns the same shape with cropHealthRaw=null.
 async function callKindwiseAPIs(imageBase64) {
-  const [plantIdRaw, cropHealthRaw] = await Promise.all([
-    callPlantId(imageBase64),   // throws if plant.id fails — that's fatal
-    callCropHealth(imageBase64), // returns null on failure — non-fatal
-  ]);
-  return { plantIdRaw, cropHealthRaw };
+  const plantIdRaw = await callPlantId(imageBase64);
+  return { plantIdRaw, cropHealthRaw: null };
 }
 
-// Shape the combined plant.id + crop.health responses into our compact format.
-// plant.id v3: result.is_plant.binary, result.classification.suggestions[]
-// crop.health v1: result.is_plant.binary, result.crop?.suggestions[], result.disease?.suggestions[]
-function shapeResult(plantIdRaw, cropHealthRaw) {
-  const pidResult = plantIdRaw?.result || {};
-  const chResult = cropHealthRaw?.result || {};
+// Shape the plant.id v3 response (with health=all) into our compact format.
+// With health=all in the request body, plant.id returns:
+//   result.is_plant.binary
+//   result.is_healthy.binary
+//   result.classification.suggestions[]
+//   result.disease.suggestions[]
+// All in a single response.
+function shapeResult(plantIdRaw, _cropHealthRaw_unused) {
+  const result = plantIdRaw?.result || {};
 
-  const isPlant = !!pidResult.is_plant?.binary;
+  const isPlant = !!result.is_plant?.binary;
+  const isHealthy = result.is_healthy?.binary !== false; // default healthy if missing
 
-  // Species from plant.id
-  const topSpecies = pidResult.classification?.suggestions?.[0] || null;
+  // Species from plant.id classification
+  const topSpecies = result.classification?.suggestions?.[0] || null;
   const species = topSpecies ? {
     name: topSpecies.name,
     common_name: topSpecies.details?.common_names?.[0] || null,
@@ -315,12 +274,11 @@ function shapeResult(plantIdRaw, cropHealthRaw) {
     description: topSpecies.details?.description?.value || topSpecies.details?.description || null,
   } : null;
 
-  // Diseases from crop.health. The disease suggestions array contains the
-  // pest/disease findings. Filter out very-low-probability noise.
-  const rawDiseases = chResult.disease?.suggestions || [];
+  // Diseases from plant.id health assessment
+  const rawDiseases = result.disease?.suggestions || [];
   const diseases = rawDiseases
-    .filter(s => (s.probability || 0) >= 0.05) // drop very low confidence noise
-    .filter(s => s.details?.is_harmful !== false) // drop explicitly non-harmful classes
+    .filter(s => (s.probability || 0) >= 0.05)
+    .filter(s => s.details?.is_harmful !== false) // drop non-harmful classes (lichen, etc.)
     .slice(0, 5)
     .map(s => ({
       name: s.details?.local_name || s.details?.common_names?.[0] || s.name,
@@ -332,20 +290,6 @@ function shapeResult(plantIdRaw, cropHealthRaw) {
       treatment: s.details?.treatment || null,
       url: s.details?.url || null,
     }));
-
-  // is_healthy: prefer crop.health's signal. If crop.health didn't run, assume healthy.
-  // crop.health's is_healthy is the cleanest signal, but if we don't have it,
-  // we can derive it from whether we found any diseases.
-  let isHealthy;
-  if (chResult.is_healthy != null) {
-    isHealthy = !!chResult.is_healthy?.binary;
-  } else if (cropHealthRaw === null) {
-    // crop.health failed; we have no health signal — default to healthy/unknown
-    isHealthy = true;
-  } else {
-    // crop.health ran but didn't include is_healthy field — infer from diseases
-    isHealthy = diseases.length === 0;
-  }
 
   return { is_plant: isPlant, is_healthy: isHealthy, species, diseases };
 }
