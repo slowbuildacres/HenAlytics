@@ -43,6 +43,8 @@ const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.g
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
+const ageInMonths=(dob)=>{if(!dob)return null;const b=parseLocalDate(dob);if(!b)return null;const n=new Date();return(n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth());};
+const fmtAge=(dob)=>{const m=ageInMonths(dob);if(m==null)return"";if(m<12)return`${m}mo`;const y=Math.floor(m/12);const mm=m%12;return mm===0?`${y}y`:`${y}y ${mm}mo`;};
 const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
 
 const COW_BREEDS=["Angus","Hereford","Holstein","Jersey","Ayrshire","Simmental","Charolais","Longhorn","Dexter","Highland","Brown Swiss","Guernsey","Limousin","Red Angus","Shorthorn","Mixed","Other"];
@@ -1146,7 +1148,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
               );
             })()}
           </div>
-          {animal.dob&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:2,marginLeft:26}}>Born {fmtDate(animal.dob)}</div>}
+          {animal.dob&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:2,marginLeft:26}}>Born {fmtDate(animal.dob)} · {fmtAge(animal.dob)}</div>}
         </div>
         <button onClick={()=>setModal({type:"editAnimal",hobbyId,animalId:animal.id})} style={{background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4}}><Edit3 size={14}/></button>
       </div>

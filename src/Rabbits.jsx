@@ -55,6 +55,8 @@ const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.g
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
+const ageInMonths=(birthdate)=>{if(!birthdate)return null;const b=parseLocalDate(birthdate);if(!b)return null;const n=new Date();return(n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth());};
+const fmtAge=(birthdate)=>{const m=ageInMonths(birthdate);if(m==null)return"";if(m<12)return`${m}mo`;const y=Math.floor(m/12);const mm=m%12;return mm===0?`${y}y`:`${y}y ${mm}mo`;};
 const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
 const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000));
 
@@ -817,7 +819,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
             {animal.hutch && !hideHutchChip && <span style={{fontSize:11,background:palette.leafSoft,padding:"2px 8px",borderRadius:4,color:palette.ink}}>{animal.hutch}</span>}
             {kindleStillUpcoming && <span style={{fontSize:11,background:palette.yolkSoft,padding:"2px 8px",borderRadius:4,color:palette.ink,fontWeight:600}}>🍼 {fmtDate(lastBred.kindleDate)}</span>}
           </div>
-          {animal.birthdate && <div style={{fontSize:11,color:palette.inkSoft,marginTop:2,marginLeft:26}}>Born {fmtDate(animal.birthdate)}</div>}
+          {animal.birthdate && <div style={{fontSize:11,color:palette.inkSoft,marginTop:2,marginLeft:26}}>Born {fmtDate(animal.birthdate)} · {fmtAge(animal.birthdate)}</div>}
         </div>
         <button onClick={()=>setModal({type:"editAnimal",hobbyId,animalId:animal.id})} style={{background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4}} aria-label="Edit"><Edit3 size={14}/></button>
       </div>
