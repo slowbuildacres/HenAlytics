@@ -216,7 +216,6 @@ async function callPlantId(imageBase64) {
       },
       body: JSON.stringify({
         images: [imageBase64], // raw base64, no data: prefix
-        similar_images: false,
       }),
       signal: controller.signal,
     });
