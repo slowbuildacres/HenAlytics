@@ -158,7 +158,7 @@ export default async function handler(req, res) {
   // Short edge cache. Status changes rarely; this keeps the gate snappy
   // without hammering Supabase on every app open. Per-user (auth-scoped),
   // so a CDN won't cross-contaminate users — but keep it private to be safe.
-  res.setHeader('Cache-Control', 'private, max-age=300');
+  res.setHeader('Cache-Control', 'no-store');
 
   return res.status(200).json({
     isSupporter: true,

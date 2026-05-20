@@ -218,6 +218,15 @@ export async function purchaseProduct(productId) {
     // RC returns customerInfo + productIdentifier on success. The webhook
     // will already have credited the supporters table by the time we get
     // here (RC sends webhooks server-to-server BEFORE returning to the app).
+
+    // Refresh supporter status cache so gated features (Standings, etc.)
+    // unlock immediately instead of waiting for the next app launch.
+    try {
+      await refreshSupporterStatus();
+    } catch (e) {
+      console.warn("[iap] refreshSupporterStatus after purchase failed:", e);
+    }
+
     return {
       success: true,
       purchase: result,
@@ -254,6 +263,11 @@ export async function restorePurchases() {
 
   try {
     const result = await _purchases.restorePurchases();
+    try {
+      await refreshSupporterStatus();
+    } catch (e) {
+      console.warn("[iap] refreshSupporterStatus after restore failed:", e);
+    }
     return { success: true, customerInfo: result };
   } catch (e) {
     return { success: false, error: e?.message || "Restore failed" };
@@ -323,5 +337,30 @@ export async function openManageSubscriptions() {
     }
   } catch (e) {
     console.error("[iap] openManageSubscriptions failed:", e);
+  }
+}
+// ============================================================================
+// REFRESH SUPPORTER STATUS — cache buster after purchase/restore
+// ----------------------------------------------------------------------------
+// After a successful purchase or restore, hit /api/supporter-status with
+// cache disabled so the next time the app reads it, the answer is fresh.
+// Without this, gated features (Year-in-Review Standings, etc.) stay locked
+// until the cached "isSupporter: false" response expires.
+// ============================================================================
+async function refreshSupporterStatus() {
+  try {
+    // Lazy-import supabase to avoid circular deps with HomesteadApp.
+    const { supabase } = await import("./supabase");
+    const { data } = await supabase.auth.getSession();
+    const jwt = data?.session?.access_token;
+    if (!jwt) return;
+
+    await fetch("/api/supporter-status", {
+      method: "GET",
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${jwt}` },
+    });
+  } catch (e) {
+    console.warn("[iap] refreshSupporterStatus error:", e);
   }
 }
