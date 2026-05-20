@@ -83,12 +83,14 @@ function Spinner({ size = 16 }) {
 async function captureNativePhoto(source = "camera") {
   try {
     const mod = await import("@capacitor/camera");
-    const { Camera, CameraResultType, CameraSource } = mod;
+    const { Camera } = mod;
+    // Use literal string values for source to avoid enum import issues
+    // ("CAMERA" for camera capture, "PHOTOS" for photo library picker).
     const photo = await Camera.getPhoto({
       quality: 80,
       allowEditing: false,
-      resultType: CameraResultType.Base64,
-      source: source === "camera" ? CameraSource.Camera : CameraSource.Photos,
+      resultType: "base64",
+      source: source === "camera" ? "CAMERA" : "PHOTOS",
       width: 1600,
     });
     return { base64: photo.base64String, dataUrl: `data:image/${photo.format || "jpeg"};base64,${photo.base64String}` };
@@ -642,7 +644,9 @@ function ResultView({ result, photoDataUrl, onScanAnother, onClose }) {
       }}>
         {isHealthy
           ? <><CheckCircle2 size={18} color={palette.success} /><span><strong>Looks healthy.</strong> No disease patterns detected.</span></>
-          : <><AlertCircle size={18} color={palette.warn} /><span><strong>Possible issues detected.</strong> See below.</span></>}
+          : diseases.length > 0
+            ? <><AlertCircle size={18} color={palette.warn} /><span><strong>Possible issues detected.</strong> See below.</span></>
+            : <><AlertCircle size={18} color={palette.warn} /><span><strong>Plant may not be perfectly healthy</strong>, but no specific disease was confidently identified. Try a closer photo of any affected area.</span></>}
       </div>
 
       {/* Diseases */}
