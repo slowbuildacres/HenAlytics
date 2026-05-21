@@ -1279,9 +1279,10 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 43;
+const CURRENT_VERSION = 44;
 
 const WHATS_NEW = [
+  "💰 Real profit & expense tracking on the Sales tab — a new Profit & Expenses card uses FIFO matching (oldest expenses get paid off first by sales, per hobby) to show your actual revenue, total expenses, and net profit. Includes a Profit by hobby bar chart so you can see which hobbies make money and which don't, plus an Unmatched expense backlog list showing money you've spent that hasn't been recouped yet — broken out per hobby. Switch the time window between This month, This quarter, This year, Last 12 months, and All time. One-time infrastructure costs (coops, fencing, etc.) are excluded from the matching so the picture reflects ongoing profitability, not your startup investment.",
   "🌱 Annual plants now have their own pages — tap any annual in your garden's Annuals list to open its detail view. See every planting and harvest for that plant this season, and log actions like spray, fertilize, weed, thin, or transplant — each one dated and saved to that plant's history. Works just like perennials and orchard trees. Your existing plantings were automatically organized into annual records.",
   "🌱 New garden layout: grid view — when you add a Garden Map area you can now lay it out as a grid of rows and columns (great for raised beds and square-foot gardening), instead of pinning plants on a photo. Tap a cell to plant it, tap again to log dates and notes. This is a Supporter early-access feature — Supporters have it now; it opens to everyone soon.",  // GARDEN_GRID
   "🌱 Become a Supporter — the monthly membership now comes with real perks: early access to new hobbies and features about a week before everyone else, a Supporter badge next to your homestead name, and a spot on the supporter wall. Every tier gets the same perks — pick the amount that feels right. The one-time tip is still there too. (The app stays free for everyone, always — Supporters just help keep it that way.)",  // STEP2C_SUPPORTER_COPY

@@ -15,8 +15,9 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney } from "./units.js";
+import { computeFifoStats, resolveWindow, WINDOW_OPTIONS } from "./expenseFifo.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1093,6 +1094,11 @@ export default function SalesPage({ data, update }) {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
 
+  // Profit/expense window — defaults to last 12 months so brand-new homesteads
+  // and long-time users both see something meaningful immediately. Users can
+  // narrow it with the chip selector below the revenue cards.
+  const [profitWindow, setProfitWindow] = useState("twelve_months");
+
   const sales = data.sales || [];
   const customers = data.customers || [];
 
@@ -1210,6 +1216,31 @@ export default function SalesPage({ data, update }) {
     }).sort((a,b) => b.revenue - a.revenue);
   }, [allSales, customers]);
 
+  // ---------------------------------------------------------------------------
+  // FIFO profit/expense stats — per-hobby, infrastructure excluded
+  // ---------------------------------------------------------------------------
+  // Pulls expenses from data.entries[hobbyId] (fed, bedding, fertilized,
+  // supplies, restock) plus structural costs (flock buys, chick cost,
+  // hive cost). Infrastructure is intentionally NOT included — it's one-time
+  // capital and would distort ongoing profitability for years.
+  //
+  // Sales window only filters the SALES side; expenses dated before the
+  // window are still consumable, because FIFO says "this revenue paid off
+  // my oldest unmatched cost," regardless of which window the user picked.
+  const fifoStats = useMemo(() => {
+    const window = resolveWindow(profitWindow, new Date());
+    // Build a synthetic data object that includes legacyEggSales merged into
+    // sales — otherwise old per-flock egg sales wouldn't count toward egg
+    // revenue in the FIFO view, even though they show up in totalRevenue
+    // above. Same merge logic as allSales but at the data shape level.
+    const saleIds = new Set((data.sales || []).map(s => s.id));
+    const mergedSales = [
+      ...(data.sales || []),
+      ...legacyEggSales.filter(s => !saleIds.has(s.id)),
+    ];
+    return computeFifoStats({ ...data, sales: mergedSales }, window);
+  }, [data, legacyEggSales, profitWindow]);
+
   const deleteSale = (id) => {
     update(d => {
       // Snapshot the sale before deletion so we can unwind the brooder
@@ -1288,6 +1319,118 @@ export default function SalesPage({ data, update }) {
           </div>
         ))}
       </div>
+
+      {/* ============================================================== */}
+      {/* Profit & Expenses (FIFO, per-hobby, infrastructure excluded)   */}
+      {/* ============================================================== */}
+      {/* Only show this section if there's actual data to discuss. New
+          users with no expenses and no sales would just see empty zeros,
+          which is more confusing than helpful. */}
+      {(fifoStats.totalRevenue > 0 || fifoStats.totalExpenses > 0 || fifoStats.totalBacklog > 0) && (
+        <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
+          <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8 }}>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,color:palette.ink }}>Profit & expenses</div>
+            <div style={{ display:"flex",gap:4,flexWrap:"wrap" }}>
+              {WINDOW_OPTIONS.map(opt => (
+                <button
+                  key={opt.key}
+                  onClick={() => setProfitWindow(opt.key)}
+                  style={{
+                    padding:"4px 9px",borderRadius:6,fontSize:11,fontWeight:600,fontFamily:FONT_BODY,
+                    background: profitWindow===opt.key ? palette.ink : palette.bgAlt,
+                    color: profitWindow===opt.key ? palette.bg : palette.ink,
+                    border:`1px solid ${palette.line}`,cursor:"pointer",
+                  }}
+                >
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Honest-numbers disclaimer — important: users need to know what
+              this includes and excludes, or the numbers will confuse them. */}
+          <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:12,lineHeight:1.4 }}>
+            FIFO matching: oldest expenses are paid off first by sales, within each hobby.
+            Excludes one-time infrastructure costs (coops, fencing, etc).
+          </div>
+
+          {/* Three headline cards: revenue, expenses, net profit */}
+          <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:14 }}>
+            <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+              <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Revenue</div>
+              <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.leaf,lineHeight:1 }}>{fmtMoney(fifoStats.totalRevenue)}</div>
+            </div>
+            <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+              <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Expenses</div>
+              <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.accent,lineHeight:1 }}>{fmtMoney(fifoStats.totalExpenses)}</div>
+            </div>
+            <div style={{ flex:"1 1 100px",background:palette.bgAlt,borderRadius:8,padding:"10px 12px" }}>
+              <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Net profit</div>
+              <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:fifoStats.netProfit>=0?palette.leaf:palette.accent,lineHeight:1 }}>{fmtMoney(fifoStats.netProfit)}</div>
+            </div>
+          </div>
+
+          {/* Per-hobby profit bar chart — only when 2+ hobbies have activity.
+              Single-hobby users would see a one-bar chart which adds no info. */}
+          {fifoStats.byHobby.length >= 2 && (
+            <div style={{ marginBottom:14 }}>
+              <div style={{ fontSize:12,fontWeight:600,color:palette.inkSoft,marginBottom:8,textTransform:"uppercase",letterSpacing:0.5 }}>Profit by hobby</div>
+              <ResponsiveContainer width="100%" height={Math.max(140, fifoStats.byHobby.length * 32)}>
+                <BarChart
+                  data={fifoStats.byHobby.map(h => ({
+                    name: `${h.emoji} ${h.label}`,
+                    profit: parseFloat(h.profit.toFixed(2)),
+                  }))}
+                  layout="vertical"
+                  margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
+                >
+                  <XAxis type="number" stroke={palette.inkSoft} fontSize={10} tickFormatter={v=>`$${v}`} />
+                  <YAxis type="category" dataKey="name" stroke={palette.inkSoft} fontSize={11} width={110} />
+                  <Tooltip
+                    contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }}
+                    formatter={v=>[fmtMoney(v),"Net profit"]}
+                  />
+                  <Bar dataKey="profit" radius={[0,4,4,0]}>
+                    {fifoStats.byHobby.map((h, i) => (
+                      <Cell
+                        key={i}
+                        fill={h.profit >= 0 ? palette.leaf : palette.accent}
+                      />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Per-hobby unmatched backlog — only when backlog actually exists. 
+              This is the "money in, not yet recouped" view. Honest and useful:
+              tells you which hobby is the cash drag. Each row shows hobby +
+              dollar amount of unmatched expenses. */}
+          {fifoStats.backlog.length > 0 && (
+            <div>
+              <div style={{ fontSize:12,fontWeight:600,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.5 }}>
+                Unmatched expense backlog
+              </div>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:8,lineHeight:1.4 }}>
+                Money spent that hasn't been recouped by sales yet — broken out per hobby.
+              </div>
+              <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+                {fifoStats.backlog.map(b => (
+                  <div key={b.hobbyId} style={{
+                    display:"flex",justifyContent:"space-between",alignItems:"center",
+                    padding:"8px 10px",background:palette.bgAlt,borderRadius:6,fontSize:13,
+                  }}>
+                    <span>{b.emoji} {b.label}</span>
+                    <strong style={{ color:palette.accent }}>{fmtMoney(b.unmatched)}</strong>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Revenue by month chart */}
       {/* Revenue by month chart — only when at least one month has revenue */}
