@@ -1,29 +1,31 @@
 import { apiUrl } from './apiBase.js';
 // ============================================================================
-// IAP MANAGER — RevenueCat wrapper for Apple In-App Purchases
+// IAP MANAGER — RevenueCat wrapper for iOS + Android In-App Purchases
 // ----------------------------------------------------------------------------
 // This module is the iOS/Android equivalent of the Stripe checkout flow in
 // HomesteadApp.jsx (`startCheckout`). It wraps RevenueCat's Capacitor SDK to
 // give us a clean async API for: initialization, fetching products, making
 // purchases, restoring purchases, and identifying the user.
 //
-// Why RevenueCat instead of raw StoreKit:
+// Why RevenueCat instead of raw StoreKit / Google Play Billing:
 //   - RevenueCat handles receipt validation server-side for free at our scale
 //     (free up to $2.5K/mo MTR; we're far below).
-//   - One API key works across iOS + Android, so adding Android later is cheap.
+//   - One SDK works across iOS + Android; only the API key differs per platform.
 //   - Built-in webhooks → we get RC events → our /api/revenuecat-webhook →
 //     same `supporters` table our Stripe flow already writes to.
 //   - Subscription state (active/canceled/past_due/grace) is computed by RC
-//     instead of us having to track Apple's notification types.
+//     instead of us having to track Apple notification types or Play RTDN.
 //
 // Architecture:
 //   - Web (non-native): this module is a NO-OP. The web SupportModal continues
 //     to use Stripe Checkout. RevenueCat doesn't support web purchases anyway.
 //   - Native (iOS/Android): RC initializes on app load (after auth), purchases
-//     are made through Apple's purchase sheet, RC webhooks tell our server
-//     when subscriptions renew/cancel/fail, our server updates `supporters`.
+//     are made through the platform's native purchase sheet, RC webhooks tell
+//     our server when subscriptions renew/cancel/fail, our server updates
+//     `supporters`.
 //
-// Product IDs (must match App Store Connect EXACTLY — Apple is case-sensitive):
+// Product IDs (must match BOTH App Store Connect AND Google Play Console
+// EXACTLY — both stores are case-sensitive):
 //   Consumable:
 //     com.henalytics.app.tip.one_time      — $4.99 one-time tip
 //   Auto-renewable subscriptions (in subscription group "Supporter Tiers"):
@@ -47,11 +49,15 @@ import { apiUrl } from './apiBase.js';
 //
 // Required setup (already done if you're reading this in production):
 //   1. npm install @revenuecat/purchases-capacitor
-//   2. npx cap sync ios
-//   3. Set VITE_REVENUECAT_IOS_API_KEY in Vercel env vars
-//   4. Create the 5 products in App Store Connect with the IDs above
-//   5. Sign Apple's "Paid Applications" agreement
+//   2. npx cap sync ios && npx cap sync android
+//   3. Set VITE_REVENUECAT_IOS_API_KEY and VITE_REVENUECAT_ANDROID_API_KEY
+//      in Vercel env vars (separate keys, one per platform)
+//   4. Create all products in App Store Connect AND Google Play Console with
+//      the IDs above. Google Play requires lowercase-only — luckily ours are.
+//   5. Sign Apple's "Paid Applications" agreement; complete Google Play
+//      Monetization setup
 //   6. Connect RevenueCat to App Store Connect (Issuer ID + Auth Key + SubKey)
+//      AND to Google Play (service account JSON + Pub/Sub Admin role)
 //   7. Set up RC webhook → https://henalytics.com/api/revenuecat-webhook
 // ============================================================================
 
@@ -134,12 +140,16 @@ export async function initIap(supabaseUserId) {
       const mod = await import("@revenuecat/purchases-capacitor");
       _purchases = mod.Purchases;
 
-      // API key. Stored as VITE_ env var so Vite inlines it at build time.
-      // RevenueCat keys are intended to be public — they identify the app,
-      // not the merchant. Receipt validation happens server-side at RC.
-      const apiKey = import.meta.env.VITE_REVENUECAT_IOS_API_KEY;
+      // API key — RevenueCat issues a SEPARATE key per platform (iOS vs.
+      // Android). Both are public (they identify the app, not the merchant)
+      // and stored as VITE_ env vars so Vite inlines them at build time.
+      // Detect platform at runtime so the same JS bundle works on both stores.
+      const platform = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "";
+      const apiKey = platform === "android"
+        ? import.meta.env.VITE_REVENUECAT_ANDROID_API_KEY
+        : import.meta.env.VITE_REVENUECAT_IOS_API_KEY;
       if (!apiKey) {
-        console.warn("[iap] VITE_REVENUECAT_IOS_API_KEY not set — IAP disabled");
+        console.warn(`[iap] RevenueCat API key not set for platform "${platform}" — IAP disabled`);
         return;
       }
 
@@ -324,26 +334,32 @@ export async function hasActiveSubscription() {
 }
 
 // ============================================================================
-// OPEN MANAGE SUBSCRIPTIONS — iOS-only deep link
+// OPEN MANAGE SUBSCRIPTIONS — iOS + Android deep link
 // ----------------------------------------------------------------------------
 // Apple requires that users can manage their subscriptions from inside the app
-// OR from iOS Settings. We use Apple's deep link to the subscriptions screen
-// so users don't have to hunt through Settings.
+// OR from iOS Settings. Google Play has a similar (less strict) expectation.
+// We deep-link directly to each platform's subscription management screen so
+// users don't have to hunt through Settings.
 //
-// Note: we deep-link directly via itms-apps:// instead of using RC's
-// showManageSubscriptions API, because the latter is not implemented in
-// @revenuecat/purchases-capacitor v13.x on iOS (it throws "not implemented
-// on ios" at runtime). The itms-apps:// URL is what RC's docs say to use
-// as the fallback, and it opens the same App Store subscriptions screen.
+// Note: we deep-link via store URLs instead of using RC's showManageSubscriptions
+// API, because the latter is not implemented in @revenuecat/purchases-capacitor
+// v13.x on iOS (it throws "not implemented on ios" at runtime). The store
+// URLs are what RC's docs recommend as the fallback and open the same screens.
+//
+// iOS:     itms-apps://apps.apple.com/account/subscriptions
+// Android: https://play.google.com/store/account/subscriptions?sku={productId}&package={packageName}
+//          (sku + package can be omitted; Google then shows the user's full
+//          subscription list, which is what we want here.)
 // ============================================================================
 export async function openManageSubscriptions() {
   if (!isNative()) return;
   try {
-    // Apple's documented deep link to the subscriptions management screen.
-    // Works on iOS 15+. Older iOS falls back to a regular App Store launch.
-    const url = "itms-apps://apps.apple.com/account/subscriptions";
-    // We use window.open with _system to hand off to the system browser/App
-    // Store, the same pattern HomesteadApp uses for openExternalUrl on native.
+    const platform = (window.Capacitor && window.Capacitor.getPlatform && window.Capacitor.getPlatform()) || "";
+    const url = platform === "android"
+      ? "https://play.google.com/store/account/subscriptions"
+      : "itms-apps://apps.apple.com/account/subscriptions";
+    // We use window.open with _system to hand off to the system browser/store,
+    // the same pattern HomesteadApp uses for openExternalUrl on native.
     if (typeof window !== "undefined" && window.open) {
       window.open(url, "_system");
     }
