@@ -891,14 +891,9 @@ export async function uploadPhoto(user, entryId, file) {
     throw new Error('You must be signed in to upload photos.');
   }
 
-  // Photos belong to the homestead, not the individual user. This ensures
-  // farmhand-uploaded photos appear for the owner and vice versa.
-  const homesteadId = readActiveHomesteadId();
-  const prefix = homesteadId || user.id; // fallback for edge cases
-
   const blob = await compressImage(file);
   const random = Math.random().toString(36).slice(2, 8);
-  const path = `${prefix}/${entryId}-${random}.jpg`;
+  const path = `${user.id}/${entryId}-${random}.jpg`;
 
   const { error } = await supabase.storage
     .from('photos')

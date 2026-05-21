@@ -78,6 +78,7 @@ import {
   listMyHomesteads, setActiveHomestead,
 } from "./sync.js";
 import { apiUrl } from './apiBase.js';
+import { useNativeBackButton } from "./useNativeBackButton.js";
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
   timelineOf as animalTimelineOf, uploadAnimalPhoto, resolveAnimalPhotoUrl,
@@ -2456,16 +2457,39 @@ export default function HomesteadApp() {
   // Onboarding wizard step is hoisted here (rather than living inside
   // ...rest of your useState lines...
 
-  // Track daily app opens (web + native)
-  useEffect(() => {
-    try {
-      const today = new Date().toISOString().slice(0, 10);
-      if (localStorage.getItem('last_open') === today) return;
-      localStorage.setItem('last_open', today);
-      const platform = window.Capacitor?.getPlatform?.() || 'web';
-      supabase.from('app_opens').insert({ platform });
-    } catch {}
-  }, []);
+// Android hardware back button. No-op on web and iOS.
+useNativeBackButton(() => {
+  // Onboarding: step back through wizard before doing anything else.
+  if (onboardingStep > 0) {
+    setOnboardingStep((s) => Math.max(0, s - 1));
+    return true;
+  }
+  // Modals / dismissible overlays — close the topmost first.
+  if (modal) { setModal(null); return true; }
+  if (showWhatsNew) { setShowWhatsNew(false); return true; }
+  if (showAppStoreLaunch) { setShowAppStoreLaunch(false); return true; }
+  if (showAccountNudge) { setShowAccountNudge(false); return true; }
+  if (showSupporterThanks) { setShowSupporterThanks(false); return true; }
+  if (showMilestone) { setShowMilestone(false); return true; }
+  if (showTutorialPrompt) { setShowTutorialPrompt(false); return true; }
+  // Don't auto-dismiss showTutorial — has its own exit UI.
+  if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
+  // Sub-page → home.
+  if (page !== "home") { setPage("home"); return true; }
+  // Home, nothing open — exit the app.
+  return false;
+});
+
+// Track daily app opens (web + native)
+useEffect(() => {
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    if (localStorage.getItem('last_open') === today) return;
+    localStorage.setItem('last_open', today);
+    const platform = window.Capacitor?.getPlatform?.() || 'web';
+    supabase.from('app_opens').insert({ platform });
+  } catch {}
+}, []);
   // Onboarding wizard step is hoisted here (rather than living inside
   // OnboardingWizard) because the wizard unmounts whenever a modal opens —
   // e.g. when the account-choice step opens AuthModal. Without hoisting,
