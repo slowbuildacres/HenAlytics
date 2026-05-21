@@ -78,7 +78,6 @@ import {
   listMyHomesteads, setActiveHomestead,
 } from "./sync.js";
 import { apiUrl } from './apiBase.js';
-import { useNativeBackButton } from "./useNativeBackButton.js";
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
   timelineOf as animalTimelineOf, uploadAnimalPhoto, resolveAnimalPhotoUrl,
@@ -2457,29 +2456,6 @@ export default function HomesteadApp() {
   // Onboarding wizard step is hoisted here (rather than living inside
   // ...rest of your useState lines...
 
-// Android hardware back button. No-op on web and iOS.
-useNativeBackButton(() => {
-  // Onboarding: step back through wizard before doing anything else.
-  if (onboardingStep > 0) {
-    setOnboardingStep((s) => Math.max(0, s - 1));
-    return true;
-  }
-  // Modals / dismissible overlays — close the topmost first.
-  if (modal) { setModal(null); return true; }
-  if (showWhatsNew) { setShowWhatsNew(false); return true; }
-  if (showAppStoreLaunch) { setShowAppStoreLaunch(false); return true; }
-  if (showAccountNudge) { setShowAccountNudge(false); return true; }
-  if (showSupporterThanks) { setShowSupporterThanks(false); return true; }
-  if (showMilestone) { setShowMilestone(false); return true; }
-  if (showTutorialPrompt) { setShowTutorialPrompt(false); return true; }
-  // Don't auto-dismiss showTutorial — has its own exit UI.
-  if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
-  // Sub-page → home.
-  if (page !== "home") { setPage("home"); return true; }
-  // Home, nothing open — exit the app.
-  return false;
-});
-
 // Track daily app opens (web + native)
 useEffect(() => {
   try {
@@ -3160,17 +3136,27 @@ useEffect(() => {
   //   2. Sub-pages — return to home
   //   3. Fall through — Capacitor exits the app (Android default)
   // On iOS and web this hook is a no-op (no hardware back button).
-  useNativeBackButton(React.useCallback(() => {
-    if (modal) { setModal(null); return true; }
-    if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
-    if (showTutorial) { setShowTutorial(false); return true; }
-    if (showTutorialPrompt) { setShowTutorialPrompt(false); return true; }
-    if (showWhatsNew) { setShowWhatsNew(false); return true; }
-    if (showSupporterThanks) { setShowSupporterThanks(false); return true; }
-    if (page !== "home") { setPage("home"); return true; }
-    return false;
-  }, [modal, hobbyMenuOpen, showTutorial, showTutorialPrompt, showWhatsNew, showSupporterThanks, page]));
-
+useNativeBackButton(React.useCallback(() => {
+  // Onboarding: step back through wizard before doing anything else.
+  if (onboardingStep > 0) {
+    setOnboardingStep((s) => Math.max(0, s - 1));
+    return true;
+  }
+  // Modals / dismissible overlays — close the topmost first.
+  if (modal) { setModal(null); return true; }
+  if (showWhatsNew) { setShowWhatsNew(false); return true; }
+  if (showAppStoreLaunch) { setShowAppStoreLaunch(false); return true; }
+  if (showAccountNudge) { setShowAccountNudge(false); return true; }
+  if (showSupporterThanks) { setShowSupporterThanks(false); return true; }
+  if (showMilestone) { setShowMilestone(false); return true; }
+  if (showTutorialPrompt) { setShowTutorialPrompt(false); return true; }
+  // Don't auto-dismiss showTutorial — has its own exit UI.
+  if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
+  // Sub-page → home.
+  if (page !== "home") { setPage("home"); return true; }
+  // Home, nothing open — exit the app.
+  return false;
+}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page]));
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
