@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef } from "react";
+
 import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
   Skull, Bird, Home, BarChart3, X, ChevronDown, ChevronUp, Calendar, DollarSign, Sparkles,
@@ -2452,6 +2453,19 @@ export default function HomesteadApp() {
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
+  // Onboarding wizard step is hoisted here (rather than living inside
+  // ...rest of your useState lines...
+
+  // Track daily app opens (web + native)
+  useEffect(() => {
+    try {
+      const today = new Date().toISOString().slice(0, 10);
+      if (localStorage.getItem('last_open') === today) return;
+      localStorage.setItem('last_open', today);
+      const platform = window.Capacitor?.getPlatform?.() || 'web';
+      supabase.from('app_opens').insert({ platform });
+    } catch {}
+  }, []);
   // Onboarding wizard step is hoisted here (rather than living inside
   // OnboardingWizard) because the wizard unmounts whenever a modal opens —
   // e.g. when the account-choice step opens AuthModal. Without hoisting,
