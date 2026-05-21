@@ -363,6 +363,12 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
 export async function loadHomestead(user) {
   if (user && isSupabaseConfigured) {
     try {
+      // Force supabase-js to settle its internal auth state before the
+      // first PostgREST request. Without this, requests fired immediately
+      // after a SIGNED_IN event can ship before the access token is
+      // attached, causing a 401 → CORS-shaped "access control" failure
+      // (Safari) on first load.
+      await supabase.auth.getSession();
       const { id, role } = await ensureHomestead(user.id);
       writeActiveHomesteadId(id);
       const { data: cloud, updatedAt } = await readCloudHomesteadMeta(id);
