@@ -419,7 +419,6 @@ export async function loadHomestead(user) {
         msg.includes('refresh token') ||
         msg.includes('jwt') ||
         msg.includes('not authenticated') ||
-        msg.includes('access control') ||
         (e && (e.status === 401 || e.status === 403));
       // Owner-guarded read: only fall back to local data that actually
       // belongs to THIS user. If the local mirror is a different account's
