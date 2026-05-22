@@ -998,6 +998,27 @@ function CustomerModal({ customer, onSave, onClose }) {
 // ============================================================================
 // SALE ROW
 // ============================================================================
+function ExpenseRow({ expense, hobbies, onEdit, onDelete }) {
+  const hobby = (hobbies || []).find(h => h.id === expense.hobbyId);
+  const hobbyLabel = hobby ? hobby.name : "General overhead";
+  return (
+    <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"#FBE5DE",border:`1.5px solid ${palette.accent}40`,borderRadius:10 }}>
+      <div style={{ fontSize:22,flexShrink:0 }}>💸</div>
+      <div style={{ flex:1,minWidth:0 }}>
+        <div style={{ fontWeight:600,fontSize:14,color:palette.ink,display:"flex",alignItems:"center",gap:8 }}>
+          −{fmtMoney(expense.amount)}
+          <span style={{ fontSize:11,background:palette.accent+"25",color:palette.ink,padding:"1px 6px",borderRadius:4,fontWeight:500 }}>{expense.category || "Expense"}</span>
+        </div>
+        <div style={{ fontSize:12,color:palette.inkSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>
+          {fmtDate(expense.date)} · {hobbyLabel}{expense.note ? ` · ${expense.note}` : ""}
+        </div>
+      </div>
+      <button onClick={onEdit} aria-label="Edit expense" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Edit3 size={16}/></button>
+      <button onClick={onDelete} aria-label="Delete expense" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Trash2 size={16}/></button>
+    </div>
+  );
+}
+
 function SaleRow({ sale, customers, onEdit, onDelete }) {
   const meta = HOBBY_META[sale.hobbyType] || HOBBY_META.other;
   const customer = customers.find(c => c.id === sale.buyerId);
@@ -1619,7 +1640,7 @@ export default function SalesPage({ data, update }) {
 
       {/* Filter + log */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8 }}>
-        <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>Sales log</div>
+        <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>Sales &amp; expenses log</div>
         <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
           {availableTypes.map(t => (
             <button key={t} onClick={() => setFilterType(t)} style={{
@@ -1634,30 +1655,64 @@ export default function SalesPage({ data, update }) {
         </div>
       </div>
 
-      {filtered.length === 0 ? (
-        <div style={{ padding:32,background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft }}>
-          {allSales.length === 0 ? (
-            <>
-              <div style={{ fontSize:32,marginBottom:10 }}>💰</div>
-              <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:6 }}>No sales logged yet</div>
-              <div style={{ fontSize:13,marginBottom:14 }}>Tap "Log sale" to record your first sale.</div>
-              <Btn onClick={() => setShowAddSale(true)}>+ Log your first sale</Btn>
-            </>
-          ) : "No sales for this category."}
-        </div>
-      ) : (
-        <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
-          {filtered.map(sale => (
-            <SaleRow
-              key={sale.id}
-              sale={sale}
-              customers={customers}
-              onEdit={() => setEditingSale(sale)}
-              onDelete={() => deleteSale(sale.id)}
-            />
-          ))}
-        </div>
-      )}
+      {(() => {
+        // Merge sales + expenses into a single date-sorted timeline.
+        // Sale.hobbyType maps to a hobby id via SALE_TO_HOBBY for filter matching.
+        const allExpenses = (data.expenses || []);
+        const filteredExpenses = filterType === "all"
+          ? allExpenses
+          : allExpenses.filter(ex => {
+              // filterType is a hobbyType (e.g. "eggs"); map back to hobbyId for expense matching.
+              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
+              return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
+            });
+        const merged = [
+          ...filtered.map(s => ({ kind: "sale", item: s, date: s.date || "" })),
+          ...filteredExpenses.map(e => ({ kind: "expense", item: e, date: e.date || "" })),
+        ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+        if (merged.length === 0) {
+          return (
+            <div style={{ padding:32,background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft }}>
+              {allSales.length === 0 && allExpenses.length === 0 ? (
+                <>
+                  <div style={{ fontSize:32,marginBottom:10 }}>💰</div>
+                  <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:6 }}>Nothing logged yet</div>
+                  <div style={{ fontSize:13,marginBottom:14 }}>Tap "Log sale" or "Log expense" to get started.</div>
+                  <Btn onClick={() => setShowAddSale(true)}>+ Log your first sale</Btn>
+                </>
+              ) : "Nothing in this category."}
+            </div>
+          );
+        }
+        return (
+          <div style={{ display:"flex",flexDirection:"column",gap:8,marginBottom:20 }}>
+            {merged.map(row => row.kind === "sale" ? (
+              <SaleRow
+                key={"s:" + row.item.id}
+                sale={row.item}
+                customers={customers}
+                onEdit={() => setEditingSale(row.item)}
+                onDelete={() => deleteSale(row.item.id)}
+              />
+            ) : (
+              <ExpenseRow
+                key={"e:" + row.item.id}
+                expense={row.item}
+                hobbies={data.hobbies}
+                onEdit={() => setEditingExpense(row.item)}
+                onDelete={() => {
+                  if (!confirm("Delete this expense?")) return;
+                  update(d => {
+                    d.expenses = (d.expenses || []).filter(e => e.id !== row.item.id);
+                    return d;
+                  });
+                }}
+              />
+            ))}
+          </div>
+        );
+      })()}
 
       {/* Farm Stand profit section */}
       {allSales.filter(s=>s.hobbyType==="farmstand").length > 0 && (() => {
