@@ -1112,6 +1112,73 @@ const EXPENSE_CATEGORIES = [
   "Infrastructure", "Supplies", "Other",
 ];
 
+// Recurrence options for expenses. Mirrors the calendar's set so users see a
+// familiar interface. "none" stores the expense with no `recurrence` field so
+// pre-existing one-off expenses stay one-offs.
+const RECUR_OPTIONS = [
+  { id: "none",     label: "Does not repeat" },
+  { id: "daily",    label: "Daily" },
+  { id: "weekly",   label: "Weekly" },
+  { id: "biweekly", label: "Every 2 weeks" },
+  { id: "monthly",  label: "Monthly" },
+  { id: "yearly",   label: "Yearly" },
+];
+
+// Expand recurring expense templates into virtual occurrences. A non-recurring
+// expense passes through unchanged. A recurring expense produces a virtual
+// occurrence for each matching date from its anchor date forward, bounded by
+// recurEnd (if set) or a 24-month horizon. Each virtual occurrence carries
+// _parentId so callers can route edit/delete to the template.
+function addMonthsIso(isoStr, months) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  const base = new Date(y, (m - 1) + months, d);
+  if (base.getDate() !== d) base.setDate(0);
+  return isoDate(base);
+}
+function addDaysIso(isoStr, days) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  return isoDate(new Date(y, m - 1, d + days));
+}
+function isoDate(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+export function expandRecurringExpenses(expenses) {
+  const out = [];
+  const today = new Date();
+  const horizon = isoDate(new Date(today.getFullYear() + 2, today.getMonth(), today.getDate()));
+  for (const e of (expenses || [])) {
+    if (!e || !e.recurrence || e.recurrence === "none") {
+      out.push(e);
+      continue;
+    }
+    const skipped = new Set(Array.isArray(e.skippedDates) ? e.skippedDates : []);
+    const stop = (e.recurEnd && e.recurEnd < horizon) ? e.recurEnd : horizon;
+    let n = 0;
+    let guard = 0;
+    while (guard < 1000) {
+      let cursor;
+      if (e.recurrence === "daily") cursor = addDaysIso(e.date, n);
+      else if (e.recurrence === "weekly") cursor = addDaysIso(e.date, n * 7);
+      else if (e.recurrence === "biweekly") cursor = addDaysIso(e.date, n * 14);
+      else if (e.recurrence === "monthly") cursor = addMonthsIso(e.date, n);
+      else if (e.recurrence === "yearly") cursor = addMonthsIso(e.date, n * 12);
+      else { cursor = e.date; }
+      if (cursor > stop) break;
+      if (!skipped.has(cursor)) {
+        out.push({ ...e, date: cursor, _parentId: e.id, _occKey: `${e.id}@${cursor}` });
+      }
+      if (!["daily", "weekly", "biweekly", "monthly", "yearly"].includes(e.recurrence)) break;
+      n += 1;
+      guard += 1;
+    }
+  }
+  return out;
+}
+
+
 function AddExpenseModal({ data, update, onClose, existingExpense }) {
   const isEdit = !!existingExpense;
   const visibleHobbies = (data.hobbies || []).filter(h => !h.hidden);
@@ -1121,6 +1188,8 @@ function AddExpenseModal({ data, update, onClose, existingExpense }) {
   const [category, setCategory] = useState(existingExpense?.category || "Feed");
   const [hobbyId, setHobbyId] = useState(existingExpense?.hobbyId || "");
   const [note, setNote] = useState(existingExpense?.note || "");
+  const [recurrence, setRecurrence] = useState(existingExpense?.recurrence || "none");
+  const [recurEnd, setRecurEnd] = useState(existingExpense?.recurEnd || "");
   const [error, setError] = useState("");
 
   const save = () => {
@@ -1136,6 +1205,17 @@ function AddExpenseModal({ data, update, onClose, existingExpense }) {
       note: note.trim(),
       created: existingExpense?.created || Date.now(),
     };
+    // Series-only recurrence: editing applies to the whole series. Step 3b
+    // will add per-occurrence skip and detach-to-standalone.
+    if (recurrence && recurrence !== "none") {
+      expense.recurrence = recurrence;
+      if (recurEnd) expense.recurEnd = recurEnd;
+      // Preserve existing skippedDates across edits.
+      if (existingExpense?.skippedDates) expense.skippedDates = existingExpense.skippedDates;
+    } else {
+      delete expense.recurrence;
+      delete expense.recurEnd;
+    }
     update((d) => {
       if (!Array.isArray(d.expenses)) d.expenses = [];
       if (isEdit) {
@@ -1215,6 +1295,24 @@ function AddExpenseModal({ data, update, onClose, existingExpense }) {
           placeholder="20lb layer pellets at TSC"
         />
       </Field>
+
+      <Field label="Repeats">
+        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+          {RECUR_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+        </select>
+      </Field>
+
+      {recurrence !== "none" && (
+        <Field label="End date (optional)">
+          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+        </Field>
+      )}
+
+      {recurrence !== "none" && isEdit && (
+        <div style={{ fontSize:12,color:palette.inkSoft,marginTop:-6,marginBottom:10,fontStyle:"italic" }}>
+          Editing or deleting affects the whole repeating series.
+        </div>
+      )}
 
       {error && (
         <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>
@@ -1658,10 +1756,10 @@ export default function SalesPage({ data, update }) {
       {(() => {
         // Merge sales + expenses into a single date-sorted timeline.
         // Sale.hobbyType maps to a hobby id via SALE_TO_HOBBY for filter matching.
-        const allExpenses = (data.expenses || []);
+        const allExpensesExpanded = expandRecurringExpenses(data.expenses || []);
         const filteredExpenses = filterType === "all"
-          ? allExpenses
-          : allExpenses.filter(ex => {
+          ? allExpensesExpanded
+          : allExpensesExpanded.filter(ex => {
               // filterType is a hobbyType (e.g. "eggs"); map back to hobbyId for expense matching.
               const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
               return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
@@ -1674,7 +1772,7 @@ export default function SalesPage({ data, update }) {
         if (merged.length === 0) {
           return (
             <div style={{ padding:32,background:palette.card,border:`1.5px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft }}>
-              {allSales.length === 0 && allExpenses.length === 0 ? (
+              {allSales.length === 0 && allExpensesExpanded.length === 0 ? (
                 <>
                   <div style={{ fontSize:32,marginBottom:10 }}>💰</div>
                   <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:6 }}>Nothing logged yet</div>
@@ -1697,14 +1795,30 @@ export default function SalesPage({ data, update }) {
               />
             ) : (
               <ExpenseRow
-                key={"e:" + row.item.id}
+                key={"e:" + (row.item._occKey || row.item.id)}
                 expense={row.item}
                 hobbies={data.hobbies}
-                onEdit={() => setEditingExpense(row.item)}
+                onEdit={() => {
+                  // Virtual instance from a recurring template: open the
+                  // template (parent) so user can edit the series.
+                  const parentId = row.item._parentId;
+                  if (parentId) {
+                    const parent = (data.expenses || []).find(x => x.id === parentId);
+                    if (parent) setEditingExpense(parent);
+                  } else {
+                    setEditingExpense(row.item);
+                  }
+                }}
                 onDelete={() => {
-                  if (!confirm("Delete this expense?")) return;
+                  const parentId = row.item._parentId;
+                  const isRecurringInstance = !!parentId;
+                  const msg = isRecurringInstance
+                    ? "Delete this recurring expense? This removes the entire series."
+                    : "Delete this expense?";
+                  if (!confirm(msg)) return;
                   update(d => {
-                    d.expenses = (d.expenses || []).filter(e => e.id !== row.item.id);
+                    const removeId = parentId || row.item.id;
+                    d.expenses = (d.expenses || []).filter(e => e.id !== removeId);
                     return d;
                   });
                 }}

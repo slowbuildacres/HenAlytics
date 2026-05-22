@@ -114,6 +114,57 @@ const EXPENSE_ACTIONS = new Set([
 //   5. hobby.animals[].purchaseCost  (livestock — if/when that field exists)
 //
 // Note: this is read-only. We never mutate input data.
+
+// Expand recurring expense templates into virtual occurrences. Mirrors the
+// expansion logic in Sales.jsx but kept local so this leaf module imports
+// nothing. Each virtual occurrence carries _parentId for traceability.
+function _addMonthsIsoExp(isoStr, months) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  const base = new Date(y, (m - 1) + months, d);
+  if (base.getDate() !== d) base.setDate(0);
+  return _isoDateExp(base);
+}
+function _addDaysIsoExp(isoStr, days) {
+  const [y, m, d] = isoStr.split("-").map(Number);
+  return _isoDateExp(new Date(y, m - 1, d + days));
+}
+function _isoDateExp(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+function _expandRecurringExpenses(expenses) {
+  const out = [];
+  const today = new Date();
+  const horizon = _isoDateExp(new Date(today.getFullYear() + 2, today.getMonth(), today.getDate()));
+  for (const e of (expenses || [])) {
+    if (!e || !e.recurrence || e.recurrence === "none") {
+      out.push(e);
+      continue;
+    }
+    const skipped = new Set(Array.isArray(e.skippedDates) ? e.skippedDates : []);
+    const stop = (e.recurEnd && e.recurEnd < horizon) ? e.recurEnd : horizon;
+    let n = 0;
+    let guard = 0;
+    while (guard < 1000) {
+      let cursor;
+      if (e.recurrence === "daily") cursor = _addDaysIsoExp(e.date, n);
+      else if (e.recurrence === "weekly") cursor = _addDaysIsoExp(e.date, n * 7);
+      else if (e.recurrence === "biweekly") cursor = _addDaysIsoExp(e.date, n * 14);
+      else if (e.recurrence === "monthly") cursor = _addMonthsIsoExp(e.date, n);
+      else if (e.recurrence === "yearly") cursor = _addMonthsIsoExp(e.date, n * 12);
+      else { cursor = e.date; }
+      if (cursor > stop) break;
+      if (!skipped.has(cursor)) out.push({ ...e, date: cursor });
+      if (!["daily", "weekly", "biweekly", "monthly", "yearly"].includes(e.recurrence)) break;
+      n += 1;
+      guard += 1;
+    }
+  }
+  return out;
+}
+
 export function extractHobbyExpenses(data, hobbyId) {
   const out = [];
   if (!data || !hobbyId) return out;
@@ -197,7 +248,7 @@ export function extractHobbyExpenses(data, hobbyId) {
   // a matching hobbyId are pulled into this hobby's FIFO pool; entries
   // with no hobbyId are treated as general overhead (handled elsewhere
   // by computeFifoStats, not here).
-  const userExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+  const userExpenses = _expandRecurringExpenses(Array.isArray(data.expenses) ? data.expenses : []);
   for (const ex of userExpenses) {
     if (ex.hobbyId !== hobbyId) continue;
     const cost = Number(ex.amount) || 0;
@@ -218,7 +269,7 @@ export function extractHobbyExpenses(data, hobbyId) {
 // hobby for FIFO matching, so we subtract them from netProfit as a
 // flat overhead deduction.
 export function generalOverheadTotal(data, window) {
-  const userExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+  const userExpenses = _expandRecurringExpenses(Array.isArray(data.expenses) ? data.expenses : []);
   let total = 0;
   for (const ex of userExpenses) {
     if (ex.hobbyId) continue; // hobby-attributed expenses handled by extractHobbyExpenses
