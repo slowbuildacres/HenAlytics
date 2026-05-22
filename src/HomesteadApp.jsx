@@ -5348,30 +5348,59 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
     );
   }
   if (hobby.type === "egg_layers") {
-    // Push 6 — Butcher tile shows up only when at least one flock has birds.
+    // Push 6 — Remove tile shows up only when at least one flock has birds.
     // Without this guard, the modal would render its empty state on tap which
     // is fine but the tile would feel useless. Hiding it keeps the grid tight.
     const hasAnyBirds = (hobby.flocks || []).some((f) => (Number(f.birdCount) || 0) > 0);
+    const builtInTiles = [
+      { action: "fed",            icon: Sun,           label: "Fed",            color: palette.feather },
+      { action: "watered",        icon: Droplet,       label: "Watered",        color: "#3F7CAC" },
+      { action: "free_range",     icon: Bird,          label: "Free Range",     color: palette.leaf },
+      { action: "move_tractor",   icon: Truck,         label: "Move Tractor",   color: palette.feather },
+      { action: "eggs",           icon: Egg,           label: "Eggs Laid",      color: palette.yolk },
+      { action: "sold_eggs",      icon: DollarSign,    label: "Sold Eggs",      color: palette.accent },
+      { action: "bedding",        icon: Archive,       label: "Bedding",        color: palette.featherSoft },
+      { action: "broody",         icon: NotebookPen,   label: "Broody",         color: palette.maple || palette.yolkSoft },
+      { action: "death",          icon: Skull,         label: "Report Death",   color: palette.accent },
+      { action: "infrastructure", icon: Hammer,        label: "Infrastructure", color: palette.feather },
+      { action: "note",           icon: NotebookPen,   label: "Note",           color: palette.inkSoft },
+    ];
+    const visibleBuiltIns = builtInTiles.filter(t => !isQuickLogHidden(hobby, t.action));
+    const customLogs = readCustomLogs(hobby);
     return (
       <div style={grid}>
-        <Tile icon={Sun} label="Fed" color={palette.feather} onClick={() => setModal({ type: "log", action: "fed" })} />
-        <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
-        <Tile icon={Bird} label="Free Range" color={palette.leaf} onClick={() => setModal({ type: "log", action: "free_range" })} />
-        <Tile icon={Truck} label="Move Tractor" color={palette.feather} onClick={() => setModal({ type: "log", action: "move_tractor" })} />
-        <Tile icon={Egg} label="Eggs Laid" color={palette.yolk} onClick={() => setModal({ type: "log", action: "eggs" })} />
-        <Tile icon={DollarSign} label="Sold Eggs" color={palette.accent} onClick={() => setModal({ type: "log", action: "sold_eggs" })} />
-        <Tile icon={Archive} label="Bedding" color={palette.featherSoft} onClick={() => setModal({ type: "log", action: "bedding" })} />
-        <Tile icon={NotebookPen} label="Broody" color={palette.maple || palette.yolkSoft} onClick={() => setModal({ type: "log", action: "broody" })} />
+        {visibleBuiltIns.map(t => (
+          <Tile
+            key={t.action}
+            icon={t.icon}
+            label={t.label}
+            color={t.color}
+            onClick={() => setModal({ type: "log", action: t.action })}
+          />
+        ))}
+        {/* Flow controls (Hatch Eggs, Remove, Add Flock) are not hideable —
+            they open their own modals, not logs. */}
         <Tile icon={Egg} label="Hatch Eggs" color={palette.leaf} onClick={() => setModal({ type: "hatchEggs", hobbyId: hobby.id })} />
-        <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
-        <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
-        <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
-        {/* Push 6 — Butcher / Remove birds. Mirrors the meat-bird butcher tile
-            but routes through ButcherFlockModal which handles all reasons
-            (butcher / sold / rehomed / given away / died / culled / other).
-            Modal shows its own flock picker when there's >1 flock with birds. */}
+        {customLogs.map(c => (
+          <Tile
+            key={c.id}
+            icon={NotebookPen}
+            label={c.label}
+            color={palette.feather}
+            onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id })}
+          />
+        ))}
+        <Tile
+          icon={Plus}
+          label="+ Custom"
+          color={palette.ink}
+          onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
+        />
+        {/* Push 6 — Remove birds (formerly "Butcher"). Routes through ButcherFlockModal
+            which handles all reasons (butcher / sold / rehomed / given away / died /
+            culled / other), so "Remove" reads more accurately than "Butcher". */}
         {hasAnyBirds && (
-          <Tile icon={Snowflake} label="Butcher" color={palette.ink} onClick={() => setModal({ type: "butcherFlock", hobbyId: hobby.id })} />
+          <Tile icon={Snowflake} label="Remove" color={palette.ink} onClick={() => setModal({ type: "butcherFlock", hobbyId: hobby.id })} />
         )}
         <Tile icon={Plus} label="Add Flock" color={palette.ink} onClick={() => setModal({ type: "addFlock", hobbyId: hobby.id })} />
       </div>
@@ -5392,14 +5421,43 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
         </div>
       );
     }
+    const builtInTiles = [
+      { action: "fed",            icon: Sun,         label: "Fed",            color: palette.feather },
+      { action: "watered",        icon: Droplet,     label: "Watered",        color: "#3F7CAC" },
+      { action: "move_tractor",   icon: Truck,       label: "Move Tractor",   color: palette.feather },
+      { action: "death",          icon: Skull,       label: "Report Death",   color: palette.accent },
+      { action: "infrastructure", icon: Hammer,      label: "Infrastructure", color: palette.feather },
+      { action: "note",           icon: NotebookPen, label: "Note",           color: palette.inkSoft },
+    ];
+    const visibleBuiltIns = builtInTiles.filter(t => !isQuickLogHidden(hobby, t.action));
+    const customLogs = readCustomLogs(hobby);
     return (
       <div style={grid}>
-        <Tile icon={Sun} label="Fed" color={palette.feather} onClick={() => setModal({ type: "log", action: "fed" })} />
-        <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
-        <Tile icon={Truck} label="Move Tractor" color={palette.feather} onClick={() => setModal({ type: "log", action: "move_tractor" })} />
-        <Tile icon={Skull} label="Report Death" color={palette.accent} onClick={() => setModal({ type: "log", action: "death" })} />
-        <Tile icon={Hammer} label="Infrastructure" color={palette.feather} onClick={() => setModal({ type: "log", action: "infrastructure" })} />
-        <Tile icon={NotebookPen} label="Note" color={palette.inkSoft} onClick={() => setModal({ type: "log", action: "note" })} />
+        {visibleBuiltIns.map(t => (
+          <Tile
+            key={t.action}
+            icon={t.icon}
+            label={t.label}
+            color={t.color}
+            onClick={() => setModal({ type: "log", action: t.action })}
+          />
+        ))}
+        {customLogs.map(c => (
+          <Tile
+            key={c.id}
+            icon={NotebookPen}
+            label={c.label}
+            color={palette.feather}
+            onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id })}
+          />
+        ))}
+        <Tile
+          icon={Plus}
+          label="+ Custom"
+          color={palette.ink}
+          onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
+        />
+        {/* Butcher = batch-end action, not a log action. Always visible. */}
         <Tile icon={Snowflake} label="Butcher" color={palette.ink} onClick={() => setModal({ type: "butcher" })} />
       </div>
     );
@@ -9987,6 +10045,27 @@ const BUILTIN_QUICK_LOGS_BY_HOBBY = {
     { action: "issue",      label: "Report Issue" },
     { action: "note",       label: "Note" },
   ],
+  egg_layers: [
+    { action: "fed",            label: "Fed" },
+    { action: "watered",        label: "Watered" },
+    { action: "free_range",     label: "Free Range" },
+    { action: "move_tractor",   label: "Move Tractor" },
+    { action: "eggs",           label: "Eggs Laid" },
+    { action: "sold_eggs",      label: "Sold Eggs" },
+    { action: "bedding",        label: "Bedding" },
+    { action: "broody",         label: "Broody" },
+    { action: "death",          label: "Report Death" },
+    { action: "infrastructure", label: "Infrastructure" },
+    { action: "note",           label: "Note" },
+  ],
+  meat_chickens: [
+    { action: "fed",            label: "Fed" },
+    { action: "watered",        label: "Watered" },
+    { action: "move_tractor",   label: "Move Tractor" },
+    { action: "death",          label: "Report Death" },
+    { action: "infrastructure", label: "Infrastructure" },
+    { action: "note",           label: "Note" },
+  ],
 };
 
 function CustomizeQuickLogsModal({ data, update, hobbyId, onClose }) {
@@ -13695,7 +13774,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
   };
   // Actions that belong to a specific batch. "infrastructure" is hobby-wide
   // (coop building, fencing, etc.) and stays un-batched.
-  const batchScopedActions = ["fed", "watered", "death", "note", "move_tractor"];
+  const batchScopedActions = ["fed", "watered", "death", "note", "move_tractor", "custom"];
   const isBatchScoped = hobby.type === "meat_chickens" && batchScopedActions.includes(action);
   const needsBatchPicker = isBatchScoped && activeBatches.length > 1 && !isEdit;
 
@@ -13710,8 +13789,11 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
   // Selected batch for new meat-chicken entries. Auto-set when only one
   // active batch exists; left empty when multiple, so submit gate fires.
   const [selectedBatchId, setSelectedBatchId] = useState(() => {
-    if (isEdit) return existingEntry.batchId || "";
+    if (isEdit) return existingEntry.batchId || (action === "custom" ? "__ALL__" : "");
     if (isBatchScoped && activeBatches.length === 1) return activeBatches[0].id;
+    // For custom logs across multiple batches, default to "All batches"
+    // rather than gating submit — the user can pick a specific batch if needed.
+    if (action === "custom" && isBatchScoped && activeBatches.length > 1) return "__ALL__";
     return "";
   });
   // Validation error shown inline above the submit button.
@@ -13858,6 +13940,10 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       if (action === "custom") {
         entry.customLogId = resolvedCustomLogId;
         entry.customLabel = resolvedCustomLabel;
+        // "All flocks" / "All batches" sentinel — strip the scope so the entry
+        // represents the whole hobby instead of a single flock/batch.
+        if (entry.flockId === "__ALL__") delete entry.flockId;
+        if (entry.batchId === "__ALL__") delete entry.batchId;
       }
       // sold_eggs customer handling: if the user typed a NEW customer name,
       // create the data.customers row now and point buyerId at it. The
@@ -14186,13 +14272,16 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           all flocks" which divides the count using largest-remainder (e.g.
           13 across 4 flocks → 4/3/3/3) and creates one entry per flock. */}
       {hobby.type === "egg_layers" && Array.isArray(hobby.flocks) && hobby.flocks.length > 1 &&
-        ["fed","bedding","death","eggs","sold_eggs","note","issue"].includes(action) && (
+        ["fed","bedding","death","eggs","sold_eggs","note","issue","custom"].includes(action) && (
         <Field label="Which flock?">
           <select
             style={inputStyle}
-            value={fields.flockId || hobby.flocks[0]?.id || ""}
+            value={fields.flockId || (action === "custom" ? "__ALL__" : (hobby.flocks[0]?.id || ""))}
             onChange={(e) => set("flockId", e.target.value)}
           >
+            {action === "custom" && (
+              <option value="__ALL__">📋 All flocks</option>
+            )}
             {(action === "eggs" || action === "eggs_laid") && (
               <option value="__TOTAL__">🥚 Total — split evenly across all flocks</option>
             )}
@@ -14232,6 +14321,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
           >
             <option value="">— Pick a batch —</option>
+            {action === "custom" && (
+              <option value="__ALL__">📋 All batches</option>
+            )}
             {/* FEAT6-FED: feed can be logged once and split across all batches. */}
             {action === "fed" && activeBatches.length > 1 && (
               <option value="__ALL__">🌾 All batches — split this feeding evenly</option>
