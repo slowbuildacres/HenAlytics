@@ -5678,7 +5678,10 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
       { action: "sold_eggs",      icon: DollarSign,    label: "Sold Eggs",      color: palette.accent },
       { action: "bedding",        icon: Archive,       label: "Bedding",        color: palette.featherSoft },
       { action: "broody",         icon: NotebookPen,   label: "Broody",         color: palette.maple || palette.yolkSoft },
-      { action: "death",          icon: Skull,         label: "Report Death",   color: palette.accent },
+      // Report Death tile removed — the Remove tile (below) now handles all
+      // reasons birds leave the flock including died/culled, so the standalone
+      // death entry point is redundant. Existing death entries in user data
+      // are unaffected; the "death" action remains a valid entry type.
       { action: "infrastructure", icon: Hammer,        label: "Infrastructure", color: palette.feather },
       { action: "note",           icon: NotebookPen,   label: "Note",           color: palette.inkSoft },
     ];
@@ -5742,7 +5745,10 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
       { action: "fed",            icon: Sun,         label: "Fed",            color: palette.feather },
       { action: "watered",        icon: Droplet,     label: "Watered",        color: "#3F7CAC" },
       { action: "move_tractor",   icon: Truck,       label: "Move Tractor",   color: palette.feather },
-      { action: "death",          icon: Skull,       label: "Report Death",   color: palette.accent },
+      // Report Death tile removed — the Remove tile (below) now handles all
+      // reasons birds leave a batch including died/culled, so the standalone
+      // death entry point is redundant. Existing death entries in user data
+      // are unaffected; the "death" action remains a valid entry type.
       { action: "infrastructure", icon: Hammer,      label: "Infrastructure", color: palette.feather },
       { action: "note",           icon: NotebookPen, label: "Note",           color: palette.inkSoft },
     ];
@@ -5774,8 +5780,12 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
           color={palette.ink}
           onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
         />
-        {/* Butcher = batch-end action, not a log action. Always visible. */}
-        <Tile icon={Snowflake} label="Butcher" color={palette.ink} onClick={() => setModal({ type: "butcher" })} />
+        {/* Remove (formerly "Butcher") — routes through ButcherModal which
+            handles all reasons (butchered / sold / rehomed / given_away /
+            died / culled / other). Matches the egg-layers Remove tile so
+            both bird hobbies use the same verb for "bird leaves the batch".
+            Always visible since it's a batch-end action, not a log action. */}
+        <Tile icon={Snowflake} label="Remove" color={palette.ink} onClick={() => setModal({ type: "butcher" })} />
       </div>
     );
   }
