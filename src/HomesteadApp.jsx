@@ -203,6 +203,60 @@ const defaultData = () => ({
   },
 });
 
+// ============================================================================
+// Custom quick logs (per-hobby)
+// ============================================================================
+// Users can define up to MAX_CUSTOM_LOGS_PER_HOBBY custom quick-log actions
+// per hobby (e.g. "Pull weeds" in Garden) AND hide built-in quick-log tiles
+// they don't use. Both lists live on the hobby object:
+//
+//   hobby.customLogs       = [{ id, label, emoji, createdAt }]
+//   hobby.hiddenQuickLogs  = ["fertilized", "issue", ...]   // action strings
+//
+// Reading code MUST treat both as optional (default empty array) so existing
+// hobbies that predate this feature continue to render correctly.
+//
+// Custom-log entries snapshot the label at log time so deleting a saved
+// custom log doesn't break historical entries:
+//
+//   { id, action: "custom", customLogId, customLabel, date, notes, ... }
+
+const MAX_CUSTOM_LOGS_PER_HOBBY = 5;
+const CUSTOM_LOG_DEFAULT_EMOJI = "\u{1F4DD}";
+const CUSTOM_LOG_LABEL_MAX = 30;
+
+function readCustomLogs(hobby) {
+  return Array.isArray(hobby?.customLogs) ? hobby.customLogs : [];
+}
+
+function readHiddenQuickLogs(hobby) {
+  return Array.isArray(hobby?.hiddenQuickLogs) ? hobby.hiddenQuickLogs : [];
+}
+
+// Returns { ok: true, label } on success, or { ok: false, error } on failure.
+// Caller is responsible for trimming inputs before passing — this also trims
+// defensively. Duplicate check is case-insensitive within the same hobby.
+// If `editingId` is set, that custom log's own label is excluded from the
+// duplicate check (so editing-without-rename doesn't trip the dupe guard).
+function validateCustomLogLabel(rawLabel, hobby, editingId = null) {
+  const label = String(rawLabel || "").trim();
+  if (!label) return { ok: false, error: "Label can't be empty." };
+  if (label.length > CUSTOM_LOG_LABEL_MAX) {
+    return { ok: false, error: `Label must be ${CUSTOM_LOG_LABEL_MAX} characters or fewer.` };
+  }
+  const lower = label.toLowerCase();
+  const existing = readCustomLogs(hobby);
+  const collision = existing.some(c => c.id !== editingId && String(c.label || "").trim().toLowerCase() === lower);
+  if (collision) return { ok: false, error: "You already have a custom log with that name." };
+  return { ok: true, label };
+}
+
+// Returns true if a built-in quick log action is currently hidden for this hobby.
+function isQuickLogHidden(hobby, action) {
+  return readHiddenQuickLogs(hobby).includes(action);
+}
+
+
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
 function migrateData(data) {
   if (!data || typeof data !== "object") return defaultData();
@@ -5245,14 +5299,50 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
         </div>
       );
     }
+    // Built-in quick-log tiles as a data array so we can filter by hiddenQuickLogs.
+    // Tiles without an action key (Plant Annual, Close Season — they open their own
+    // modals) are NOT hideable since they're flow controls, not log actions.
+    const builtInTiles = [
+      { action: "watered",     icon: Droplet,        label: "Watered",      color: "#3F7CAC" },
+      { action: "fertilized",  icon: Leaf,           label: "Fertilized",   color: palette.leafSoft || "#A8C078" },
+      { action: "harvested",   icon: Scissors,       label: "Harvested",    color: palette.accent },
+      { action: "issue",       icon: AlertTriangle,  label: "Report Issue", color: palette.yolk },
+      { action: "note",        icon: NotebookPen,    label: "Note",         color: palette.feather },
+    ];
+    const visibleBuiltIns = builtInTiles.filter(t => !isQuickLogHidden(hobby, t.action));
+    const customLogs = readCustomLogs(hobby);
+
     return (
       <div style={grid}>
-        <Tile icon={Droplet} label="Watered" color="#3F7CAC" onClick={() => setModal({ type: "log", action: "watered" })} />
-        <Tile icon={Leaf} label="Fertilized" color={palette.leafSoft || "#A8C078"} onClick={() => setModal({ type: "log", action: "fertilized" })} />
+        {visibleBuiltIns.map(t => (
+          <Tile
+            key={t.action}
+            icon={t.icon}
+            label={t.label}
+            color={t.color}
+            onClick={() => setModal({ type: "log", action: t.action })}
+          />
+        ))}
+        {/* Plant Annual and Close Season are flow controls (open their own modals),
+            not log actions — they're not hideable and stay outside the filter. */}
         <Tile icon={Sprout} label="Plant Annual" color={palette.leaf} onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })} />
-        <Tile icon={Scissors} label="Harvested" color={palette.accent} onClick={() => setModal({ type: "log", action: "harvested" })} />
-        <Tile icon={AlertTriangle} label="Report Issue" color={palette.yolk} onClick={() => setModal({ type: "log", action: "issue" })} />
-        <Tile icon={NotebookPen} label="Note" color={palette.feather} onClick={() => setModal({ type: "log", action: "note" })} />
+        {/* User-defined custom logs render between built-ins and the "+ Custom" tile. */}
+        {customLogs.map(c => (
+          <Tile
+            key={c.id}
+            icon={NotebookPen}
+            label={c.label}
+            color={palette.feather}
+            onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id })}
+          />
+        ))}
+        {/* + Custom is always visible — opens the picker/manage modal even at the cap. */}
+        <Tile
+          icon={Plus}
+          label="+ Custom"
+          color={palette.ink}
+          onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
+        />
         <Tile icon={Leaf} label="Close Season" color={palette.ink} onClick={() => setModal({ type: "closeGardenSeason" })} />
       </div>
     );
@@ -6539,7 +6629,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
         <Icon size={18} strokeWidth={1.8} color={palette.ink} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{labels[entry.action] || entry.action}</div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{entry.action === "custom" ? (entry.customLabel || "Custom log") : (labels[entry.action] || entry.action)}</div>
         <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {fmtDate(entry.date)} {detail && "· " + detail}
         </div>
@@ -7989,6 +8079,8 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "support") return <SupportModal onClose={close} />;
   if (modal.type === "plantScanner") return <PlantScannerModal onClose={close} />;
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
+  if (modal.type === "customizeQuickLogs") return <CustomizeQuickLogsModal data={data} update={update} hobbyId={modal.hobbyId} onClose={close} />;
+  if (modal.type === "customLogPicker") return <CustomLogPickerModal data={data} update={update} hobbyId={modal.hobbyId} onClose={close} setModal={setModal} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
@@ -8112,7 +8204,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const targetHobby = modal.hobbyIdOverride
       ? (data.hobbies.find((h) => h.id === modal.hobbyIdOverride) || hobby)
       : hobby;
-    return <LogModal hobby={targetHobby} action={modal.action} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
+    return <LogModal hobby={targetHobby} action={modal.action} customLogId={modal.customLogId} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
   }
   if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} onConfirm={modal.onConfirm} />;
   if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
@@ -9765,6 +9857,330 @@ function FirstSignInModal({ user, localData, onClose, onFreshStart }) {
       }}>
         💡 You can sign out anytime in Settings. Your account email is only used for support — never shared.
       </div>
+    </Modal>
+  );
+}
+
+function CustomLogPickerModal({ data, update, hobbyId, onClose, setModal }) {
+  const hobby = data.hobbies.find((h) => h.id === hobbyId);
+  const customLogs = readCustomLogs(hobby);
+  const atLimit = customLogs.length >= MAX_CUSTOM_LOGS_PER_HOBBY;
+
+  const [creating, setCreating] = useState(false);
+  const [newLabel, setNewLabel] = useState("");
+  const [error, setError] = useState("");
+
+  const handleCreate = () => {
+    const result = validateCustomLogLabel(newLabel, hobby);
+    if (!result.ok) { setError(result.error); return; }
+    const newLog = {
+      id: newId(),
+      label: result.label,
+      emoji: CUSTOM_LOG_DEFAULT_EMOJI,
+      createdAt: new Date().toISOString(),
+    };
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobbyId);
+      if (!h) return d;
+      if (!Array.isArray(h.customLogs)) h.customLogs = [];
+      h.customLogs.push(newLog);
+      return d;
+    });
+    // Immediately switch to the log modal for the freshly created custom log.
+    setModal({ type: "log", action: "custom", customLogId: newLog.id });
+  };
+
+  const handlePick = (customLog) => {
+    setModal({ type: "log", action: "custom", customLogId: customLog.id });
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Custom quick log">
+      {!creating && (
+        <>
+          {customLogs.length === 0 ? (
+            <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+              No custom logs yet. Create one for actions you do often that aren't
+              already a quick-log tile — like "Pull weeds" or "Spray for pests".
+            </div>
+          ) : (
+            <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+              {customLogs.map((c) => (
+                <button
+                  key={c.id}
+                  onClick={() => handlePick(c)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", background: palette.card,
+                    border: `1.5px solid ${palette.line}`, borderRadius: 8,
+                    cursor: "pointer", fontFamily: FONT_BODY, fontSize: 14,
+                    color: palette.ink, textAlign: "left", width: "100%",
+                  }}
+                >
+                  <span style={{ fontSize: 18 }}>{c.emoji || CUSTOM_LOG_DEFAULT_EMOJI}</span>
+                  <span style={{ flex: 1 }}>{c.label}</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            {atLimit ? (
+              <div style={{
+                flex: 1, padding: "10px 12px", background: palette.bgAlt,
+                border: `1.5px dashed ${palette.line}`, borderRadius: 8,
+                fontSize: 12, color: palette.inkSoft, textAlign: "center",
+              }}>
+                Limit of {MAX_CUSTOM_LOGS_PER_HOBBY} reached. Use "Manage" to delete one.
+              </div>
+            ) : (
+              <Btn variant="primary" onClick={() => { setCreating(true); setError(""); }}>
+                + Create new
+              </Btn>
+            )}
+            <Btn variant="ghost" onClick={() => setModal({ type: "customizeQuickLogs", hobbyId })}>
+              Manage
+            </Btn>
+          </div>
+        </>
+      )}
+
+      {creating && (
+        <>
+          <Field label="Label">
+            <input
+              style={inputStyle}
+              value={newLabel}
+              onChange={(e) => { setNewLabel(e.target.value); setError(""); }}
+              placeholder="e.g. Pull weeds"
+              autoFocus
+              maxLength={CUSTOM_LOG_LABEL_MAX}
+            />
+          </Field>
+          {error && (
+            <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>
+              {error}
+            </div>
+          )}
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="primary" onClick={handleCreate}>Save & log</Btn>
+            <Btn variant="ghost" onClick={() => { setCreating(false); setNewLabel(""); setError(""); }}>
+              Cancel
+            </Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// Per-hobby list of built-in quick-log actions and human labels. Used by the
+// CustomizeQuickLogsModal to render hide/show toggles. We keep this here in
+// source rather than reading from the QuickLogTiles render because that's a
+// JSX-only structure — duplicating the action+label pairs is the simplest
+// way to expose them to the manage UI. If you add a new built-in action to
+// a hobby's quick-log grid, add it here too so users can hide it.
+const BUILTIN_QUICK_LOGS_BY_HOBBY = {
+  garden: [
+    { action: "watered",    label: "Watered" },
+    { action: "fertilized", label: "Fertilized" },
+    { action: "harvested",  label: "Harvested" },
+    { action: "issue",      label: "Report Issue" },
+    { action: "note",       label: "Note" },
+  ],
+};
+
+function CustomizeQuickLogsModal({ data, update, hobbyId, onClose }) {
+  const hobby = data.hobbies.find((h) => h.id === hobbyId);
+  const builtIns = BUILTIN_QUICK_LOGS_BY_HOBBY[hobby?.type] || [];
+  const hidden = readHiddenQuickLogs(hobby);
+  const customLogs = readCustomLogs(hobby);
+  const visibleCount = builtIns.filter(b => !hidden.includes(b.action)).length;
+
+  const [editingId, setEditingId] = useState(null);
+  const [editLabel, setEditLabel] = useState("");
+  const [editError, setEditError] = useState("");
+  const [confirmDeleteId, setConfirmDeleteId] = useState(null);
+
+  const toggleBuiltIn = (action) => {
+    const currentlyHidden = hidden.includes(action);
+    // Guardrail: if hiding this one would hide ALL built-ins, refuse.
+    // (Users still have "+ Custom" tile, but a totally empty grid feels broken.)
+    if (!currentlyHidden && visibleCount <= 1) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobbyId);
+      if (!h) return d;
+      if (!Array.isArray(h.hiddenQuickLogs)) h.hiddenQuickLogs = [];
+      if (currentlyHidden) {
+        h.hiddenQuickLogs = h.hiddenQuickLogs.filter((a) => a !== action);
+      } else {
+        h.hiddenQuickLogs.push(action);
+      }
+      return d;
+    });
+  };
+
+  const startEdit = (c) => {
+    setEditingId(c.id);
+    setEditLabel(c.label);
+    setEditError("");
+  };
+
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditLabel("");
+    setEditError("");
+  };
+
+  const saveEdit = () => {
+    const result = validateCustomLogLabel(editLabel, hobby, editingId);
+    if (!result.ok) { setEditError(result.error); return; }
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobbyId);
+      if (!h || !Array.isArray(h.customLogs)) return d;
+      const idx = h.customLogs.findIndex((c) => c.id === editingId);
+      if (idx !== -1) h.customLogs[idx] = { ...h.customLogs[idx], label: result.label };
+      return d;
+    });
+    cancelEdit();
+  };
+
+  const doDelete = (id) => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobbyId);
+      if (!h || !Array.isArray(h.customLogs)) return d;
+      h.customLogs = h.customLogs.filter((c) => c.id !== id);
+      return d;
+    });
+    setConfirmDeleteId(null);
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Customize quick logs">
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        Show or hide the built-in tiles, and manage your custom logs. Existing
+        entries for hidden tiles are not removed — they still appear in history.
+      </div>
+
+      {builtIns.length > 0 && (
+        <>
+          <div style={{
+            fontSize: 11, color: palette.inkSoft, marginBottom: 8,
+            textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+          }}>
+            Built-in tiles
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 18 }}>
+            {builtIns.map((b) => {
+              const isHidden = hidden.includes(b.action);
+              const wouldBreak = !isHidden && visibleCount <= 1;
+              return (
+                <div key={b.action} style={{
+                  display: "flex", alignItems: "center", gap: 10,
+                  padding: "10px 12px", background: palette.card,
+                  border: `1.5px solid ${palette.line}`, borderRadius: 8,
+                }}>
+                  <div style={{ flex: 1, fontSize: 14, color: palette.ink }}>{b.label}</div>
+                  <button
+                    onClick={() => toggleBuiltIn(b.action)}
+                    disabled={wouldBreak}
+                    title={wouldBreak ? "At least one built-in tile must remain visible." : (isHidden ? "Show this tile" : "Hide this tile")}
+                    style={{
+                      background: isHidden ? "transparent" : palette.leafSoft,
+                      border: `1.5px solid ${isHidden ? palette.line : palette.leaf}`,
+                      borderRadius: 6, padding: "4px 10px",
+                      cursor: wouldBreak ? "not-allowed" : "pointer",
+                      color: isHidden ? palette.inkSoft : palette.ink,
+                      fontSize: 12, fontFamily: FONT_BODY, fontWeight: 600,
+                      opacity: wouldBreak ? 0.5 : 1,
+                    }}
+                  >
+                    {isHidden ? "Hidden" : "Showing"}
+                  </button>
+                </div>
+              );
+            })}
+          </div>
+        </>
+      )}
+
+      <div style={{
+        fontSize: 11, color: palette.inkSoft, marginBottom: 8,
+        textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+      }}>
+        Your custom logs ({customLogs.length}/{MAX_CUSTOM_LOGS_PER_HOBBY})
+      </div>
+      {customLogs.length === 0 ? (
+        <div style={{
+          padding: 12, background: palette.bgAlt,
+          border: `1.5px dashed ${palette.line}`, borderRadius: 8,
+          fontSize: 13, color: palette.inkSoft, textAlign: "center",
+        }}>
+          No custom logs yet. Close this and tap "+ Custom" on the quick-log grid to create one.
+        </div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {customLogs.map((c) => {
+            const isEditing = editingId === c.id;
+            const isConfirmingDelete = confirmDeleteId === c.id;
+            return (
+              <div key={c.id} style={{
+                padding: "10px 12px", background: palette.card,
+                border: `1.5px solid ${palette.line}`, borderRadius: 8,
+              }}>
+                {isEditing ? (
+                  <>
+                    <input
+                      style={inputStyle}
+                      value={editLabel}
+                      onChange={(e) => { setEditLabel(e.target.value); setEditError(""); }}
+                      autoFocus
+                      maxLength={CUSTOM_LOG_LABEL_MAX}
+                    />
+                    {editError && (
+                      <div style={{ fontSize: 12, color: palette.accent, marginTop: 6 }}>
+                        {editError}
+                      </div>
+                    )}
+                    <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                      <Btn variant="primary" small onClick={saveEdit}>Save</Btn>
+                      <Btn variant="ghost" small onClick={cancelEdit}>Cancel</Btn>
+                    </div>
+                  </>
+                ) : isConfirmingDelete ? (
+                  <>
+                    <div style={{ fontSize: 13, color: palette.ink, marginBottom: 8 }}>
+                      Delete "{c.label}"? Existing entries will keep their label.
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <Btn variant="primary" small onClick={() => doDelete(c.id)}>Delete</Btn>
+                      <Btn variant="ghost" small onClick={() => setConfirmDeleteId(null)}>Cancel</Btn>
+                    </div>
+                  </>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>{c.emoji || CUSTOM_LOG_DEFAULT_EMOJI}</span>
+                    <div style={{ flex: 1, fontSize: 14, color: palette.ink }}>{c.label}</div>
+                    <button
+                      onClick={() => startEdit(c)}
+                      title="Rename"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
+                    >
+                      <Edit3 size={16} />
+                    </button>
+                    <button
+                      onClick={() => setConfirmDeleteId(c.id)}
+                      title="Delete"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4 }}
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </Modal>
   );
 }
@@ -13251,7 +13667,7 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
 }
 
 // ============ LOG MODAL (DIFFERENT BY ACTION) ============
-function LogModal({ hobby, action, data, update, onClose, user, existingEntry }) {
+function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry }) {
   const isEdit = !!existingEntry;
 
   // Push 4b — multi-batch support for meat chickens. Active batches live in
@@ -13437,6 +13853,12 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
         created: isEdit ? existingEntry.created : Date.now(),
         ...cleanFields,
       };
+      // Custom-log entries snapshot the label at save time so historical
+      // entries survive deletion or rename of the source custom log.
+      if (action === "custom") {
+        entry.customLogId = resolvedCustomLogId;
+        entry.customLabel = resolvedCustomLabel;
+      }
       // sold_eggs customer handling: if the user typed a NEW customer name,
       // create the data.customers row now and point buyerId at it. The
       // transient UI-only fields (newBuyerName, _showNewBuyer) must not be
@@ -13730,8 +14152,22 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
     sold_eggs: "eggs sold", infrastructure: "infrastructure",
     eggs_laid: "eggs laid", broody: "broody hen",
   };
+  // For custom logs, resolve the label from the hobby's customLogs list.
+  // On edit, the entry has customLogId and snapshotted customLabel — prefer
+  // current label if the custom log still exists (so renames flow through to
+  // the modal title), fall back to the snapshotted label otherwise.
+  const resolvedCustomLogId = customLogId || (existingEntry && existingEntry.customLogId) || null;
+  const resolvedCustomLabel = (() => {
+    if (action !== "custom") return null;
+    const live = readCustomLogs(hobby).find(c => c.id === resolvedCustomLogId);
+    if (live) return live.label;
+    if (existingEntry && existingEntry.customLabel) return existingEntry.customLabel;
+    return "custom log";
+  })();
   const titlePrefix = isEdit ? "Edit" : "Log";
-  const dynamicTitle = `${titlePrefix} ${titles[action] || "entry"}`;
+  const dynamicTitle = action === "custom"
+    ? `${titlePrefix} ${resolvedCustomLabel}`
+    : `${titlePrefix} ${titles[action] || "entry"}`;
 
   // existing plant names from history (for the autocomplete-ish helper)
   const plants = Array.from(new Set((data.plantings || []).map((p) => p.plant).filter(Boolean)));
@@ -14289,6 +14725,18 @@ function LogModal({ hobby, action, data, update, onClose, user, existingEntry })
             <textarea style={{ ...inputStyle, minHeight: 60 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="materials, who built it, etc." />
           </Field>
         </>
+      )}
+
+      {action === "custom" && (
+        <Field label="Notes (optional)">
+          <textarea
+            style={{ ...inputStyle, minHeight: 100 }}
+            value={fields.note || ""}
+            onChange={(e) => set("note", e.target.value)}
+            placeholder={`What you want to remember about this ${resolvedCustomLabel || "log"}...`}
+            autoFocus
+          />
+        </Field>
       )}
 
       {action === "note" && (
