@@ -110,7 +110,7 @@ const fmtTractorDistance = (totalFeet) => {
     : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
 };
 
-export default function YearInReviewPage({ data, isSupporter = false, onOpenSupport }) {
+export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport }) {
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
   const [year, setYear] = useState(() => {
@@ -183,6 +183,7 @@ export default function YearInReviewPage({ data, isSupporter = false, onOpenSupp
       ) : (
         <div style={{ display: "flex", flexDirection: "column", gap: 14 }}>
           <CoverCard year={year} stats={stats} />
+          <GoalsCard data={data} update={update} year={year} />
           {isSupporter && <BadgesCard stats={stats} />}
           {isSupporter && <CommunityPanels stats={stats} year={year} />}
           <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} horsesEnabled={horsesEnabled} farmstandEnabled={farmstandEnabled} bakingEnabled={bakingEnabled} canningEnabled={canningEnabled} />
@@ -217,6 +218,232 @@ export default function YearInReviewPage({ data, isSupporter = false, onOpenSupp
         </div>
       )}
     </div>
+  );
+}
+
+// ============================================================================
+// GoalsCard — per-year goal-tracker
+// ----------------------------------------------------------------------------
+// Goals belong to a specific year. They can be attached to a hobby (e.g.
+// "egg_layers" → "Sell 100 dozen eggs") or be hobby-less (long-term homestead
+// goals like "Add a greenhouse"). Completed goals stay visible with strike-
+// through and a check; users can uncheck to re-mark as incomplete.
+//
+// Goals from one year do NOT auto-carry to the next year — each year is its
+// own clean slate, by design (less clutter, intentional re-commitment).
+// ============================================================================
+function newId() {
+  return "g_" + Math.random().toString(36).slice(2, 10);
+}
+
+function GoalsCard({ data, update, year }) {
+  const allGoals = Array.isArray(data.goals) ? data.goals : [];
+  // Filter to this year only.
+  const goals = allGoals.filter(g => g.year === year);
+  const hobbies = (data.hobbies || []).filter(h => !h.hidden);
+
+  // Inline-edit state: tracks which goal is being edited (by id) + draft text.
+  const [editingId, setEditingId] = useState(null);
+  const [editingText, setEditingText] = useState("");
+
+  // Add-goal state: input mode + draft fields. We render a small inline form
+  // (no modal) for adding, to keep the UX light. Hobby picker is optional —
+  // empty = long-term.
+  const [adding, setAdding] = useState(false);
+  const [newText, setNewText] = useState("");
+  const [newHobbyId, setNewHobbyId] = useState("");
+
+  // Group goals: long-term (no hobbyId) + per-hobby buckets.
+  const longTerm = goals.filter(g => !g.hobbyId);
+  const byHobby = {};
+  for (const g of goals) {
+    if (!g.hobbyId) continue;
+    (byHobby[g.hobbyId] = byHobby[g.hobbyId] || []).push(g);
+  }
+
+  const toggleComplete = (goalId) => {
+    update(d => {
+      const g = (d.goals || []).find(x => x.id === goalId);
+      if (!g) return d;
+      g.completedAt = g.completedAt ? null : new Date().toISOString();
+      return d;
+    });
+  };
+
+  const startEdit = (goal) => {
+    setEditingId(goal.id);
+    setEditingText(goal.text);
+  };
+  const cancelEdit = () => {
+    setEditingId(null);
+    setEditingText("");
+  };
+  const saveEdit = () => {
+    const text = editingText.trim();
+    if (!text) { cancelEdit(); return; }
+    update(d => {
+      const g = (d.goals || []).find(x => x.id === editingId);
+      if (g) g.text = text;
+      return d;
+    });
+    cancelEdit();
+  };
+
+  const deleteGoal = (goalId) => {
+    if (!confirm("Delete this goal?")) return;
+    update(d => {
+      d.goals = (d.goals || []).filter(x => x.id !== goalId);
+      return d;
+    });
+  };
+
+  const addGoal = () => {
+    const text = newText.trim();
+    if (!text) return;
+    update(d => {
+      if (!Array.isArray(d.goals)) d.goals = [];
+      d.goals.push({
+        id: newId(),
+        text,
+        hobbyId: newHobbyId || null,
+        year,
+        completedAt: null,
+        created: Date.now(),
+      });
+      return d;
+    });
+    setNewText("");
+    setNewHobbyId("");
+    setAdding(false);
+  };
+
+  // Render a single goal row — inline-editable.
+  const GoalRow = ({ goal }) => {
+    const isEditing = editingId === goal.id;
+    const isDone = !!goal.completedAt;
+    if (isEditing) {
+      return (
+        <div style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 10px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8 }}>
+          <input
+            style={{ flex: 1, padding: "6px 8px", border: `1.5px solid ${palette.line}`, borderRadius: 6, fontFamily: FONT_BODY, fontSize: 14, color: palette.ink, background: palette.bg }}
+            value={editingText}
+            onChange={(e) => setEditingText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") saveEdit(); if (e.key === "Escape") cancelEdit(); }}
+            autoFocus
+          />
+          <button onClick={saveEdit} style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 10px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}>Save</button>
+          <button onClick={cancelEdit} style={{ background: "transparent", color: palette.inkSoft, border: "none", padding: "6px 8px", fontFamily: FONT_BODY, fontSize: 12, cursor: "pointer" }}>Cancel</button>
+        </div>
+      );
+    }
+    return (
+      <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8 }}>
+        <input
+          type="checkbox"
+          checked={isDone}
+          onChange={() => toggleComplete(goal.id)}
+          style={{ width: 18, height: 18, cursor: "pointer", accentColor: palette.leaf || palette.ink, flexShrink: 0 }}
+        />
+        <div
+          onClick={() => startEdit(goal)}
+          style={{
+            flex: 1, fontSize: 14, color: isDone ? palette.inkSoft : palette.ink,
+            textDecoration: isDone ? "line-through" : "none",
+            cursor: "pointer",
+            whiteSpace: "normal", wordBreak: "break-word",
+          }}
+          title="Click to edit"
+        >
+          {goal.text}
+        </div>
+        <button onClick={() => deleteGoal(goal.id)} aria-label="Delete goal" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4, flexShrink: 0 }}>
+          ✕
+        </button>
+      </div>
+    );
+  };
+
+  return (
+    <Card>
+      <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 12 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>
+          🎯 Goals for {year}
+        </div>
+        {!adding && (
+          <button
+            onClick={() => setAdding(true)}
+            style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+          >
+            + Add goal
+          </button>
+        )}
+      </div>
+
+      {adding && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, padding: 10, background: palette.bg, border: `1.5px dashed ${palette.line}`, borderRadius: 8, marginBottom: 14 }}>
+          <input
+            placeholder="What do you want to accomplish?"
+            value={newText}
+            onChange={(e) => setNewText(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter") addGoal(); if (e.key === "Escape") { setAdding(false); setNewText(""); setNewHobbyId(""); } }}
+            style={{ padding: "8px 10px", border: `1.5px solid ${palette.line}`, borderRadius: 6, fontFamily: FONT_BODY, fontSize: 14, color: palette.ink, background: palette.bg }}
+            autoFocus
+          />
+          <select
+            value={newHobbyId}
+            onChange={(e) => setNewHobbyId(e.target.value)}
+            style={{ padding: "8px 10px", border: `1.5px solid ${palette.line}`, borderRadius: 6, fontFamily: FONT_BODY, fontSize: 14, color: palette.ink, background: palette.bg, cursor: "pointer" }}
+          >
+            <option value="">Long-term / homestead-wide</option>
+            {hobbies.map(h => (
+              <option key={h.id} value={h.id}>{h.name}</option>
+            ))}
+          </select>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button
+              onClick={() => { setAdding(false); setNewText(""); setNewHobbyId(""); }}
+              style={{ background: "transparent", color: palette.inkSoft, border: `1.5px solid ${palette.line}`, padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, cursor: "pointer" }}
+            >Cancel</button>
+            <button
+              onClick={addGoal}
+              style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            >Add goal</button>
+          </div>
+        </div>
+      )}
+
+      {goals.length === 0 && !adding ? (
+        <div style={{ padding: 16, textAlign: "center", color: palette.inkSoft, fontSize: 13, fontStyle: "italic" }}>
+          No goals yet for {year}. Tap "+ Add goal" to set one — for a hobby, or for the homestead overall.
+        </div>
+      ) : (
+        <>
+          {longTerm.length > 0 && (
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600 }}>
+                Long-term / homestead-wide
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                {longTerm.map(g => <GoalRow key={g.id} goal={g} />)}
+              </div>
+            </div>
+          )}
+          {Object.entries(byHobby).map(([hobbyId, hobbyGoals]) => {
+            const hobby = hobbies.find(h => h.id === hobbyId);
+            return (
+              <div key={hobbyId} style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600 }}>
+                  {hobby ? hobby.name : hobbyId}
+                </div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {hobbyGoals.map(g => <GoalRow key={g.id} goal={g} />)}
+                </div>
+              </div>
+            );
+          })}
+        </>
+      )}
+    </Card>
   );
 }
 
