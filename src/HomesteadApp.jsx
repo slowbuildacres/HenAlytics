@@ -187,6 +187,7 @@ const defaultData = () => ({
   salesHidden: false,        // true if user hides the Sales tab
   spouseMode: false,         // true = dark mode + fudged costs/production for "spouse presentation"
   sales: [],            // unified sales log
+  expenses: [],         // unified expenses log (single entries + recurring templates)
   customers: [],        // repeat buyer directory
   freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
@@ -265,6 +266,7 @@ function migrateData(data) {
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
+  if (!Array.isArray(data.expenses)) data.expenses = [];
   if (!Array.isArray(data.freezerLog)) data.freezerLog = [];
   if (typeof data.supportersDismissedMonth !== "string" && data.supportersDismissedMonth !== null) {
     data.supportersDismissedMonth = null;

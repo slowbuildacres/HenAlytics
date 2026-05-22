@@ -192,7 +192,43 @@ export function extractHobbyExpenses(data, hobbyId) {
     }
   }
 
+  // (6) User-logged expenses from the Sales tab's "+ Log expense" button.
+  // These live in data.expenses[] with an optional hobbyId. Entries with
+  // a matching hobbyId are pulled into this hobby's FIFO pool; entries
+  // with no hobbyId are treated as general overhead (handled elsewhere
+  // by computeFifoStats, not here).
+  const userExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+  for (const ex of userExpenses) {
+    if (ex.hobbyId !== hobbyId) continue;
+    const cost = Number(ex.amount) || 0;
+    if (cost <= 0 || !ex.date) continue;
+    out.push({
+      date: ex.date,
+      cost,
+      source: "logged_expense",
+      note: ex.note || ex.category || "Expense",
+    });
+  }
+
   return out.sort((a, b) => (a.date || "").localeCompare(b.date || ""));
+}
+
+// Sum of "general overhead" — user-logged expenses with no hobbyId.
+// These are real money out the door but can't be attributed to a single
+// hobby for FIFO matching, so we subtract them from netProfit as a
+// flat overhead deduction.
+export function generalOverheadTotal(data, window) {
+  const userExpenses = Array.isArray(data.expenses) ? data.expenses : [];
+  let total = 0;
+  for (const ex of userExpenses) {
+    if (ex.hobbyId) continue; // hobby-attributed expenses handled by extractHobbyExpenses
+    const cost = Number(ex.amount) || 0;
+    if (cost <= 0 || !ex.date) continue;
+    if (window && window.start && ex.date < window.start) continue;
+    if (window && window.end && ex.date > window.end) continue;
+    total += cost;
+  }
+  return total;
 }
 
 // ---------------------------------------------------------------------------
@@ -366,6 +402,11 @@ export function computeFifoStats(data, window) {
   const unmappedSales = salesByHobby["_unmapped"] || [];
   for (const s of unmappedSales) totalRevenue += s.revenue;
 
+  // General overhead — user-logged expenses with no hobby attribution.
+  // Counted in totals + netProfit but not attributed to any per-hobby
+  // bucket (no FIFO matching possible).
+  const overhead = generalOverheadTotal(data, window);
+
   // Sort: profit desc for chart, unmatched desc for backlog list
   byHobby.sort((a, b) => b.profit - a.profit);
   const backlog = byHobby
@@ -376,8 +417,9 @@ export function computeFifoStats(data, window) {
   return {
     window: window || null,
     totalRevenue,
-    totalExpenses: totalConsumed,
-    netProfit: totalRevenue - totalConsumed,
+    totalExpenses: totalConsumed + overhead,
+    overhead,
+    netProfit: totalRevenue - totalConsumed - overhead,
     byHobby,
     backlog,
     totalBacklog,

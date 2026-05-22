@@ -1086,9 +1086,143 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
 // ============================================================================
 // MAIN SALES PAGE
 // ============================================================================
+const EXPENSE_CATEGORIES = [
+  "Feed", "Bedding", "Equipment", "Medical/Vet",
+  "Infrastructure", "Supplies", "Other",
+];
+
+function AddExpenseModal({ data, update, onClose, existingExpense }) {
+  const isEdit = !!existingExpense;
+  const visibleHobbies = (data.hobbies || []).filter(h => !h.hidden);
+
+  const [date, setDate] = useState(existingExpense?.date || todayStr());
+  const [amount, setAmount] = useState(existingExpense?.amount != null ? String(existingExpense.amount) : "");
+  const [category, setCategory] = useState(existingExpense?.category || "Feed");
+  const [hobbyId, setHobbyId] = useState(existingExpense?.hobbyId || "");
+  const [note, setNote] = useState(existingExpense?.note || "");
+  const [error, setError] = useState("");
+
+  const save = () => {
+    const n = parseFloat(amount);
+    if (!n || n <= 0) { setError("Enter a valid amount."); return; }
+    if (!category.trim()) { setError("Pick or type a category."); return; }
+    const expense = {
+      id: existingExpense?.id || ("ex_" + Math.random().toString(36).slice(2, 10)),
+      date,
+      amount: n,
+      category: category.trim(),
+      hobbyId: hobbyId || null,
+      note: note.trim(),
+      created: existingExpense?.created || Date.now(),
+    };
+    update((d) => {
+      if (!Array.isArray(d.expenses)) d.expenses = [];
+      if (isEdit) {
+        const idx = d.expenses.findIndex(e => e.id === expense.id);
+        if (idx !== -1) d.expenses[idx] = expense;
+        else d.expenses.push(expense);
+      } else {
+        d.expenses.push(expense);
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  const remove = () => {
+    if (!isEdit) return;
+    if (!confirm("Delete this expense?")) return;
+    update((d) => {
+      d.expenses = (d.expenses || []).filter(e => e.id !== existingExpense.id);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit expense" : "Log expense"}</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20 }}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+
+      <Field label="Amount ($)">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={amount}
+          onChange={(e) => { setAmount(e.target.value); setError(""); }}
+          placeholder="0.00"
+          autoFocus
+        />
+      </Field>
+
+      <Field label="Category">
+        <input
+          list="expense-categories"
+          style={inputStyle}
+          value={category}
+          onChange={(e) => { setCategory(e.target.value); setError(""); }}
+          placeholder="Feed, Bedding, etc."
+        />
+        <datalist id="expense-categories">
+          {EXPENSE_CATEGORIES.map(c => <option key={c} value={c} />)}
+        </datalist>
+      </Field>
+
+      <Field label="For which hobby? (optional)">
+        <select style={inputStyle} value={hobbyId} onChange={(e) => setHobbyId(e.target.value)}>
+          <option value="">— All / unspecified —</option>
+          {visibleHobbies.map(h => (
+            <option key={h.id} value={h.id}>{h.name}</option>
+          ))}
+        </select>
+      </Field>
+
+      <Field label="Note (optional)">
+        <input
+          style={inputStyle}
+          value={note}
+          onChange={(e) => setNote(e.target.value)}
+          placeholder="20lb layer pellets at TSC"
+        />
+      </Field>
+
+      {error && (
+        <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>
+          {error}
+        </div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "space-between", marginTop: 8 }}>
+        {isEdit ? (
+          <button onClick={remove} style={{ padding: "9px 14px", borderRadius: 8, background: "transparent", border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.accent }}>
+            Delete
+          </button>
+        ) : <div />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
+          <button onClick={save} style={{ padding: "9px 16px", borderRadius: 8, background: palette.ink, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}>{isEdit ? "Save" : "Log expense"}</button>
+        </div>
+      </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function SalesPage({ data, update }) {
   const [showAddSale, setShowAddSale] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
+  const [showAddExpense, setShowAddExpense] = useState(false);
+  const [editingExpense, setEditingExpense] = useState(null);
   const [filterType, setFilterType] = useState("all");
   const [showCustomers, setShowCustomers] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -1291,13 +1425,18 @@ export default function SalesPage({ data, update }) {
     <div>
       {showAddSale && <AddSaleModal data={data} update={update} onClose={() => setShowAddSale(false)} />}
       {editingSale && <AddSaleModal data={data} update={update} onClose={() => setEditingSale(null)} existingSale={editingSale} />}
+      {showAddExpense && <AddExpenseModal data={data} update={update} onClose={() => setShowAddExpense(false)} />}
+      {editingExpense && <AddExpenseModal data={data} update={update} onClose={() => setEditingExpense(null)} existingExpense={editingExpense} />}
       {showAddCustomer && <CustomerModal onSave={saveCustomer} onClose={() => setShowAddCustomer(false)} />}
       {editingCustomer && <CustomerModal customer={editingCustomer} onSave={saveCustomer} onClose={() => setEditingCustomer(null)} />}
 
       {/* Header */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10 }}>
         <h2 style={{ fontFamily:FONT_DISPLAY,fontSize:26,margin:0,color:palette.ink }}>sales</h2>
-        <Btn onClick={() => setShowAddSale(true)}>+ Log sale</Btn>
+        <div style={{ display: "flex", gap: 8 }}>
+          <Btn onClick={() => setShowAddSale(true)}>+ Log sale</Btn>
+          <Btn onClick={() => setShowAddExpense(true)}>+ Log expense</Btn>
+        </div>
       </div>
 
       {/* Revenue summary cards */}
