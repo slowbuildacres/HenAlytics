@@ -1179,11 +1179,11 @@ export function expandRecurringExpenses(expenses) {
 }
 
 
-function AddExpenseModal({ data, update, onClose, existingExpense }) {
+function AddExpenseModal({ data, update, onClose, existingExpense, occurrenceDate }) {
   const isEdit = !!existingExpense;
   const visibleHobbies = (data.hobbies || []).filter(h => !h.hidden);
 
-  const [date, setDate] = useState(existingExpense?.date || todayStr());
+  const [date, setDate] = useState(occurrenceDate || existingExpense?.date || todayStr());
   const [amount, setAmount] = useState(existingExpense?.amount != null ? String(existingExpense.amount) : "");
   const [category, setCategory] = useState(existingExpense?.category || "Feed");
   const [hobbyId, setHobbyId] = useState(existingExpense?.hobbyId || "");
@@ -1192,25 +1192,45 @@ function AddExpenseModal({ data, update, onClose, existingExpense }) {
   const [recurEnd, setRecurEnd] = useState(existingExpense?.recurEnd || "");
   const [error, setError] = useState("");
 
-  const save = () => {
+  // True when we're editing a virtual instance of a recurring template.
+  // In that case, save offers a choice: this occurrence only, or whole series.
+  const isRecurringInstanceEdit = isEdit && occurrenceDate && existingExpense?.recurrence && existingExpense.recurrence !== "none";
+
+  // Shared field validation + base expense shape. Returns null if invalid.
+  const buildBaseExpense = () => {
     const n = parseFloat(amount);
-    if (!n || n <= 0) { setError("Enter a valid amount."); return; }
-    if (!category.trim()) { setError("Pick or type a category."); return; }
-    const expense = {
-      id: existingExpense?.id || ("ex_" + Math.random().toString(36).slice(2, 10)),
-      date,
+    if (!n || n <= 0) { setError("Enter a valid amount."); return null; }
+    if (!category.trim()) { setError("Pick or type a category."); return null; }
+    return {
       amount: n,
       category: category.trim(),
       hobbyId: hobbyId || null,
       note: note.trim(),
+    };
+  };
+
+  // Save changes to the whole series (or save a non-recurring expense).
+  // This is the existing default save behavior.
+  const saveSeries = () => {
+    const base = buildBaseExpense();
+    if (!base) return;
+    // CRITICAL: when editing a recurring instance, the modal's `date` field
+    // was pre-filled with the occurrence's date — NOT the original anchor
+    // date. If we used `date` as the anchor for the series, we'd shift the
+    // entire series forward and wipe all earlier occurrences. Preserve the
+    // parent's original anchor date instead.
+    const seriesAnchorDate = isRecurringInstanceEdit
+      ? existingExpense.date
+      : date;
+    const expense = {
+      id: existingExpense?.id || ("ex_" + Math.random().toString(36).slice(2, 10)),
+      date: seriesAnchorDate,
+      ...base,
       created: existingExpense?.created || Date.now(),
     };
-    // Series-only recurrence: editing applies to the whole series. Step 3b
-    // will add per-occurrence skip and detach-to-standalone.
     if (recurrence && recurrence !== "none") {
       expense.recurrence = recurrence;
       if (recurEnd) expense.recurEnd = recurEnd;
-      // Preserve existing skippedDates across edits.
       if (existingExpense?.skippedDates) expense.skippedDates = existingExpense.skippedDates;
     } else {
       delete expense.recurrence;
@@ -1229,6 +1249,39 @@ function AddExpenseModal({ data, update, onClose, existingExpense }) {
     });
     onClose();
   };
+
+  // Save changes for THIS occurrence only:
+  //   - Add occurrenceDate to parent's skippedDates (so the virtual won't render).
+  //   - Create a new standalone expense at the modal's `date` field with the
+  //     edited values. (date may have been changed by the user; default was
+  //     the occurrence's date.)
+  const saveOccurrenceOnly = () => {
+    const base = buildBaseExpense();
+    if (!base) return;
+    const standalone = {
+      id: "ex_" + Math.random().toString(36).slice(2, 10),
+      date,
+      ...base,
+      created: Date.now(),
+    };
+    update((d) => {
+      if (!Array.isArray(d.expenses)) d.expenses = [];
+      // Mark this occurrence skipped on the parent template.
+      const parent = d.expenses.find(e => e.id === existingExpense.id);
+      if (parent) {
+        const skipped = Array.isArray(parent.skippedDates) ? parent.skippedDates : [];
+        if (!skipped.includes(occurrenceDate)) skipped.push(occurrenceDate);
+        parent.skippedDates = skipped;
+      }
+      // Push the new standalone record.
+      d.expenses.push(standalone);
+      return d;
+    });
+    onClose();
+  };
+
+  // Default action button — used when not editing a virtual instance.
+  const save = saveSeries;
 
   const remove = () => {
     if (!isEdit) return;
@@ -1326,9 +1379,16 @@ function AddExpenseModal({ data, update, onClose, existingExpense }) {
             Delete
           </button>
         ) : <div />}
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
-          <button onClick={save} style={{ padding: "9px 16px", borderRadius: 8, background: palette.ink, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}>{isEdit ? "Save" : "Log expense"}</button>
+          {isRecurringInstanceEdit ? (
+            <>
+              <button onClick={saveOccurrenceOnly} style={{ padding: "9px 12px", borderRadius: 8, background: palette.card, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer", color: palette.ink }}>Save this occurrence only</button>
+              <button onClick={saveSeries} style={{ padding: "9px 12px", borderRadius: 8, background: palette.ink, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer", color: palette.bg }}>Save whole series</button>
+            </>
+          ) : (
+            <button onClick={save} style={{ padding: "9px 16px", borderRadius: 8, background: palette.ink, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}>{isEdit ? "Save" : "Log expense"}</button>
+          )}
         </div>
       </div>
         </div>
@@ -1342,6 +1402,7 @@ export default function SalesPage({ data, update }) {
   const [editingSale, setEditingSale] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
+  const [editingOccurrenceDate, setEditingOccurrenceDate] = useState(null);
   const [filterType, setFilterType] = useState("all");
   const [showCustomers, setShowCustomers] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
@@ -1545,7 +1606,7 @@ export default function SalesPage({ data, update }) {
       {showAddSale && <AddSaleModal data={data} update={update} onClose={() => setShowAddSale(false)} />}
       {editingSale && <AddSaleModal data={data} update={update} onClose={() => setEditingSale(null)} existingSale={editingSale} />}
       {showAddExpense && <AddExpenseModal data={data} update={update} onClose={() => setShowAddExpense(false)} />}
-      {editingExpense && <AddExpenseModal data={data} update={update} onClose={() => setEditingExpense(null)} existingExpense={editingExpense} />}
+      {editingExpense && <AddExpenseModal data={data} update={update} onClose={() => { setEditingExpense(null); setEditingOccurrenceDate(null); }} existingExpense={editingExpense} occurrenceDate={editingOccurrenceDate} />}
       {showAddCustomer && <CustomerModal onSave={saveCustomer} onClose={() => setShowAddCustomer(false)} />}
       {editingCustomer && <CustomerModal customer={editingCustomer} onSave={saveCustomer} onClose={() => setEditingCustomer(null)} />}
 
@@ -1800,27 +1861,52 @@ export default function SalesPage({ data, update }) {
                 hobbies={data.hobbies}
                 onEdit={() => {
                   // Virtual instance from a recurring template: open the
-                  // template (parent) so user can edit the series.
+                  // template (parent) so user can edit the series — OR pick
+                  // "this occurrence only" to detach.
                   const parentId = row.item._parentId;
                   if (parentId) {
                     const parent = (data.expenses || []).find(x => x.id === parentId);
-                    if (parent) setEditingExpense(parent);
+                    if (parent) {
+                      setEditingExpense(parent);
+                      setEditingOccurrenceDate(row.item.date);
+                    }
                   } else {
                     setEditingExpense(row.item);
+                    setEditingOccurrenceDate(null);
                   }
                 }}
                 onDelete={() => {
                   const parentId = row.item._parentId;
-                  const isRecurringInstance = !!parentId;
-                  const msg = isRecurringInstance
-                    ? "Delete this recurring expense? This removes the entire series."
-                    : "Delete this expense?";
-                  if (!confirm(msg)) return;
-                  update(d => {
-                    const removeId = parentId || row.item.id;
-                    d.expenses = (d.expenses || []).filter(e => e.id !== removeId);
-                    return d;
-                  });
+                  if (!parentId) {
+                    // Non-recurring expense — simple delete.
+                    if (!confirm("Delete this expense?")) return;
+                    update(d => {
+                      d.expenses = (d.expenses || []).filter(e => e.id !== row.item.id);
+                      return d;
+                    });
+                    return;
+                  }
+                  // Virtual instance from a recurring template — offer two options
+                  // via chained confirms. "OK" on first prompt = skip this occurrence
+                  // only. Cancel → second prompt offers full-series delete.
+                  const occurrenceDateText = fmtDate(row.item.date);
+                  if (confirm(`Delete just the ${occurrenceDateText} occurrence?\n\nClick OK to skip this occurrence only.\nClick Cancel to see the option to delete the whole series.`)) {
+                    update(d => {
+                      const parent = (d.expenses || []).find(e => e.id === parentId);
+                      if (!parent) return d;
+                      const skipped = Array.isArray(parent.skippedDates) ? parent.skippedDates : [];
+                      if (!skipped.includes(row.item.date)) skipped.push(row.item.date);
+                      parent.skippedDates = skipped;
+                      return d;
+                    });
+                    return;
+                  }
+                  if (confirm("Delete the entire recurring series instead? This removes all occurrences.")) {
+                    update(d => {
+                      d.expenses = (d.expenses || []).filter(e => e.id !== parentId);
+                      return d;
+                    });
+                  }
                 }}
               />
             ))}
