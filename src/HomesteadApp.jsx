@@ -198,6 +198,27 @@ const defaultData = () => ({
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
+  // STEP3_REVIEW_PROMPT: in-app review prompt state (iOS + Android only).
+  // userTappedReview locks the prompt forever after the user agrees to review.
+  // permanentlyDismissed locks after "No thanks". promptCount enforces Apple's
+  // 3-per-365-day cap (resets on calendar year change via lastPromptYear).
+  // lastPromptedAt drives a 60-day cooldown between asks for the same user.
+  reviewPrompt: {
+    promptCount: 0,
+    lastPromptedAt: null,
+    lastPromptYear: null,
+    userTappedReview: false,
+    permanentlyDismissed: false,
+  },
+  // STEP3_REVIEW_PROMPT: which egg-count milestones the user has already
+  // been celebrated for. Pre-populated in migrateData for users who already
+  // crossed thresholds before this feature shipped, so the modal never
+  // fires retroactively (those moments already passed).
+  eggMilestonesCelebrated: {
+    eggs_100: false,
+    eggs_500: false,
+    eggs_1000: false,
+  },
   units: {
     temperature: "F",      // "F" or "C"
     currency: "USD",       // ISO currency code: USD, AUD, CAD, GBP, EUR, NZD
@@ -369,6 +390,35 @@ function migrateData(data) {
   if (typeof data.spouseMode !== "boolean") data.spouseMode = false;
   if (!Array.isArray(data.customers)) data.customers = [];
   if (!Array.isArray(data.seenMilestones)) data.seenMilestones = [];
+  // STEP3_REVIEW_PROMPT: review-prompt state defaults.
+  if (!data.reviewPrompt || typeof data.reviewPrompt !== "object") {
+    data.reviewPrompt = { promptCount: 0, lastPromptedAt: null, lastPromptYear: null, userTappedReview: false, permanentlyDismissed: false };
+  } else {
+    if (typeof data.reviewPrompt.promptCount !== "number") data.reviewPrompt.promptCount = 0;
+    if (typeof data.reviewPrompt.lastPromptedAt !== "string" && data.reviewPrompt.lastPromptedAt !== null) data.reviewPrompt.lastPromptedAt = null;
+    if (typeof data.reviewPrompt.lastPromptYear !== "number" && data.reviewPrompt.lastPromptYear !== null) data.reviewPrompt.lastPromptYear = null;
+    if (typeof data.reviewPrompt.userTappedReview !== "boolean") data.reviewPrompt.userTappedReview = false;
+    if (typeof data.reviewPrompt.permanentlyDismissed !== "boolean") data.reviewPrompt.permanentlyDismissed = false;
+  }
+  // STEP3_REVIEW_PROMPT: egg milestone flags. On first migration, pre-mark
+  // any threshold the user has already crossed so we don't fire a 100-egg
+  // celebration on someone who already has 5,000 eggs logged. New crossings
+  // post-migration will still fire normally.
+  if (!data.eggMilestonesCelebrated || typeof data.eggMilestonesCelebrated !== "object") {
+    const eggEntries = (data.entries && Array.isArray(data.entries.egg_layers)) ? data.entries.egg_layers : [];
+    const existingEggTotal = eggEntries
+      .filter(e => e && (e.action === "eggs" || e.action === "eggs_laid"))
+      .reduce((s, e) => s + (Number(e.count) || 0), 0);
+    data.eggMilestonesCelebrated = {
+      eggs_100: existingEggTotal >= 100,
+      eggs_500: existingEggTotal >= 500,
+      eggs_1000: existingEggTotal >= 1000,
+    };
+  } else {
+    if (typeof data.eggMilestonesCelebrated.eggs_100 !== "boolean") data.eggMilestonesCelebrated.eggs_100 = false;
+    if (typeof data.eggMilestonesCelebrated.eggs_500 !== "boolean") data.eggMilestonesCelebrated.eggs_500 = false;
+    if (typeof data.eggMilestonesCelebrated.eggs_1000 !== "boolean") data.eggMilestonesCelebrated.eggs_1000 = false;
+  }
   if (typeof data.homesteadName !== "string") data.homesteadName = "";
   if (data.homesteadLocation !== null && (!data.homesteadLocation || typeof data.homesteadLocation !== "object")) {
     data.homesteadLocation = null;
@@ -1340,6 +1390,61 @@ const newId = () => {
 
 const CURRENT_VERSION = 44;
 
+// STEP3_REVIEW_PROMPT: custom pre-prompt modal.
+// Apple-compliant pattern: we show our own modal first asking if the
+// user is enjoying the app. Only if they tap "Sure" do we trigger the
+// native review dialog. We never gate the native dialog on rating —
+// everyone who taps Sure gets it. We just filter who we bother with the
+// request based on engagement signals, which is the standard pattern.
+function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
+  const palette = { bg: "#F4EDE0", card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030" };
+  const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
+  const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
+  return (
+    <div style={{
+      position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 10000, padding: 20,
+    }}>
+      <div style={{
+        background: palette.card, borderRadius: 14, padding: 24,
+        maxWidth: 360, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
+        fontFamily: FONT_BODY, color: palette.ink,
+      }}>
+        <div style={{ fontSize: 36, textAlign: "center", marginBottom: 10 }}>💚</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, textAlign: "center", marginBottom: 10, lineHeight: 1.2 }}>
+          Enjoying Henalytics?
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.5, color: palette.inkSoft, textAlign: "center", marginBottom: 22 }}>
+          A quick review on the App Store really helps other homesteaders find the app.
+        </div>
+        <button onClick={onSure} style={{
+          width: "100%", padding: "12px 16px", borderRadius: 10, border: "none",
+          background: palette.accent, color: "#fff", fontFamily: FONT_BODY,
+          fontSize: 15, fontWeight: 600, cursor: "pointer", marginBottom: 8,
+        }}>
+          Sure, I'll leave a review
+        </button>
+        <button onClick={onLater} style={{
+          width: "100%", padding: "12px 16px", borderRadius: 10,
+          border: `1.5px solid ${palette.line}`, background: "transparent",
+          color: palette.ink, fontFamily: FONT_BODY, fontSize: 14,
+          cursor: "pointer", marginBottom: 8,
+        }}>
+          Maybe later
+        </button>
+        <button onClick={onNoThanks} style={{
+          width: "100%", padding: "10px 16px", borderRadius: 10, border: "none",
+          background: "transparent", color: palette.inkSoft,
+          fontFamily: FONT_BODY, fontSize: 13, cursor: "pointer",
+        }}>
+          No thanks
+        </button>
+      </div>
+    </div>
+  );
+}
+
 const WHATS_NEW = [
   "💰 Real profit & expense tracking on the Sales tab — a new Profit & Expenses card uses FIFO matching (oldest expenses get paid off first by sales, per hobby) to show your actual revenue, total expenses, and net profit. Includes a Profit by hobby bar chart so you can see which hobbies make money and which don't, plus an Unmatched expense backlog list showing money you've spent that hasn't been recouped yet — broken out per hobby. Switch the time window between This month, This quarter, This year, Last 12 months, and All time. One-time infrastructure costs (coops, fencing, etc.) are excluded from the matching so the picture reflects ongoing profitability, not your startup investment.",
   "🌱 Annual plants now have their own pages — tap any annual in your garden's Annuals list to open its detail view. See every planting and harvest for that plant this season, and log actions like spray, fertilize, weed, thin, or transplant — each one dated and saved to that plant's history. Works just like perennials and orchard trees. Your existing plantings were automatically organized into annual records.",
@@ -1427,6 +1532,57 @@ const getNativePlatform = () => {
   } catch (_) {}
   return "web";
 };
+
+// STEP3_REVIEW_PROMPT: native in-app review request.
+// Uses @capacitor-community/in-app-review which wraps iOS SKStoreReviewController
+// and Android Play In-App Review API. The OS controls whether the dialog
+// actually shows — iOS silently suppresses past its 3-per-365-day quota,
+// Android may suppress for various reasons. Either way the call resolves
+// without throwing. Web is a no-op.
+const requestNativeReview = async () => {
+  if (!isNativeApp()) return;
+  try {
+    const { InAppReview } = await loadCapacitor("@capacitor-community/in-app-review");
+    await InAppReview.requestReview();
+  } catch (e) {
+    console.warn("[review] requestReview failed (plugin missing or platform quota):", e?.message || e);
+  }
+};
+
+// STEP3_REVIEW_PROMPT: pure eligibility gate.
+// Inputs: the data.reviewPrompt object, and an account-age-in-days number.
+// Returns true if we may show the pre-prompt right now. Native-only is
+// enforced at the call site (showReviewPrompt is set inside native triggers
+// only) but we also gate here as belt-and-suspenders.
+//
+// Rules:
+//   - Must be a native app (iOS or Android), never web
+//   - Account age >= 20 days
+//   - Not already userTappedReview (one-way lock)
+//   - Not already permanentlyDismissed (one-way lock)
+//   - promptCount < 3 for the current calendar year
+//   - At least 60 days since lastPromptedAt (cooldown)
+const REVIEW_MIN_ACCOUNT_AGE_DAYS = 20;
+const REVIEW_MAX_PROMPTS_PER_YEAR = 3;
+const REVIEW_COOLDOWN_DAYS = 60;
+function shouldPromptForReview(reviewPrompt, accountAgeDays) {
+  if (!isNativeApp()) return false;
+  if (typeof accountAgeDays !== "number" || accountAgeDays < REVIEW_MIN_ACCOUNT_AGE_DAYS) return false;
+  const r = reviewPrompt || {};
+  if (r.userTappedReview === true) return false;
+  if (r.permanentlyDismissed === true) return false;
+  const currentYear = new Date().getFullYear();
+  const promptCount = (r.lastPromptYear === currentYear) ? (Number(r.promptCount) || 0) : 0;
+  if (promptCount >= REVIEW_MAX_PROMPTS_PER_YEAR) return false;
+  if (r.lastPromptedAt) {
+    const lastMs = Date.parse(r.lastPromptedAt);
+    if (!Number.isNaN(lastMs)) {
+      const daysSince = (Date.now() - lastMs) / 86400000;
+      if (daysSince < REVIEW_COOLDOWN_DAYS) return false;
+    }
+  }
+  return true;
+}
 
 // Open an external URL. In native: uses @capacitor/browser (in-app safari/
 // chrome custom tab — user swipes/taps to dismiss back to Henalytics).
@@ -2717,6 +2873,11 @@ useEffect(() => {
   // Riley can change anything (add more milestones, edit copy, kill the
   // whole feature) by updating the row in Supabase. No app update needed.
   const milestoneShownRef = React.useRef(false);
+  // STEP3_REVIEW_PROMPT: review prompt UI state + per-session guards.
+  const [showReviewPrompt, setShowReviewPrompt] = useState(false);
+  const reviewPromptShownRef = React.useRef(false); // guards multi-fire in one session
+  const yirHasScrolledRef = React.useRef(false);    // set true by YIR when user scrolls
+  const lastEggCountForReviewRef = React.useRef(null); // baseline for egg-milestone trigger
   useEffect(() => {
     let cancelled = false;
     const fetchAll = async () => {
@@ -2835,6 +2996,98 @@ useEffect(() => {
     if (eligible.length === 0) return null;
     return Math.max(...eligible);
   }, [milestoneConfig, userCount]);
+
+  // STEP3_REVIEW_PROMPT: account age in days (from Supabase auth user.created_at).
+  // Returns null when the user isn't signed in or created_at is unavailable,
+  // which causes shouldPromptForReview to return false — signed-out users
+  // (or fresh sign-ups before sync) never see the prompt.
+  const accountAgeDays = React.useMemo(() => {
+    const createdAt = user?.created_at;
+    if (!createdAt) return null;
+    const created = Date.parse(createdAt);
+    if (Number.isNaN(created)) return null;
+    return (Date.now() - created) / 86400000;
+  }, [user?.created_at]);
+
+  // STEP3_REVIEW_PROMPT: helper used by both triggers to actually open the
+  // pre-prompt. Centralizes all the guards so the trigger effects stay
+  // small. Returns true if the prompt was opened.
+  const tryOpenReviewPrompt = React.useCallback(() => {
+    if (reviewPromptShownRef.current) return false;
+    if (!shouldPromptForReview(data?.reviewPrompt, accountAgeDays)) return false;
+    reviewPromptShownRef.current = true;
+    // Small delay so the prompt lands after any concurrent modal/toast settles.
+    setTimeout(() => setShowReviewPrompt(true), 600);
+    return true;
+  }, [data?.reviewPrompt, accountAgeDays]);
+
+  // STEP3_REVIEW_PROMPT: egg-milestone trigger.
+  // Watches the total egg count across all flocks (data.entries.egg_layers).
+  // When the total crosses 100, 500, or 1000 AND that milestone hasn't been
+  // celebrated, mark it celebrated and try to open the review prompt.
+  // Marking happens regardless of whether the prompt actually opens, so a
+  // user who isn't eligible (account < 20 days, hit annual cap, etc.) still
+  // gets their milestone marked and won't re-trigger when next eligible.
+  useEffect(() => {
+    if (!data?.entries) return;
+    const eggEntries = Array.isArray(data.entries.egg_layers) ? data.entries.egg_layers : [];
+    const total = eggEntries
+      .filter(e => e && (e.action === "eggs" || e.action === "eggs_laid"))
+      .reduce((s, e) => s + (Number(e.count) || 0), 0);
+    // First pass: record the baseline silently. This guards against firing
+    // on app open for a user who already meets a threshold (migrateData also
+    // back-marks celebrated milestones, but this is belt-and-suspenders).
+    if (lastEggCountForReviewRef.current === null) {
+      lastEggCountForReviewRef.current = total;
+      return;
+    }
+    const prev = lastEggCountForReviewRef.current;
+    lastEggCountForReviewRef.current = total;
+    if (total <= prev) return; // only react to increases
+    const celebrated = data.eggMilestonesCelebrated || {};
+    const thresholds = [
+      { key: "eggs_100",  value: 100  },
+      { key: "eggs_500",  value: 500  },
+      { key: "eggs_1000", value: 1000 },
+    ];
+    // Find the highest newly-crossed threshold (handles the rare case of
+    // a user logging a big number that crosses two at once — celebrate the
+    // biggest one, mark both, never re-fire).
+    const justCrossed = thresholds.filter(t => total >= t.value && !celebrated[t.key]);
+    if (justCrossed.length === 0) return;
+    // Mark all just-crossed milestones as celebrated (idempotent persist).
+    update(d => {
+      if (!d.eggMilestonesCelebrated || typeof d.eggMilestonesCelebrated !== "object") {
+        d.eggMilestonesCelebrated = { eggs_100: false, eggs_500: false, eggs_1000: false };
+      }
+      justCrossed.forEach(t => { d.eggMilestonesCelebrated[t.key] = true; });
+      return d;
+    });
+    // Attempt to open the prompt. Guards inside tryOpenReviewPrompt handle
+    // eligibility — if user isn't native, isn't 20 days old, etc., nothing
+    // happens visually but the milestone is still marked above so it doesn't
+    // queue up forever.
+    tryOpenReviewPrompt();
+    // `update` is intentionally excluded from deps: it's declared later in this
+    // component body (TDZ at evaluation time if listed here). It closes over
+    // setData which is stable across renders, so omitting is safe.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.entries, data?.eggMilestonesCelebrated, tryOpenReviewPrompt]);
+
+  // STEP3_REVIEW_PROMPT: YIR scroll-then-exit trigger.
+  // YearInReviewPage sets yirHasScrolledRef.current = true via the
+  // onScrolled prop when the user scrolls the page. When the user
+  // navigates away from page === "year" with that ref set, we try the
+  // review prompt. The ref is then reset so re-entering YIR starts fresh.
+  const prevPageRef = React.useRef(page);
+  useEffect(() => {
+    const prevPage = prevPageRef.current;
+    prevPageRef.current = page;
+    if (prevPage === "year" && page !== "year" && yirHasScrolledRef.current) {
+      yirHasScrolledRef.current = false;
+      tryOpenReviewPrompt();
+    }
+  }, [page, tryOpenReviewPrompt]);
 
   // Trigger: watch total entry count. Fires when count INCREASES (a new log
   // saved) AND all gating conditions are met. The ref guards against
@@ -3792,6 +4045,66 @@ useNativeBackButton(React.useCallback(() => {
         />
       )}
 
+      {/* STEP3_REVIEW_PROMPT: review pre-prompt modal.
+          Fires from one of two triggers (YIR scroll-and-exit, or crossing an
+          egg-count milestone). Guarded by shouldPromptForReview() inside
+          tryOpenReviewPrompt — so platform/age/cooldown/quota are already
+          enforced by the time showReviewPrompt is true. */}
+      {showReviewPrompt && !showWhatsNew && !showSupporterThanks && !showMilestone && (
+        <ReviewPromptModal
+          onSure={() => {
+            setShowReviewPrompt(false);
+            update(d => {
+              if (!d.reviewPrompt || typeof d.reviewPrompt !== "object") {
+                d.reviewPrompt = { promptCount: 0, lastPromptedAt: null, lastPromptYear: null, userTappedReview: false, permanentlyDismissed: false };
+              }
+              d.reviewPrompt.userTappedReview = true;
+              const now = new Date();
+              d.reviewPrompt.lastPromptedAt = now.toISOString();
+              const yr = now.getFullYear();
+              if (d.reviewPrompt.lastPromptYear !== yr) {
+                d.reviewPrompt.lastPromptYear = yr;
+                d.reviewPrompt.promptCount = 0;
+              }
+              d.reviewPrompt.promptCount = (Number(d.reviewPrompt.promptCount) || 0) + 1;
+              return d;
+            });
+            // Fire the native review dialog. iOS/Android will decide whether
+            // to actually show it; either way userTappedReview is now true
+            // and we will never ask again.
+            requestNativeReview();
+          }}
+          onLater={() => {
+            setShowReviewPrompt(false);
+            update(d => {
+              if (!d.reviewPrompt || typeof d.reviewPrompt !== "object") {
+                d.reviewPrompt = { promptCount: 0, lastPromptedAt: null, lastPromptYear: null, userTappedReview: false, permanentlyDismissed: false };
+              }
+              const now = new Date();
+              const yr = now.getFullYear();
+              if (d.reviewPrompt.lastPromptYear !== yr) {
+                d.reviewPrompt.lastPromptYear = yr;
+                d.reviewPrompt.promptCount = 0;
+              }
+              d.reviewPrompt.promptCount = (Number(d.reviewPrompt.promptCount) || 0) + 1;
+              d.reviewPrompt.lastPromptedAt = now.toISOString();
+              return d;
+            });
+          }}
+          onNoThanks={() => {
+            setShowReviewPrompt(false);
+            update(d => {
+              if (!d.reviewPrompt || typeof d.reviewPrompt !== "object") {
+                d.reviewPrompt = { promptCount: 0, lastPromptedAt: null, lastPromptYear: null, userTappedReview: false, permanentlyDismissed: false };
+              }
+              d.reviewPrompt.permanentlyDismissed = true;
+              d.reviewPrompt.lastPromptedAt = new Date().toISOString();
+              return d;
+            });
+          }}
+        />
+      )}
+
       {/* Tutorial prompt — shown once after onboarding */}
       {showTutorialPrompt && !showTutorial && (
         <TutorialPrompt
@@ -4197,7 +4510,7 @@ useNativeBackButton(React.useCallback(() => {
           <PhotoLibraryPage data={data} user={user} />
         )}
         {page === "year" && (
-          <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
+          <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /* STEP3_REVIEW_PROMPT */ />
         )}
         {page === "bees" && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />

@@ -110,7 +110,32 @@ const fmtTractorDistance = (totalFeet) => {
     : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
 };
 
-export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport }) {
+export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport, onScrolled }) {
+  // STEP3_REVIEW_PROMPT: notify the parent when the user has scrolled
+  // the YIR page. Parent uses this signal to decide whether to show the
+  // review prompt when the user leaves the page. Threshold is 200px so
+  // a stray touch doesn't count as "engaged with the page". We only fire
+  // once per mount. Using a ref for the callback so re-renders that pass
+  // a new inline arrow don't reset the "fired" guard or thrash listeners.
+  const onScrolledRef = React.useRef(onScrolled);
+  React.useEffect(() => { onScrolledRef.current = onScrolled; }, [onScrolled]);
+  useEffect(() => {
+    let fired = false;
+    const onScroll = () => {
+      if (fired) return;
+      const y = typeof window !== "undefined" ? (window.scrollY || window.pageYOffset || 0) : 0;
+      if (y >= 200) {
+        fired = true;
+        try {
+          if (typeof onScrolledRef.current === "function") onScrolledRef.current();
+        } catch (_) {}
+        window.removeEventListener("scroll", onScroll);
+      }
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, []);
+
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
   const [year, setYear] = useState(() => {
