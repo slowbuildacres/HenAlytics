@@ -619,9 +619,47 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
   if (gardenHobby) {
     if (!Array.isArray(gardenHobby.annuals)) gardenHobby.annuals = [];
     const gardenEntries = (data.entries && data.entries.garden) || [];
+
+    // STEP_ANNUALS_DEDUPE: collapse any existing duplicate annuals.
+    // Previous versions of the indexing pass below used an asymmetric trim
+    // (existing keys: no trim; new entry keys: trimmed), so any whitespace
+    // mismatch between an existing annual.name and a planted entry's
+    // e.plant value would cause the dedupe to miss and a duplicate annual
+    // to be appended on every load. This one-shot collapse merges any
+    // (name-trimmed-lowercased | seasonId) duplicates into the earliest
+    // record, preserving its id/created/actions so detail views and the
+    // action log don't break for users who already have duplicates.
+    const collapsedByKey = new Map();
+    for (const a of gardenHobby.annuals) {
+      const k = `${String(a.name || "").trim().toLowerCase()}|${a.seasonId || ""}`;
+      if (!collapsedByKey.has(k)) {
+        // First seen — keep this record but normalize its stored name so
+        // future comparisons are stable (no leading/trailing whitespace).
+        a.name = String(a.name || "").trim() || "Unnamed";
+        collapsedByKey.set(k, a);
+      } else {
+        // Duplicate — merge actions[] into the kept record and drop this one.
+        const keeper = collapsedByKey.get(k);
+        if (Array.isArray(a.actions) && a.actions.length) {
+          keeper.actions = Array.isArray(keeper.actions) ? keeper.actions : [];
+          // De-dupe by action id when merging so re-running migrateData is idempotent.
+          const seenIds = new Set(keeper.actions.map(x => x && x.id).filter(Boolean));
+          for (const act of a.actions) {
+            if (!act || (act.id && seenIds.has(act.id))) continue;
+            keeper.actions.push(act);
+            if (act.id) seenIds.add(act.id);
+          }
+        }
+      }
+    }
+    gardenHobby.annuals = Array.from(collapsedByKey.values());
+
+    // Now run the index-from-entries pass with a SYMMETRIC dedupe key.
+    // Both sides trim + lowercase so "BED 1- Dill " and "BED 1- Dill"
+    // resolve to the same key and we don't re-append on load.
     const existingKeys = new Set(
       gardenHobby.annuals.map(
-        (a) => `${String(a.name || "").toLowerCase()}|${a.seasonId || ""}`
+        (a) => `${String(a.name || "").trim().toLowerCase()}|${a.seasonId || ""}`
       )
     );
     gardenEntries.forEach((e) => {
@@ -639,20 +677,6 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
         created: Date.now(),
       });
     });
-  }
-
-  // ---- Seed Starts ----
-  // Parallel to incubator's brooderBatches: a discrete batch of seeds you've
-  // sown indoors (or under grow lights), tracking germination and transplant
-  // outcomes. Shape:
-  //   { id, seasonId, plant, variety, sowDate, seedsSown,
-  //     germinated, germinationDate,           // null until logged
-  //     transplants: [{ id, date, count, plantingId }],
-  //     lost,                                  // sprouts lost between germ and transplant
-  //     failed, archived, notes, created }
-  // Survival rate analytics derive entirely from this array.
-  if (gardenHobby) {
-    if (!Array.isArray(gardenHobby.seedStarts)) gardenHobby.seedStarts = [];
   }
   if (typeof data.lastSeenVersion !== "number") data.lastSeenVersion = 0;
   const hasBees = data.hobbies.some(h => h.id === "bees");
@@ -1402,7 +1426,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 45;
+const CURRENT_VERSION = 44;
 
 // STEP3_REVIEW_PROMPT: custom pre-prompt modal.
 // Apple-compliant pattern: we show our own modal first asking if the
@@ -1460,7 +1484,6 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
-  "🌱 Seed Starts in Garden — sow seeds indoors and track them all the way to harvest, like the Incubator's brooder flow but for plants. From your garden home, start a batch (variety, sow date, seeds sown) and Henalytics drops a 'check seedlings' reminder on your calendar at expected germination. Log germination, then transplant sprouts whenever you're ready — each transplant becomes a real planting record so harvests and annual history all keep working. The Garden analytics page now shows a survival funnel: germination rate, sprout-to-transplant rate, and what % of transplanted batches reached harvest.",
   "💰 Real profit & expense tracking on the Sales tab — a new Profit & Expenses card uses FIFO matching (oldest expenses get paid off first by sales, per hobby) to show your actual revenue, total expenses, and net profit. Includes a Profit by hobby bar chart so you can see which hobbies make money and which don't, plus an Unmatched expense backlog list showing money you've spent that hasn't been recouped yet — broken out per hobby. Switch the time window between This month, This quarter, This year, Last 12 months, and All time. One-time infrastructure costs (coops, fencing, etc.) are excluded from the matching so the picture reflects ongoing profitability, not your startup investment.",
   "🌱 Annual plants now have their own pages — tap any annual in your garden's Annuals list to open its detail view. See every planting and harvest for that plant this season, and log actions like spray, fertilize, weed, thin, or transplant — each one dated and saved to that plant's history. Works just like perennials and orchard trees. Your existing plantings were automatically organized into annual records.",
   "🌱 New garden layout: grid view — when you add a Garden Map area you can now lay it out as a grid of rows and columns (great for raised beds and square-foot gardening), instead of pinning plants on a photo. Tap a cell to plant it, tap again to log dates and notes. This is a Supporter early-access feature — Supporters have it now; it opens to everyone soon.",  // GARDEN_GRID
@@ -5000,7 +5023,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
         const nm = plantName.trim() || "Unnamed";
         const sid = gh.currentSeason?.id || "";
         const exists = gh.annuals.some(
-          a => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
+          a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
                (a.seasonId || "") === sid
         );
         if (!exists) {
@@ -5693,10 +5716,7 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
       { action: "sold_eggs",      icon: DollarSign,    label: "Sold Eggs",      color: palette.accent },
       { action: "bedding",        icon: Archive,       label: "Bedding",        color: palette.featherSoft },
       { action: "broody",         icon: NotebookPen,   label: "Broody",         color: palette.maple || palette.yolkSoft },
-      // Report Death tile removed — the Remove tile (below) now handles all
-      // reasons birds leave the flock including died/culled, so the standalone
-      // death entry point is redundant. Existing death entries in user data
-      // are unaffected; the "death" action remains a valid entry type.
+      { action: "death",          icon: Skull,         label: "Report Death",   color: palette.accent },
       { action: "infrastructure", icon: Hammer,        label: "Infrastructure", color: palette.feather },
       { action: "note",           icon: NotebookPen,   label: "Note",           color: palette.inkSoft },
     ];
@@ -5760,10 +5780,7 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
       { action: "fed",            icon: Sun,         label: "Fed",            color: palette.feather },
       { action: "watered",        icon: Droplet,     label: "Watered",        color: "#3F7CAC" },
       { action: "move_tractor",   icon: Truck,       label: "Move Tractor",   color: palette.feather },
-      // Report Death tile removed — the Remove tile (below) now handles all
-      // reasons birds leave a batch including died/culled, so the standalone
-      // death entry point is redundant. Existing death entries in user data
-      // are unaffected; the "death" action remains a valid entry type.
+      { action: "death",          icon: Skull,       label: "Report Death",   color: palette.accent },
       { action: "infrastructure", icon: Hammer,      label: "Infrastructure", color: palette.feather },
       { action: "note",           icon: NotebookPen, label: "Note",           color: palette.inkSoft },
     ];
@@ -5795,12 +5812,8 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
           color={palette.ink}
           onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
         />
-        {/* Remove (formerly "Butcher") — routes through ButcherModal which
-            handles all reasons (butchered / sold / rehomed / given_away /
-            died / culled / other). Matches the egg-layers Remove tile so
-            both bird hobbies use the same verb for "bird leaves the batch".
-            Always visible since it's a batch-end action, not a log action. */}
-        <Tile icon={Snowflake} label="Remove" color={palette.ink} onClick={() => setModal({ type: "butcher" })} />
+        {/* Butcher = batch-end action, not a log action. Always visible. */}
+        <Tile icon={Snowflake} label="Butcher" color={palette.ink} onClick={() => setModal({ type: "butcher" })} />
       </div>
     );
   }
@@ -6115,7 +6128,7 @@ function AnnualSection({ hobby, season, seasonEntries, setModal }) {
   // Subtitle data per record: gather this plant's planted/harvested entries.
   const rowsData = annuals
     .map((a) => {
-      const nameKey = String(a.name || "").toLowerCase();
+      const nameKey = String(a.name || "").trim().toLowerCase();
       const plantings = seasonEntries.filter(
         (e) => e.action === "planted" &&
           (e.plant || "Unnamed").trim().toLowerCase() === nameKey
@@ -6181,7 +6194,7 @@ function AnnualSection({ hobby, season, seasonEntries, setModal }) {
 // Shows one annual's plantings + harvests (gathered from garden entries) and
 // its action log. Modeled on PerennialDetailModal.
 function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose }) {
-  const nameKey = String(annual.name || "").toLowerCase();
+  const nameKey = String(annual.name || "").trim().toLowerCase();
   const gardenEntries = (data.entries && data.entries.garden) || [];
   const scoped = gardenEntries.filter(
     (e) => e.seasonId === annual.seasonId
@@ -6205,8 +6218,104 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
     return d;
   });
 
+  // STEP_ANNUAL_RENAME: inline rename UI.
+  // The annual record's name is the human label; the linkage to planted /
+  // harvested entries is by (e.plant.trim().toLowerCase() === annual.name
+  // .trim().toLowerCase() && e.seasonId === annual.seasonId). So a real
+  // rename has to: (1) update annual.name, (2) rewrite every matching
+  // planted/harvested entry's e.plant to the new name (same season only —
+  // we don't touch other seasons' history), and (3) if an annual with the
+  // new name already exists in the same season, merge into it (combine
+  // actions[] by id, drop the now-redundant record). Keeps the rename
+  // operation idempotent and avoids creating yet another duplicate row.
+  const [renameOpen, setRenameOpen] = useState(false);
+  const [renameValue, setRenameValue] = useState(annual.name || "");
+  const renameInputRef = React.useRef(null);
+  React.useEffect(() => {
+    if (renameOpen && renameInputRef.current) {
+      // Defer focus to next tick so the input is mounted.
+      setTimeout(() => { try { renameInputRef.current.focus(); renameInputRef.current.select(); } catch (_) {} }, 0);
+    }
+  }, [renameOpen]);
+
+  const saveRename = () => {
+    const next = String(renameValue || "").trim();
+    if (!next) return; // ignore blank
+    const oldName = String(annual.name || "").trim();
+    if (next.toLowerCase() === oldName.toLowerCase()) {
+      // No-op rename (case-insensitive identical); just close the editor.
+      setRenameOpen(false);
+      return;
+    }
+    update(d => {
+      const h = (d.hobbies || []).find(x => x.id === hobbyId);
+      if (!h || !Array.isArray(h.annuals)) return d;
+      const me = h.annuals.find(x => x.id === annual.id);
+      if (!me) return d;
+      const sid = me.seasonId || "";
+      const oldKey = String(me.name || "").trim().toLowerCase();
+      const newKeyLc = next.toLowerCase();
+
+      // 1) Rewrite matching planted/harvested entries in the same season to
+      //    use the new name. This is the core of "a real rename" — without
+      //    it, the entries still reference the old name and migrateData's
+      //    indexing pass would re-create an annual for the old name on the
+      //    next load.
+      const gEntries = (d.entries && d.entries.garden) || [];
+      for (const e of gEntries) {
+        if (!e) continue;
+        if (e.seasonId !== sid) continue;
+        if (e.action !== "planted" && e.action !== "harvested") continue;
+        const pn = String(e.plant || "").trim().toLowerCase();
+        if (pn !== oldKey) continue;
+        e.plant = next;
+      }
+
+      // 2) If an existing annual already has the target name in this season,
+      //    merge into it (preserve its id so links/refs don't break) and drop
+      //    this one. Otherwise, just update this record's name in place.
+      const existing = h.annuals.find(
+        x => x.id !== me.id &&
+             (x.seasonId || "") === sid &&
+             String(x.name || "").trim().toLowerCase() === newKeyLc
+      );
+      if (existing) {
+        // Merge actions[] by id (skip duplicates) into the existing record.
+        existing.actions = Array.isArray(existing.actions) ? existing.actions : [];
+        const seenIds = new Set(existing.actions.map(a => a && a.id).filter(Boolean));
+        for (const act of (me.actions || [])) {
+          if (!act || (act.id && seenIds.has(act.id))) continue;
+          existing.actions.push(act);
+          if (act.id) seenIds.add(act.id);
+        }
+        // Normalize the keeper's name to the trimmed new value so casing/
+        // whitespace from this rename wins.
+        existing.name = next;
+        // Drop our record.
+        h.annuals = h.annuals.filter(x => x.id !== me.id);
+      } else {
+        me.name = next;
+      }
+      return d;
+    });
+
+    // If we merged into another annual, the current modal's `annual.id` no
+    // longer exists — close the modal so the parent doesn't try to look it
+    // up and render an empty state. If we just renamed in place, the parent
+    // will resolve the same id with the new name on the next render and the
+    // modal stays open with the updated title.
+    const willMerge = (data.hobbies || [])
+      .find(h => h.id === hobbyId)?.annuals
+      ?.some(x => x.id !== annual.id &&
+                  (x.seasonId || "") === (annual.seasonId || "") &&
+                  String(x.name || "").trim().toLowerCase() === next.toLowerCase());
+    setRenameOpen(false);
+    if (willMerge) onClose();
+  };
+
   const rowStyle = { padding:"8px 10px",background:palette.bgAlt,borderRadius:8,fontSize:12,color:palette.ink };
   const sectionLabel = { fontSize:11,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600,margin:"14px 0 6px" };
+  const inputStyle = { width:"100%",padding:"8px 10px",borderRadius:8,border:`1px solid ${palette.line || "#2C181030"}`,fontSize:14,background:palette.card || "#FAF5EA",color:palette.ink };
 
   return (
     <Modal open onClose={onClose} title={annual.name}>
@@ -6215,11 +6324,44 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
         {harvests.length ? ` · ${harvestSummary(harvests)} harvested` : ""}
       </div>
 
-      <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:4 }}>
-        <Btn variant="primary" onClick={() => setModal({ type:"logAnnualAction",hobbyId,annualId:annual.id })}>
-          + Log action
-        </Btn>
-      </div>
+      {/* STEP_ANNUAL_RENAME: rename row.
+          Collapsed by default to keep the modal clean. When expanded, shows
+          a text input + Save / Cancel. On Save we rewrite the underlying
+          planted/harvested entries (see saveRename above) so future loads
+          don't re-create the old-name annual via migrateData. */}
+      {!renameOpen && (
+        <div style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:4 }}>
+          <Btn variant="primary" onClick={() => setModal({ type:"logAnnualAction",hobbyId,annualId:annual.id })}>
+            + Log action
+          </Btn>
+          <Btn onClick={() => { setRenameValue(annual.name || ""); setRenameOpen(true); }}>
+            Rename
+          </Btn>
+        </div>
+      )}
+      {renameOpen && (
+        <div style={{ marginBottom:10,padding:10,background:palette.bgAlt,borderRadius:8 }}>
+          <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6 }}>
+            Renaming this annual updates the plantings and harvests it groups in this season.
+            Other seasons aren&rsquo;t affected.
+          </div>
+          <input
+            ref={renameInputRef}
+            style={inputStyle}
+            value={renameValue}
+            onChange={(e) => setRenameValue(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") { e.preventDefault(); saveRename(); }
+              else if (e.key === "Escape") { e.preventDefault(); setRenameOpen(false); }
+            }}
+            placeholder="New name"
+          />
+          <div style={{ display:"flex",gap:8,marginTop:8 }}>
+            <Btn variant="primary" onClick={saveRename}>Save</Btn>
+            <Btn onClick={() => setRenameOpen(false)}>Cancel</Btn>
+          </div>
+        </div>
+      )}
 
       {actions.length > 0 && (
         <>
@@ -6316,770 +6458,6 @@ function LogAnnualActionModal({ hobbyId, annual, update, onClose }) {
   );
 }
 
-// ============================================================================
-// SEED STARTS
-// ============================================================================
-// Mirrors the incubator -> brooder flow for plants: sow seeds indoors, log
-// germination, transplant sprouts (which creates a real planting record so
-// downstream garden analytics/annuals all keep working). Survival rates are
-// computed entirely from this array; direct-sown plantings don't appear here
-// and aren't counted in seed-start survival math.
-//
-// Per-batch shape (stored on garden hobby as `seedStarts[]`):
-//   id, seasonId, plant, variety, sowDate, seedsSown,
-//   germinated (null until logged), germinationDate,
-//   transplants: [{ id, date, count, plantingId }],
-//   lost (sprouts that died before transplant — optional),
-//   failed (true if the whole batch is written off),
-//   archived (true when nothing remains to transplant),
-//   notes, created
-// ============================================================================
-
-// Helpers for the section / modals to consume.
-function seedStartRemaining(batch) {
-  if (!batch) return 0;
-  if (batch.germinated == null) {
-    // No germination logged yet — the "remaining" pool is the seeds you sowed.
-    // (For display purposes only; the user can't transplant pre-germination.)
-    return Number(batch.seedsSown) || 0;
-  }
-  const transplanted = (batch.transplants || []).reduce(
-    (s, t) => s + (Number(t.count) || 0), 0
-  );
-  const lost = Number(batch.lost) || 0;
-  return Math.max(0, (Number(batch.germinated) || 0) - transplanted - lost);
-}
-
-function seedStartStatus(batch) {
-  if (batch.failed) return "failed";
-  if (batch.archived) return "archived";
-  if (batch.germinated == null) return "awaiting_germination";
-  if (seedStartRemaining(batch) > 0) return "ready_to_transplant";
-  return "complete";
-}
-
-// SeedStartSection — collapsible card shown above Annuals on the garden home.
-function SeedStartSection({ hobby, season, setModal }) {
-  const [open, setOpen] = useState(true);
-  const all = (hobby.seedStarts || []).filter(
-    (b) => b.seasonId === (season && season.id)
-  );
-  // Active = not archived and not failed. Failed/archived still appear, but
-  // grouped and de-emphasized so you can still see the season's full history.
-  const active = all.filter((b) => !b.archived && !b.failed);
-  const done = all.filter((b) => b.archived || b.failed);
-
-  const sectionStyle = {
-    background: palette.card,
-    border: `1.5px solid ${palette.line}`,
-    borderRadius: 12,
-    padding: 14,
-    marginBottom: 10,
-  };
-
-  return (
-    <div style={sectionStyle}>
-      <div style={{
-        display: "flex", justifyContent: "space-between", alignItems: "center",
-        marginBottom: open ? 10 : 0,
-      }}>
-        <button
-          onClick={() => setOpen((o) => !o)}
-          style={{
-            background: "none", border: "none", padding: 0, cursor: "pointer",
-            display: "flex", alignItems: "center", gap: 6,
-            fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink,
-          }}
-          aria-expanded={open}
-        >
-          <span style={{
-            fontSize: 12, display: "inline-block",
-            transform: open ? "rotate(90deg)" : "rotate(0deg)",
-            transition: "transform 0.15s",
-          }}>▶</span>
-          🌱 Seed Starts
-          <span style={{ fontSize: 12, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 400 }}>
-            {active.length > 0 ? `(${active.length} active)` : ""}
-          </span>
-        </button>
-        {open && (
-          <button
-            onClick={() => setModal({ type: "addSeedStart", hobbyId: hobby.id })}
-            style={{
-              background: palette.bgAlt, border: `1px solid ${palette.line}`,
-              borderRadius: 6, padding: "4px 10px", fontSize: 12, color: palette.ink,
-              cursor: "pointer", fontFamily: FONT_BODY,
-            }}
-          >
-            + Start seeds
-          </button>
-        )}
-      </div>
-      {open && (
-        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          {all.length === 0 ? (
-            <div style={{ fontSize: 12, color: palette.inkSoft, padding: "6px 4px", fontStyle: "italic" }}>
-              Start seeds indoors (or under grow lights) and we'll track germination and transplant survival.
-            </div>
-          ) : (
-            <>
-              {active.map((b) => (
-                <SeedStartRow key={b.id} batch={b} hobby={hobby} setModal={setModal} />
-              ))}
-              {done.length > 0 && (
-                <>
-                  <div style={{
-                    fontSize: 10, color: palette.inkSoft, textTransform: "uppercase",
-                    letterSpacing: 1, marginTop: 8, marginBottom: 2, paddingLeft: 4,
-                  }}>
-                    Archived / failed
-                  </div>
-                  {done.map((b) => (
-                    <SeedStartRow key={b.id} batch={b} hobby={hobby} setModal={setModal} dim />
-                  ))}
-                </>
-              )}
-            </>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function SeedStartRow({ batch, hobby, setModal, dim = false }) {
-  const status = seedStartStatus(batch);
-  const remaining = seedStartRemaining(batch);
-  const sown = Number(batch.seedsSown) || 0;
-  const days = Math.max(0, Math.floor(
-    (Date.now() - parseLocalDate(batch.sowDate).getTime()) / (1000 * 60 * 60 * 24)
-  ));
-  let subtitle;
-  if (status === "failed") {
-    subtitle = "Batch failed";
-  } else if (status === "archived") {
-    const total = (batch.transplants || []).reduce((s, t) => s + (Number(t.count) || 0), 0);
-    subtitle = `${total} of ${sown} transplanted`;
-  } else if (status === "awaiting_germination") {
-    subtitle = `Day ${days} · ${sown} seeds sown · awaiting germination`;
-  } else if (status === "ready_to_transplant") {
-    subtitle = `Day ${days} · ${remaining} of ${batch.germinated} sprout${batch.germinated === 1 ? "" : "s"} ready`;
-  } else {
-    subtitle = `Day ${days} · ${sown} sown`;
-  }
-  const displayName = batch.variety ? `${batch.plant} (${batch.variety})` : batch.plant;
-  return (
-    <button
-      onClick={() => setModal({ type: "seedStartDetail", hobbyId: hobby.id, batchId: batch.id })}
-      style={{
-        display: "flex", alignItems: "center", gap: 8, padding: "10px",
-        background: palette.bgAlt, borderRadius: 8, border: "none",
-        cursor: "pointer", textAlign: "left", width: "100%", fontFamily: FONT_BODY,
-        opacity: dim ? 0.6 : 1,
-      }}
-    >
-      <Sprout size={15} color={palette.leaf} strokeWidth={1.8} style={{ flexShrink: 0 }} />
-      <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 13, color: palette.ink }}>{displayName}</div>
-        <div style={{ fontSize: 11, color: palette.inkSoft }}>{subtitle}</div>
-      </div>
-      <span style={{ fontSize: 14, color: palette.inkSoft, flexShrink: 0 }}>›</span>
-    </button>
-  );
-}
-
-// AddSeedStartModal — create a new seed-start batch and a calendar nudge.
-function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
-  const hobby = data.hobbies.find((h) => h.id === hobbyId);
-  const seasonId = hobby && hobby.currentSeason ? hobby.currentSeason.id : "";
-  const [plant, setPlant] = useState("");
-  const [variety, setVariety] = useState("");
-  const [sowDate, setSowDate] = useState(todayStr());
-  const [seedsSown, setSeedsSown] = useState("");
-  const [expectGermDays, setExpectGermDays] = useState("10"); // 7-14 typical; default 10
-  const [notes, setNotes] = useState("");
-
-  const canSave =
-    plant.trim().length > 0 &&
-    Number(seedsSown) > 0 &&
-    sowDate &&
-    seasonId;
-
-  const save = () => {
-    if (!canSave) return;
-    const batchId = newId();
-    const sownN = Number(seedsSown);
-    const germDays = Math.max(1, Number(expectGermDays) || 10);
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      if (!Array.isArray(gh.seedStarts)) gh.seedStarts = [];
-      gh.seedStarts.push({
-        id: batchId,
-        seasonId,
-        plant: plant.trim(),
-        variety: variety.trim(),
-        sowDate,
-        seedsSown: sownN,
-        germinated: null,
-        germinationDate: null,
-        transplants: [],
-        lost: 0,
-        failed: false,
-        archived: false,
-        notes: notes.trim(),
-        created: Date.now(),
-      });
-      // Calendar event: "check on seedlings" at expected germination
-      if (!Array.isArray(d.calendarEvents)) d.calendarEvents = [];
-      const germDate = (() => {
-        const dt = parseLocalDate(sowDate);
-        dt.setDate(dt.getDate() + germDays);
-        const y = dt.getFullYear();
-        const m = String(dt.getMonth() + 1).padStart(2, "0");
-        const day = String(dt.getDate()).padStart(2, "0");
-        return `${y}-${m}-${day}`;
-      })();
-      const label = variety.trim() ? `${plant.trim()} (${variety.trim()})` : plant.trim();
-      d.calendarEvents.push({
-        id: newId(),
-        date: germDate,
-        title: `🌱 Check seedlings: ${label}`,
-        type: "seed_start_germination",
-        notes: `${sownN} seeds sown ${sowDate}. Log germination from the Seed Starts section.`,
-        seedStartId: batchId,
-      });
-      return d;
-    });
-    onClose();
-  };
-
-  return (
-    <Modal open onClose={onClose} title="🌱 Start seeds">
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        Track a batch of seeds you've sown indoors. We'll watch germination and transplant survival for the season.
-      </div>
-      <Field label="Plant *">
-        <input
-          autoFocus
-          value={plant}
-          onChange={(e) => setPlant(e.target.value)}
-          style={inputStyle}
-          placeholder="e.g. Tomato, Pepper, Basil"
-        />
-      </Field>
-      <Field label="Variety (optional)">
-        <input
-          value={variety}
-          onChange={(e) => setVariety(e.target.value)}
-          style={inputStyle}
-          placeholder="e.g. Cherokee Purple"
-        />
-      </Field>
-      <Field label="Sow date *">
-        <input
-          type="date"
-          value={sowDate}
-          onChange={(e) => setSowDate(e.target.value)}
-          style={inputStyle}
-        />
-      </Field>
-      <Field label="Seeds sown *">
-        <input
-          type="number"
-          inputMode="numeric"
-          min="1"
-          value={seedsSown}
-          onChange={(e) => setSeedsSown(e.target.value)}
-          style={inputStyle}
-          placeholder="e.g. 24"
-        />
-      </Field>
-      <Field label="Expected days to germination">
-        <input
-          type="number"
-          inputMode="numeric"
-          min="1"
-          max="60"
-          value={expectGermDays}
-          onChange={(e) => setExpectGermDays(e.target.value)}
-          style={inputStyle}
-        />
-        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
-          We'll drop a "check seedlings" reminder on your calendar for this date. Typical range is 7–14 days.
-        </div>
-      </Field>
-      <Field label="Notes (optional)">
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          style={{ ...inputStyle, resize: "vertical", minHeight: 50 }}
-          placeholder="Tray ID, soil mix, light setup..."
-        />
-      </Field>
-      {!seasonId && (
-        <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>
-          Start a garden season before sowing seeds.
-        </div>
-      )}
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={save} disabled={!canSave}>Start seeds</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-// LogGerminationModal — record how many of the sown seeds actually sprouted.
-function LogGerminationModal({ hobbyId, batch, update, onClose }) {
-  const [germinated, setGerminated] = useState("");
-  const [germDate, setGermDate] = useState(todayStr());
-  const sown = Number(batch.seedsSown) || 0;
-  const n = Number(germinated);
-  const canSave = n >= 0 && n <= sown && germDate;
-
-  const save = () => {
-    if (!canSave) return;
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      const b = (gh.seedStarts || []).find((x) => x.id === batch.id);
-      if (!b) return d;
-      b.germinated = n;
-      b.germinationDate = germDate;
-      // If germination is logged as 0, auto-mark the batch as failed so the
-      // user gets a clean "this didn't work" rather than a zombie batch.
-      if (n === 0) {
-        b.failed = true;
-        b.archived = true;
-      }
-      return d;
-    });
-    onClose();
-  };
-
-  return (
-    <Modal open onClose={onClose} title="🌱 Log germination">
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        How many of the {sown} seed{sown === 1 ? "" : "s"} sprouted?
-      </div>
-      <Field label="Sprouts counted *">
-        <input
-          autoFocus
-          type="number"
-          inputMode="numeric"
-          min="0"
-          max={sown}
-          value={germinated}
-          onChange={(e) => setGerminated(e.target.value)}
-          style={inputStyle}
-          placeholder={`0 to ${sown}`}
-        />
-        {germinated !== "" && n >= 0 && sown > 0 && (
-          <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
-            Germination rate: {Math.round((n / sown) * 100)}%
-          </div>
-        )}
-      </Field>
-      <Field label="Germination date">
-        <input
-          type="date"
-          value={germDate}
-          onChange={(e) => setGermDate(e.target.value)}
-          style={inputStyle}
-        />
-      </Field>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={save} disabled={!canSave}>Save</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-// TransplantSeedlingsModal — move N sprouts from a seed-start batch into a
-// real planting record. Mirrors how brooder dispositions push into the flock.
-function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
-  const remaining = seedStartRemaining(batch);
-  const [count, setCount] = useState(String(remaining));
-  const [date, setDate] = useState(todayStr());
-  const [notes, setNotes] = useState("");
-  const n = Number(count);
-  const canSave = n > 0 && n <= remaining && date;
-
-  const save = () => {
-    if (!canSave) return;
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      const b = (gh.seedStarts || []).find((x) => x.id === batch.id);
-      if (!b) return d;
-
-      const plantName = batch.variety ? `${batch.plant} (${batch.variety})` : batch.plant;
-
-      // 1) Push a `planted` entry into garden entries so all existing
-      //    analytics/annuals/journal flows pick it up unchanged.
-      if (!d.entries) d.entries = {};
-      if (!Array.isArray(d.entries.garden)) d.entries.garden = [];
-      const plantedEntry = {
-        id: newId(),
-        date,
-        action: "planted",
-        plant: plantName,
-        quantity: n,
-        seasonId: b.seasonId,
-        notes: notes.trim(),
-        seedStartId: b.id,
-        created: Date.now(),
-      };
-      d.entries.garden.push(plantedEntry);
-
-      // 2) Create the lightweight planting record (the existing shape).
-      if (!Array.isArray(d.plantings)) d.plantings = [];
-      const plantingId = newId();
-      d.plantings.push({
-        id: plantingId,
-        plant: plantName,
-        quantity: String(n),
-        date,
-        harvested: false,
-        seedStartId: b.id,
-      });
-
-      // 3) Ensure an annual record exists for this plant+season (matches the
-      //    legacy planAnnual flow). Idempotent.
-      if (!Array.isArray(gh.annuals)) gh.annuals = [];
-      const nm = plantName.trim() || "Unnamed";
-      const sid = b.seasonId || "";
-      const exists = gh.annuals.some(
-        (a) => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
-               (a.seasonId || "") === sid
-      );
-      if (!exists) {
-        gh.annuals.push({
-          id: newId(),
-          name: nm,
-          seasonId: sid,
-          actions: [],
-          created: Date.now(),
-        });
-      }
-
-      // 4) Log the transplant on the seed-start batch itself.
-      if (!Array.isArray(b.transplants)) b.transplants = [];
-      b.transplants.push({
-        id: newId(),
-        date,
-        count: n,
-        plantingId,
-        entryId: plantedEntry.id,
-      });
-
-      // 5) Auto-archive if nothing remains (all transplanted or lost).
-      if (seedStartRemaining(b) === 0) {
-        b.archived = true;
-      }
-
-      return d;
-    });
-    onClose();
-  };
-
-  return (
-    <Modal open onClose={onClose} title="🌿 Transplant seedlings">
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        {remaining} sprout{remaining === 1 ? "" : "s"} remaining from this batch.
-        Transplanting creates a planting record so harvests track back to it.
-      </div>
-      <Field label="Transplanting *">
-        <input
-          autoFocus
-          type="number"
-          inputMode="numeric"
-          min="1"
-          max={remaining}
-          value={count}
-          onChange={(e) => setCount(e.target.value)}
-          style={inputStyle}
-        />
-      </Field>
-      <Field label="Transplant date *">
-        <input
-          type="date"
-          value={date}
-          onChange={(e) => setDate(e.target.value)}
-          style={inputStyle}
-        />
-      </Field>
-      <Field label="Notes (optional)">
-        <textarea
-          value={notes}
-          onChange={(e) => setNotes(e.target.value)}
-          rows={2}
-          style={{ ...inputStyle, resize: "vertical", minHeight: 50 }}
-          placeholder="Bed, spacing, weather..."
-        />
-      </Field>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn onClick={save} disabled={!canSave}>Transplant</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-// LogSeedStartLossModal — record sprouts that died before transplant
-// (damping off, leggy, knocked over, etc). Subtracts from "remaining".
-function LogSeedStartLossModal({ hobbyId, batch, update, onClose }) {
-  const remaining = seedStartRemaining(batch);
-  const [count, setCount] = useState("");
-  const n = Number(count);
-  const canSave = n > 0 && n <= remaining;
-
-  const save = () => {
-    if (!canSave) return;
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      const b = (gh.seedStarts || []).find((x) => x.id === batch.id);
-      if (!b) return d;
-      b.lost = (Number(b.lost) || 0) + n;
-      if (seedStartRemaining(b) === 0) {
-        b.archived = true;
-      }
-      return d;
-    });
-    onClose();
-  };
-
-  return (
-    <Modal open onClose={onClose} title="💀 Log seedling loss">
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        {remaining} sprout{remaining === 1 ? "" : "s"} remaining. How many were lost?
-      </div>
-      <Field label="Sprouts lost *">
-        <input
-          autoFocus
-          type="number"
-          inputMode="numeric"
-          min="1"
-          max={remaining}
-          value={count}
-          onChange={(e) => setCount(e.target.value)}
-          style={inputStyle}
-        />
-      </Field>
-      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-        <Btn variant="danger" onClick={save} disabled={!canSave}>Log loss</Btn>
-      </div>
-    </Modal>
-  );
-}
-
-// SeedStartDetailModal — full view of one batch: timeline, actions, delete.
-function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClose }) {
-  const hobby = data.hobbies.find((h) => h.id === hobbyId);
-  const batch = hobby && (hobby.seedStarts || []).find((b) => b.id === batchId);
-  if (!batch) {
-    return (
-      <Modal open onClose={onClose} title="Seed start">
-        <div style={{ color: palette.inkSoft }}>This batch no longer exists.</div>
-      </Modal>
-    );
-  }
-  const status = seedStartStatus(batch);
-  const remaining = seedStartRemaining(batch);
-  const sown = Number(batch.seedsSown) || 0;
-  const transplantedTotal = (batch.transplants || []).reduce(
-    (s, t) => s + (Number(t.count) || 0), 0
-  );
-  const germRate = batch.germinated != null && sown > 0
-    ? Math.round((batch.germinated / sown) * 100) : null;
-  const transplantRate = batch.germinated > 0
-    ? Math.round((transplantedTotal / batch.germinated) * 100) : null;
-
-  const markFailed = () => {
-    if (!confirm("Mark this batch as failed? It will be archived.")) return;
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      const b = (gh.seedStarts || []).find((x) => x.id === batchId);
-      if (!b) return d;
-      b.failed = true;
-      b.archived = true;
-      return d;
-    });
-    onClose();
-  };
-
-  const reopen = () => {
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      const b = (gh.seedStarts || []).find((x) => x.id === batchId);
-      if (!b) return d;
-      b.archived = false;
-      b.failed = false;
-      return d;
-    });
-  };
-
-  const deleteBatch = () => {
-    if (!confirm("Delete this seed-start batch? Transplants you've already logged will stay (they're real planting records now).")) return;
-    update((d) => {
-      const gh = d.hobbies.find((h) => h.id === hobbyId);
-      if (!gh) return d;
-      gh.seedStarts = (gh.seedStarts || []).filter((b) => b.id !== batchId);
-      // Clean up the "check seedlings" calendar reminder if it's still there.
-      // Mirrors brooder's behavior: removing a batch shouldn't leave dangling
-      // calendar events whose backlink target no longer exists.
-      if (Array.isArray(d.calendarEvents)) {
-        d.calendarEvents = d.calendarEvents.filter((e) => e.seedStartId !== batchId);
-      }
-      return d;
-    });
-    onClose();
-  };
-
-  const sectionLabel = {
-    fontSize: 10, color: palette.inkSoft, textTransform: "uppercase",
-    letterSpacing: 1, marginBottom: 6, marginTop: 14,
-  };
-
-  const displayName = batch.variety ? `${batch.plant} (${batch.variety})` : batch.plant;
-
-  return (
-    <Modal open onClose={onClose} title={`🌱 ${displayName}`}>
-      {/* Status pill */}
-      <div style={{
-        display: "inline-block", padding: "3px 10px", borderRadius: 99,
-        background: status === "failed" ? palette.accent
-          : status === "archived" ? palette.line
-          : status === "ready_to_transplant" ? palette.leafSoft
-          : palette.bgAlt,
-        color: status === "failed" ? palette.bg : palette.ink,
-        fontSize: 11, fontWeight: 600, marginBottom: 12,
-      }}>
-        {status === "failed" ? "Failed"
-          : status === "archived" ? "Archived"
-          : status === "ready_to_transplant" ? "Ready to transplant"
-          : status === "awaiting_germination" ? "Awaiting germination"
-          : "Complete"}
-      </div>
-
-      {/* Stats grid */}
-      <div style={{
-        display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 4,
-      }}>
-        <div style={{ background: palette.bgAlt, borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8 }}>Seeds sown</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>{sown}</div>
-          <div style={{ fontSize: 11, color: palette.inkSoft }}>{batch.sowDate}</div>
-        </div>
-        <div style={{ background: palette.bgAlt, borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8 }}>Germinated</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>
-            {batch.germinated == null ? "—" : batch.germinated}
-          </div>
-          <div style={{ fontSize: 11, color: palette.inkSoft }}>
-            {germRate != null ? `${germRate}% rate` : "not logged"}
-          </div>
-        </div>
-        <div style={{ background: palette.bgAlt, borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8 }}>Transplanted</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>{transplantedTotal}</div>
-          <div style={{ fontSize: 11, color: palette.inkSoft }}>
-            {transplantRate != null ? `${transplantRate}% of sprouts` : "not started"}
-          </div>
-        </div>
-        <div style={{ background: palette.bgAlt, borderRadius: 8, padding: 10 }}>
-          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8 }}>Remaining</div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>{remaining}</div>
-          <div style={{ fontSize: 11, color: palette.inkSoft }}>
-            {(Number(batch.lost) || 0) > 0 ? `${batch.lost} lost` : "ready when germ logged"}
-          </div>
-        </div>
-      </div>
-
-      {batch.notes && (
-        <>
-          <div style={sectionLabel}>Notes</div>
-          <div style={{
-            background: palette.bgAlt, borderRadius: 8, padding: 10,
-            fontSize: 13, color: palette.ink, whiteSpace: "pre-wrap",
-          }}>
-            {batch.notes}
-          </div>
-        </>
-      )}
-
-      {/* Transplant log */}
-      {(batch.transplants || []).length > 0 && (
-        <>
-          <div style={sectionLabel}>Transplants</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-            {batch.transplants.map((t) => (
-              <div key={t.id} style={{
-                display: "flex", justifyContent: "space-between",
-                background: palette.bgAlt, borderRadius: 6, padding: "8px 10px",
-                fontSize: 13,
-              }}>
-                <span>{t.date}</span>
-                <strong>{t.count} transplanted</strong>
-              </div>
-            ))}
-          </div>
-        </>
-      )}
-
-      {/* Actions — only available while batch is active */}
-      {!batch.archived && !batch.failed && (
-        <>
-          <div style={sectionLabel}>Actions</div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-            {batch.germinated == null && (
-              <Btn onClick={() => setModal({ type: "logGermination", hobbyId, batchId })}>
-                🌱 Log germination
-              </Btn>
-            )}
-            {batch.germinated != null && remaining > 0 && (
-              <>
-                <Btn onClick={() => setModal({ type: "transplantSeedlings", hobbyId, batchId })}>
-                  🌿 Transplant sprouts
-                </Btn>
-                <Btn variant="ghost" onClick={() => setModal({ type: "logSeedStartLoss", hobbyId, batchId })}>
-                  Log loss
-                </Btn>
-              </>
-            )}
-            <Btn variant="ghost" onClick={markFailed}>Mark batch as failed</Btn>
-          </div>
-        </>
-      )}
-
-      {(batch.archived || batch.failed) && (
-        <div style={{ marginTop: 14 }}>
-          <Btn variant="ghost" onClick={reopen}>Reopen batch</Btn>
-        </div>
-      )}
-
-      <div style={{ marginTop: 18, paddingTop: 14, borderTop: `1px solid ${palette.line}` }}>
-        <button
-          onClick={deleteBatch}
-          style={{
-            background: "none", border: "none", color: palette.accent,
-            fontSize: 12, cursor: "pointer", padding: 0, fontFamily: FONT_BODY,
-          }}
-        >
-          Delete batch
-        </button>
-      </div>
-    </Modal>
-  );
-}
-
 // ============ HOBBY SUMMARIES ============
 function GardenSummary({ hobby, data, update, setModal }) {
   // Perennials section shown at bottom of garden home regardless of season
@@ -7160,11 +6538,6 @@ function GardenSummary({ hobby, data, update, setModal }) {
           <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {harvestSummary(harvests)} harvested · day {days}</div>
         </div>
       </div>
-
-      {/* Seed Starts — sown indoors, awaiting germination or transplant.
-          Lives above Annuals so the seed -> sprout -> transplant flow reads
-          top-to-bottom matching the season's actual progression. */}
-      <SeedStartSection hobby={hobby} season={season} setModal={setModal} />
 
       {/* Annuals — collapsible section. Each annual is a record (one per
           plant-name per season) with its own action log; tapping one opens
@@ -8137,12 +7510,12 @@ function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spous
         <EmptyState text="No garden seasons yet. Start one from the Home page." />
       )}
 
-      <GardenAnalytics entries={analyticsEntries} data={data} hobby={hobby} seasonFilter={seasonFilter} seasonName={seasonName} spouseMode={spouseMode} />
+      <GardenAnalytics entries={analyticsEntries} data={data} seasonName={seasonName} spouseMode={spouseMode} />
     </div>
   );
 }
 
-function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spouseMode }) {
+function GardenAnalytics({ entries, data, seasonName, spouseMode }) {
   const harvests = entries.filter((e) => e.action === "harvested");
   const totalHarvestRaw = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
   const totalHarvest = spouseProd(totalHarvestRaw, spouseMode);
@@ -8164,107 +7537,12 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
   const issueTypes = {};
   issues.forEach((e) => { issueTypes[e.issueType || "other"] = (issueTypes[e.issueType || "other"] || 0) + 1; });
 
-  // ---- Seed-start survival funnel ----
-  // Scoped to the same season filter the rest of analytics uses. We only
-  // surface this whole section when there's actually seed-start data, so
-  // users who never sow indoors don't see empty-zero cards. Computed above
-  // the "no entries" early-return so a brand-new season with only seed-starts
-  // (no garden entries yet) still shows the funnel.
-  const allSeedStarts = (hobby && hobby.seedStarts) || [];
-  const scopedSeedStarts = seasonFilter === "all"
-    ? allSeedStarts
-    : allSeedStarts.filter((b) => b.seasonId === seasonFilter);
-
-  if (entries.length === 0 && scopedSeedStarts.length === 0) {
+  if (entries.length === 0) {
     return <EmptyState text={`No entries in ${seasonName || "this view"}.`} />;
   }
 
-  const seedStats = (() => {
-    if (scopedSeedStarts.length === 0) return null;
-    const sown = scopedSeedStarts.reduce((s, b) => s + (Number(b.seedsSown) || 0), 0);
-    const withGerm = scopedSeedStarts.filter((b) => b.germinated != null);
-    const germinated = withGerm.reduce((s, b) => s + (Number(b.germinated) || 0), 0);
-    const sownInGermed = withGerm.reduce((s, b) => s + (Number(b.seedsSown) || 0), 0);
-    const transplanted = scopedSeedStarts.reduce(
-      (s, b) => s + (b.transplants || []).reduce((t, x) => t + (Number(x.count) || 0), 0),
-      0
-    );
-    // Transplant -> harvest: count plantings (from a seed-start) that have
-    // ≥1 harvest in the scoped entries. Entries are filtered by season
-    // already, so we look up plantingId or seedStartId on harvest entries.
-    // Today we don't tag harvests with plantingId, so we fall back to a
-    // name+season heuristic: does any harvest in scope match this batch's
-    // plant name?
-    const harvestEntries = entries.filter((e) => e.action === "harvested");
-    let batchesTransplanted = 0;
-    let batchesWithHarvest = 0;
-    scopedSeedStarts.forEach((b) => {
-      const transplantedFromBatch = (b.transplants || []).reduce(
-        (s, x) => s + (Number(x.count) || 0), 0
-      );
-      if (transplantedFromBatch === 0) return;
-      batchesTransplanted += 1;
-      const plantNameLc = String(b.plant || "").toLowerCase();
-      const varietyLc = String(b.variety || "").toLowerCase();
-      const matched = harvestEntries.some((h) => {
-        const hp = String(h.plant || "").toLowerCase();
-        // Match either bare plant name or "plant (variety)" form used by
-        // the transplant flow.
-        return hp === plantNameLc
-          || (varietyLc && hp === `${plantNameLc} (${varietyLc})`);
-      });
-      if (matched) batchesWithHarvest += 1;
-    });
-    return {
-      batches: scopedSeedStarts.length,
-      sown,
-      germinated,
-      sownInGermed,
-      transplanted,
-      germRate: sownInGermed > 0 ? Math.round((germinated / sownInGermed) * 100) : null,
-      transplantRate: germinated > 0 ? Math.round((transplanted / germinated) * 100) : null,
-      batchesTransplanted,
-      batchesWithHarvest,
-      harvestRate: batchesTransplanted > 0
-        ? Math.round((batchesWithHarvest / batchesTransplanted) * 100) : null,
-    };
-  })();
-
   return (
     <div>
-      {seedStats && (
-        <ChartCard title={`🌱 Seed-start survival (${seedStats.batches} batch${seedStats.batches === 1 ? "" : "es"})`}>
-          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 4 }}>
-            <StatCard
-              label="Germination"
-              value={seedStats.germRate != null ? `${seedStats.germRate}%` : "—"}
-              accent={palette.leaf}
-            />
-            <StatCard
-              label="Transplanted"
-              value={seedStats.transplantRate != null ? `${seedStats.transplantRate}%` : "—"}
-              accent={palette.leafSoft || "#A8C078"}
-            />
-            <StatCard
-              label="Reached harvest"
-              value={seedStats.harvestRate != null ? `${seedStats.harvestRate}%` : "—"}
-              accent={palette.yolk || palette.leaf}
-            />
-          </div>
-          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, lineHeight: 1.5 }}>
-            {seedStats.sownInGermed > 0
-              ? `${seedStats.germinated} of ${seedStats.sownInGermed} seeds sprouted · `
-              : "Germination not yet logged · "}
-            {seedStats.germinated > 0
-              ? `${seedStats.transplanted} of ${seedStats.germinated} sprouts transplanted · `
-              : "no sprouts to transplant yet · "}
-            {seedStats.batchesTransplanted > 0
-              ? `${seedStats.batchesWithHarvest} of ${seedStats.batchesTransplanted} transplanted batches reached harvest`
-              : "no harvests from transplants yet"}
-          </div>
-        </ChartCard>
-      )}
-
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Annuals planted" value={plantings} accent={palette.leaf} />
         <StatCard label="Total Harvest" value={harvestSummary(harvests)} accent={palette.leaf} />
@@ -9478,32 +8756,6 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "editZone") return <EditZoneModal data={data} update={update} onClose={close} />;
   if (modal.type === "viewDayEvents") return <ViewDayEventsModal data={data} update={update} date={modal.date} setModal={setModal} onClose={close} />;
   if (modal.type === "gardenMap") return <GardenMapModal data={data} update={update} user={user} onClose={close} /* GARDEN_GRID */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport={() => setModal({ type: "support" })} />;
-  // Seed Starts — sow indoors -> germinate -> transplant pipeline. The detail
-  // modal looks up the batch by id each render so it stays in sync after edits.
-  if (modal.type === "addSeedStart") {
-    return <AddSeedStartModal hobbyId={modal.hobbyId} data={data} update={update} setModal={setModal} onClose={close} />;
-  }
-  if (modal.type === "seedStartDetail") {
-    return <SeedStartDetailModal hobbyId={modal.hobbyId} batchId={modal.batchId} data={data} update={update} setModal={setModal} onClose={close} />;
-  }
-  if (modal.type === "logGermination") {
-    const gh = data.hobbies.find((h) => h.id === modal.hobbyId);
-    const batch = gh && (gh.seedStarts || []).find((b) => b.id === modal.batchId);
-    if (!batch) return null;
-    return <LogGerminationModal hobbyId={modal.hobbyId} batch={batch} update={update} onClose={close} />;
-  }
-  if (modal.type === "transplantSeedlings") {
-    const gh = data.hobbies.find((h) => h.id === modal.hobbyId);
-    const batch = gh && (gh.seedStarts || []).find((b) => b.id === modal.batchId);
-    if (!batch) return null;
-    return <TransplantSeedlingsModal hobbyId={modal.hobbyId} batch={batch} update={update} onClose={close} />;
-  }
-  if (modal.type === "logSeedStartLoss") {
-    const gh = data.hobbies.find((h) => h.id === modal.hobbyId);
-    const batch = gh && (gh.seedStarts || []).find((b) => b.id === modal.batchId);
-    if (!batch) return null;
-    return <LogSeedStartLossModal hobbyId={modal.hobbyId} batch={batch} update={update} onClose={close} />;
-  }
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
@@ -15265,7 +14517,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             const nm = (cleanFields.plant || "Unnamed").trim() || "Unnamed";
             const sid = entry.seasonId || "";
             const exists = gh.annuals.some(
-              a => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
+              a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
                    (a.seasonId || "") === sid
             );
             if (!exists) {
