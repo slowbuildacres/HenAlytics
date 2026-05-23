@@ -77,7 +77,7 @@ const RABBIT_ROLES=[
 const KINDLE_DAYS=31; // gestation
 
 function Btn({children,onClick,variant="primary",small=false,style={},disabled=false}){
-  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`}};
+  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.bg,border:`1.5px solid ${palette.leaf}`}};  /* RABBITS_UNIFY_V1 */
   return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"2px 2px 0 "+palette.line,...styles[variant],...style}}>{children}</button>;
 }
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
@@ -734,6 +734,664 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
   );
 }
 
+
+// ============================================================================
+// RABBITS_UNIFY_V1 — top-bar quick-action modals
+// ----------------------------------------------------------------------------
+// These mount once on the page, opened from the tile bar. Each picks WHICH
+// rabbits the action applies to (single, multi-select, or "all in a hutch"),
+// then writes entries to data.entries[hobbyId] in the SAME shape the old
+// per-card LogModal used — so existing analytics / history / archive logic
+// reads them unchanged.
+// ============================================================================
+
+// --- Shared helpers ---------------------------------------------------------
+
+function selectionButtons({ live, hutchLabels, mode, setMode }) {
+  // Returns the buttons row for "All / per-hutch / Custom". The caller decides
+  // whether to render the per-rabbit toggle list below (only when mode==="custom").
+  return (
+    <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+      <button type="button" onClick={()=>setMode("all")} style={pillStyle(mode==="all")}>
+        {mode==="all" ? "✓ " : ""}All ({live.length})
+      </button>
+      {hutchLabels.map(label => {
+        const k = `group:${label}`;
+        const count = live.filter(a => (a.hutch||"").trim() === label).length;
+        return (
+          <button key={label} type="button" onClick={()=>setMode(k)} style={pillStyle(mode===k)}>
+            {mode===k ? "✓ " : ""}{label} ({count})
+          </button>
+        );
+      })}
+      <button type="button" onClick={()=>setMode("custom")} style={pillStyle(mode==="custom")}>
+        {mode==="custom" ? "✓ " : ""}Custom…
+      </button>
+    </div>
+  );
+}
+
+function pillStyle(active) {
+  return {
+    padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+    border: active ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+    background: active ? palette.ink : palette.bgAlt,
+    color: active ? palette.bg : palette.ink,
+    cursor:"pointer",
+  };
+}
+
+function multiToggleRow({ live, selectedIds, setSelectedIds }) {
+  return (
+    <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+      {live.map(a => {
+        const on = selectedIds.includes(a.id);
+        return (
+          <button
+            key={a.id}
+            type="button"
+            onClick={()=>setSelectedIds(prev => prev.includes(a.id) ? prev.filter(x=>x!==a.id) : [...prev, a.id])}
+            style={{
+              padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+              border: on ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+              background: on ? palette.ink : palette.card,
+              color: on ? palette.bg : palette.ink,
+              cursor:"pointer",
+            }}
+          >{on ? "✓ " : ""}{a.name}{a.hutch?` · ${a.hutch}`:""}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+function resolveSelectedIds({ mode, customIds, live }) {
+  // Returns the list of animal ids the action applies to, given the chosen mode.
+  if (mode === "all") return live.map(a => a.id);
+  if (mode === "custom") return customIds;
+  if (mode.startsWith("group:")) {
+    const label = mode.slice("group:".length);
+    return live.filter(a => (a.hutch||"").trim() === label).map(a => a.id);
+  }
+  return [];
+}
+
+function hutchLabelsOf(live) {
+  return Array.from(new Set(live.map(a => (a.hutch||"").trim()).filter(Boolean))).sort((a,b)=>a.localeCompare(b));
+}
+
+// --- 🌾 FedRabbitModal ------------------------------------------------------
+
+function FedRabbitModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const hutches = hutchLabelsOf(live);
+  const [date, setDate] = useState(todayStr());
+  const [lbs, setLbs] = useState("");
+  const [feedUnit, setFeedUnit] = useState("lbs");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const [mode, setMode] = useState(live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState([]);
+
+  const targetIds = resolveSelectedIds({ mode, customIds, live });
+  const canSave = (mode === "all") || (mode === "custom" ? targetIds.length > 0 : targetIds.length > 0);
+
+  const save = () => {
+    if (!canSave) return;
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      // Single entry with animalIds=[...] (Sheep multi-select shape). animalId
+      // (singular) = first id so legacy filter code still surfaces the entry
+      // on at least one animal's history. herdWide=true when applied to ALL
+      // live rabbits, matching the legacy whole-herd flag for analytics.
+      const entry = {
+        id: newId(),
+        date,
+        action: "fed",
+        animalIds: [...targetIds],
+        animalId: targetIds[0] || null,
+        feedAmount: Number(lbs) || 0,
+        feedUnit,
+        lbs: feedUnit === "lbs" ? (Number(lbs) || 0) : 0,
+        cost: Number(cost) || 0,
+        notes: notes.trim(),
+        herdWide: mode === "all",
+        created: Date.now(),
+      };
+      d.entries[hobbyId].push(entry);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🌾 Log feeding">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+      </Field>
+      <Field label={`Who is this for? (${targetIds.length} rabbit${targetIds.length===1?"":"s"})`}>
+        {selectionButtons({ live, hutchLabels: hutches, mode, setMode })}
+        {mode === "custom" && multiToggleRow({ live, selectedIds: customIds, setSelectedIds: setCustomIds })}
+      </Field>
+      <Field label="How much feed?">
+        <div style={{display:"flex",gap:8,marginBottom:8}}>
+          {["lbs","cups"].map(u => (
+            <button
+              key={u}
+              type="button"
+              onClick={() => setFeedUnit(u)}
+              style={{
+                flex:1,padding:"8px 10px",borderRadius:8,
+                border:`1.5px solid ${feedUnit===u?palette.ink:palette.line}`,
+                background: feedUnit===u?palette.ink:palette.card,
+                color: feedUnit===u?palette.bg:palette.ink,
+                fontFamily:FONT_BODY,fontSize:13,fontWeight:600,cursor:"pointer",
+              }}
+            >{u === "lbs" ? weightUnitLabel() : u}</button>
+          ))}
+        </div>
+        {(()=>{
+          const metricW = getCurrentWeightUnit()==="kg";
+          const isCups = feedUnit==="cups";
+          const shown = isCups ? lbs : (lbs===""||lbs==null ? "" : (metricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs));
+          const ph = isCups ? "Cups of feed" : (metricW ? "Kilograms of feed" : "Pounds of feed");
+          return <input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;if(isCups){setLbs(r);return;}if(r===""){setLbs("");return;}setLbs(metricW?String(lbsFromInput(r)):r);}} placeholder={ph}/>;
+        })()}
+      </Field>
+      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- ⚖️ 💊 📝 LogRabbitEntryModal (shared) ---------------------------------
+
+function LogRabbitEntryModal({ hobby, hobbyId, action, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const hutches = hutchLabelsOf(live);
+
+  // Weight is single-select (one number per rabbit). Health & note are multi.
+  const isMulti = action === "health" || action === "note";
+
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [mode, setMode] = useState(live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState([]);
+  const [weight, setWeight] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const targetIds = isMulti ? resolveSelectedIds({ mode, customIds, live }) : (animalId ? [animalId] : []);
+
+  const titles = { weight:"⚖️ Log weight", health:"💊 Vet / meds", note:"📝 Add note" };
+  const subtexts = {
+    weight: "Track growth and butcher-readiness over time.",
+    health: "Treatments, dewormers, vaccines, vet visits — anything worth remembering.",
+    note: "Anything else worth tracking against a rabbit or the herd.",
+  };
+
+  const noteRequired = action === "health" || action === "note";
+  const canSave = (() => {
+    if (action === "weight" && (!animalId || !(Number(weight) > 0))) return false;
+    if (isMulti && targetIds.length === 0) return false;
+    if (noteRequired && !notes.trim()) return false;
+    return true;
+  })();
+
+  const save = () => {
+    if (!canSave) return;
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      if (action === "weight") {
+        const a = live.find(x => x.id === animalId);
+        d.entries[hobbyId].push({
+          id: newId(), date, action: "weight",
+          animalId, animalName: a?.name || "",
+          weight: Number(weight) || 0,
+          notes: notes.trim(),
+          created: Date.now(),
+        });
+      } else {
+        // health / note: one entry per rabbit so per-animal history filters
+        // (which key off animalId) still surface them. Same id stem for
+        // grouping later if we ever de-dup.
+        const stem = newId();
+        targetIds.forEach((id, i) => {
+          const a = live.find(x => x.id === id);
+          d.entries[hobbyId].push({
+            id: i === 0 ? stem : `${stem}-${i}`,
+            date, action,
+            animalId: id, animalName: a?.name || "",
+            animalIds: [...targetIds],   // also store the full set for newer code
+            notes: notes.trim(),
+            created: Date.now(),
+          });
+        });
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={titles[action]}>
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      {action === "weight" ? (
+        <Field label="Rabbit">
+          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+            {live.length === 0 && <option value="">— No live rabbits —</option>}
+            {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.hutch?` · ${a.hutch}`:""}</option>)}
+          </select>
+        </Field>
+      ) : (
+        <Field label={`Who? (${targetIds.length} rabbit${targetIds.length===1?"":"s"})`}>
+          {selectionButtons({ live, hutchLabels: hutches, mode, setMode })}
+          {mode === "custom" && multiToggleRow({ live, selectedIds: customIds, setSelectedIds: setCustomIds })}
+        </Field>
+      )}
+      {action === "weight" && (()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
+        return (
+          <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
+            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+              onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
+              placeholder="0" autoFocus inputMode="decimal"/>
+          </Field>
+        );
+      })()}
+      <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+          placeholder={
+            action === "health" ? "e.g. Ivermectin — dewormer round" :
+            action === "note" ? "What happened" : ""
+          }
+          autoFocus={action !== "weight"}/>
+      </Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- 🐇 BredRabbitModal -----------------------------------------------------
+
+function BredRabbitModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const does = live.filter(a => a.sex === "Doe");
+  const bucks = live.filter(a => a.sex === "Buck");
+
+  const [date, setDate] = useState(todayStr());
+  const [doeId, setDoeId] = useState(does[0]?.id || "");
+  const [buckId, setBuckId] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const kindleDate = date ? addDays(date, KINDLE_DAYS) : "";
+  const canSave = !!doeId && !!date;
+
+  const save = () => {
+    if (!canSave) return;
+    const doe = does.find(d => d.id === doeId);
+    const buck = bucks.find(b => b.id === buckId);
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const entry = {
+        id: newId(), date, action: "bred",
+        animalId: doeId, animalName: doe?.name || "",
+        buckId: buckId || null, buckName: buck?.name || "",
+        kindleDate,
+        notes: notes.trim(),
+        created: Date.now(),
+      };
+      d.entries[hobbyId].push(entry);
+      if (kindleDate) {
+        d.calendarEvents = d.calendarEvents || [];
+        d.calendarEvents.push({
+          id: newId(), date: kindleDate,
+          title: `🍼 ${doe?.name || "doe"} — kindle expected`,
+          type: "rabbits",
+          notes: `Bred ${fmtDate(date)}${buck?.name ? " · sire " + buck.name : ""}`,
+        });
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🐇 Log breeding">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      <Field label="Doe">
+        <select style={inputStyle} value={doeId} onChange={e=>setDoeId(e.target.value)} autoFocus>
+          {does.length === 0 && <option value="">— No does available —</option>}
+          {does.map(a => <option key={a.id} value={a.id}>{a.name}{a.hutch?` · ${a.hutch}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Buck (optional)">
+        <select style={inputStyle} value={buckId} onChange={e=>setBuckId(e.target.value)}>
+          <option value="">— Not specified —</option>
+          {bucks.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
+        </select>
+      </Field>
+      {kindleDate && (
+        <div style={{padding:"10px 14px",background:palette.yolkSoft,borderRadius:8,fontSize:13,color:palette.ink,marginBottom:14}}>
+          📅 Expected kindle: <strong>{fmtDate(kindleDate)}</strong> ({KINDLE_DAYS} days)
+          <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>A reminder will be added to your calendar after saving.</div>
+        </div>
+      )}
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- 🍼 LitterRabbitModal ---------------------------------------------------
+
+function LitterRabbitModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const does = live.filter(a => a.sex === "Doe");
+  const bucks = live.filter(a => a.sex === "Buck");
+
+  const [date, setDate] = useState(todayStr());
+  const [doeId, setDoeId] = useState(does[0]?.id || "");
+  const [sireId, setSireId] = useState("");
+  const [kitsAlive, setKitsAlive] = useState("");
+  const [kitsStillborn, setKitsStillborn] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!doeId && !!date;
+
+  const save = () => {
+    if (!canSave) return;
+    const doe = does.find(d => d.id === doeId);
+    const sire = bucks.find(b => b.id === sireId);
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const entry = {
+        id: newId(), date, action: "litter",
+        animalId: doeId, animalName: doe?.name || "",
+        kitsAlive: Number(kitsAlive) || 0,
+        kitsStillborn: Number(kitsStillborn) || 0,
+        notes: notes.trim(),
+        created: Date.now(),
+      };
+      // Sire is optional metadata; only set when user picked one.
+      if (sireId) {
+        entry.sireId = sireId;
+        entry.sireName = sire?.name || "";
+        entry.buckId = sireId;             // legacy field name kept in step too
+        entry.buckName = sire?.name || "";
+      }
+      d.entries[hobbyId].push(entry);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🍼 Log litter">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      <Field label="Doe">
+        <select style={inputStyle} value={doeId} onChange={e=>setDoeId(e.target.value)} autoFocus>
+          {does.length === 0 && <option value="">— No does available —</option>}
+          {does.map(a => <option key={a.id} value={a.id}>{a.name}{a.hutch?` · ${a.hutch}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Sire / buck (optional)">
+        <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+          <option value="">— Not specified —</option>
+          {bucks.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
+        </select>
+      </Field>
+      <div style={{display:"flex",gap:12}}>
+        <div style={{flex:1}}><Field label="Kits alive"><input type="number" min={0} style={inputStyle} value={kitsAlive} onChange={e=>setKitsAlive(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}><Field label="Stillborn"><input type="number" min={0} style={inputStyle} value={kitsStillborn} onChange={e=>setKitsStillborn(e.target.value)} placeholder="0"/></Field></div>
+      </div>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- ❄️ RemoveRabbitModal (unified butcher/sold/rehomed/died/...) -----------
+
+function RemoveRabbitModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [reason, setReason] = useState("butchered");
+  const [date, setDate] = useState(todayStr());
+  // butcher
+  const [weight, setWeight] = useState("");
+  const [cost, setCost] = useState("");
+  // sold
+  const [buyer, setBuyer] = useState("");
+  const [price, setPrice] = useState("");
+  // rehomed / given away
+  const [recipient, setRecipient] = useState("");
+  // died
+  const [cause, setCause] = useState("Unknown");
+  // culled
+  const [cullReason, setCullReason] = useState("");
+  // shared notes
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!animalId && !!date;
+
+  const REASONS = [
+    { k:"butchered",   label:"🥩 Butchered" },
+    { k:"sold",        label:"🏷️ Sold" },
+    { k:"rehomed",     label:"🏠 Rehomed" },
+    { k:"given_away",  label:"🎁 Given away" },
+    { k:"died",        label:"🪦 Died" },
+    { k:"culled",      label:"⚠️ Culled" },
+    { k:"other",       label:"📋 Other" },
+  ];
+
+  const save = () => {
+    if (!canSave) return;
+    const animal = live.find(a => a.id === animalId);
+    if (!animal) return;
+
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      const target = (h?.animals || []).find(x => x.id === animalId);
+      if (!target) return d;
+
+      // 1) Per-reason entry + archive metadata. Shapes mirror what the
+      //    old per-card LogModal wrote so existing analytics keep working.
+      if (reason === "butchered") {
+        const entry = {
+          id: newId(), date, action: "butcher",
+          animalId, animalName: animal.name,
+          weight: Number(weight) || 0,
+          cost: Number(cost) || 0,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = "butchered";
+        target.archivedDate = date;
+      } else if (reason === "sold" || reason === "rehomed" || reason === "given_away") {
+        // Map all three to the existing sale-entry pattern. We use the same
+        // saleType keys the prior LogModal supported (`sold` / `rehomed`)
+        // so the Sales tab and analytics surface them without changes.
+        // "given_away" is stored as `saleType:"rehomed"` with a reasonTag so
+        // we don't introduce a saleType that other code doesn't recognize.
+        const saleType = reason === "sold" ? "sold" : "rehomed";
+        const verb = reason === "sold" ? "Sold" : reason === "rehomed" ? "Rehomed" : "Given away";
+        const partyName = reason === "sold" ? buyer.trim() : recipient.trim();
+        const numericPrice = reason === "sold" ? (Number(price) || 0) : 0;
+        const entry = {
+          id: newId(), date, action: "sale",
+          animalId, animalName: animal.name,
+          buyer: partyName,
+          price: numericPrice,
+          saleType,
+          reasonTag: reason,           // preserves "given_away" distinction in history
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const partyStr = partyName ? ` to ${partyName}` : "";
+        target.archived = true;
+        target.archivedReason = `${verb}${partyStr}${priceStr}`;
+        target.archivedDate = date;
+        target.saleId = entry.id;
+        d.sales = d.sales || [];
+        d.sales.push({
+          id: entry.id, date, hobbyType: "rabbit", crop: animal.name, saleType,
+          pricePerUnit: numericPrice, totalRevenue: numericPrice,
+          qty: 1, animalId, buyer: partyName, notes: notes.trim() || "",
+        });
+      } else if (reason === "died") {
+        const entry = {
+          id: newId(), date, action: "death",
+          animalId, animalName: animal.name,
+          cause,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = cause && cause !== "Unknown" ? `Died: ${cause}` : "Died";
+        target.archivedDate = date;
+      } else if (reason === "culled") {
+        const causeStr = cullReason.trim() ? `culled: ${cullReason.trim()}` : "culled";
+        const entry = {
+          id: newId(), date, action: "death",
+          animalId, animalName: animal.name,
+          cause: causeStr,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = `Culled${cullReason.trim() ? ": " + cullReason.trim() : ""}`;
+        target.archivedDate = date;
+      } else {
+        // other — archive only; record a note entry so history shows it
+        const entry = {
+          id: newId(), date, action: "note",
+          animalId, animalName: animal.name,
+          notes: notes.trim() ? `Removed: ${notes.trim()}` : "Removed (other)",
+          reasonTag: "other_removal",
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = notes.trim() ? `Removed: ${notes.trim()}` : "Removed (other)";
+        target.archivedDate = date;
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="❄️ Remove rabbit">
+      <Field label="Which rabbit?">
+        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+          {live.length === 0 && <option value="">— No live rabbits —</option>}
+          {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.hutch?` · ${a.hutch}`:""}{a.sex?` · ${a.sex}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Why?">
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {REASONS.map(r => (
+            <button key={r.k} type="button" onClick={()=>setReason(r.k)} style={{
+              padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+              border: reason===r.k ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+              background: reason===r.k ? palette.ink : palette.bgAlt,
+              color: reason===r.k ? palette.bg : palette.ink,
+              cursor:"pointer",
+            }}>{r.label}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+
+      {reason === "butchered" && (()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shownW = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
+        return (
+          <>
+            <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
+              <input type="number" min={0} step="0.1" style={inputStyle} value={shownW}
+                onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
+            </Field>
+            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+          </>
+        );
+      })()}
+
+      {reason === "sold" && (
+        <>
+          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+        </>
+      )}
+
+      {(reason === "rehomed" || reason === "given_away") && (
+        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+      )}
+
+      {reason === "died" && (
+        <Field label="Cause">
+          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+            {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Kit loss","Other"].map(c=><option key={c}>{c}</option>)}
+          </select>
+        </Field>
+      )}
+
+      {reason === "culled" && (
+        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
+      )}
+
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
+        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This rabbit";})()} will move to your Archived list{(reason==="sold")?" and a sale record will appear in your Sales tab":""}. You can restore from there if this was a mistake.
+      </div>
+
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant={reason==="died"||reason==="culled"?"danger":"primary"} onClick={save} disabled={!canSave}>Save &amp; archive</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// /RABBITS_UNIFY_V1
+// ============================================================================
+
 // ============================================================================
 // ANIMAL CARD — single rabbit row with action buttons, recent activity,
 // and pedigree button. Matches Pigs/Goats/Cows pattern.
@@ -760,7 +1418,6 @@ function RabbitProfileCircle({animal,size=20}){
 }
 
 function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,hideHutchChip}){
-  const[logAction,setLogAction]=useState(null);
   const[showPedigree,setShowPedigree]=useState(false);
   const[showHistory,setShowHistory]=useState(false);
   const animalEntries=entries.filter(e=>e.animalId===animal.id);
@@ -773,10 +1430,8 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
     : null;
   const kindleStillUpcoming = lastBred?.kindleDate && lastBred.kindleDate >= todayStr();
 
-  // Action set differs slightly by sex. Bred + litter only show for does.
-  const baseActions = ["fed","weight","butcher","death","sale","note"];
-  const doeActions = ["bred","litter"];
-  const LOG_ACTIONS = animal.sex==="Doe" ? [...baseActions.slice(0,2), ...doeActions, ...baseActions.slice(2)] : baseActions;
+  // RABBITS_UNIFY_V1 — AnimalCard trimmed: action buttons moved to top tile bar.
+  // actionLabels stays (used by the recent-entries summary below).
   const actionLabels = {
     fed:"🌾 Feed", weight:"⚖️ Weight", bred:"🐇 Bred", litter:"🍼 Litter",
     butcher:"❄️ Butcher", death:"💀 Death", sale:"🏷️ Sale", note:"📓 Note",
@@ -788,7 +1443,6 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
 
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
-      {logAction && <LogModal animal={animal} hobbyId={hobbyId} animals={animals} action={logAction} update={update} onClose={()=>setLogAction(null)}/>}
       {showPedigree && (
         <PedigreeView
           animal={animal}
@@ -829,9 +1483,6 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
         </div>
       )}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
-        {LOG_ACTIONS.map(a=>(
-          <button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>
-        ))}
         <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
         <button onClick={()=>setShowHistory(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>📜 History</button>
         <button onClick={()=>setModal({type:"moveRabbit",hobbyId,animalId:animal.id})} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>↔️ Move</button>
@@ -1133,6 +1784,12 @@ export default function RabbitsPage({hobby,data,update,user}){
   }, []);
 
   const[localModal,setLocalModal]=useState(null);
+  // RABBITS_UNIFY_V1 — top-bar modal state
+  const [fedOpen, setFedOpen] = useState(false);
+  const [bredOpen, setBredOpen] = useState(false);
+  const [litterOpen, setLitterOpen] = useState(false);
+  const [logEntryAction, setLogEntryAction] = useState(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const entries=data.entries[hobby.id]||[];
   const allAnimals=hobby.animals||[];
   const animals=allAnimals.filter(a=>!a.archived);
@@ -1153,6 +1810,25 @@ export default function RabbitsPage({hobby,data,update,user}){
         <StatCard label="Total" value={animals.length} sub="live rabbits" accent={palette.accent}/>
       </div>
 
+
+      {/* RABBITS_UNIFY_V1 — quick action tile bar (mirrors Sheep/Horses) */}
+      {fedOpen && <FedRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setFedOpen(false)} />}
+      {bredOpen && <BredRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setBredOpen(false)} />}
+      {litterOpen && <LitterRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setLitterOpen(false)} />}
+      {logEntryAction && <LogRabbitEntryModal hobby={hobby} hobbyId={hobby.id} action={logEntryAction} update={update} onClose={()=>setLogEntryAction(null)} />}
+      {removeOpen && <RemoveRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setRemoveOpen(false)} />}
+
+      {animals.length > 0 && (
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8,marginBottom:18 }}>
+          <Btn small onClick={() => setFedOpen(true)} style={{ width:"100%" }}>🌾 Feed</Btn>
+          <Btn small onClick={() => setLogEntryAction("weight")} style={{ width:"100%" }}>⚖️ Weight</Btn>
+          <Btn small variant="leaf" onClick={() => setBredOpen(true)} style={{ width:"100%" }}>🐇 Bred</Btn>
+          <Btn small variant="leaf" onClick={() => setLitterOpen(true)} style={{ width:"100%" }}>🍼 Litter</Btn>
+          <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
+          <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
+          <Btn small variant="danger" onClick={() => setRemoveOpen(true)} style={{ width:"100%" }}>❄️ Remove</Btn>
+        </div>
+      )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your rabbits</div>
         <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add rabbit</button>
