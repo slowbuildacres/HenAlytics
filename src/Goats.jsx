@@ -16,9 +16,10 @@ import {
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
-  accent:"#C84B31",leaf:"#5A7A3C",yolk:"#E8B547",yolkSoft:"#F2D58A",
+  accent:"#C84B31",leaf:"#5A7A3C",leafSoft:"#A8C078",
+  yolk:"#E8B547",yolkSoft:"#F2D58A",
   feather:"#8B6F47",line:"#2C181030",card:"#FAF5EA",
-};
+}; /* GOATS_UNIFY_V1 — added leafSoft */
 const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
 const inputStyle={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"};
@@ -50,7 +51,7 @@ const GOAT_PURPOSES=["Dairy","Meat","Both"];
 const GOAT_SEXES=["Doe","Buck","Wether","Kid"];
 
 function Btn({children,onClick,variant="primary",small=false,style={},disabled=false}){
-  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`}};
+  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.bg,border:`1.5px solid ${palette.leaf}`}}; /* GOATS_UNIFY_V1 — leaf variant */
   return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"2px 2px 0 "+palette.line,...styles[variant],...style}}>{children}</button>;
 }
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
@@ -492,6 +493,603 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   );
 }
 
+// ============================================================================
+// GOATS_UNIFY_V1 — top-bar quick-action modals
+// ----------------------------------------------------------------------------
+// Mirrors the post-Phase-1/2 Rabbits/Pigs pattern. Each modal lets the user
+// pick one goat, multiple goats, or "all live goats" via an All/Custom mode
+// picker (goats have no group/herd/pen field, so no per-group chips).
+//
+// Entry shapes match what the old per-card LogModal wrote, so existing
+// analytics, history views, and archive logic keep working unchanged.
+//
+// PRESERVED: the existing rich BreedingModal (see below) is unchanged — it
+// continues to drive the lifecycle record on hobby.breedings[] and the
+// goat_kidding calendar events. We just give it a tile-bar entry point.
+// The simple per-card `kid` action is replaced by a top-bar 🍼 Kidding tile
+// that writes the same { action:"kid", count } entry shape so analytics
+// (GoatsAnalytics.totalKids) continues to work without changes.
+// ============================================================================
+
+// --- Shared selection helpers (no group chips; goats are a flat list) -------
+
+function pillStyleG(active) {
+  return {
+    padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+    border: active ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+    background: active ? palette.ink : palette.bgAlt,
+    color: active ? palette.bg : palette.ink,
+    cursor:"pointer",
+  };
+}
+
+function selectionButtonsG({ live, mode, setMode }) {
+  return (
+    <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+      <button type="button" onClick={()=>setMode("all")} style={pillStyleG(mode==="all")}>
+        {mode==="all" ? "✓ " : ""}All ({live.length})
+      </button>
+      <button type="button" onClick={()=>setMode("custom")} style={pillStyleG(mode==="custom")}>
+        {mode==="custom" ? "✓ " : ""}Custom…
+      </button>
+    </div>
+  );
+}
+
+function multiToggleRowG({ live, selectedIds, setSelectedIds }) {
+  return (
+    <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+      {live.map(a => {
+        const on = selectedIds.includes(a.id);
+        return (
+          <button
+            key={a.id}
+            type="button"
+            onClick={()=>setSelectedIds(prev => prev.includes(a.id) ? prev.filter(x=>x!==a.id) : [...prev, a.id])}
+            style={{
+              padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+              border: on ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+              background: on ? palette.ink : palette.card,
+              color: on ? palette.bg : palette.ink,
+              cursor:"pointer",
+            }}
+          >{on ? "✓ " : ""}{a.name}{a.sex?` · ${a.sex}`:""}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+function resolveSelectedIdsG({ mode, customIds, live }) {
+  if (mode === "all") return live.map(a => a.id);
+  if (mode === "custom") return customIds;
+  return [];
+}
+
+// --- 🌾 FedGoatModal --------------------------------------------------------
+
+function FedGoatModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const [date, setDate] = useState(todayStr());
+  const [lbs, setLbs] = useState("");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const [mode, setMode] = useState(live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState([]);
+
+  const targetIds = resolveSelectedIdsG({ mode, customIds, live });
+  const canSave = (mode === "all") || targetIds.length > 0;
+
+  const save = () => {
+    if (!canSave) return;
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const entry = {
+        id: newId(),
+        date,
+        action: "fed",
+        animalIds: [...targetIds],
+        animalId: targetIds[0] || null,
+        animalName: (live.find(a=>a.id===targetIds[0])?.name) || "",
+        lbs: Number(lbs) || 0,
+        cost: Number(cost) || 0,
+        notes: notes.trim(),
+        herdWide: mode === "all",
+        created: Date.now(),
+      };
+      d.entries[hobbyId].push(entry);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🌾 Log feeding">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+      </Field>
+      <Field label={`Who is this for? (${targetIds.length} goat${targetIds.length===1?"":"s"})`}>
+        {selectionButtonsG({ live, mode, setMode })}
+        {mode === "custom" && multiToggleRowG({ live, selectedIds: customIds, setSelectedIds: setCustomIds })}
+      </Field>
+      {(()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shown = lbs===""||lbs==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs);
+        return (
+          <Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}>
+            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+              onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
+              placeholder="0"/>
+          </Field>
+        );
+      })()}
+      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- ⚖️ 💊 📝 LogGoatEntryModal (shared for weight / health / note) --------
+
+function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+
+  // Weight is single-select (one number per goat). Health & note are multi.
+  const isMulti = action === "health" || action === "note";
+
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [mode, setMode] = useState(live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState([]);
+  const [weight, setWeight] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const targetIds = isMulti ? resolveSelectedIdsG({ mode, customIds, live }) : (animalId ? [animalId] : []);
+
+  const titles = { weight:"⚖️ Log weight", health:"💊 Vet / meds", note:"📝 Add note" };
+  const subtexts = {
+    weight: "Track growth over time.",
+    health: "Treatments, dewormers, vaccines, vet visits — anything worth remembering.",
+    note: "Anything else worth tracking against a goat or the herd.",
+  };
+
+  const noteRequired = action === "health" || action === "note";
+  const canSave = (() => {
+    if (action === "weight" && (!animalId || !(Number(weight) > 0))) return false;
+    if (isMulti && targetIds.length === 0) return false;
+    if (noteRequired && !notes.trim()) return false;
+    return true;
+  })();
+
+  const save = () => {
+    if (!canSave) return;
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      if (action === "weight") {
+        const a = live.find(x => x.id === animalId);
+        d.entries[hobbyId].push({
+          id: newId(), date, action: "weight",
+          animalId, animalName: a?.name || "",
+          weight: Number(weight) || 0,
+          notes: notes.trim(),
+          created: Date.now(),
+        });
+      } else {
+        // health / note: one entry per goat so per-animal history filters
+        // (which key off animalId) still surface them.
+        const stem = newId();
+        targetIds.forEach((id, i) => {
+          const a = live.find(x => x.id === id);
+          d.entries[hobbyId].push({
+            id: i === 0 ? stem : `${stem}-${i}`,
+            date, action,
+            animalId: id, animalName: a?.name || "",
+            animalIds: [...targetIds],
+            notes: notes.trim(),
+            created: Date.now(),
+          });
+        });
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={titles[action]}>
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      {action === "weight" ? (
+        <Field label="Goat">
+          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+            {live.length === 0 && <option value="">— No live goats —</option>}
+            {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
+          </select>
+        </Field>
+      ) : (
+        <Field label={`Who? (${targetIds.length} goat${targetIds.length===1?"":"s"})`}>
+          {selectionButtonsG({ live, mode, setMode })}
+          {mode === "custom" && multiToggleRowG({ live, selectedIds: customIds, setSelectedIds: setCustomIds })}
+        </Field>
+      )}
+      {action === "weight" && (()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
+        return (
+          <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
+            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+              onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
+              placeholder="0" autoFocus inputMode="decimal"/>
+          </Field>
+        );
+      })()}
+      <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+          placeholder={
+            action === "health" ? "e.g. Ivermectin — dewormer round" :
+            action === "note" ? "What happened" : ""
+          }
+          autoFocus={action !== "weight"}/>
+      </Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- 🥛 MilkGoatModal -------------------------------------------------------
+
+function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  // Milk is logged per-doe. Restrict the picker to does with a dairy
+  // purpose (Dairy or Both); fall back to all live goats if the user
+  // hasn't set purposes yet (don't be obstinate).
+  const dairy = live.filter(a => a.purpose === "Dairy" || a.purpose === "Both");
+  const choosable = dairy.length > 0 ? dairy : live;
+
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [oz, setOz] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!animalId && !!date && Number(oz) > 0;
+
+  const save = () => {
+    if (!canSave) return;
+    const a = choosable.find(x => x.id === animalId);
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      d.entries[hobbyId].push({
+        id: newId(), date, action: "milk",
+        animalId, animalName: a?.name || "",
+        oz: Number(oz) || 0,
+        notes: notes.trim(),
+        created: Date.now(),
+      });
+      return d;
+    });
+    onClose();
+  };
+
+  const isMetricV = getCurrentVolumeUnit() === "L";
+
+  return (
+    <Modal open onClose={onClose} title="🥛 Log milk">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      <Field label="Doe">
+        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+          {choosable.length === 0 && <option value="">— No goats available —</option>}
+          {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.purpose?` · ${a.purpose}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Milk collected (oz)">
+        <input type="number" min={0} step="0.1" style={inputStyle} value={oz}
+          onChange={e=>setOz(e.target.value)} placeholder="0" inputMode="decimal"/>
+        {oz && (
+          <div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>
+            {isMetricV ? fmtVolume(Number(oz)/128) : `${(Number(oz)/128).toFixed(2)} gallons`}
+          </div>
+        )}
+      </Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- 🍼 KiddingGoatModal ----------------------------------------------------
+//
+// Light kidding entry that mirrors the OLD per-card `kid` action shape so
+// GoatsAnalytics.totalKids keeps working. For full breed-through-kidding
+// lifecycle records (dam, sire, method, expected/actual dates, offspring
+// alive at weaning), use the 💕 Breeding tile, which opens the existing
+// rich BreedingModal — that's the canonical breeding flow for goats.
+
+function KiddingGoatModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const does = live.filter(a => a.sex === "Doe");
+  const choosable = does.length > 0 ? does : live;
+
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [count, setCount] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!animalId && !!date && Number(count) > 0;
+
+  const save = () => {
+    if (!canSave) return;
+    const a = choosable.find(x => x.id === animalId);
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      d.entries[hobbyId].push({
+        id: newId(), date, action: "kid",
+        animalId, animalName: a?.name || "",
+        count: Number(count) || 1,
+        notes: notes.trim(),
+        created: Date.now(),
+      });
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🍼 Log kidding">
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>
+        Quick log of how many kids a doe just had. For the full breed-through-kidding record (dam, sire, dates, kids alive at weaning) use the 💕 Breeding tile instead.
+      </div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      <Field label="Dam">
+        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+          {choosable.length === 0 && <option value="">— No does available —</option>}
+          {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Kids born">
+        <input type="number" min={1} style={inputStyle} value={count}
+          onChange={e=>setCount(e.target.value)} placeholder="1" inputMode="numeric"/>
+      </Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- ❄️ RemoveGoatModal (unified butcher / sold / rehomed / died / ...) ----
+
+function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [reason, setReason] = useState("butchered");
+  const [date, setDate] = useState(todayStr());
+  // butcher
+  const [weight, setWeight] = useState("");
+  const [cost, setCost] = useState("");
+  // sold
+  const [buyer, setBuyer] = useState("");
+  const [price, setPrice] = useState("");
+  // rehomed / given away
+  const [recipient, setRecipient] = useState("");
+  // died
+  const [cause, setCause] = useState("Unknown");
+  // culled
+  const [cullReason, setCullReason] = useState("");
+  // shared notes
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!animalId && !!date;
+
+  const REASONS = [
+    { k:"butchered",   label:"🥩 Butchered" },
+    { k:"sold",        label:"🏷️ Sold" },
+    { k:"rehomed",     label:"🏠 Rehomed" },
+    { k:"given_away",  label:"🎁 Given away" },
+    { k:"died",        label:"🪦 Died" },
+    { k:"culled",      label:"⚠️ Culled" },
+    { k:"other",       label:"📋 Other" },
+  ];
+
+  const save = () => {
+    if (!canSave) return;
+    const animal = live.find(a => a.id === animalId);
+    if (!animal) return;
+
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      const target = (h?.animals || []).find(x => x.id === animalId);
+      if (!target) return d;
+
+      if (reason === "butchered") {
+        const entry = {
+          id: newId(), date, action: "butcher",
+          animalId, animalName: animal.name,
+          weight: Number(weight) || 0,
+          cost: Number(cost) || 0,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = "butchered";
+        target.archivedDate = date;
+      } else if (reason === "sold" || reason === "rehomed" || reason === "given_away") {
+        const saleType = reason === "sold" ? "sold" : "rehomed";
+        const verb = reason === "sold" ? "Sold" : reason === "rehomed" ? "Rehomed" : "Given away";
+        const partyName = reason === "sold" ? buyer.trim() : recipient.trim();
+        const numericPrice = reason === "sold" ? (Number(price) || 0) : 0;
+        const entry = {
+          id: newId(), date, action: "sale",
+          animalId, animalName: animal.name,
+          buyer: partyName,
+          price: numericPrice,
+          saleType,
+          reasonTag: reason,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const partyStr = partyName ? ` to ${partyName}` : "";
+        target.archived = true;
+        target.archivedReason = `${verb}${partyStr}${priceStr}`;
+        target.archivedDate = date;
+        target.saleId = entry.id;
+        d.sales = d.sales || [];
+        const _saleRow = {
+          id: entry.id, date, hobbyType: "goat", crop: animal.name, saleType,
+          pricePerUnit: numericPrice, totalRevenue: numericPrice,
+          qty: 1, animalId, buyer: partyName, buyerId: null,
+          notes: notes.trim() || "",
+        };
+        resolveSaleBuyer(d, _saleRow);
+        d.sales.push(_saleRow);
+      } else if (reason === "died") {
+        const entry = {
+          id: newId(), date, action: "death",
+          animalId, animalName: animal.name,
+          cause,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = cause && cause !== "Unknown" ? `Died: ${cause}` : "Died";
+        target.archivedDate = date;
+      } else if (reason === "culled") {
+        const causeStr = cullReason.trim() ? `culled: ${cullReason.trim()}` : "culled";
+        const entry = {
+          id: newId(), date, action: "death",
+          animalId, animalName: animal.name,
+          cause: causeStr,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = `Culled${cullReason.trim() ? ": " + cullReason.trim() : ""}`;
+        target.archivedDate = date;
+      } else {
+        const entry = {
+          id: newId(), date, action: "note",
+          animalId, animalName: animal.name,
+          notes: notes.trim() ? `Removed: ${notes.trim()}` : "Removed (other)",
+          reasonTag: "other_removal",
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = notes.trim() ? `Removed: ${notes.trim()}` : "Removed (other)";
+        target.archivedDate = date;
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="❄️ Remove goat">
+      <Field label="Which goat?">
+        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+          {live.length === 0 && <option value="">— No live goats —</option>}
+          {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}{a.breed?` · ${a.breed}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Why?">
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {REASONS.map(r => (
+            <button key={r.k} type="button" onClick={()=>setReason(r.k)} style={{
+              padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+              border: reason===r.k ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+              background: reason===r.k ? palette.ink : palette.bgAlt,
+              color: reason===r.k ? palette.bg : palette.ink,
+              cursor:"pointer",
+            }}>{r.label}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+
+      {reason === "butchered" && (()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shownW = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
+        return (
+          <>
+            <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
+              <input type="number" min={0} step="0.1" style={inputStyle} value={shownW}
+                onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
+            </Field>
+            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+          </>
+        );
+      })()}
+
+      {reason === "sold" && (
+        <>
+          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+        </>
+      )}
+
+      {(reason === "rehomed" || reason === "given_away") && (
+        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+      )}
+
+      {reason === "died" && (
+        <Field label="Cause">
+          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+            {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Kidding complications","Bloat","Parasites","Other"].map(c=><option key={c}>{c}</option>)}
+          </select>
+        </Field>
+      )}
+
+      {reason === "culled" && (
+        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
+      )}
+
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
+        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This goat";})()} will move to your Archived goats list{(reason==="sold")?" and a sale record will appear in your Sales tab":""}. You can restore from there if this was a mistake.
+      </div>
+
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant={reason==="died"||reason==="culled"?"danger":"primary"} onClick={save} disabled={!canSave}>Save &amp; archive</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// /GOATS_UNIFY_V1
+// ============================================================================
+
 function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const[date,setDate]=useState(todayStr());
   const[oz,setOz]=useState("");
@@ -628,7 +1226,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
 }
 
 function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,customers=[]}){
-  const[logAction,setLogAction]=useState(null);
+  /* GOATS_UNIFY_V1 — logAction state removed (action buttons moved to top tile bar) */
   // Push 7a — pedigree modal state. Toggled by the 🧬 Pedigree button.
   const[showPedigree,setShowPedigree]=useState(false);
   const[showHistory,setShowHistory]=useState(false);
@@ -640,12 +1238,12 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
   const lastMilk=milkEntries.sort((a,b)=>b.date.localeCompare(a.date))[0];
   const purposeColor={Dairy:palette.leaf,Meat:palette.accent,Both:palette.feather};
   const sexLabel={Doe:"♀",Buck:"♂",Wether:"⚧",Kid:"🐣"};
-  const LOG_ACTIONS=animal.purpose==="Meat"?["fed","weight","health","butcher","death","sale","note"]:animal.purpose==="Dairy"?["milk","fed","kid","health","death","sale","note"]:["milk","fed","kid","weight","health","butcher","death","sale","note"];
+  /* GOATS_UNIFY_V1 — LOG_ACTIONS array removed (per-card row gone) */
   const actionLabels={milk:"🥛 Milk",fed:"🌾 Feed",kid:"🍼 Kids",weight:"⚖️ Weight",health:"💊 Health",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note"};
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
-      {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} update={update} onClose={()=>setLogAction(null)} customers={customers}/>}
+      {/* GOATS_UNIFY_V1 — per-card LogModal mount removed; tile bar drives logging now */}
       {showPedigree && (
         <PedigreeView
           animal={animal}
@@ -693,7 +1291,7 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
         </div>
       )}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
-        {LOG_ACTIONS.map(a=><button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>)}
+        {/* GOATS_UNIFY_V1 — per-card action buttons removed; log via top tile bar */}
         {/* Push 7a — Pedigree view. Always shown so the entry point is
             consistent across animals; the modal handles the "no data yet"
             case internally with a friendly empty state. */}
@@ -923,6 +1521,18 @@ function GoatHome({hobby,entries,sales,update,setModal,customers=[]}){
   const animals=allAnimals.filter(a=>!a.archived);
   const archived=allAnimals.filter(a=>a.archived);
   const[breedingModal,setBreedingModal]=useState({open:false,breeding:null});
+  // GOATS_UNIFY_V1 — top-bar modal state
+  const [fedOpen, setFedOpen] = useState(false);
+  const [milkOpen, setMilkOpen] = useState(false);
+  const [kiddingOpen, setKiddingOpen] = useState(false);
+  const [logEntryAction, setLogEntryAction] = useState(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  // Milk tile visibility: any live goat with a dairy purpose, OR none
+  // have a purpose set at all (don't hide the tile if the user just
+  // hasn't labeled their goats yet).
+  const anyPurposeSet = animals.some(a => a.purpose);
+  const hasDairy = animals.some(a => a.purpose === "Dairy" || a.purpose === "Both");
+  const showMilkTile = !anyPurposeSet || hasDairy;
   const breedings=(hobby.breedings||[]).slice().sort((a,b)=>(b.breedDate||"").localeCompare(a.breedDate||""));
   const upcomingKiddings=breedings.filter(b=>!b.birthedDate&&b.expectedBirthDate>=todayStr()).slice(0,3);
 
@@ -969,10 +1579,32 @@ function GoatHome({hobby,entries,sales,update,setModal,customers=[]}){
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14,gap:8,flexWrap:"wrap"}}>
         <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your goats</div>
         <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-          {animals.length>0 && <Btn small variant="ghost" onClick={()=>setBreedingModal({open:true,breeding:null})}>💕 Breeding</Btn>}
+          {/* GOATS_UNIFY_V1 — 💕 Breeding moved into the tile bar below; the Add goat button stays as the page-action. */}
           <Btn small variant="accent" onClick={()=>setModal({type:"addAnimal",hobbyId:hobby.id})}><Plus size={14} style={{marginRight:4}}/>Add goat</Btn>
         </div>
       </div>
+
+      {/* GOATS_UNIFY_V1 — quick action tile bar (mirrors Sheep/Rabbits/Pigs) */}
+      {fedOpen && <FedGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setFedOpen(false)} />}
+      {milkOpen && <MilkGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setMilkOpen(false)} />}
+      {kiddingOpen && <KiddingGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setKiddingOpen(false)} />}
+      {logEntryAction && <LogGoatEntryModal hobby={hobby} hobbyId={hobby.id} action={logEntryAction} update={update} onClose={()=>setLogEntryAction(null)} />}
+      {removeOpen && <RemoveGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setRemoveOpen(false)} />}
+
+      {animals.length > 0 && (
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8,marginBottom:18 }}>
+          {showMilkTile && (
+            <Btn small variant="leaf" onClick={() => setMilkOpen(true)} style={{ width:"100%" }}>🥛 Milk</Btn>
+          )}
+          <Btn small onClick={() => setFedOpen(true)} style={{ width:"100%" }}>🌾 Feed</Btn>
+          <Btn small onClick={() => setLogEntryAction("weight")} style={{ width:"100%" }}>⚖️ Weight</Btn>
+          <Btn small variant="leaf" onClick={() => setBreedingModal({open:true,breeding:null})} style={{ width:"100%" }}>💕 Breeding</Btn>
+          <Btn small variant="leaf" onClick={() => setKiddingOpen(true)} style={{ width:"100%" }}>🍼 Kidding</Btn>
+          <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
+          <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
+          <Btn small variant="danger" onClick={() => setRemoveOpen(true)} style={{ width:"100%" }}>❄️ Remove</Btn>
+        </div>
+      )}
       <HerdTallyCard hobby={hobby} setModal={setModal}/>
       {upcomingKiddings.length>0 && (
         <div style={{padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13,marginBottom:12,color:palette.ink}}>

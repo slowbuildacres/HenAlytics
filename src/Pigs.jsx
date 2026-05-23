@@ -16,9 +16,10 @@ import {
 
 const palette = {
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
-  accent:"#C84B31",leaf:"#5A7A3C",yolk:"#E8B547",feather:"#8B6F47",
+  accent:"#C84B31",leaf:"#5A7A3C",leafSoft:"#A8C078",
+  yolk:"#E8B547",yolkSoft:"#F2D58A",feather:"#8B6F47",
   line:"#2C181030",card:"#FAF5EA",
-};
+}; /* PIGS_UNIFY_V1 — added leafSoft + yolkSoft */
 const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
 const inputStyle={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"};
@@ -44,12 +45,14 @@ const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
+const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000)); /* PIGS_UNIFY_V1 */
 
 const PIG_BREEDS=["Berkshire","Duroc","Hampshire","Yorkshire","Landrace","Tamworth","Spotted","Mangalitsa","Kunekune","Chester White","Poland China","American Guinea Hog","Mixed","Other"];
 const PIG_SEXES=["Sow","Boar","Barrow","Gilt","Piglet"];
+const GESTATION_DAYS=114; // pig gestation: "three months, three weeks, three days" — PIGS_UNIFY_V1
 
 function Btn({children,onClick,variant="primary",small=false,style={},disabled=false}){
-  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`}};
+  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.bg,border:`1.5px solid ${palette.leaf}`}}; /* PIGS_UNIFY_V1 — leaf variant */
   return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"2px 2px 0 "+palette.line,...styles[variant],...style}}>{children}</button>;
 }
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
@@ -392,6 +395,642 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   );
 }
 
+// ============================================================================
+// PIGS_UNIFY_V1 — top-bar quick-action modals
+// ----------------------------------------------------------------------------
+// Mirrors the post-Phase-1 Rabbits.jsx pattern. Each modal lets the user pick
+// one pig, multiple pigs, or "all live pigs" via the All/Custom mode picker
+// (Pigs have no group/hutch/pen field, so no per-group chips).
+//
+// Entry shapes match what the old per-card LogModal wrote, so existing
+// analytics, history views, and archive logic keep working unchanged.
+// ============================================================================
+
+// --- Shared selection helpers (Rabbits-shape; group labels left empty
+// because Pigs are a flat list with no hutch/lot/pen field). -----------------
+
+function pillStyleP(active) {
+  return {
+    padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+    border: active ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+    background: active ? palette.ink : palette.bgAlt,
+    color: active ? palette.bg : palette.ink,
+    cursor:"pointer",
+  };
+}
+
+function selectionButtonsP({ live, mode, setMode }) {
+  // Pigs have no group field, so only All + Custom. Kept in helper form so
+  // a future shared livestock helpers file can pull this in.
+  return (
+    <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+      <button type="button" onClick={()=>setMode("all")} style={pillStyleP(mode==="all")}>
+        {mode==="all" ? "✓ " : ""}All ({live.length})
+      </button>
+      <button type="button" onClick={()=>setMode("custom")} style={pillStyleP(mode==="custom")}>
+        {mode==="custom" ? "✓ " : ""}Custom…
+      </button>
+    </div>
+  );
+}
+
+function multiToggleRowP({ live, selectedIds, setSelectedIds }) {
+  return (
+    <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginBottom:8 }}>
+      {live.map(a => {
+        const on = selectedIds.includes(a.id);
+        return (
+          <button
+            key={a.id}
+            type="button"
+            onClick={()=>setSelectedIds(prev => prev.includes(a.id) ? prev.filter(x=>x!==a.id) : [...prev, a.id])}
+            style={{
+              padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+              border: on ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+              background: on ? palette.ink : palette.card,
+              color: on ? palette.bg : palette.ink,
+              cursor:"pointer",
+            }}
+          >{on ? "✓ " : ""}{a.name}{a.sex?` · ${a.sex}`:""}</button>
+        );
+      })}
+    </div>
+  );
+}
+
+function resolveSelectedIdsP({ mode, customIds, live }) {
+  if (mode === "all") return live.map(a => a.id);
+  if (mode === "custom") return customIds;
+  return [];
+}
+
+// --- 🌾 FedPigModal ---------------------------------------------------------
+
+function FedPigModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  const [date, setDate] = useState(todayStr());
+  const [lbs, setLbs] = useState("");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const [mode, setMode] = useState(live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState([]);
+
+  const targetIds = resolveSelectedIdsP({ mode, customIds, live });
+  const canSave = (mode === "all") || targetIds.length > 0;
+
+  const save = () => {
+    if (!canSave) return;
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      // Single entry with animalIds=[...]; animalId (singular) = first id so
+      // legacy filter code surfaces the entry on at least one pig's history.
+      const entry = {
+        id: newId(),
+        date,
+        action: "fed",
+        animalIds: [...targetIds],
+        animalId: targetIds[0] || null,
+        animalName: (live.find(a=>a.id===targetIds[0])?.name) || "",
+        lbs: Number(lbs) || 0,
+        cost: Number(cost) || 0,
+        notes: notes.trim(),
+        herdWide: mode === "all",
+        created: Date.now(),
+      };
+      d.entries[hobbyId].push(entry);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🌾 Log feeding">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+      </Field>
+      <Field label={`Who is this for? (${targetIds.length} pig${targetIds.length===1?"":"s"})`}>
+        {selectionButtonsP({ live, mode, setMode })}
+        {mode === "custom" && multiToggleRowP({ live, selectedIds: customIds, setSelectedIds: setCustomIds })}
+      </Field>
+      {(()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shown = lbs===""||lbs==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs);
+        return (
+          <Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}>
+            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+              onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
+              placeholder="0"/>
+          </Field>
+        );
+      })()}
+      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- ⚖️ 💊 📝 LogPigEntryModal (shared for weight / health / note) ---------
+
+function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+
+  // Weight is single-select (one number per pig). Health & note are multi.
+  const isMulti = action === "health" || action === "note";
+
+  const [date, setDate] = useState(todayStr());
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [mode, setMode] = useState(live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState([]);
+  const [weight, setWeight] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const targetIds = isMulti ? resolveSelectedIdsP({ mode, customIds, live }) : (animalId ? [animalId] : []);
+
+  const titles = { weight:"⚖️ Log weight", health:"💊 Vet / meds", note:"📝 Add note" };
+  const subtexts = {
+    weight: "Track growth and butcher-readiness over time.",
+    health: "Treatments, dewormers, vaccines, vet visits — anything worth remembering.",
+    note: "Anything else worth tracking against a pig or the herd.",
+  };
+
+  const noteRequired = action === "health" || action === "note";
+  const canSave = (() => {
+    if (action === "weight" && (!animalId || !(Number(weight) > 0))) return false;
+    if (isMulti && targetIds.length === 0) return false;
+    if (noteRequired && !notes.trim()) return false;
+    return true;
+  })();
+
+  const save = () => {
+    if (!canSave) return;
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      if (action === "weight") {
+        const a = live.find(x => x.id === animalId);
+        d.entries[hobbyId].push({
+          id: newId(), date, action: "weight",
+          animalId, animalName: a?.name || "",
+          weight: Number(weight) || 0,
+          notes: notes.trim(),
+          created: Date.now(),
+        });
+      } else {
+        // health / note: one entry per pig so per-animal history filters
+        // (which key off animalId) still surface them.
+        const stem = newId();
+        targetIds.forEach((id, i) => {
+          const a = live.find(x => x.id === id);
+          d.entries[hobbyId].push({
+            id: i === 0 ? stem : `${stem}-${i}`,
+            date, action,
+            animalId: id, animalName: a?.name || "",
+            animalIds: [...targetIds],
+            notes: notes.trim(),
+            created: Date.now(),
+          });
+        });
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={titles[action]}>
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      {action === "weight" ? (
+        <Field label="Pig">
+          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+            {live.length === 0 && <option value="">— No live pigs —</option>}
+            {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
+          </select>
+        </Field>
+      ) : (
+        <Field label={`Who? (${targetIds.length} pig${targetIds.length===1?"":"s"})`}>
+          {selectionButtonsP({ live, mode, setMode })}
+          {mode === "custom" && multiToggleRowP({ live, selectedIds: customIds, setSelectedIds: setCustomIds })}
+        </Field>
+      )}
+      {action === "weight" && (()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
+        return (
+          <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
+            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+              onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
+              placeholder="0" autoFocus inputMode="decimal"/>
+          </Field>
+        );
+      })()}
+      <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
+        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+          placeholder={
+            action === "health" ? "e.g. Ivermectin — dewormer round" :
+            action === "note" ? "What happened" : ""
+          }
+          autoFocus={action !== "weight"}/>
+      </Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- 🐖 BredPigModal --------------------------------------------------------
+
+function BredPigModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  // Sows AND gilts are breedable (a gilt becomes a sow after first farrow).
+  const females = live.filter(a => a.sex === "Sow" || a.sex === "Gilt");
+  const boars = live.filter(a => a.sex === "Boar");
+
+  const [date, setDate] = useState(todayStr());
+  const [femaleId, setFemaleId] = useState(females[0]?.id || "");
+  const [boarId, setBoarId] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const farrowDate = date ? addDays(date, GESTATION_DAYS) : "";
+  const canSave = !!femaleId && !!date;
+
+  const save = () => {
+    if (!canSave) return;
+    const female = females.find(f => f.id === femaleId);
+    const boar = boars.find(b => b.id === boarId);
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const entry = {
+        id: newId(), date, action: "bred",
+        animalId: femaleId, animalName: female?.name || "",
+        boarId: boarId || null, boarName: boar?.name || "",
+        // Mirror BredRabbitModal's buckId/buckName for cross-hobby code paths.
+        buckId: boarId || null, buckName: boar?.name || "",
+        farrowDate,
+        notes: notes.trim(),
+        created: Date.now(),
+      };
+      d.entries[hobbyId].push(entry);
+      if (farrowDate) {
+        d.calendarEvents = d.calendarEvents || [];
+        d.calendarEvents.push({
+          id: newId(), date: farrowDate,
+          title: `🐽 ${female?.name || "sow"} — farrow expected`,
+          type: "pigs",
+          notes: `Bred ${fmtDate(date)}${boar?.name ? " · sire " + boar.name : ""}`,
+        });
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🐖 Log breeding">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      <Field label="Sow / gilt">
+        <select style={inputStyle} value={femaleId} onChange={e=>setFemaleId(e.target.value)} autoFocus>
+          {females.length === 0 && <option value="">— No sows or gilts available —</option>}
+          {females.map(a => <option key={a.id} value={a.id}>{a.name} · {a.sex}{a.breed?` · ${a.breed}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Boar (optional)">
+        <select style={inputStyle} value={boarId} onChange={e=>setBoarId(e.target.value)}>
+          <option value="">— Not specified —</option>
+          {boars.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
+        </select>
+      </Field>
+      {farrowDate && (
+        <div style={{padding:"10px 14px",background:palette.yolkSoft,borderRadius:8,fontSize:13,color:palette.ink,marginBottom:14}}>
+          📅 Expected farrow: <strong>{fmtDate(farrowDate)}</strong> ({GESTATION_DAYS} days — "three months, three weeks, three days")
+          <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>A reminder will be added to your calendar after saving.</div>
+        </div>
+      )}
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- 🐽 FarrowPigModal ------------------------------------------------------
+
+function FarrowPigModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+  // Spec says "Farrow is for sows only" — gilts are still on the Bred picker
+  // (a gilt with her first litter is conventionally reclassified to Sow by
+  // the user editing the sex field). If gilts also need to appear here later,
+  // change to: live.filter(a => a.sex === "Sow" || a.sex === "Gilt").
+  const sows = live.filter(a => a.sex === "Sow");
+  const boars = live.filter(a => a.sex === "Boar");
+
+  const [date, setDate] = useState(todayStr());
+  const [sowId, setSowId] = useState(sows[0]?.id || "");
+  const [sireId, setSireId] = useState("");
+  const [pigletsAlive, setPigletsAlive] = useState("");
+  const [pigletsStillborn, setPigletsStillborn] = useState("");
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!sowId && !!date;
+
+  const save = () => {
+    if (!canSave) return;
+    const sow = sows.find(s => s.id === sowId);
+    const sire = boars.find(b => b.id === sireId);
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      // action="litter" matches the existing Pigs analytics + LogModal shape.
+      // count = piglets alive (back-compat with existing `e.count` reads in
+      // AnimalCard recent-entries + PigsAnalytics totalPiglets sum).
+      const alive = Number(pigletsAlive) || 0;
+      const stillborn = Number(pigletsStillborn) || 0;
+      const entry = {
+        id: newId(), date, action: "litter",
+        animalId: sowId, animalName: sow?.name || "",
+        count: alive,                  // legacy field — sum of alive piglets
+        pigletsAlive: alive,           // new explicit fields
+        pigletsStillborn: stillborn,
+        notes: notes.trim(),
+        created: Date.now(),
+      };
+      if (sireId) {
+        entry.sireId = sireId;
+        entry.sireName = sire?.name || "";
+        entry.boarId = sireId;
+        entry.boarName = sire?.name || "";
+      }
+      d.entries[hobbyId].push(entry);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🐽 Log farrowing">
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+      </Field>
+      <Field label="Sow">
+        <select style={inputStyle} value={sowId} onChange={e=>setSowId(e.target.value)} autoFocus>
+          {sows.length === 0 && <option value="">— No sows available —</option>}
+          {sows.map(a => <option key={a.id} value={a.id}>{a.name}{a.breed?` · ${a.breed}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Sire / boar (optional)">
+        <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+          <option value="">— Not specified —</option>
+          {boars.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
+        </select>
+      </Field>
+      <div style={{display:"flex",gap:12}}>
+        <div style={{flex:1}}><Field label="Piglets alive"><input type="number" min={0} style={inputStyle} value={pigletsAlive} onChange={e=>setPigletsAlive(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}><Field label="Stillborn"><input type="number" min={0} style={inputStyle} value={pigletsStillborn} onChange={e=>setPigletsStillborn(e.target.value)} placeholder="0"/></Field></div>
+      </div>
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn onClick={save} disabled={!canSave}>Save</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// --- ❄️ RemovePigModal (unified butcher / sold / rehomed / died / ...) -----
+
+function RemovePigModal({ hobby, hobbyId, update, onClose }) {
+  const live = (hobby.animals||[]).filter(a=>!a.archived);
+
+  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [reason, setReason] = useState("butchered");
+  const [date, setDate] = useState(todayStr());
+  // butcher
+  const [weight, setWeight] = useState("");
+  const [cost, setCost] = useState("");
+  // sold
+  const [buyer, setBuyer] = useState("");
+  const [price, setPrice] = useState("");
+  // rehomed / given away
+  const [recipient, setRecipient] = useState("");
+  // died
+  const [cause, setCause] = useState("Unknown");
+  // culled
+  const [cullReason, setCullReason] = useState("");
+  // shared notes
+  const [notes, setNotes] = useState("");
+
+  const canSave = !!animalId && !!date;
+
+  const REASONS = [
+    { k:"butchered",   label:"🥩 Butchered" },
+    { k:"sold",        label:"🏷️ Sold" },
+    { k:"rehomed",     label:"🏠 Rehomed" },
+    { k:"given_away",  label:"🎁 Given away" },
+    { k:"died",        label:"🪦 Died" },
+    { k:"culled",      label:"⚠️ Culled" },
+    { k:"other",       label:"📋 Other" },
+  ];
+
+  const save = () => {
+    if (!canSave) return;
+    const animal = live.find(a => a.id === animalId);
+    if (!animal) return;
+
+    update(d => {
+      d.entries = d.entries || {};
+      d.entries[hobbyId] = d.entries[hobbyId] || [];
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      const target = (h?.animals || []).find(x => x.id === animalId);
+      if (!target) return d;
+
+      // Per-reason entry + archive metadata. Shapes mirror what the old
+      // per-card LogModal wrote so existing analytics keep working.
+      if (reason === "butchered") {
+        const entry = {
+          id: newId(), date, action: "butcher",
+          animalId, animalName: animal.name,
+          weight: Number(weight) || 0,
+          cost: Number(cost) || 0,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = "butchered";
+        target.archivedDate = date;
+      } else if (reason === "sold" || reason === "rehomed" || reason === "given_away") {
+        // Map sold/rehomed/given_away to the existing sale-entry pattern,
+        // matching the prior LogModal so the Sales tab + analytics surface
+        // them without changes. "given_away" stored as saleType:"rehomed"
+        // with reasonTag so the given-away distinction is preserved.
+        const saleType = reason === "sold" ? "sold" : "rehomed";
+        const verb = reason === "sold" ? "Sold" : reason === "rehomed" ? "Rehomed" : "Given away";
+        const partyName = reason === "sold" ? buyer.trim() : recipient.trim();
+        const numericPrice = reason === "sold" ? (Number(price) || 0) : 0;
+        const entry = {
+          id: newId(), date, action: "sale",
+          animalId, animalName: animal.name,
+          buyer: partyName,
+          price: numericPrice,
+          saleType,
+          reasonTag: reason,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const partyStr = partyName ? ` to ${partyName}` : "";
+        target.archived = true;
+        target.archivedReason = `${verb}${partyStr}${priceStr}`;
+        target.archivedDate = date;
+        target.saleId = entry.id;
+        d.sales = d.sales || [];
+        const _saleRow = {
+          id: entry.id, date, hobbyType: "pig", crop: animal.name, saleType,
+          pricePerUnit: numericPrice, totalRevenue: numericPrice,
+          qty: 1, animalId, buyer: partyName, buyerId: null,
+          notes: notes.trim() || "",
+        };
+        // Reuse the existing buyer-customer resolver (already defined at the
+        // top of Pigs.jsx). Keeps Sales-tab customer rollups consistent.
+        resolveSaleBuyer(d, _saleRow);
+        d.sales.push(_saleRow);
+      } else if (reason === "died") {
+        const entry = {
+          id: newId(), date, action: "death",
+          animalId, animalName: animal.name,
+          cause,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = cause && cause !== "Unknown" ? `Died: ${cause}` : "Died";
+        target.archivedDate = date;
+      } else if (reason === "culled") {
+        const causeStr = cullReason.trim() ? `culled: ${cullReason.trim()}` : "culled";
+        const entry = {
+          id: newId(), date, action: "death",
+          animalId, animalName: animal.name,
+          cause: causeStr,
+          notes: notes.trim(),
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = `Culled${cullReason.trim() ? ": " + cullReason.trim() : ""}`;
+        target.archivedDate = date;
+      } else {
+        // other — archive only; record a note entry so history shows it
+        const entry = {
+          id: newId(), date, action: "note",
+          animalId, animalName: animal.name,
+          notes: notes.trim() ? `Removed: ${notes.trim()}` : "Removed (other)",
+          reasonTag: "other_removal",
+          created: Date.now(),
+        };
+        d.entries[hobbyId].push(entry);
+        target.archived = true;
+        target.archivedReason = notes.trim() ? `Removed: ${notes.trim()}` : "Removed (other)";
+        target.archivedDate = date;
+      }
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="❄️ Remove pig">
+      <Field label="Which pig?">
+        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+          {live.length === 0 && <option value="">— No live pigs —</option>}
+          {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}{a.breed?` · ${a.breed}`:""}</option>)}
+        </select>
+      </Field>
+      <Field label="Why?">
+        <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+          {REASONS.map(r => (
+            <button key={r.k} type="button" onClick={()=>setReason(r.k)} style={{
+              padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+              border: reason===r.k ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
+              background: reason===r.k ? palette.ink : palette.bgAlt,
+              color: reason===r.k ? palette.bg : palette.ink,
+              cursor:"pointer",
+            }}>{r.label}</button>
+          ))}
+        </div>
+      </Field>
+      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+
+      {reason === "butchered" && (()=>{
+        const isMetricW = getCurrentWeightUnit()==="kg";
+        const shownW = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
+        return (
+          <>
+            <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
+              <input type="number" min={0} step="0.1" style={inputStyle} value={shownW}
+                onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
+            </Field>
+            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+          </>
+        );
+      })()}
+
+      {reason === "sold" && (
+        <>
+          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+        </>
+      )}
+
+      {(reason === "rehomed" || reason === "given_away") && (
+        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+      )}
+
+      {reason === "died" && (
+        <Field label="Cause">
+          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+            {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Birthing complications","Other"].map(c=><option key={c}>{c}</option>)}
+          </select>
+        </Field>
+      )}
+
+      {reason === "culled" && (
+        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
+      )}
+
+      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+
+      <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
+        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This pig";})()} will move to your Archived pigs list{(reason==="sold")?" and a sale record will appear in your Sales tab":""}. You can restore from there if this was a mistake.
+      </div>
+
+      <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
+        <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+        <Btn variant={reason==="died"||reason==="culled"?"danger":"primary"} onClick={save} disabled={!canSave}>Save &amp; archive</Btn>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// /PIGS_UNIFY_V1
+// ============================================================================
+
 function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const[date,setDate]=useState(todayStr());
   const[lbs,setLbs]=useState("");
@@ -513,7 +1152,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
 }
 
 function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,customers=[]}){
-  const[logAction,setLogAction]=useState(null);
+  /* PIGS_UNIFY_V1 — logAction state removed (action buttons moved to top tile bar) */
   const[showPedigree,setShowPedigree]=useState(false);
   const[showHistory,setShowHistory]=useState(false);
   const animalEntries=entries.filter(e=>e.animalId===animal.id);
@@ -521,12 +1160,12 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
   const latestWeight=weightEntries[0]?.weight||null;
   const startWeight=animal.startWeight||0;
   const gain=latestWeight&&startWeight?latestWeight-startWeight:null;
-  const LOG_ACTIONS=["fed","weight","litter","health","wean","butcher","death","sale","note"];
-  const actionLabels={fed:"🌾 Feed",weight:"⚖️ Weight",litter:"🐷 Litter",health:"💊 Health",wean:"🍼 Wean",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note"};
+  /* PIGS_UNIFY_V1 — LOG_ACTIONS array removed (per-card row gone) */
+  const actionLabels={fed:"🌾 Feed",weight:"⚖️ Weight",bred:"🐖 Bred",litter:"🐽 Farrow",health:"💊 Health",wean:"🍼 Wean",butcher:"🔪 Butcher",death:"💀 Death",sale:"🏷️ Sale",note:"📓 Note"}; /* PIGS_UNIFY_V1 — added bred; renamed litter→Farrow */
   const recentEntries=animalEntries.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3);
   return(
     <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:10}}>
-      {logAction&&<LogModal animal={animal} hobbyId={hobbyId} action={logAction} update={update} onClose={()=>setLogAction(null)} customers={customers}/>}
+      {/* PIGS_UNIFY_V1 — per-card LogModal mount removed; tile bar drives logging now */}
       {showPedigree && (
         <PedigreeView
           animal={animal}
@@ -565,8 +1204,8 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
           {gain!==null&&<div style={{fontSize:12,color:gain>0?palette.leaf:palette.accent}}><strong>+{fmtWeight(Number(gain)||0)} gained</strong></div>}
         </div>
       )}
+      {/* PIGS_UNIFY_V1 — per-card action row trimmed: log buttons moved to top tile bar. */}
       <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:recentEntries.length>0?10:0}}>
-        {LOG_ACTIONS.map(a=><button key={a} onClick={()=>setLogAction(a)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>{actionLabels[a]}</button>)}
         <button onClick={()=>setShowPedigree(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>🧬 Pedigree</button>
         <button onClick={()=>setShowHistory(true)} style={{padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",color:palette.ink}}>📜 History</button>
       </div>
@@ -576,7 +1215,8 @@ function AnimalCard({animal,hobbyId,animals,entries,sales,hobby,update,setModal,
             let detail="";
             if(e.action==="fed")detail=`${fmtWeight(Number(e.lbs)||0)}${e.cost>0?` · ${fmtMoney(e.cost)}`:""}`;
             else if(e.action==="weight")detail=fmtWeight(Number(e.weight)||0);
-            else if(e.action==="litter")detail=`${e.count} piglets`;
+            else if(e.action==="litter")detail=`${e.pigletsAlive!=null?e.pigletsAlive:e.count||0} alive${(Number(e.pigletsStillborn)||0)>0?` · ${e.pigletsStillborn} stillborn`:""}`;
+            else if(e.action==="bred")detail=`${e.boarName?"sire: "+e.boarName+" · ":""}${e.farrowDate?"farrow "+fmtDate(e.farrowDate):""}`; /* PIGS_UNIFY_V1 */
             else if(e.action==="butcher")detail=fmtWeight(Number(e.weight)||0);
             return (
               <div key={e.id} style={{fontSize:12,color:palette.inkSoft,padding:"4px 8px",background:palette.bgAlt,borderRadius:6,display:"flex",justifyContent:"space-between",alignItems:"center",gap:6}}>
@@ -780,6 +1420,12 @@ function PigModalRouter({modal,hobby,update,user,onClose}){
 
 export default function PigsPage({hobby,data,update,user}){
   const[localModal,setLocalModal]=useState(null);
+  // PIGS_UNIFY_V1 — top-bar modal state
+  const [fedOpen, setFedOpen] = useState(false);
+  const [bredOpen, setBredOpen] = useState(false);
+  const [farrowOpen, setFarrowOpen] = useState(false);
+  const [logEntryAction, setLogEntryAction] = useState(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
   const entries=data.entries[hobby.id]||[];
   const allAnimals=hobby.animals||[];
   const animals=allAnimals.filter(a=>!a.archived);
@@ -788,6 +1434,25 @@ export default function PigsPage({hobby,data,update,user}){
     <div>
       <PigModalRouter modal={localModal} hobby={hobby} update={update} user={user} onClose={()=>setLocalModal(null)}/>
       <HerdTallySection hobby={hobby} update={update}/>
+
+      {/* PIGS_UNIFY_V1 — quick action tile bar (mirrors Sheep/Rabbits) */}
+      {fedOpen && <FedPigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setFedOpen(false)} />}
+      {bredOpen && <BredPigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setBredOpen(false)} />}
+      {farrowOpen && <FarrowPigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setFarrowOpen(false)} />}
+      {logEntryAction && <LogPigEntryModal hobby={hobby} hobbyId={hobby.id} action={logEntryAction} update={update} onClose={()=>setLogEntryAction(null)} />}
+      {removeOpen && <RemovePigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={()=>setRemoveOpen(false)} />}
+
+      {animals.length > 0 && (
+        <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(110px,1fr))",gap:8,marginBottom:18 }}>
+          <Btn small onClick={() => setFedOpen(true)} style={{ width:"100%" }}>🌾 Feed</Btn>
+          <Btn small onClick={() => setLogEntryAction("weight")} style={{ width:"100%" }}>⚖️ Weight</Btn>
+          <Btn small variant="leaf" onClick={() => setBredOpen(true)} style={{ width:"100%" }}>🐖 Bred</Btn>
+          <Btn small variant="leaf" onClick={() => setFarrowOpen(true)} style={{ width:"100%" }}>🐽 Farrow</Btn>
+          <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
+          <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
+          <Btn small variant="danger" onClick={() => setRemoveOpen(true)} style={{ width:"100%" }}>❄️ Remove</Btn>
+        </div>
+      )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your pigs</div>
         <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add pig</button>
