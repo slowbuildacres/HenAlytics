@@ -19,6 +19,20 @@ import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, Trash2, ChevronDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
+import { pantryItemCostForUsage } from "./pantry.js";
+
+function computePantryLinesTotal(lines, pantry) {
+  if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
+  let total = 0;
+  for (const ln of lines) {
+    const it = pantry.find(p => p.id === ln.pantryId);
+    if (!it) continue;
+    const r = pantryItemCostForUsage(it, ln.amount, ln.unit);
+    if (r.ok) total += r.cost;
+  }
+  return total;
+}
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
@@ -163,17 +177,34 @@ function StarterModal({ starter, onSave, onDelete, onClose }) {
 }
 
 // ============ BAKE MODAL ============
-function BakeModal({ bake, starters, onSave, onDelete, onClose }) {
+function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
   const liveStarters = (starters || []).filter(s => !s.archived);
   const [date, setDate] = useState(bake?.date || todayStr());
   const [recipe, setRecipe] = useState(bake?.recipe || "Country Loaf");
   const [loafCount, setLoafCount] = useState(bake?.loafCount ? String(bake.loafCount) : "1");
   const [weightPerLoafG, setWeightPerLoafG] = useState(bake?.weightPerLoafG ? String(bake.weightPerLoafG) : "");
   const [costPerLoaf, setCostPerLoaf] = useState(bake?.costPerLoaf ? String(bake.costPerLoaf) : "");
+  const [costTouched, setCostTouched] = useState(false);
+  const [pantryLines, setPantryLines] = useState(() => Array.isArray(bake?._pantryLines) ? bake._pantryLines.map(l => ({ ...l })) : []);
   const [crumbRating, setCrumbRating] = useState(bake?.crumbRating || 0);
   const [starterId, setStarterId] = useState(bake?.starterId || liveStarters[0]?.id || "");
   const [notes, setNotes] = useState(bake?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // SHARED_PANTRY: pantry lines describe the TOTAL ingredients used for this
+  // bake session. Cost-per-loaf = pantry total / loaf count. Auto-fill when
+  // the picker has lines and the user hasn't manually edited the field.
+  const pantryCostTotal = computePantryLinesTotal(pantryLines, pantry);
+  const loafCountNum = Math.max(1, parseInt(loafCount) || 1);
+  React.useEffect(() => {
+    if (costTouched) return;
+    if (pantryLines.length === 0) return;
+    if (pantryCostTotal > 0) {
+      setCostPerLoaf((pantryCostTotal / loafCountNum).toFixed(2));
+    } else {
+      setCostPerLoaf("");
+    }
+  }, [pantryCostTotal, loafCountNum, costTouched, pantryLines.length]);
 
   const handleSave = () => {
     if (!date || !recipe.trim()) return;
@@ -187,6 +218,7 @@ function BakeModal({ bake, starters, onSave, onDelete, onClose }) {
       crumbRating: Number(crumbRating) || 0,
       starterId: starterId || null,
       notes: notes.trim(),
+      _pantryLinesToApply: pantryLines,
     });
     onClose();
   };
@@ -215,7 +247,25 @@ function BakeModal({ bake, starters, onSave, onDelete, onClose }) {
         </div>
       </div>
       <Field label="Cost per loaf (flour + salt + electricity, optional)">
-        <input type="number" step="0.01" style={inputStyle} value={costPerLoaf} onChange={e=>setCostPerLoaf(e.target.value)} placeholder="2.50" />
+        <input
+          type="number"
+          step="0.01"
+          style={inputStyle}
+          value={costPerLoaf}
+          onChange={e => { setCostPerLoaf(e.target.value); setCostTouched(true); }}
+          placeholder="2.50"
+        />
+        <PantryQuickCost
+          pantry={pantry}
+          lines={pantryLines}
+          onChange={setPantryLines}
+          palette={{ ink: palette.ink, text: palette.ink, textSoft: palette.inkSoft, border: palette.line, bg: palette.card, bgAlt: palette.bgAlt, accent: palette.accent }}
+        />
+        {pantryLines.length > 0 && pantryCostTotal > 0 && (
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+            Pantry total: {fmtMoney(pantryCostTotal)} ÷ {loafCountNum} loaves = {fmtMoney(pantryCostTotal / loafCountNum)}/loaf
+          </div>
+        )}
       </Field>
       {liveStarters.length > 1 && (
         <Field label="Which starter?">
@@ -374,15 +424,44 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.bakes)) h.bakes = [];
-      const idx = h.bakes.findIndex(x => x.id === bake.id);
-      if (idx >= 0) h.bakes[idx] = bake; else h.bakes.push(bake);
+
+      // SHARED_PANTRY: apply pantry deductions. On EDIT, refund prior
+      // deductions first so we don't double-count.
+      const linesToApply = bake._pantryLinesToApply || [];
+      const cleanBake = { ...bake };
+      delete cleanBake._pantryLinesToApply;
+
+      const existingIdx = h.bakes.findIndex(x => x.id === cleanBake.id);
+      if (existingIdx >= 0) {
+        const prior = h.bakes[existingIdx];
+        if (Array.isArray(prior?._pantryDeductions) && prior._pantryDeductions.length > 0) {
+          applyPantryRefunds(d, prior._pantryDeductions);
+        }
+      }
+
+      if (linesToApply.length > 0) {
+        const deductions = applyPantryDeductions(d, linesToApply);
+        if (deductions.length > 0) cleanBake._pantryDeductions = deductions;
+        cleanBake._pantryLines = linesToApply;
+      } else {
+        delete cleanBake._pantryDeductions;
+        delete cleanBake._pantryLines;
+      }
+
+      if (existingIdx >= 0) h.bakes[existingIdx] = cleanBake; else h.bakes.push(cleanBake);
       return d;
     });
   };
   const deleteBake = (id) => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
-      if (h) h.bakes = (h.bakes||[]).filter(b => b.id !== id);
+      if (!h) return d;
+      // SHARED_PANTRY: refund any deducted stock.
+      const target = (h.bakes || []).find(b => b.id === id);
+      if (target && Array.isArray(target._pantryDeductions)) {
+        applyPantryRefunds(d, target._pantryDeductions);
+      }
+      h.bakes = (h.bakes||[]).filter(b => b.id !== id);
       return d;
     });
   };
@@ -410,6 +489,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
         <BakeModal
           bake={bakeModal.bake}
           starters={starters}
+          pantry={Array.isArray(data.pantry) ? data.pantry : []}
           onClose={() => setBakeModal({ open: false, bake: null })}
           onSave={saveBake}
           onDelete={deleteBake}
@@ -436,6 +516,18 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
         <Btn variant="accent" onClick={() => setBakeModal({ open: true, bake: null })} style={{ width:"100%" }}>🍞 Log a bake</Btn>
         <Btn variant="leaf" small onClick={() => setStarterModal({ open: true, starter: null })} style={{ width:"100%" }}>+ Add starter</Btn>
         <Btn variant="ghost" small onClick={() => setInfraModal({ open: true, entry: null })} style={{ width:"100%" }}>🔨 Infrastructure</Btn>
+        {setModal && (
+          <Btn variant="ghost" small onClick={() => setModal({ type: "pantry" })} style={{ width:"100%" }}>🥫 Pantry</Btn>
+        )}
+        {setModal && (
+          <Btn variant="ghost" small onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })} style={{ width:"100%" }}>💵 Add Expense</Btn>
+        )}
+        {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+          <Btn key={c.id} variant="ghost" small onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ width:"100%" }}>{c.emoji || "📝"} {c.label}</Btn>
+        ))}
+        {setModal && (
+          <Btn variant="ghost" small onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ width:"100%" }}>➕ Custom</Btn>
+        )}
       </div>
 
       {/* Starters */}

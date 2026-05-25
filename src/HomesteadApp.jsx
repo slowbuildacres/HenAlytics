@@ -100,7 +100,14 @@ import {
 import GardenMapModal from "./GardenMap.jsx";
 import PlantScannerModal from "./PlantScannerModal.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
-import SalesPage from "./Sales.jsx";
+import SalesPage, { AddExpenseModal } from "./Sales.jsx";
+import {
+  PANTRY_CATEGORIES, PANTRY_CATEGORY_LABELS, INGREDIENT_DENSITIES,
+  PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
+  PANTRY_UNIT_LABELS, pantryUnitKind, convertPantryUnit,
+  pantryItemDensity, pantryItemCostPerPurchaseUnit, pantryItemCostForUsage,
+  computeRecipeCost,
+} from "./pantry.js";
 import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 import GoatsPage, { GoatsAnalytics } from "./Goats.jsx";
@@ -289,6 +296,12 @@ function migrateData(data) {
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
   if (!Array.isArray(data.expenses)) data.expenses = [];
+  // SHARED_PANTRY — kitchen-hobbies ingredient stock & cost tracking.
+  // Each entry: { id, name, brand?, category, purchaseUnit, purchaseAmount,
+  // purchaseCost, purchaseDate, currentAmount, densityOzPerCup?, archived,
+  // created }. Used by Baking/Sourdough/Canning/Fermentation/FreezeDrying/
+  // Dehydrating to auto-calculate recipe cost and deduct stock on bake log.
+  if (!Array.isArray(data.pantry)) data.pantry = [];
   if (!Array.isArray(data.goals)) data.goals = [];
   if (!Array.isArray(data.freezerLog)) data.freezerLog = [];
   if (typeof data.supportersDismissedMonth !== "string" && data.supportersDismissedMonth !== null) {
@@ -1096,6 +1109,100 @@ function harvestSummary(harvestEntries) {
   return parts.length ? parts.join(" · ") : "0 lbs";
 }
 
+// ============================================================================
+// SHARED PANTRY — usage history helper
+// ----------------------------------------------------------------------------
+// Walks the user's data and collects every recorded pantry deduction for a
+// given pantry item id. Each kitchen hobby stores deductions on the saved
+// batch / bake / ferment under `_pantryDeductions`, so we just iterate the
+// known locations:
+//
+//   - hobby.batches[]    (canning, freeze drying, dehydrating)
+//   - hobby.ferments[]   (fermentation)
+//   - hobby.bakes[]      (sourdough)
+//   - data.entries.baking[] (baking)
+//
+// Returns [{ date, amount, unit, source, label }] sorted newest-first.
+// source is the hobby type for grouping; label is a human-friendly
+// description like "Country Loaf (3 loaves)" or "Strawberry jam (12 jars)".
+// ============================================================================
+function collectPantryItemHistory(data, pantryId) {
+  if (!data || !pantryId) return [];
+  const rows = [];
+
+  const collectFromArray = (arr, hobbyType, getLabel, getDate) => {
+    if (!Array.isArray(arr)) return;
+    for (const rec of arr) {
+      if (!rec || !Array.isArray(rec._pantryDeductions)) continue;
+      for (const ded of rec._pantryDeductions) {
+        if (!ded || ded.pantryId !== pantryId) continue;
+        rows.push({
+          date: getDate(rec),
+          amount: Number(ded.amount) || 0,
+          unit: ded.unit,
+          source: hobbyType,
+          label: getLabel(rec),
+        });
+      }
+    }
+  };
+
+  for (const h of (data.hobbies || [])) {
+    if (!h) continue;
+    if (h.type === "canning") {
+      collectFromArray(
+        h.batches, "canning",
+        (b) => `${b.item || "Batch"}${b.jarsMade ? ` (${b.jarsMade} jars)` : ""}`,
+        (b) => b.date || ""
+      );
+    } else if (h.type === "freeze_drying") {
+      collectFromArray(
+        h.batches, "freeze_drying",
+        (b) => b.item || "Batch",
+        (b) => b.date || ""
+      );
+    } else if (h.type === "dehydrating") {
+      collectFromArray(
+        h.batches, "dehydrating",
+        (b) => b.item || "Batch",
+        (b) => b.date || ""
+      );
+    } else if (h.type === "fermentation") {
+      collectFromArray(
+        h.ferments, "fermentation",
+        (f) => f.name || "Ferment",
+        (f) => f.startDate || ""
+      );
+    } else if (h.type === "sourdough") {
+      collectFromArray(
+        h.bakes, "sourdough",
+        (b) => `${b.recipe || "Bake"}${b.loafCount ? ` (${b.loafCount} loaves)` : ""}`,
+        (b) => b.date || ""
+      );
+    }
+  }
+
+  // Baking entries live in data.entries.baking — same shape but no per-hobby
+  // array. Pull them through the same helper for consistency.
+  collectFromArray(
+    (data.entries && data.entries.baking) || [], "baking",
+    (b) => `${b.recipeName || "Bake"}${b.qty ? ` (${b.qty} ${b.unit || ""})` : ""}`,
+    (b) => b.date || ""
+  );
+
+  // Sort newest-first.
+  return rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+}
+
+const PANTRY_HISTORY_SOURCE_LABELS = {
+  canning: "🫙 Canning",
+  freeze_drying: "❄️ Freeze Drying",
+  dehydrating: "🌬️ Dehydrating",
+  fermentation: "🫧 Fermentation",
+  sourdough: "🍞 Sourdough",
+  baking: "🥧 Baking",
+};
+
 
 // Backwards compatibility: old entries use `entry.photoPath` (single string),
 // new entries use `entry.photoPaths` (array). This helper returns a unified array
@@ -1442,7 +1549,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 45;
+const CURRENT_VERSION = 49;
 
 // STEP3_REVIEW_PROMPT: custom pre-prompt modal.
 // Apple-compliant pattern: we show our own modal first asking if the
@@ -1500,6 +1607,14 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "✏️ Edit a batch with pantry usage and it just works — the picker now preloads your original pantry rows when you reopen a saved batch / bake / ferment in Canning, Fermentation, Freeze Drying, Dehydrating, or Sourdough. Editing refunds the old deductions and re-applies the new ones, so stock numbers stay clean even if you change quantities or swap ingredients.",
+  "📜 Pantry usage history — tap any pantry item to see exactly which bakes, batches, and ferments consumed from it, with amounts and dates. Answers \"where did all my flour go?\" at a glance. Shows the 50 most recent entries with a running total at the top.",
+  "🍞 Sourdough joins the pantry rollout — log a bake and pick your flour/salt/etc. from pantry. Cost-per-loaf auto-calculates from total pantry cost ÷ loaves baked. Stock deducts on save and refunds if you delete the bake. With Sourdough wrapped up, all 6 kitchen hobbies (Baking, Sourdough, Canning, Fermentation, Freeze Drying, Dehydrating) now share the same pantry.",
+  "🥫 Pantry refill button — bought another bag of flour? Tap ↻ Refill on any pantry item to log the new purchase: it tops up your stock, updates the cost-per-unit to the new bag's price, and logs the expense in the Sales tab automatically. The button highlights in red when an item drops below 20% remaining so you can spot what's running low at a glance. Deleting a batch / bake also refunds the stock back to pantry so the numbers stay honest.",
+  "🥫 Shared pantry — now live across Baking, Canning, Fermentation, Freeze Drying, and Dehydrating. Tap 🥫 Pantry on any kitchen hobby to add what you bought (10 lb flour for $5, 12 oz honey for $7, etc). Each kitchen hobby's batch / ferment / bake modal now has a \"🥫 Pick from pantry\" button: pick items + amounts, costs total up automatically, and stock deducts when you save. The Ingredient cost field auto-fills from the picker (override anytime). Deleting a batch or bake automatically refunds the stock back to the pantry so the numbers stay honest. Adding pantry items also logs a Supplies expense in the Sales tab for accurate profit math. Built-in densities ship for 20 common baking ingredients (flour, sugar, butter, honey, salt, etc.); add a per-item density override if your brand's different.",
+  "✏️ Edit & delete plantings and harvests on annual detail pages — tap into any annual plant (Tomatoes, Peppers, etc.) and each planting or harvest row now has Edit and Delete buttons. Edit reuses the same modal you used to log it; delete removes it cleanly and refunds any photos attached. The Action log on annuals already had this, just bringing plantings and harvests in line.",
+  "📝 Custom quick-log on every hobby — the ➕ Custom button (already on garden, egg layers, and meat birds) now shows up everywhere. Tap it on any hobby and define your own quick-log actions, with your own emoji and label (e.g. \"Hoof trim\" for goats, \"Mite check\" for bees, \"Pull weeds\" for the garden, \"Cleaned coop\" for chickens). Each saved action becomes a tile on that hobby's quick-log grid up to a 5-per-hobby cap.",
+  "💵 Add Expense from every hobby — every hobby's quick-log now has a 💵 Add Expense tile that logs directly to the Sales tab with the hobby pre-filled. Categories, recurring expenses (daily/weekly/monthly/yearly), and the existing FIFO profit matching all work — you just don't have to leave the hobby page anymore. Goats, cows, pigs, rabbits, sheep, horses, dogs, cats, bees, incubator, baking, canning, sourdough, farmstand, dehydrating, fermentation, freeze drying, maple syrup, oil infusions, tinctures, tea, salves, garden, egg layers, and meat chickens all got the tile.",
   "🌱 Seed Starts in Garden — sow seeds indoors and track them all the way to harvest, like the Incubator's brooder flow but for plants. From your garden home, start a batch (variety, sow date, seeds sown) and Henalytics drops a 'check seedlings' reminder on your calendar at expected germination. Log germination, then transplant sprouts whenever you're ready — each transplant becomes a real planting record so harvests and annual history all keep working. The Garden analytics page now shows a survival funnel: germination rate, sprout-to-transplant rate, and what % of transplanted batches reached harvest.",
   "🐄 Cows page tidied — last of the livestock pages! Quick-log buttons moved to the top, each lets you pick one cow, multiple, or a whole pasture/herd at once. Butcher/sold/died/given away are now one ❄️ Remove button with a reason picker. Heat, AI breeding, preg check, and calf-born all have their own tiles too — and the rich 💕 Breeding lifecycle modal (dam, sire, method, expected calving) is unchanged, just relocated. Bonus: fixed an underlying bug where the pregnant badge background wasn't rendering its color.",
   "🐐 Goats page tidied — quick-log buttons moved to the top, each lets you pick one goat, multiple, or the whole herd at once. Butcher/sold/died/given away are now one ❄️ Remove button with a reason picker. The rich 💕 Breeding flow (dam, sire, method, expected/actual kidding dates, kids alive) is unchanged — just easier to find from the new tile bar.",
@@ -1552,12 +1667,6 @@ const WHATS_NEW = [
   "🐝 Beekeeping upgrades — log hive cost when you add a hive, plus a varroa mite testing log with high-mite alerts",
   "🌍 International friends — pick your currency (USD, AUD, GBP, EUR, etc), Celsius or Fahrenheit, and southern-hemisphere seasons. Find it in Settings.",
   "🐑 Sheep hobby — dairy, meat, wool, or mixed flocks with lambing tracking, shearing logs, and calendar reminders",
-  "🐔 Per-flock tracking — feed, bedding, deaths, and sold eggs now attach to a specific flock so you get real per-flock cost-per-egg numbers",
-  "🙏 Monthly thank-you got an upgrade — clearer mission note + a 'Buy Henalytics a bag of feed' button to support the app",
-  "🧾 Farmstand hobby — saved items with cost & price for one-tap sales, plus profit + top-seller analytics in the Stats tab",
-  "❄️ Butcher any bird — chickens, ducks, quail, geese, turkeys all go to the freezer log with date + weight",
-  "💵 Hatchery tracking — log where you got each flock and how much you paid",
-  "🐐 Goats, 🐄 Cows & 🐷 Pigs — three new hobbies with per-animal tracking, milk logging, FCR, and butcher stats",
 ];
 
 // Spouse Mode helpers — fudge numbers for "presentation" purposes
@@ -4629,7 +4738,7 @@ useNativeBackButton(React.useCallback(() => {
           <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
         )}
         {page === "maple_syrup" && (
-          <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} />
+          <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} setModal={setModal} />
         )}
         {page === "horses" && (
           <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />
@@ -5719,6 +5828,14 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
           color={palette.ink}
           onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
         />
+        {/* Add Expense — logs a hobby-attributed expense to data.expenses[]
+            for FIFO matching in the Sales tab. Always visible. */}
+        <Tile
+          icon={DollarSign}
+          label="Add Expense"
+          color={palette.accent}
+          onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}
+        />
         <Tile icon={Leaf} label="Close Season" color={palette.ink} onClick={() => setModal({ type: "closeGardenSeason" })} />
       </div>
     );
@@ -5771,6 +5888,14 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
           label="+ Custom"
           color={palette.ink}
           onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
+        />
+        {/* Add Expense — logs a hobby-attributed expense to data.expenses[]
+            for FIFO matching in the Sales tab. Always visible. */}
+        <Tile
+          icon={DollarSign}
+          label="Add Expense"
+          color={palette.accent}
+          onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}
         />
         {/* Push 6 — Remove birds (formerly "Butcher"). Routes through ButcherFlockModal
             which handles all reasons (butcher / sold / rehomed / given away / died /
@@ -5832,6 +5957,14 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
           label="+ Custom"
           color={palette.ink}
           onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
+        />
+        {/* Add Expense — logs a hobby-attributed expense to data.expenses[]
+            for FIFO matching in the Sales tab. Always visible. */}
+        <Tile
+          icon={DollarSign}
+          label="Add Expense"
+          color={palette.accent}
+          onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}
         />
         {/* Butcher = batch-end action, not a log action. Always visible. */}
         <Tile icon={Snowflake} label="Butcher" color={palette.ink} onClick={() => setModal({ type: "butcher" })} />
@@ -6239,6 +6372,32 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
     return d;
   });
 
+  // Edit/delete for plantings & harvests. Both live in data.entries.garden as
+  // action:"planted" or action:"harvested" rows. Editing routes through the
+  // existing LogModal flow (same one Garden Home uses). Deleting also cleans
+  // up linked plantings[] entries if the entry was tied to one — but most
+  // annual-style plantings are entry-only so the cleanup is a no-op in
+  // common cases. Photos (if any) are best-effort deleted.
+  const editPlantingOrHarvest = (entry) => {
+    setModal({ type: "log", action: entry.action, existingEntry: entry, hobbyIdOverride: hobbyId });
+  };
+  const deletePlantingOrHarvest = (entry) => {
+    if (!confirm(`Delete this ${entry.action === "planted" ? "planting" : "harvest"}?`)) return;
+    // Best-effort: clean up photos if any.
+    try { getEntryPhotos(entry).forEach(p => deletePhoto(p).catch(() => {})); } catch (_) {}
+    update(d => {
+      if (d.entries && Array.isArray(d.entries.garden)) {
+        d.entries.garden = d.entries.garden.filter(x => x.id !== entry.id);
+      }
+      // If this planting was the seed for a plantings[] record, also drop
+      // that record so the garden home view stays in sync.
+      if (entry.action === "planted" && Array.isArray(d.plantings)) {
+        d.plantings = d.plantings.filter(p => p.entryId !== entry.id);
+      }
+      return d;
+    });
+  };
+
   // STEP_ANNUAL_RENAME: inline rename UI.
   // The annual record's name is the human label; the linkage to planted /
   // harvested entries is by (e.plant.trim().toLowerCase() === annual.name
@@ -6413,8 +6572,22 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
           <div style={sectionLabel}>Plantings ({plantings.length})</div>
           <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
             {plantings.map(e => (
-              <div key={e.id} style={rowStyle}>
-                {e.date}{e.quantity ? ` · ${e.quantity} planted` : ""}{e.bed ? ` · ${e.bed}` : ""}
+              <div key={e.id} style={{ ...rowStyle,display:"flex",alignItems:"center",gap:8 }}>
+                <div style={{ flex:1,minWidth:0 }}>
+                  {e.date}{e.quantity ? ` · ${e.quantity} planted` : ""}{e.bed ? ` · ${e.bed}` : ""}
+                </div>
+                <button
+                  onClick={() => editPlantingOrHarvest(e)}
+                  style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4,fontSize:12 }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => deletePlantingOrHarvest(e)}
+                  style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4,fontSize:12 }}
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>
@@ -6426,8 +6599,22 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
           <div style={sectionLabel}>Harvests ({harvests.length})</div>
           <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
             {harvests.map(e => (
-              <div key={e.id} style={rowStyle}>
-                {e.date} · {e.quantity || 0} {HARVEST_UNIT_LABELS[e.unit] || e.unit || "lbs"}
+              <div key={e.id} style={{ ...rowStyle,display:"flex",alignItems:"center",gap:8 }}>
+                <div style={{ flex:1,minWidth:0 }}>
+                  {e.date} · {e.quantity || 0} {HARVEST_UNIT_LABELS[e.unit] || e.unit || "lbs"}
+                </div>
+                <button
+                  onClick={() => editPlantingOrHarvest(e)}
+                  style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4,fontSize:12 }}
+                >
+                  Edit
+                </button>
+                <button
+                  onClick={() => deletePlantingOrHarvest(e)}
+                  style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4,fontSize:12 }}
+                >
+                  Delete
+                </button>
               </div>
             ))}
           </div>
@@ -9508,6 +9695,12 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
   if (modal.type === "customizeQuickLogs") return <CustomizeQuickLogsModal data={data} update={update} hobbyId={modal.hobbyId} onClose={close} />;
   if (modal.type === "customLogPicker") return <CustomLogPickerModal data={data} update={update} hobbyId={modal.hobbyId} onClose={close} setModal={setModal} />;
+  // Add Expense — opened from each hobby's "Add Expense" quick-log tile.
+  // Pre-fills the hobby dropdown with modal.hobbyId so users don't have to
+  // re-select it. Falls through to "All / unspecified" if no hobbyId given.
+  if (modal.type === "addExpense") return <AddExpenseModal data={data} update={update} onClose={close} initialHobbyId={modal.hobbyId || ""} />;
+  // SHARED_PANTRY — opened via "🥫 Pantry" button on any kitchen hobby.
+  if (modal.type === "pantry") return <PantryModal data={data} update={update} onClose={close} setModal={setModal} />;
   if (modal.type === "renameHomestead") return <RenameHomesteadModal data={data} update={update} onClose={close} />;
   if (modal.type === "feedback") return <FeedbackModal onClose={close} presetCategory={modal.presetCategory} user={user} />;
   if (modal.type === "signin") return <AuthModal onClose={close} initialMode="signin" />;
@@ -11655,6 +11848,586 @@ function CustomizeQuickLogsModal({ data, update, hobbyId, onClose }) {
           })}
         </div>
       )}
+    </Modal>
+  );
+}
+
+// ============================================================================
+// SHARED PANTRY MODAL — list view, opened via "🥫 Pantry" button on each
+// kitchen hobby (Baking, Sourdough, Canning, Fermentation, FreezeDrying,
+// Dehydrating). Data lives in data.pantry[] and is shared across all six.
+// ----------------------------------------------------------------------------
+// Each row shows: name (+ brand), current stock, cost-per-purchase-unit, a
+// progress bar of remaining vs. purchased. Tap a row to edit/refill/delete.
+// Adding a pantry item also creates a matching entry in data.expenses[] so
+// the Sales tab profit math reflects the purchase.
+// ============================================================================
+
+function PantryModal({ data, update, onClose, setModal }) {
+  const pantry = Array.isArray(data.pantry) ? data.pantry : [];
+  const active = pantry.filter(p => !p.archived);
+  const archived = pantry.filter(p => p.archived);
+  const [showArchived, setShowArchived] = useState(false);
+  const [editingItem, setEditingItem] = useState(null);
+  const [refillingItem, setRefillingItem] = useState(null);
+  const [showAdd, setShowAdd] = useState(false);
+
+  const renderRow = (item) => {
+    const purchased = Number(item.purchaseAmount) || 0;
+    const remaining = Number(item.currentAmount) || 0;
+    const pct = purchased > 0 ? Math.max(0, Math.min(100, (remaining / purchased) * 100)) : 0;
+    const costPer = pantryItemCostPerPurchaseUnit(item);
+    const unitLabel = PANTRY_UNIT_LABELS[item.purchaseUnit] || item.purchaseUnit;
+    return (
+      <div
+        key={item.id}
+        style={{
+          background: palette.card,
+          border: `1.5px solid ${palette.line}`,
+          borderRadius: 10,
+          padding: "10px 12px",
+          display: "flex",
+          flexDirection: "column",
+          gap: 6,
+        }}
+      >
+        <div
+          onClick={() => setEditingItem(item)}
+          style={{ cursor: "pointer", display: "flex", flexDirection: "column", gap: 6 }}
+        >
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+            <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink, flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {item.name}{item.brand ? <span style={{ color: palette.inkSoft, fontWeight: 400 }}> · {item.brand}</span> : null}
+            </div>
+            <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap" }}>
+              {fmtMoney(costPer)}/{unitLabel}
+            </div>
+          </div>
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: palette.inkSoft }}>
+            <span>{remaining.toFixed(remaining < 10 ? 2 : 1)} / {purchased} {unitLabel} left</span>
+            <span>{pct.toFixed(0)}%</span>
+          </div>
+          <div style={{ height: 4, background: palette.bgAlt, borderRadius: 2, overflow: "hidden" }}>
+            <div style={{ width: `${pct}%`, height: "100%", background: pct < 20 ? palette.accent : palette.leaf || palette.feather }} />
+          </div>
+        </div>
+        {/* Refill action — sits below the tap-to-edit area so it doesn't
+            swallow the parent click. Most useful when the bag's running low,
+            so we highlight it in accent color when <20% remains. */}
+        {!item.archived && (
+          <button
+            onClick={(e) => { e.stopPropagation(); setRefillingItem(item); }}
+            style={{
+              alignSelf: "flex-start",
+              background: pct < 20 ? palette.accent : "transparent",
+              color: pct < 20 ? palette.bg : palette.ink,
+              border: `1.5px solid ${pct < 20 ? palette.accent : palette.line}`,
+              borderRadius: 6,
+              padding: "4px 10px",
+              fontSize: 11,
+              fontWeight: 600,
+              cursor: "pointer",
+              fontFamily: FONT_BODY,
+            }}
+          >
+            ↻ Refill
+          </button>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🥫 Pantry">
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        Shared across Baking, Sourdough, Canning, Fermentation, Freeze Drying, and Dehydrating. Track what you bought, what it cost, and how much you have left. Recipes can link to pantry items for automatic cost calculation.
+      </div>
+
+      <button
+        onClick={() => setShowAdd(true)}
+        style={{
+          padding: "10px 14px",
+          borderRadius: 8,
+          background: palette.ink,
+          color: palette.bg,
+          border: `1.5px solid ${palette.ink}`,
+          fontFamily: FONT_BODY,
+          fontWeight: 600,
+          fontSize: 13,
+          cursor: "pointer",
+          width: "100%",
+          marginBottom: 14,
+        }}
+      >
+        + Add pantry item
+      </button>
+
+      {active.length === 0 && !showArchived && (
+        <div style={{ padding: 22, background: palette.bgAlt, border: `1.5px dashed ${palette.line}`, borderRadius: 10, textAlign: "center", color: palette.inkSoft, fontSize: 13, lineHeight: 1.5 }}>
+          Your pantry is empty. Add an item — e.g. 10 lb flour at $5 — to start tracking ingredient costs across recipes.
+        </div>
+      )}
+
+      {active.length > 0 && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {active.map(renderRow)}
+        </div>
+      )}
+
+      {archived.length > 0 && (
+        <details style={{ marginTop: 16 }} open={showArchived} onToggle={e => setShowArchived(e.target.open)}>
+          <summary style={{ cursor: "pointer", color: palette.inkSoft, fontSize: 13, padding: 8, background: palette.bgAlt, borderRadius: 8, userSelect: "none" }}>
+            Archived ({archived.length}) — used-up or no longer stocked
+          </summary>
+          <div style={{ marginTop: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+            {archived.map(renderRow)}
+          </div>
+        </details>
+      )}
+
+      {showAdd && (
+        <AddPantryItemModal
+          data={data}
+          update={update}
+          onClose={() => setShowAdd(false)}
+        />
+      )}
+      {editingItem && (
+        <AddPantryItemModal
+          data={data}
+          update={update}
+          existing={editingItem}
+          onClose={() => setEditingItem(null)}
+        />
+      )}
+      {refillingItem && (
+        <RefillPantryModal
+          data={data}
+          update={update}
+          item={refillingItem}
+          onClose={() => setRefillingItem(null)}
+        />
+      )}
+    </Modal>
+  );
+}
+
+// Add / edit / delete a single pantry item.
+function AddPantryItemModal({ data, update, existing, onClose }) {
+  const isEdit = !!existing;
+  const [name, setName] = useState(existing?.name || "");
+  const [brand, setBrand] = useState(existing?.brand || "");
+  const [category, setCategory] = useState(existing?.category || "flour");
+  const [purchaseUnit, setPurchaseUnit] = useState(existing?.purchaseUnit || "lb");
+  const [purchaseAmount, setPurchaseAmount] = useState(existing?.purchaseAmount != null ? String(existing.purchaseAmount) : "");
+  const [purchaseCost, setPurchaseCost] = useState(existing?.purchaseCost != null ? String(existing.purchaseCost) : "");
+  const [purchaseDate, setPurchaseDate] = useState(existing?.purchaseDate || todayStr());
+  const [currentAmount, setCurrentAmount] = useState(existing?.currentAmount != null ? String(existing.currentAmount) : (existing?.purchaseAmount != null ? String(existing.purchaseAmount) : ""));
+  const [densityOverride, setDensityOverride] = useState(existing?.densityOzPerCup != null ? String(existing.densityOzPerCup) : "");
+  const [archived, setArchived] = useState(!!existing?.archived);
+  const [error, setError] = useState("");
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  // When category changes during ADD (not edit), auto-fill the default
+  // density hint so the user can see what the built-in table thinks.
+  const builtInDensity = INGREDIENT_DENSITIES[category];
+  const effectiveDensity = densityOverride.trim() !== "" ? Number(densityOverride) : builtInDensity;
+
+  const handleSave = () => {
+    const n = name.trim();
+    if (!n) { setError("Name is required."); return; }
+    const pAmt = parseFloat(purchaseAmount);
+    const pCost = parseFloat(purchaseCost);
+    if (!(pAmt > 0)) { setError("Purchase amount must be greater than 0."); return; }
+    if (!(pCost >= 0)) { setError("Purchase cost must be 0 or more."); return; }
+    const cAmt = currentAmount.trim() === "" ? pAmt : Math.max(0, parseFloat(currentAmount) || 0);
+    const dens = densityOverride.trim() === "" ? null : Math.max(0, parseFloat(densityOverride) || 0);
+
+    const next = {
+      id: existing?.id || ("pn_" + Math.random().toString(36).slice(2, 10)),
+      name: n,
+      brand: brand.trim(),
+      category,
+      purchaseUnit,
+      purchaseAmount: pAmt,
+      purchaseCost: pCost,
+      purchaseDate: purchaseDate || todayStr(),
+      currentAmount: cAmt,
+      densityOzPerCup: dens && dens > 0 ? dens : null,
+      archived: !!archived,
+      created: existing?.created || Date.now(),
+    };
+
+    update(d => {
+      if (!Array.isArray(d.pantry)) d.pantry = [];
+      const idx = d.pantry.findIndex(p => p.id === next.id);
+      if (idx >= 0) d.pantry[idx] = next;
+      else d.pantry.push(next);
+
+      // SHARED_PANTRY: auto-link purchase to data.expenses[] for FIFO profit
+      // math in the Sales tab. We only do this on the FIRST save (insert),
+      // not on subsequent edits — otherwise editing a typo would double-
+      // count the expense. The expense row is tagged with the pantry id in
+      // `note` so users can trace it. Hobby-attribution is intentionally
+      // empty (the pantry is shared across multiple hobbies; the user can
+      // re-assign it from the Sales tab if they want).
+      if (!isEdit && pCost > 0) {
+        if (!Array.isArray(d.expenses)) d.expenses = [];
+        d.expenses.push({
+          id: "ex_" + Math.random().toString(36).slice(2, 10),
+          date: next.purchaseDate,
+          amount: pCost,
+          category: "Supplies",
+          hobbyId: null, // shared pantry — no single hobby
+          note: `Pantry: ${next.name}${next.brand ? " (" + next.brand + ")" : ""}`,
+          created: Date.now(),
+          _pantryId: next.id, // traceability tag
+        });
+      }
+      return d;
+    });
+
+    onClose();
+  };
+
+  const handleDelete = () => {
+    if (!existing) return;
+    update(d => {
+      d.pantry = (d.pantry || []).filter(p => p.id !== existing.id);
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={isEdit ? "Edit pantry item" : "Add pantry item"}>
+      <Field label="Name">
+        <input
+          style={inputStyle}
+          value={name}
+          onChange={e => { setName(e.target.value); setError(""); }}
+          placeholder="e.g. All-purpose flour"
+          autoFocus
+        />
+      </Field>
+
+      <Field label="Brand (optional)">
+        <input
+          style={inputStyle}
+          value={brand}
+          onChange={e => setBrand(e.target.value)}
+          placeholder="e.g. King Arthur"
+        />
+      </Field>
+
+      <Field label="Category">
+        <select style={inputStyle} value={category} onChange={e => setCategory(e.target.value)}>
+          {PANTRY_CATEGORIES.map(c => (
+            <option key={c} value={c}>{PANTRY_CATEGORY_LABELS[c] || c}</option>
+          ))}
+        </select>
+      </Field>
+
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10 }}>
+        <Field label="Purchase amount">
+          <input
+            type="number"
+            step="0.01"
+            min="0"
+            style={inputStyle}
+            value={purchaseAmount}
+            onChange={e => { setPurchaseAmount(e.target.value); setError(""); }}
+            placeholder="10"
+          />
+        </Field>
+        <Field label="Unit">
+          <select style={inputStyle} value={purchaseUnit} onChange={e => setPurchaseUnit(e.target.value)}>
+            <optgroup label="Weight">
+              {PANTRY_WEIGHT_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
+            </optgroup>
+            <optgroup label="Volume">
+              {PANTRY_VOLUME_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
+            </optgroup>
+            <optgroup label="Count">
+              {PANTRY_COUNT_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
+            </optgroup>
+          </select>
+        </Field>
+      </div>
+
+      <Field label="Purchase cost ($)">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={purchaseCost}
+          onChange={e => { setPurchaseCost(e.target.value); setError(""); }}
+          placeholder="5.00"
+        />
+      </Field>
+
+      <Field label="Purchase date">
+        <input type="date" style={inputStyle} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
+      </Field>
+
+      <Field label="Current stock remaining">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={currentAmount}
+          onChange={e => setCurrentAmount(e.target.value)}
+          placeholder={purchaseAmount || "0"}
+        />
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
+          Defaults to the full purchase amount. Edit if you've already used some, or set to 0 to mark used up.
+        </div>
+      </Field>
+
+      <Field label="Density override (oz per cup, optional)">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={densityOverride}
+          onChange={e => setDensityOverride(e.target.value)}
+          placeholder={builtInDensity != null ? `Default: ${builtInDensity}` : "No default for this category"}
+        />
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+          Used to convert between weight and volume in recipes (e.g. "1/2 cup" of a "10 lb" bag). Leave blank to use the built-in average for {PANTRY_CATEGORY_LABELS[category] || category}.{effectiveDensity != null ? ` Currently: ${effectiveDensity} oz/cup.` : " No conversion available for this category — recipe ingredients must use the same unit you bought in."}
+        </div>
+      </Field>
+
+      {isEdit && (
+        <Field label="Archived">
+          <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={archived} onChange={e => setArchived(e.target.checked)} />
+            <span style={{ fontSize: 13, color: palette.ink }}>Hide from recipe pickers (used up / no longer stocked)</span>
+          </label>
+        </Field>
+      )}
+
+      {/* Usage history — only shown on edit. Renders the list of batches/
+          bakes/ferments that consumed from this pantry item. Helpful for
+          users asking "where did all my flour go?" */}
+      {isEdit && (() => {
+        const history = collectPantryItemHistory(data, existing.id);
+        if (history.length === 0) {
+          return (
+            <Field label="Usage history">
+              <div style={{ fontSize: 12, color: palette.inkSoft, padding: 10, background: palette.bgAlt, borderRadius: 6, lineHeight: 1.5 }}>
+                Nothing has consumed from this item yet. Once you log a batch / bake / ferment that pulls from this pantry item, you'll see the history here.
+              </div>
+            </Field>
+          );
+        }
+        const totalConsumed = history.reduce((s, h) => s + h.amount, 0);
+        const unitLabel = PANTRY_UNIT_LABELS[existing.purchaseUnit] || existing.purchaseUnit;
+        return (
+          <Field label={`Usage history (${history.length} entries, ${totalConsumed.toFixed(2)} ${unitLabel} total)`}>
+            <div style={{ display: "flex", flexDirection: "column", gap: 4, maxHeight: 220, overflow: "auto", padding: 4, background: palette.bgAlt, borderRadius: 6 }}>
+              {history.slice(0, 50).map((row, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "6px 8px", background: palette.card, borderRadius: 4, fontSize: 12 }}>
+                  <div style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    <div style={{ color: palette.ink, fontWeight: 600 }}>{row.label}</div>
+                    <div style={{ color: palette.inkSoft, fontSize: 11 }}>
+                      {PANTRY_HISTORY_SOURCE_LABELS[row.source] || row.source} · {row.date || "no date"}
+                    </div>
+                  </div>
+                  <div style={{ color: palette.ink, fontWeight: 600, whiteSpace: "nowrap", marginLeft: 8 }}>
+                    {row.amount.toFixed(row.amount < 1 ? 3 : 2)} {PANTRY_UNIT_LABELS[row.unit] || row.unit}
+                  </div>
+                </div>
+              ))}
+              {history.length > 50 && (
+                <div style={{ fontSize: 11, color: palette.inkSoft, fontStyle: "italic", textAlign: "center", padding: 6 }}>
+                  Showing 50 most recent of {history.length} entries.
+                </div>
+              )}
+            </div>
+          </Field>
+        );
+      })()}
+
+      {!isEdit && (
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, marginBottom: 10, lineHeight: 1.5, padding: 10, background: palette.bgAlt, borderRadius: 6 }}>
+          Adding this also logs a ${parseFloat(purchaseCost || 0).toFixed(2)} expense in the Sales tab (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
+        </div>
+      )}
+
+      {error && (
+        <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>{error}</div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, marginTop: 8, justifyContent: "space-between" }}>
+        {isEdit ? (
+          !confirmDelete ? (
+            <button
+              onClick={() => setConfirmDelete(true)}
+              style={{ padding: "9px 14px", borderRadius: 8, background: "transparent", border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.accent }}
+            >
+              Delete
+            </button>
+          ) : (
+            <button
+              onClick={handleDelete}
+              style={{ padding: "9px 14px", borderRadius: 8, background: palette.accent, border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}
+            >
+              Confirm delete
+            </button>
+          )
+        ) : <div />}
+        <div style={{ display: "flex", gap: 8 }}>
+          <button
+            onClick={onClose}
+            style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}
+          >
+            Cancel
+          </button>
+          <button
+            onClick={handleSave}
+            style={{ padding: "9px 16px", borderRadius: 8, background: palette.ink, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}
+          >
+            {isEdit ? "Save" : "Add to pantry"}
+          </button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// REFILL PANTRY MODAL — quick "bought another bag" action
+// ----------------------------------------------------------------------------
+// When the user picks up another bag of flour, they don't want to create
+// a brand-new pantry item — they want to top up the existing one. This
+// modal takes a new purchase amount/cost/date and:
+//
+//   1. Logs a new $X expense to data.expenses[] (Sales tab math stays honest)
+//   2. Updates the pantry item's currentAmount: adds the new purchase amount
+//      to whatever's left (caps at sane bounds — see below)
+//   3. Updates purchaseAmount and purchaseCost to reflect the most recent
+//      purchase, so cost-per-unit going forward reflects the new bag's
+//      rate (NOT the average over historical bags). This matches the most
+//      intuitive mental model: "this bag of flour cost me $5.99 now."
+//
+// Note: we don't merge with the prior purchase or compute weighted-average
+// cost. If the user really wants per-bag cost history, they can leave
+// notes; but the common case is "I bought another bag, here's the new
+// price" and this is what we optimize for.
+// ============================================================================
+function RefillPantryModal({ data, update, item, onClose }) {
+  const [refillAmount, setRefillAmount] = useState(item?.purchaseAmount != null ? String(item.purchaseAmount) : "");
+  const [refillCost, setRefillCost] = useState(item?.purchaseCost != null ? String(item.purchaseCost) : "");
+  const [refillDate, setRefillDate] = useState(todayStr());
+  const [error, setError] = useState("");
+
+  const currentRemaining = Number(item?.currentAmount) || 0;
+  const unitLabel = PANTRY_UNIT_LABELS[item?.purchaseUnit] || item?.purchaseUnit;
+
+  const handleSave = () => {
+    const amt = parseFloat(refillAmount);
+    const cost = parseFloat(refillCost);
+    if (!(amt > 0)) { setError("Amount must be greater than 0."); return; }
+    if (!(cost >= 0)) { setError("Cost must be 0 or more."); return; }
+
+    update(d => {
+      if (!Array.isArray(d.pantry)) d.pantry = [];
+      const target = d.pantry.find(p => p.id === item.id);
+      if (!target) return d;
+      // Top up the stock — current remaining + new bag amount.
+      target.currentAmount = (Number(target.currentAmount) || 0) + amt;
+      // Update purchase fields to the latest bag.
+      target.purchaseAmount = amt;
+      target.purchaseCost = cost;
+      target.purchaseDate = refillDate || todayStr();
+      // Un-archive if it was archived (user is buying more, clearly).
+      if (target.archived) target.archived = false;
+
+      // Log the expense for Sales tab profit math.
+      if (cost > 0) {
+        if (!Array.isArray(d.expenses)) d.expenses = [];
+        d.expenses.push({
+          id: "ex_" + Math.random().toString(36).slice(2, 10),
+          date: refillDate || todayStr(),
+          amount: cost,
+          category: "Supplies",
+          hobbyId: null,
+          note: `Pantry refill: ${target.name}${target.brand ? " (" + target.brand + ")" : ""}`,
+          created: Date.now(),
+          _pantryId: target.id,
+        });
+      }
+      return d;
+    });
+
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title={`↻ Refill ${item?.name || "pantry item"}`}>
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+        Bought another bag? Add the new purchase here — we'll top up the stock and log the expense.
+      </div>
+
+      <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, marginBottom: 14, fontSize: 12, color: palette.ink }}>
+        Currently <strong>{currentRemaining.toFixed(currentRemaining < 10 ? 2 : 1)} {unitLabel}</strong> remaining.
+      </div>
+
+      <Field label={`New purchase amount (${unitLabel})`}>
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={refillAmount}
+          onChange={e => { setRefillAmount(e.target.value); setError(""); }}
+          placeholder={item?.purchaseAmount != null ? String(item.purchaseAmount) : "0"}
+          autoFocus
+        />
+      </Field>
+
+      <Field label="New purchase cost ($)">
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={refillCost}
+          onChange={e => { setRefillCost(e.target.value); setError(""); }}
+          placeholder={item?.purchaseCost != null ? String(item.purchaseCost) : "0.00"}
+        />
+      </Field>
+
+      <Field label="Purchase date">
+        <input type="date" style={inputStyle} value={refillDate} onChange={e => setRefillDate(e.target.value)} />
+      </Field>
+
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 12, padding: 10, background: palette.bgAlt, borderRadius: 6, lineHeight: 1.5 }}>
+        After refill, stock will be <strong>{(currentRemaining + (parseFloat(refillAmount) || 0)).toFixed(2)} {unitLabel}</strong> total. The cost-per-unit will update to reflect this bag's price ({refillAmount && refillCost ? `${fmtMoney((parseFloat(refillCost) || 0) / (parseFloat(refillAmount) || 1))}/${unitLabel}` : "—"}).
+      </div>
+
+      {error && (
+        <div style={{ fontSize: 12, color: palette.accent, marginBottom: 10 }}>{error}</div>
+      )}
+
+      <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+        <button
+          onClick={onClose}
+          style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}
+        >
+          Cancel
+        </button>
+        <button
+          onClick={handleSave}
+          style={{ padding: "9px 16px", borderRadius: 8, background: palette.ink, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}
+        >
+          ↻ Refill
+        </button>
+      </div>
     </Modal>
   );
 }

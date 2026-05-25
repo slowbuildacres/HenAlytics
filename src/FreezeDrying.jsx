@@ -21,6 +21,20 @@ import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
+import { pantryItemCostForUsage } from "./pantry.js";
+
+function computePantryLinesTotal(lines, pantry) {
+  if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
+  let total = 0;
+  for (const ln of lines) {
+    const it = pantry.find(p => p.id === ln.pantryId);
+    if (!it) continue;
+    const r = pantryItemCostForUsage(it, ln.amount, ln.unit);
+    if (r.ok) total += r.cost;
+  }
+  return total;
+}
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
@@ -131,7 +145,7 @@ const inputStyle = {
 // ============================================================================
 // BATCH MODAL — create/edit a freeze-drying batch
 // ============================================================================
-function BatchModal({ batch, onSave, onDelete, onClose }) {
+function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   const editing = !!batch;
   const [date, setDate] = useState(batch?.date || todayIso());
   const [item, setItem] = useState(batch?.item || "");
@@ -140,9 +154,19 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
   const [outputOz, setOutputOz] = useState(batch?.outputOz?.toString() || "");
   const [containerType, setContainerType] = useState(batch?.containerType || "mylar");
   const [ingredientsCost, setIngredientsCost] = useState(batch?.ingredientsCost?.toString() || "");
+  const [costTouched, setCostTouched] = useState(false);
+  const [pantryLines, setPantryLines] = useState(() => Array.isArray(batch?._pantryLines) ? batch._pantryLines.map(l => ({ ...l })) : []);
   const [notes, setNotes] = useState(batch?.notes || "");
 
   const canSave = !!item.trim();
+
+  // SHARED_PANTRY: auto-fill cost field from pantry lines.
+  const pantryCostTotal = computePantryLinesTotal(pantryLines, pantry);
+  React.useEffect(() => {
+    if (costTouched) return;
+    if (pantryLines.length === 0) return;
+    setIngredientsCost(pantryCostTotal > 0 ? pantryCostTotal.toFixed(2) : "");
+  }, [pantryCostTotal, costTouched, pantryLines.length]);
 
   const handleSave = () => {
     if (!canSave) return;
@@ -157,6 +181,7 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
       notes: notes.trim(),
       archived: batch?.archived || false,
       created: batch?.created || Date.now(),
+      _pantryLinesToApply: pantryLines,
     });
     onClose();
   };
@@ -194,7 +219,22 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
         </select>
       </Field>
       <Field label="Ingredient cost ($)">
-        <input type="number" step="0.01" min={0} style={inputStyle} value={ingredientsCost} onChange={(e) => setIngredientsCost(e.target.value)} placeholder="0.00" inputMode="decimal" />
+        <input
+          type="number"
+          step="0.01"
+          min={0}
+          style={inputStyle}
+          value={ingredientsCost}
+          onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
+          placeholder="0.00"
+          inputMode="decimal"
+        />
+        <PantryQuickCost
+          pantry={pantry}
+          lines={pantryLines}
+          onChange={setPantryLines}
+          palette={{ ink: palette.ink, text: palette.ink, textSoft: palette.inkSoft, border: palette.line, bg: palette.card, bgAlt: palette.bgAlt, accent: palette.accent }}
+        />
       </Field>
       <Field label="Notes">
         <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, freezing notes, runtime quirks…" />
@@ -226,8 +266,31 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
-      const idx = h.batches.findIndex(x => x.id === batch.id);
-      if (idx >= 0) h.batches[idx] = batch; else h.batches.push(batch);
+
+      // SHARED_PANTRY: apply deductions before persisting. On EDIT, refund
+      // prior deductions first so we don't double-count.
+      const linesToApply = batch._pantryLinesToApply || [];
+      const cleanBatch = { ...batch };
+      delete cleanBatch._pantryLinesToApply;
+
+      const existingIdx = h.batches.findIndex(x => x.id === cleanBatch.id);
+      if (existingIdx >= 0) {
+        const prior = h.batches[existingIdx];
+        if (Array.isArray(prior?._pantryDeductions) && prior._pantryDeductions.length > 0) {
+          applyPantryRefunds(d, prior._pantryDeductions);
+        }
+      }
+
+      if (linesToApply.length > 0) {
+        const deductions = applyPantryDeductions(d, linesToApply);
+        if (deductions.length > 0) cleanBatch._pantryDeductions = deductions;
+        cleanBatch._pantryLines = linesToApply;
+      } else {
+        delete cleanBatch._pantryDeductions;
+        delete cleanBatch._pantryLines;
+      }
+
+      if (existingIdx >= 0) h.batches[existingIdx] = cleanBatch; else h.batches.push(cleanBatch);
       return d;
     });
   };
@@ -235,7 +298,13 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
   const deleteBatch = (id) => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
-      if (h) h.batches = (h.batches || []).filter(b => b.id !== id);
+      if (!h) return d;
+      // SHARED_PANTRY: refund any deducted stock.
+      const target = (h.batches || []).find(b => b.id === id);
+      if (target && Array.isArray(target._pantryDeductions)) {
+        applyPantryRefunds(d, target._pantryDeductions);
+      }
+      h.batches = (h.batches || []).filter(b => b.id !== id);
       return d;
     });
   };
@@ -256,9 +325,23 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
 
   return (
     <div style={{ paddingBottom: 100 }}>
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
         <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 28, margin: 0, color: palette.ink }}>❄️ Freeze Drying</h1>
-        <Btn variant="primary" small onClick={() => setBatchModal({ open: true, batch: null })}>+ New batch</Btn>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {setModal && (
+            <Btn variant="ghost" small onClick={() => setModal({ type: "pantry" })}>🥫 Pantry</Btn>
+          )}
+          {setModal && (
+            <Btn variant="ghost" small onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}>💵 Add Expense</Btn>
+          )}
+          {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <Btn key={c.id} variant="ghost" small onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })}>{c.emoji || "📝"} {c.label}</Btn>
+          ))}
+          {setModal && (
+            <Btn variant="ghost" small onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}>➕ Custom</Btn>
+          )}
+          <Btn variant="primary" small onClick={() => setBatchModal({ open: true, batch: null })}>+ New batch</Btn>
+        </div>
       </div>
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
@@ -316,6 +399,7 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
       {batchModal.open && (
         <BatchModal
           batch={batchModal.batch}
+          pantry={Array.isArray(data.pantry) ? data.pantry : []}
           onSave={saveBatch}
           onDelete={batchModal.batch ? deleteBatch : null}
           onClose={() => setBatchModal({ open: false, batch: null })}

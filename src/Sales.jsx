@@ -1179,14 +1179,18 @@ export function expandRecurringExpenses(expenses) {
 }
 
 
-function AddExpenseModal({ data, update, onClose, existingExpense, occurrenceDate }) {
+// initialHobbyId pre-fills the hobby dropdown when the modal is opened from
+// a hobby's "Add Expense" quick-log tile. Ignored when editing an existing
+// expense (the existing record's hobbyId wins). Falls back to "" if no
+// initial hobby is provided.
+export function AddExpenseModal({ data, update, onClose, existingExpense, occurrenceDate, initialHobbyId }) {
   const isEdit = !!existingExpense;
   const visibleHobbies = (data.hobbies || []).filter(h => !h.hidden);
 
   const [date, setDate] = useState(occurrenceDate || existingExpense?.date || todayStr());
   const [amount, setAmount] = useState(existingExpense?.amount != null ? String(existingExpense.amount) : "");
   const [category, setCategory] = useState(existingExpense?.category || "Feed");
-  const [hobbyId, setHobbyId] = useState(existingExpense?.hobbyId || "");
+  const [hobbyId, setHobbyId] = useState(existingExpense?.hobbyId || initialHobbyId || "");
   const [note, setNote] = useState(existingExpense?.note || "");
   const [recurrence, setRecurrence] = useState(existingExpense?.recurrence || "none");
   const [recurEnd, setRecurEnd] = useState(existingExpense?.recurEnd || "");

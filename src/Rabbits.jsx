@@ -1775,7 +1775,7 @@ function RabbitsModalRouter({modal,hobby,update,user,onClose}){
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function RabbitsPage({hobby,data,update,user}){
+export default function RabbitsPage({hobby,data,update,user,setModal:setAppModal}){
   // Run migration once on mount. useEffect ensures we don't loop on the
   // update-triggered re-render — the flag check inside guards against it.
   useEffect(() => {
@@ -1826,6 +1826,15 @@ export default function RabbitsPage({hobby,data,update,user}){
           <Btn small variant="leaf" onClick={() => setLitterOpen(true)} style={{ width:"100%" }}>🍼 Litter</Btn>
           <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
           <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
+          {setAppModal && (
+            <Btn small onClick={() => setAppModal({ type: "addExpense", hobbyId: hobby.id })} style={{ width:"100%" }}>💵 Add Expense</Btn>
+          )}
+          {setAppModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <Btn key={c.id} small onClick={() => setAppModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ width:"100%" }}>{c.emoji || "📝"} {c.label}</Btn>
+          ))}
+          {setAppModal && (
+            <Btn small onClick={() => setAppModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ width:"100%" }}>➕ Custom</Btn>
+          )}
           <Btn small variant="danger" onClick={() => setRemoveOpen(true)} style={{ width:"100%" }}>❄️ Remove</Btn>
         </div>
       )}

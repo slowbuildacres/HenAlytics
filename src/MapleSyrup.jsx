@@ -278,7 +278,7 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
 }
 
 // ============ MAIN PAGE ============
-export default function MapleSyrupPage({ hobby, data, update }) {
+export default function MapleSyrupPage({ hobby, data, update, setModal }) {
   const seasons = (hobby.seasons || []).slice().sort((a, b) => (b.year || 0) - (a.year || 0));
   const allEntries = data.entries[hobby.id] || [];
 
@@ -385,7 +385,18 @@ export default function MapleSyrupPage({ hobby, data, update }) {
 
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>🍁 Maple syrup</div>
-        <Btn small variant="accent" onClick={() => setSeasonModal({ open: true, season: null })}><Plus size={14} style={{ marginRight: 4 }} />New season</Btn>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {setModal && (
+            <Btn small variant="ghost" onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}>💵 Add Expense</Btn>
+          )}
+          {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <Btn key={c.id} small variant="ghost" onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })}>{c.emoji || "📝"} {c.label}</Btn>
+          ))}
+          {setModal && (
+            <Btn small variant="ghost" onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}>➕ Custom</Btn>
+          )}
+          <Btn small variant="accent" onClick={() => setSeasonModal({ open: true, season: null })}><Plus size={14} style={{ marginRight: 4 }} />New season</Btn>
+        </div>
       </div>
 
       {!currentSeason ? (

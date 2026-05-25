@@ -480,7 +480,7 @@ function SalveModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function SalvePage({ hobby, data, update }) {
+export default function SalvePage({ hobby, data, update, setModal }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
@@ -495,11 +495,28 @@ export default function SalvePage({ hobby, data, update }) {
     <div>
       <SalveModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
 
-      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, gap: 8, flexWrap: "wrap" }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>Your salves</div>
-        <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
-          <Plus size={14} />New batch
-        </button>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+          {setModal && (
+            <button onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+              💵 Add Expense
+            </button>
+          )}
+          {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <button key={c.id} onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+              {c.emoji || "📝"} {c.label}
+            </button>
+          ))}
+          {setModal && (
+            <button onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+              ➕ Custom
+            </button>
+          )}
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+            <Plus size={14} />New batch
+          </button>
+        </div>
       </div>
 
       {batches.length === 0 ? (

@@ -1358,6 +1358,15 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
         <Btn small variant="leaf" onClick={() => setBreedingModal({ open: true, breeding: null })} style={{ width:"100%" }}>💕 Log breeding</Btn>
         <Btn small variant="ghost" onClick={() => setSaleModal({ open: true, horse: null })} style={{ width:"100%" }}>🏷️ Sale</Btn>
         <Btn small variant="ghost" onClick={() => setDeathModal({ open: true, horse: null })} style={{ width:"100%" }}>🪦 Died</Btn>
+        {setModal && (
+          <Btn small variant="ghost" onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })} style={{ width:"100%" }}>💵 Add Expense</Btn>
+        )}
+        {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+          <Btn key={c.id} small variant="ghost" onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ width:"100%" }}>{c.emoji || "📝"} {c.label}</Btn>
+        ))}
+        {setModal && (
+          <Btn small variant="ghost" onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ width:"100%" }}>➕ Custom</Btn>
+        )}
         <Btn small variant="ghost" onClick={() => setHorseModal({ open: true, horse: null })} style={{ width:"100%" }}>+ Add horse</Btn>
       </div>
 

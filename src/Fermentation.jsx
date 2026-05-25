@@ -25,7 +25,21 @@
 
 import React, { useState, useMemo } from "react";
 import { X, Plus, Trash2 } from "lucide-react";
+import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
+import { pantryItemCostForUsage } from "./pantry.js";
 import { fmtMoney } from "./units.js";
+
+function computePantryLinesTotal(lines, pantry) {
+  if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
+  let total = 0;
+  for (const ln of lines) {
+    const it = pantry.find(p => p.id === ln.pantryId);
+    if (!it) continue;
+    const r = pantryItemCostForUsage(it, ln.amount, ln.unit);
+    if (r.ok) total += r.cost;
+  }
+  return total;
+}
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
@@ -153,7 +167,7 @@ const inputStyle = {
 // ============================================================================
 // NEW / EDIT FERMENT MODAL
 // ============================================================================
-function FermentModal({ ferment, recipes, onSave, onDelete, onClose }) {
+function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose }) {
   const editing = !!ferment;
   const [name, setName] = useState(ferment?.name || "");
   const [startDate, setStartDate] = useState(ferment?.startDate || todayIso());
@@ -162,6 +176,17 @@ function FermentModal({ ferment, recipes, onSave, onDelete, onClose }) {
   const [startedTemperatureF, setStartedTemperatureF] = useState(ferment?.startedTemperatureF?.toString() || "");
   const [location, setLocation] = useState(ferment?.location || "");
   const [ingredients, setIngredients] = useState(ferment?.ingredients || "");
+  const [ingredientsCost, setIngredientsCost] = useState(ferment?.ingredientsCost?.toString() || "");
+  const [costTouched, setCostTouched] = useState(false);
+  const [pantryLines, setPantryLines] = useState(() => Array.isArray(ferment?._pantryLines) ? ferment._pantryLines.map(l => ({ ...l })) : []);
+
+  // SHARED_PANTRY: auto-fill cost from pantry lines.
+  const pantryCostTotal = computePantryLinesTotal(pantryLines, pantry);
+  React.useEffect(() => {
+    if (costTouched) return;
+    if (pantryLines.length === 0) return;
+    setIngredientsCost(pantryCostTotal > 0 ? pantryCostTotal.toFixed(2) : "");
+  }, [pantryCostTotal, costTouched, pantryLines.length]);
 
   const onPickRecipe = (id) => {
     setRecipeId(id);
@@ -187,11 +212,13 @@ function FermentModal({ ferment, recipes, onSave, onDelete, onClose }) {
       startedTemperatureF: parseFloat(startedTemperatureF) || null,
       location: location.trim(),
       ingredients: ingredients.trim(),
+      ingredientsCost: parseFloat(ingredientsCost) || 0,
       stages: ferment?.stages || [],
       finishDate: ferment?.finishDate || null,
       finalNotes: ferment?.finalNotes || "",
       archived: ferment?.archived || false,
       created: ferment?.created || Date.now(),
+      _pantryLinesToApply: pantryLines,
     });
     onClose();
   };
@@ -235,6 +262,24 @@ function FermentModal({ ferment, recipes, onSave, onDelete, onClose }) {
       </div>
       <Field label="Ingredients / recipe details">
         <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="2 heads cabbage, 1 tbsp salt, etc." />
+      </Field>
+      <Field label="Ingredients cost ($, optional)">
+        <input
+          type="number"
+          step="0.01"
+          min={0}
+          style={inputStyle}
+          value={ingredientsCost}
+          onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
+          placeholder="0.00"
+          inputMode="decimal"
+        />
+        <PantryQuickCost
+          pantry={pantry}
+          lines={pantryLines}
+          onChange={setPantryLines}
+          palette={{ ink: palette.ink, text: palette.ink, textSoft: palette.inkSoft, border: palette.line, bg: palette.card, bgAlt: palette.bgAlt, accent: palette.accent }}
+        />
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
@@ -482,8 +527,31 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.ferments)) h.ferments = [];
-      const idx = h.ferments.findIndex(x => x.id === ferment.id);
-      if (idx >= 0) h.ferments[idx] = ferment; else h.ferments.push(ferment);
+
+      // SHARED_PANTRY: apply pantry deductions. On EDIT, refund prior
+      // deductions first so we don't double-count.
+      const linesToApply = ferment._pantryLinesToApply || [];
+      const cleanFerment = { ...ferment };
+      delete cleanFerment._pantryLinesToApply;
+
+      const existingIdx = h.ferments.findIndex(x => x.id === cleanFerment.id);
+      if (existingIdx >= 0) {
+        const prior = h.ferments[existingIdx];
+        if (Array.isArray(prior?._pantryDeductions) && prior._pantryDeductions.length > 0) {
+          applyPantryRefunds(d, prior._pantryDeductions);
+        }
+      }
+
+      if (linesToApply.length > 0) {
+        const deductions = applyPantryDeductions(d, linesToApply);
+        if (deductions.length > 0) cleanFerment._pantryDeductions = deductions;
+        cleanFerment._pantryLines = linesToApply;
+      } else {
+        delete cleanFerment._pantryDeductions;
+        delete cleanFerment._pantryLines;
+      }
+
+      if (existingIdx >= 0) h.ferments[existingIdx] = cleanFerment; else h.ferments.push(cleanFerment);
       return d;
     });
   };
@@ -491,7 +559,13 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   const deleteFerment = (id) => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
-      if (h) h.ferments = (h.ferments || []).filter(f => f.id !== id);
+      if (!h) return d;
+      // SHARED_PANTRY: refund any deducted stock.
+      const target = (h.ferments || []).find(f => f.id === id);
+      if (target && Array.isArray(target._pantryDeductions)) {
+        applyPantryRefunds(d, target._pantryDeductions);
+      }
+      h.ferments = (h.ferments || []).filter(f => f.id !== id);
       return d;
     });
   };
@@ -557,6 +631,18 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
         <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 28, margin: 0, color: palette.ink }}>🫧 Fermentation</h1>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
           <Btn variant="ghost" small onClick={() => setInfraModal({ open: true, entry: null })}>🔨 Infrastructure</Btn>
+          {setModal && (
+            <Btn variant="ghost" small onClick={() => setModal({ type: "pantry" })}>🥫 Pantry</Btn>
+          )}
+          {setModal && (
+            <Btn variant="ghost" small onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}>💵 Add Expense</Btn>
+          )}
+          {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <Btn key={c.id} variant="ghost" small onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })}>{c.emoji || "📝"} {c.label}</Btn>
+          ))}
+          {setModal && (
+            <Btn variant="ghost" small onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}>➕ Custom</Btn>
+          )}
           {view === "active" && (
             <Btn variant="primary" small onClick={() => setFermentModal({ open: true, ferment: null })}>+ New ferment</Btn>
           )}
@@ -717,6 +803,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
         <FermentModal
           ferment={fermentModal.ferment}
           recipes={recipes}
+          pantry={Array.isArray(data.pantry) ? data.pantry : []}
           onSave={saveFerment}
           onDelete={fermentModal.ferment ? deleteFerment : null}
           onClose={() => setFermentModal({ open: false, ferment: null })}

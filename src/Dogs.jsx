@@ -1503,6 +1503,15 @@ export default function DogsPage({ hobby, data, update, setModal, user }) {
         <Btn small onClick={() => setLogEntryAction("note")} style={{ width: "100%" }}>📝 Note</Btn>
         <Btn small variant="danger" onClick={() => setLogEntryAction("death")} style={{ width: "100%" }}>🪦 Died</Btn>
         <Btn small onClick={() => setLogEntryAction("sale")} style={{ width: "100%" }}>🏷️ Sale</Btn>
+        {setModal && (
+          <Btn small onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })} style={{ width: "100%" }}>💵 Add Expense</Btn>
+        )}
+        {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+          <Btn key={c.id} small onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ width: "100%" }}>{c.emoji || "📝"} {c.label}</Btn>
+        ))}
+        {setModal && (
+          <Btn small onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ width: "100%" }}>➕ Custom</Btn>
+        )}
       </div>
 
       {/* DOGS LIST */}

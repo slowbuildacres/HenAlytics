@@ -2583,7 +2583,7 @@ function CowModalRouter({modal,hobby,update,user,onClose}){
   return null;
 }
 
-export default function CowsPage({hobby,data,update,user}){
+export default function CowsPage({hobby,data,update,user,setModal:setAppModal}){
   const[localModal,setLocalModal]=useState(null);
   const[breedingModal,setBreedingModal]=useState({open:false,breeding:null});
   // COWS_UNIFY_V1 — top-bar modal state
@@ -2686,6 +2686,15 @@ export default function CowsPage({hobby,data,update,user}){
             <Btn small variant="leaf" onClick={() => setAiOpen(true)} style={{ width:"100%" }}>💉 AI</Btn>
             <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
             <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
+            {setAppModal && (
+              <Btn small onClick={() => setAppModal({ type: "addExpense", hobbyId: hobby.id })} style={{ width:"100%" }}>💵 Add Expense</Btn>
+            )}
+            {setAppModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+              <Btn key={c.id} small onClick={() => setAppModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ width:"100%" }}>{c.emoji || "📝"} {c.label}</Btn>
+            ))}
+            {setAppModal && (
+              <Btn small onClick={() => setAppModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ width:"100%" }}>➕ Custom</Btn>
+            )}
             <Btn small variant="danger" onClick={() => setRemoveOpen(true)} style={{ width:"100%" }}>❄️ Remove</Btn>
           </div>
         );

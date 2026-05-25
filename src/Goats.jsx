@@ -1516,7 +1516,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
   );
 }
 
-function GoatHome({hobby,entries,sales,update,setModal,customers=[]}){
+function GoatHome({hobby,entries,sales,update,setModal,setAppModal,customers=[]}){
   const allAnimals=hobby.animals||[];
   const animals=allAnimals.filter(a=>!a.archived);
   const archived=allAnimals.filter(a=>a.archived);
@@ -1602,6 +1602,20 @@ function GoatHome({hobby,entries,sales,update,setModal,customers=[]}){
           <Btn small variant="leaf" onClick={() => setKiddingOpen(true)} style={{ width:"100%" }}>🍼 Kidding</Btn>
           <Btn small onClick={() => setLogEntryAction("health")} style={{ width:"100%" }}>💊 Vet / meds</Btn>
           <Btn small onClick={() => setLogEntryAction("note")} style={{ width:"100%" }}>📝 Note</Btn>
+          {/* Add Expense — opens the shared AddExpenseModal via the app-level
+              ModalRouter (setAppModal). Logs a hobby-attributed row to
+              data.expenses[] for FIFO matching in the Sales tab. */}
+          {setAppModal && (
+            <Btn small onClick={() => setAppModal({ type: "addExpense", hobbyId: hobby.id })} style={{ width:"100%" }}>💵 Add Expense</Btn>
+          )}
+          {/* Custom logs — user-defined quick-log actions (e.g. "Hoof trim").
+              Each writes to data.entries[hobby.id] via the global LogModal. */}
+          {setAppModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <Btn key={c.id} small onClick={() => setAppModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ width:"100%" }}>{c.emoji || "📝"} {c.label}</Btn>
+          ))}
+          {setAppModal && (
+            <Btn small onClick={() => setAppModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ width:"100%" }}>➕ Custom</Btn>
+          )}
           <Btn small variant="danger" onClick={() => setRemoveOpen(true)} style={{ width:"100%" }}>❄️ Remove</Btn>
         </div>
       )}
@@ -1766,13 +1780,13 @@ function GoatModalRouter({modal,hobby,update,user,onClose}){
   return null;
 }
 
-export default function GoatsPage({hobby,data,update,user}){
+export default function GoatsPage({hobby,data,update,user,setModal:setAppModal}){
   const[localModal,setLocalModal]=useState(null);
   const entries=data.entries[hobby.id]||[];
   return(
     <div>
       <GoatModalRouter modal={localModal} hobby={hobby} update={update} user={user} onClose={()=>setLocalModal(null)}/>
-      <GoatHome hobby={hobby} entries={entries} sales={data.sales||[]} update={update} setModal={setLocalModal} customers={data.customers||[]}/>
+      <GoatHome hobby={hobby} entries={entries} sales={data.sales||[]} update={update} setModal={setLocalModal} setAppModal={setAppModal} customers={data.customers||[]}/>
     </div>
   );
 }

@@ -1396,7 +1396,7 @@ function BrooderBatchCard({ batch, hobbyId, data, update, setModal }) {
 // ============================================================================
 // INCUBATOR HOME PAGE
 // ============================================================================
-function IncubatorHome({ hobby, update, setModal, data }) {
+function IncubatorHome({ hobby, update, setModal, setAppModal, data }) {
   const runs = hobby.runs || [];
   const activeRuns = runs.filter(r => r.status !== "hatched" && r.status !== "closed");
   const completedRuns = runs.filter(r => r.status === "hatched" || r.status === "closed");
@@ -1410,6 +1410,18 @@ function IncubatorHome({ hobby, update, setModal, data }) {
 
   return (
     <div>
+      {/* Quick actions row — Add Expense lives here so the Sales tab can
+          attribute incubator costs (eggs purchased, brooder supplies, etc.)
+          to this hobby for FIFO profit matching. */}
+      {setAppModal && (
+        <div style={{ display:"flex",justifyContent:"flex-end",gap:6,flexWrap:"wrap",marginBottom:10 }}>
+          <Btn small onClick={() => setAppModal({ type: "addExpense", hobbyId: hobby.id })}>💵 Add Expense</Btn>
+          {(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+            <Btn key={c.id} small onClick={() => setAppModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })}>{c.emoji || "📝"} {c.label}</Btn>
+          ))}
+          <Btn small onClick={() => setAppModal({ type: "customLogPicker", hobbyId: hobby.id })}>➕ Custom</Btn>
+        </div>
+      )}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14 }}>
         <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>Active runs</div>
         <Btn small variant="accent" onClick={() => setModal({ type:"addRun", hobbyId:hobby.id })}>
@@ -1733,7 +1745,7 @@ export default function IncubatorPage({ hobby, data, update, setModal }) {
   return (
     <div>
       <IncubatorModalRouter modal={localModal} hobby={hobby} data={data} update={update} setModal={setLocalModal} onClose={closeModal} />
-      <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} data={data} />
+      <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} setAppModal={setModal} data={data} />
     </div>
   );
 }

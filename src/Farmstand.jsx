@@ -814,6 +814,15 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
           <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:0,color:palette.ink }}>Items at the stand</h3>
           <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
             <Btn small variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })}>🔨 Infrastructure</Btn>
+            {setModal && (
+              <Btn small variant="ghost" onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}>💵 Add Expense</Btn>
+            )}
+            {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+              <Btn key={c.id} small variant="ghost" onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })}>{c.emoji || "📝"} {c.label}</Btn>
+            ))}
+            {setModal && (
+              <Btn small variant="ghost" onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}>➕ Custom</Btn>
+            )}
             <Btn small onClick={() => { setEditingItem(null); setShowItemModal(true); }}>+ Add item</Btn>
           </div>
         </div>

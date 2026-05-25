@@ -18,6 +18,12 @@ import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, ExternalLink, Star } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+import {
+  PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
+  PANTRY_UNIT_LABELS, pantryItemCostForUsage, computeRecipeCost,
+  convertPantryUnit, pantryItemDensity,
+} from "./pantry.js";
+import { applyPantryRefunds } from "./PantryQuickCost.jsx";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
@@ -173,22 +179,80 @@ function StarRating({ value, onChange, readOnly = false }) {
 // MODALS
 // ============================================================================
 
-function RecipeModal({ recipe, onSave, onDelete, onClose }) {
+function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
   const isEdit = !!recipe;
   const [name, setName] = useState(recipe?.name || "");
   const [type, setType] = useState(recipe?.type || "bread");
   const [link, setLink] = useState(recipe?.link || "");
   const [notes, setNotes] = useState(recipe?.notes || "");
+  // SHARED_PANTRY: ingredients[] — structured rows that can optionally link
+  // to a pantry item by pantryId. Backward compatible: legacy recipes have
+  // no `ingredients` field; we default to []. Each row:
+  //   { id, name, pantryId?, amount, unit, notes? }
+  const [ingredients, setIngredients] = useState(() => Array.isArray(recipe?.ingredients) ? recipe.ingredients.map(i => ({...i})) : []);
   const [confirmDelete, setConfirmDelete] = useState(false);
+
+  const activePantry = pantry.filter(p => !p.archived);
+
+  const addIngredient = () => {
+    setIngredients(arr => [
+      ...arr,
+      { id: newId(), name: "", pantryId: "", amount: "", unit: "cup", notes: "" },
+    ]);
+  };
+  const updateIngredient = (id, patch) => {
+    setIngredients(arr => arr.map(i => i.id === id ? { ...i, ...patch } : i));
+  };
+  const removeIngredient = (id) => {
+    setIngredients(arr => arr.filter(i => i.id !== id));
+  };
+
+  // When user links to a pantry item, auto-fill the name (if blank) from
+  // the pantry item, and default unit to the pantry item's purchase unit
+  // (if the ingredient's unit isn't compatible). Both are best-effort
+  // conveniences — user can override either after.
+  const handlePantryLink = (rowId, pantryId) => {
+    const p = pantry.find(x => x.id === pantryId);
+    if (!p) {
+      updateIngredient(rowId, { pantryId: "" });
+      return;
+    }
+    setIngredients(arr => arr.map(i => {
+      if (i.id !== rowId) return i;
+      const next = { ...i, pantryId: p.id };
+      if (!i.name || !i.name.trim()) next.name = p.name;
+      // Don't override unit if user already picked something compatible.
+      // We just leave it — if they set unit and it can't be priced, the
+      // row shows a warning instead.
+      return next;
+    }));
+  };
+
+  // Live cost preview against the user's current pantry.
+  const cleanIngredients = ingredients.filter(i => (i.name && i.name.trim()) || i.pantryId);
+  const { cost: recipeCost, missingCount } = computeRecipeCost(cleanIngredients, pantry);
 
   const handleSave = () => {
     if (!name.trim()) return;
+    // Strip empty rows. Keep amount as number, unit as string. Drop the
+    // temporary row.id (not persistent — re-generated on open).
+    const cleaned = ingredients
+      .filter(i => (i.name && i.name.trim()) || i.pantryId)
+      .map(i => ({
+        id: i.id || newId(),
+        name: (i.name || "").trim(),
+        pantryId: i.pantryId || null,
+        amount: i.amount === "" || i.amount == null ? null : Number(i.amount),
+        unit: i.unit || "",
+        notes: (i.notes || "").trim() || undefined,
+      }));
     onSave({
       id: recipe?.id || newId(),
       name: name.trim(),
       type,
       link: link.trim(),
       notes: notes.trim(),
+      ingredients: cleaned,
       archived: recipe?.archived || false,
     });
     onClose();
@@ -222,8 +286,113 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
       <Field label="Link (optional)">
         <input style={inputStyle} value={link} onChange={e => setLink(e.target.value)} placeholder="https://... or paste a URL" />
       </Field>
+
+      {/* SHARED_PANTRY: structured ingredients section. Each row can
+          optionally link to a pantry item to get auto cost calculation. */}
+      <div style={{ marginTop: 14, marginBottom: 14, padding: 12, background: palette.bgAlt, borderRadius: 10, border: `1.5px solid ${palette.line}` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink }}>Ingredients</div>
+          <button
+            type="button"
+            onClick={addIngredient}
+            style={{ background: "none", border: `1.5px solid ${palette.ink}`, borderRadius: 6, padding: "4px 10px", cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: palette.ink }}
+          >
+            + Add
+          </button>
+        </div>
+        {ingredients.length === 0 ? (
+          <div style={{ fontSize: 12, color: palette.inkSoft, padding: "8px 0", lineHeight: 1.5 }}>
+            Add ingredients to track cost. Linking each to a pantry item lets Henalytics calculate the cost of one batch automatically. Optional — leave blank if you prefer free-text notes below.
+          </div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {ingredients.map(ing => {
+              const linkedItem = ing.pantryId ? pantry.find(p => p.id === ing.pantryId) : null;
+              const costPreview = linkedItem ? pantryItemCostForUsage(linkedItem, ing.amount, ing.unit) : null;
+              return (
+                <div key={ing.id} style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, padding: 8 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center", marginBottom: 6 }}>
+                    <input
+                      style={{ ...inputStyle, marginBottom: 0 }}
+                      value={ing.name}
+                      onChange={e => updateIngredient(ing.id, { name: e.target.value })}
+                      placeholder="Ingredient name (e.g. flour)"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeIngredient(ing.id)}
+                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4, fontSize: 11 }}
+                      title="Remove"
+                    >
+                      ✕
+                    </button>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, marginBottom: 6 }}>
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      style={{ ...inputStyle, marginBottom: 0 }}
+                      value={ing.amount}
+                      onChange={e => updateIngredient(ing.id, { amount: e.target.value })}
+                      placeholder="Amount"
+                    />
+                    <select
+                      style={{ ...inputStyle, marginBottom: 0 }}
+                      value={ing.unit}
+                      onChange={e => updateIngredient(ing.id, { unit: e.target.value })}
+                    >
+                      <optgroup label="Volume">
+                        {PANTRY_VOLUME_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
+                      </optgroup>
+                      <optgroup label="Weight">
+                        {PANTRY_WEIGHT_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
+                      </optgroup>
+                      <optgroup label="Count">
+                        {PANTRY_COUNT_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
+                      </optgroup>
+                    </select>
+                  </div>
+                  <select
+                    style={{ ...inputStyle, marginBottom: 0, fontSize: 12 }}
+                    value={ing.pantryId || ""}
+                    onChange={e => handlePantryLink(ing.id, e.target.value)}
+                  >
+                    <option value="">— Link to pantry item (optional) —</option>
+                    {activePantry.map(p => (
+                      <option key={p.id} value={p.id}>
+                        {p.name}{p.brand ? ` (${p.brand})` : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {linkedItem && costPreview && (
+                    <div style={{ fontSize: 11, color: costPreview.ok ? palette.inkSoft : palette.accent, marginTop: 6, lineHeight: 1.4 }}>
+                      {costPreview.ok
+                        ? `Cost: ${fmtMoney(costPreview.cost)} (from ${linkedItem.name})`
+                        : `⚠️ Can't convert ${ing.unit} ↔ ${PANTRY_UNIT_LABELS[linkedItem.purchaseUnit] || linkedItem.purchaseUnit}. Set a density override on the pantry item or use the same unit.`
+                      }
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+            {recipeCost > 0 && (
+              <div style={{ padding: "8px 10px", background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 6, marginTop: 4, display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div style={{ fontSize: 12, color: palette.ink, fontWeight: 600 }}>Recipe cost (priced items)</div>
+                <div style={{ fontSize: 14, color: palette.ink, fontWeight: 700 }}>{fmtMoney(recipeCost)}</div>
+              </div>
+            )}
+            {missingCount > 0 && (
+              <div style={{ fontSize: 11, color: palette.inkSoft, fontStyle: "italic", textAlign: "center" }}>
+                {missingCount} ingredient{missingCount === 1 ? "" : "s"} not priced (no pantry link or unit mismatch)
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Ingredients, method, tweaks..." />
+        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Method, tweaks, anything else..." />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -257,12 +426,13 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
   );
 }
 
-function LogBakeModal({ recipes, presetRecipeId, onSave, onClose }) {
+function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose }) {
   const [date, setDate] = useState(todayIso());
   const [recipeId, setRecipeId] = useState(presetRecipeId || "");
   const [customName, setCustomName] = useState("");
   const [qty, setQty] = useState("1");
   const [cost, setCost] = useState("");
+  const [costTouched, setCostTouched] = useState(false);
   const [rating, setRating] = useState(0);
   const [note, setNote] = useState("");
 
@@ -271,6 +441,28 @@ function LogBakeModal({ recipes, presetRecipeId, onSave, onClose }) {
   const usingCustom = recipeId === "__custom";
   const effectiveName = usingCustom ? customName.trim() : selectedRecipe?.name || "";
   const effectiveUnit = selectedRecipe ? unitFor(selectedRecipe.type) : "items";
+
+  // SHARED_PANTRY: compute ingredient cost from the recipe's pantry-linked
+  // ingredients, scaled by the qty being logged. If user hasn't manually
+  // edited the cost field, pre-fill it. Once they touch the field we stop
+  // auto-overwriting so we don't fight their input.
+  const ingredientCostPerBatch = useMemo(() => {
+    if (!selectedRecipe || !Array.isArray(selectedRecipe.ingredients)) return { cost: 0, missingCount: 0, ok: false };
+    const r = computeRecipeCost(selectedRecipe.ingredients, pantry);
+    return { ...r, ok: r.cost > 0 };
+  }, [selectedRecipe, pantry]);
+
+  const totalIngredientCost = ingredientCostPerBatch.cost * (parseFloat(qty) || 0);
+
+  React.useEffect(() => {
+    if (costTouched) return;
+    if (!selectedRecipe) return;
+    if (totalIngredientCost > 0) {
+      setCost(totalIngredientCost.toFixed(2));
+    } else {
+      setCost("");
+    }
+  }, [selectedRecipe?.id, totalIngredientCost, costTouched]);
 
   const handleSave = () => {
     if (!effectiveName) return;
@@ -319,7 +511,22 @@ function LogBakeModal({ recipes, presetRecipeId, onSave, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Cost ($)">
-            <input type="number" step="0.01" min="0" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="0.00" />
+            <input
+              type="number"
+              step="0.01"
+              min="0"
+              style={inputStyle}
+              value={cost}
+              onChange={e => { setCost(e.target.value); setCostTouched(true); }}
+              placeholder="0.00"
+            />
+            {selectedRecipe && totalIngredientCost > 0 && (
+              <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+                {costTouched
+                  ? `Pantry estimate for ${qty || 0} ${effectiveUnit}: ${fmtMoney(totalIngredientCost)}`
+                  : `Auto-filled from pantry (${ingredientCostPerBatch.missingCount > 0 ? `${ingredientCostPerBatch.missingCount} unpriced` : "all ingredients priced"}). Stock will be deducted on log.`}
+              </div>
+            )}
           </Field>
         </div>
       </div>
@@ -516,6 +723,54 @@ export default function BakingPage({ hobby, data, update, setModal }) {
       if (!d.entries) d.entries = {};
       if (!Array.isArray(d.entries["baking"])) d.entries["baking"] = [];
       d.entries["baking"].push(bake);
+
+      // SHARED_PANTRY: auto-deduct ingredients from pantry stock. Fires
+      // when the bake is tied to a saved recipe with linked ingredients
+      // (one-off bakes don't deduct since they have no recipe). For each
+      // linked ingredient, convert the recipe amount to the pantry item's
+      // purchase unit and subtract from currentAmount. Floor at 0 so a
+      // bake never produces negative stock (we just stop deducting once
+      // the item runs out — the user can refill or adjust).
+      //
+      // We multiply by bake.qty to handle "logged 3 loaves" — the recipe
+      // says 2 cups flour per loaf, three loaves consumed six cups. This
+      // matches the most-common mental model. If the user logs a half
+      // batch (qty=0.5) the deduction halves correspondingly.
+      //
+      // We also record what was deducted on the bake entry itself (in
+      // bake._pantryDeductions = [{ pantryId, amount, unit }]). Deleting
+      // the bake refunds these back to pantry stock — see deleteBake.
+      if (bake.recipeId && Number(bake.qty) > 0) {
+        const hb = d.hobbies.find(x => x.id === "baking");
+        const rec = hb && (hb.recipes || []).find(r => r.id === bake.recipeId);
+        if (rec && Array.isArray(rec.ingredients) && rec.ingredients.length > 0 && Array.isArray(d.pantry)) {
+          const deductions = [];
+          for (const ing of rec.ingredients) {
+            if (!ing || !ing.pantryId) continue;
+            const amt = Number(ing.amount);
+            if (!isFinite(amt) || amt <= 0) continue;
+            const totalUseAmt = amt * Number(bake.qty);
+            const item = d.pantry.find(p => p.id === ing.pantryId);
+            if (!item || item.archived) continue;
+            const inPurchaseUnits = convertPantryUnit(
+              totalUseAmt,
+              ing.unit,
+              item.purchaseUnit,
+              pantryItemDensity(item)
+            );
+            if (inPurchaseUnits == null) continue; // can't convert — skip silently
+            const current = Number(item.currentAmount) || 0;
+            const newAmt = Math.max(0, current - inPurchaseUnits);
+            item.currentAmount = newAmt;
+            deductions.push({ pantryId: item.id, amount: inPurchaseUnits, unit: item.purchaseUnit });
+          }
+          if (deductions.length > 0) {
+            // Store on the bake entry for traceability/future refund.
+            bake._pantryDeductions = deductions;
+          }
+        }
+      }
+
       return d;
     });
   };
@@ -523,6 +778,11 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   const deleteBake = (id) => {
     update(d => {
       if (d.entries?.["baking"]) {
+        // SHARED_PANTRY: refund any deducted stock from this bake.
+        const target = d.entries["baking"].find(b => b.id === id);
+        if (target && Array.isArray(target._pantryDeductions)) {
+          applyPantryRefunds(d, target._pantryDeductions);
+        }
         d.entries["baking"] = d.entries["baking"].filter(b => b.id !== id);
       }
       return d;
@@ -566,6 +826,26 @@ export default function BakingPage({ hobby, data, update, setModal }) {
         <Btn variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })} style={{ flex: "1 1 140px" }}>
           🔨 Infrastructure
         </Btn>
+        {setModal && (
+          <Btn variant="ghost" onClick={() => setModal({ type: "pantry" })} style={{ flex: "1 1 140px" }}>
+            🥫 Pantry
+          </Btn>
+        )}
+        {setModal && (
+          <Btn variant="ghost" onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })} style={{ flex: "1 1 140px" }}>
+            💵 Add Expense
+          </Btn>
+        )}
+        {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+          <Btn key={c.id} variant="ghost" onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ flex: "1 1 140px" }}>
+            {c.emoji || "📝"} {c.label}
+          </Btn>
+        ))}
+        {setModal && (
+          <Btn variant="ghost" onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ flex: "1 1 140px" }}>
+            ➕ Custom
+          </Btn>
+        )}
       </div>
       {infraModal.open && (
         <InfrastructureModal
@@ -683,6 +963,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
       {editRecipe && (
         <RecipeModal
           recipe={editRecipe === "new" ? null : editRecipe}
+          pantry={Array.isArray(data.pantry) ? data.pantry : []}
           onSave={saveRecipe}
           onDelete={deleteRecipe}
           onClose={() => setEditRecipe(null)}
@@ -691,6 +972,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
       {logBake && (
         <LogBakeModal
           recipes={recipes}
+          pantry={Array.isArray(data.pantry) ? data.pantry : []}
           presetRecipeId={logBakeRecipeId}
           onSave={saveBake}
           onClose={() => { setLogBake(false); setLogBakeRecipeId(""); }}

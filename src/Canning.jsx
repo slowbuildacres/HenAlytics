@@ -19,6 +19,21 @@ import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
+import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
+import { pantryItemCostForUsage } from "./pantry.js";
+
+// SHARED_PANTRY helper: sum cost across pantry-picker lines.
+function computePantryLinesTotal(lines, pantry) {
+  if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
+  let total = 0;
+  for (const ln of lines) {
+    const it = pantry.find(p => p.id === ln.pantryId);
+    if (!it) continue;
+    const r = pantryItemCostForUsage(it, ln.amount, ln.unit);
+    if (r.ok) total += r.cost;
+  }
+  return total;
+}
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
@@ -178,7 +193,7 @@ function expiryState(batch) {
 // MODALS
 // ============================================================================
 
-function BatchModal({ batch, onSave, onDelete, onClose }) {
+function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   const isEdit = !!batch;
   const [date, setDate] = useState(batch?.date || todayIso());
   const [item, setItem] = useState(batch?.item || "");
@@ -188,6 +203,12 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
   // Default eat-by = 12 months out for new batches
   const [eatByDate, setEatByDate] = useState(batch?.eatByDate || (isEdit ? "" : addDaysIso(365)));
   const [ingredientsCost, setIngredientsCost] = useState(batch?.ingredientsCost != null ? String(batch.ingredientsCost) : "");
+  // SHARED_PANTRY: pantry-picked lines. On edit, preload from
+  // batch._pantryLines (stored at save time) so the user sees the same
+  // entries they originally picked, with original units. The save handler
+  // refunds the old deductions and re-applies the new ones, so editing
+  // is a clean diff rather than a double-count.
+  const [pantryLines, setPantryLines] = useState(() => Array.isArray(batch?._pantryLines) ? batch._pantryLines.map(l => ({ ...l })) : []);
   const [notes, setNotes] = useState(batch?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -195,6 +216,18 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
   const remaining = parseInt(jarsRemaining) || 0;
   // Default jarsRemaining to jarsMade for new batches
   const effectiveRemaining = isEdit ? remaining : (jarsRemaining === "" ? made : remaining);
+
+  // SHARED_PANTRY: running cost from pantry lines. When the picker has at
+  // least one valid line, auto-override the ingredients-cost input. User can
+  // still type a manual override afterward (we don't fight their input once
+  // they've focused that field).
+  const [costTouched, setCostTouched] = useState(false);
+  const pantryCostTotal = computePantryLinesTotal(pantryLines, pantry);
+  React.useEffect(() => {
+    if (costTouched) return;
+    if (pantryLines.length === 0) return;
+    setIngredientsCost(pantryCostTotal > 0 ? pantryCostTotal.toFixed(2) : "");
+  }, [pantryCostTotal, costTouched, pantryLines.length]);
 
   const handleSave = () => {
     if (!item.trim() || made <= 0) return;
@@ -209,6 +242,10 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
       ingredientsCost: parseFloat(ingredientsCost) || 0,
       notes: notes.trim(),
       archived: batch?.archived || false,
+      // SHARED_PANTRY: hand pantry lines to the parent so it can deduct
+      // from stock inside its update(). We don't write _pantryDeductions
+      // here — the parent stamps that on after running deductions.
+      _pantryLinesToApply: pantryLines,
     });
     onClose();
   };
@@ -269,7 +306,21 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
         <input type="date" style={inputStyle} value={eatByDate} onChange={e => setEatByDate(e.target.value)} />
       </Field>
       <Field label="Ingredients cost ($, optional)">
-        <input type="number" step="0.01" min="0" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="0.00" />
+        <input
+          type="number"
+          step="0.01"
+          min="0"
+          style={inputStyle}
+          value={ingredientsCost}
+          onChange={e => { setIngredientsCost(e.target.value); setCostTouched(true); }}
+          placeholder="0.00"
+        />
+        <PantryQuickCost
+          pantry={pantry}
+          lines={pantryLines}
+          onChange={setPantryLines}
+          palette={{ ink: palette.ink, text: palette.ink, textSoft: palette.inkSoft, border: palette.line, bg: palette.card, bgAlt: palette.bgAlt, accent: palette.accent }}
+        />
       </Field>
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Recipe, water bath time, pressure..." />
@@ -529,8 +580,39 @@ export default function CanningPage({ hobby, data, update, setModal }) {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
-      const idx = h.batches.findIndex(x => x.id === b.id);
-      if (idx >= 0) h.batches[idx] = b; else h.batches.push(b);
+
+      // SHARED_PANTRY: apply pantry deductions if the modal handed them
+      // over. Strip the transient `_pantryLinesToApply` field before
+      // writing the batch.
+      //
+      // EDIT FLOW: if we're editing an existing batch with prior
+      // deductions, refund those FIRST (so stock numbers don't double-
+      // count when we re-apply). We also persist the picker lines on
+      // the batch as `_pantryLines` so re-opening the edit form can
+      // preload them with the same units the user originally picked.
+      const linesToApply = b._pantryLinesToApply || [];
+      const cleanBatch = { ...b };
+      delete cleanBatch._pantryLinesToApply;
+
+      const existingIdx = h.batches.findIndex(x => x.id === cleanBatch.id);
+      if (existingIdx >= 0) {
+        const prior = h.batches[existingIdx];
+        if (Array.isArray(prior?._pantryDeductions) && prior._pantryDeductions.length > 0) {
+          applyPantryRefunds(d, prior._pantryDeductions);
+        }
+      }
+
+      if (linesToApply.length > 0) {
+        const deductions = applyPantryDeductions(d, linesToApply);
+        if (deductions.length > 0) cleanBatch._pantryDeductions = deductions;
+        cleanBatch._pantryLines = linesToApply;
+      } else {
+        // No new pantry usage — drop any stale fields from prior versions.
+        delete cleanBatch._pantryDeductions;
+        delete cleanBatch._pantryLines;
+      }
+
+      if (existingIdx >= 0) h.batches[existingIdx] = cleanBatch; else h.batches.push(cleanBatch);
       return d;
     });
   };
@@ -538,7 +620,14 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   const deleteBatch = (id) => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
-      if (h && Array.isArray(h.batches)) h.batches = h.batches.filter(b => b.id !== id);
+      if (!h) return d;
+      // SHARED_PANTRY: refund any stock that was deducted when this batch
+      // was logged. Stored on batch._pantryDeductions at save time.
+      const target = (h.batches || []).find(b => b.id === id);
+      if (target && Array.isArray(target._pantryDeductions)) {
+        applyPantryRefunds(d, target._pantryDeductions);
+      }
+      h.batches = (h.batches || []).filter(b => b.id !== id);
       return d;
     });
   };
@@ -624,6 +713,26 @@ export default function CanningPage({ hobby, data, update, setModal }) {
         <Btn variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })} style={{ flex: "1 1 140px" }}>
           🔨 Infrastructure
         </Btn>
+        {setModal && (
+          <Btn variant="ghost" onClick={() => setModal({ type: "pantry" })} style={{ flex: "1 1 140px" }}>
+            🥫 Pantry
+          </Btn>
+        )}
+        {setModal && (
+          <Btn variant="ghost" onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })} style={{ flex: "1 1 140px" }}>
+            💵 Add Expense
+          </Btn>
+        )}
+        {setModal && (Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map(c => (
+          <Btn key={c.id} variant="ghost" onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id })} style={{ flex: "1 1 140px" }}>
+            {c.emoji || "📝"} {c.label}
+          </Btn>
+        ))}
+        {setModal && (
+          <Btn variant="ghost" onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })} style={{ flex: "1 1 140px" }}>
+            ➕ Custom
+          </Btn>
+        )}
       </div>
       {infraModal.open && (
         <InfrastructureModal
@@ -760,6 +869,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
       {editBatch && (
         <BatchModal
           batch={editBatch === "new" ? null : editBatch}
+          pantry={Array.isArray(data.pantry) ? data.pantry : []}
           onSave={saveBatch}
           onDelete={deleteBatch}
           onClose={() => setEditBatch(null)}

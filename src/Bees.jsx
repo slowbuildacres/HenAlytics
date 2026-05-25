@@ -461,7 +461,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
 }
 
 // ============ HIVE DETAIL VIEW ============
-function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEntry, onEditEntry }) {
+function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEntry, onEditEntry, hobbyId, setModal, customLogs = [] }) {
   // Track delete confirmation locally so we can show inline "Confirm delete?"
   // instead of a native window.confirm() dialog (which looks bad on iOS and
   // even worse when wrapped in Capacitor for the App Store).
@@ -590,6 +590,44 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>{label}</div>
           </button>
         ))}
+        {/* Add Expense — opens shared AddExpenseModal via HomesteadApp.jsx's
+            ModalRouter, pre-filled with this hobby. Logs to data.expenses[]
+            for FIFO matching in the Sales tab. */}
+        {setModal && (
+          <button onClick={()=>setModal({ type: "addExpense", hobbyId })} style={{
+            background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
+            padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
+            gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
+            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+          }}>
+            <div style={{ fontSize:22 }}>💵</div>
+            <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>Add Expense</div>
+          </button>
+        )}
+        {/* Custom log tiles — user-defined quick-log actions. Each writes to
+            data.entries[hobbyId] with action:"custom" via HomesteadApp's LogModal. */}
+        {setModal && customLogs.map(c => (
+          <button key={c.id} onClick={()=>setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobbyId })} style={{
+            background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
+            padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
+            gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
+            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+          }}>
+            <div style={{ fontSize:22 }}>{c.emoji || "📝"}</div>
+            <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>{c.label}</div>
+          </button>
+        ))}
+        {setModal && (
+          <button onClick={()=>setModal({ type: "customLogPicker", hobbyId })} style={{
+            background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
+            padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
+            gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
+            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+          }}>
+            <div style={{ fontSize:22 }}>➕</div>
+            <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>+ Custom</div>
+          </button>
+        )}
       </div>
 
       <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 10px",color:palette.ink }}>recent activity</h3>
@@ -618,6 +656,11 @@ function BeeEntryRow({ entry, onDelete, onEdit }) {
     infrastructure:"🔨", split:"✂️", swarm:"🐝", death:"💀",
     note:"📓", winter_prep:"❄️", spring_buildup:"🌸",
   };
+  // Custom log entries snapshot their label at log time on entry.customLabel.
+  const displayLabel = entry.action === "custom"
+    ? (entry.customLabel || "Custom log")
+    : (labels[entry.action] || entry.action);
+  const displayEmoji = entry.action === "custom" ? "📝" : (emojis[entry.action] || "📝");
   let detail = "";
   if (entry.action==="inspect") {
     const bits = [];
@@ -641,9 +684,9 @@ function BeeEntryRow({ entry, onDelete, onEdit }) {
 
   return (
     <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10 }}>
-      <div style={{ fontSize:22,flexShrink:0 }}>{emojis[entry.action]||"📝"}</div>
+      <div style={{ fontSize:22,flexShrink:0 }}>{displayEmoji}</div>
       <div style={{ flex:1,minWidth:0 }}>
-        <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>{labels[entry.action]||entry.action}</div>
+        <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>{displayLabel}</div>
         <div style={{ fontSize:12,color:palette.inkSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>
           {fmtDate(entry.date)}{detail?" · "+detail:""}
         </div>
@@ -843,7 +886,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
 }
 
 // ============ MAIN BEES PAGE (hives list + hive detail) ============
-export default function BeesPage({ hobby, data, update }) {
+export default function BeesPage({ hobby, data, update, setModal }) {
   const [selectedHive, setSelectedHive] = useState(null);
   const [showAddHive, setShowAddHive] = useState(false);
   const [editingHive, setEditingHive] = useState(null);
@@ -896,6 +939,9 @@ export default function BeesPage({ hobby, data, update }) {
           onBack={()=>setSelectedHive(null)}
           onDeleteEntry={deleteEntry}
           onEditEntry={setEditingEntry}
+          hobbyId={hobby.id}
+          setModal={setModal}
+          customLogs={Array.isArray(hobby.customLogs) ? hobby.customLogs : []}
         />
       ) : (
         <div>
