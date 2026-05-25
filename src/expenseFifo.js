@@ -478,6 +478,98 @@ export function computeFifoStats(data, window) {
 }
 
 // ---------------------------------------------------------------------------
+// SIMPLE STATS — cash-in vs cash-out, no FIFO matching
+// ---------------------------------------------------------------------------
+// Plain checkbook math for users who don't want FIFO accounting:
+//   - Sum all sales dated within the window (revenue)
+//   - Sum all expenses dated within the window (expenses), including hobby-
+//     attributed and general-overhead alike
+//   - Net = revenue - expenses
+//   - Per-hobby breakdown: same logic per hobby
+//
+// Same return shape as computeFifoStats so the UI can swap freely:
+//   { window, totalRevenue, totalExpenses, overhead, netProfit, byHobby,
+//     backlog: [], totalBacklog: 0 }
+// `backlog` and `totalBacklog` are always empty in simple mode — simple mode
+// doesn't track unmatched expenses, just window totals. UI hides the backlog
+// section automatically when this is empty.
+//
+// Infrastructure expenses are EXCLUDED to match FIFO mode's behavior. One-
+// time capital costs would distort month-by-month numbers just as much under
+// simple math as under FIFO.
+export function computeSimpleStats(data, window) {
+  const sales = (data.sales || []).map(normalizeSale);
+  const inWindowSales = sales.filter((s) => inWindow(s.date, window));
+
+  // Build sales-by-hobby buckets
+  const salesByHobby = {};
+  for (const s of inWindowSales) {
+    const key = s.hobbyId || "_unmapped";
+    (salesByHobby[key] = salesByHobby[key] || []).push(s);
+  }
+
+  // Collect every hobby that has either window-filtered sales or window-
+  // filtered expenses. Need to check expenses too so a hobby with expenses
+  // but no sales still appears in the breakdown.
+  const allHobbyIds = new Set(Object.keys(salesByHobby).filter((k) => k !== "_unmapped"));
+  for (const h of (data.hobbies || [])) allHobbyIds.add(h.id);
+
+  const byHobby = [];
+  let totalRevenue = 0;
+  let totalExpenses = 0;
+
+  for (const hobbyId of allHobbyIds) {
+    const hobbySales = salesByHobby[hobbyId] || [];
+    const revenue = hobbySales.reduce((s, x) => s + x.revenue, 0);
+
+    // Expenses dated within the window only — simple mode is cash-in vs
+    // cash-out, not FIFO consumption.
+    let expenses = extractHobbyExpenses(data, hobbyId);
+    if (window && window.start) expenses = expenses.filter((e) => e.date && e.date >= window.start);
+    if (window && window.end) expenses = expenses.filter((e) => !e.date || e.date <= window.end);
+    const expenseTotal = expenses.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+
+    if (revenue === 0 && expenseTotal === 0) continue;
+
+    const meta = HOBBY_LABEL[hobbyId] || { label: hobbyId, emoji: "•" };
+    byHobby.push({
+      hobbyId,
+      label: meta.label,
+      emoji: meta.emoji,
+      revenue,
+      consumed: expenseTotal,    // name kept for UI parity with FIFO mode
+      profit: revenue - expenseTotal,
+      unmatched: 0,
+    });
+    totalRevenue += revenue;
+    totalExpenses += expenseTotal;
+  }
+
+  // Unmapped sales (no hobby attribution) — add their revenue but no
+  // expense bucket exists for them.
+  const unmappedSales = salesByHobby["_unmapped"] || [];
+  for (const s of unmappedSales) totalRevenue += s.revenue;
+
+  // General overhead (un-attributed expenses) within the window.
+  const overhead = generalOverheadTotal(data, window);
+  totalExpenses += overhead;
+
+  // Sort by profit desc (matches FIFO chart ordering).
+  byHobby.sort((a, b) => b.profit - a.profit);
+
+  return {
+    window: window || null,
+    totalRevenue,
+    totalExpenses,
+    overhead,
+    netProfit: totalRevenue - totalExpenses,
+    byHobby,
+    backlog: [],
+    totalBacklog: 0,
+  };
+}
+
+// ---------------------------------------------------------------------------
 // Date window helpers (used by the Sales-tab window selector)
 // ---------------------------------------------------------------------------
 function pad2(n) { return String(n).padStart(2, "0"); }

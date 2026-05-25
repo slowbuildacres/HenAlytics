@@ -645,21 +645,27 @@ function EggsCard({ stats }) {
       )}
 
       {peakEggMonth && (
-        <div style={{ marginTop: 14 }}>
-          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6 }}>
-            Best month: <strong style={{ color: palette.ink }}>{peakEggMonth}</strong>
-          </div>
+        <div style={{ marginTop: 18 }}>
           <div style={{ display: "flex", gap: 3, alignItems: "flex-end", height: 60 }}>
             {monthLabels.map((label, i) => {
               const collected = (eggRevenueByMonth[i] && eggRevenueByMonth[i].collected) || 0;
               const h = (collected / maxBar) * 60;
+              // Highlight the peak month so the "Best month" label below is
+              // visually anchored to a specific bar.
+              const isPeak = peakEggMonth && label === peakEggMonth.slice(0, 3);
               return (
                 <div key={i} style={{ flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 2 }} title={`${label}: ${collected} eggs`}>
-                  <div style={{ width: "100%", height: `${h}px`, minHeight: 2, background: palette.yolk, borderRadius: "3px 3px 0 0" }} />
-                  <div style={{ fontSize: 9, color: palette.inkSoft }}>{label[0]}</div>
+                  <div style={{ width: "100%", height: `${h}px`, minHeight: 2, background: isPeak ? palette.accent : palette.yolk, borderRadius: "3px 3px 0 0" }} />
+                  <div style={{ fontSize: 9, color: isPeak ? palette.ink : palette.inkSoft, fontWeight: isPeak ? 700 : 400 }}>{label[0]}</div>
                 </div>
               );
             })}
+          </div>
+          {/* Label moved below the bars so the chart can never visually
+              cover it. The peak month's bar is highlighted in accent above
+              so the eye knows which month "Best" refers to. */}
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 8, textAlign: "center" }}>
+            Best month: <strong style={{ color: palette.ink }}>{peakEggMonth}</strong>
           </div>
         </div>
       )}

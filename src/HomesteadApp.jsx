@@ -1549,7 +1549,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 49;
+const CURRENT_VERSION = 50;
 
 // STEP3_REVIEW_PROMPT: custom pre-prompt modal.
 // Apple-compliant pattern: we show our own modal first asking if the
@@ -1607,6 +1607,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "💵 Profit math now defaults to Simple mode — cash in vs cash out, dated within the window you pick. Matches the homesteader mental model: \"did I spend more than I made this month?\" The FIFO option (true cost-per-unit accounting) is still there for users who want deeper analysis, just one tap away in the Sales tab. New homesteads default to Simple; existing data is unaffected. Also added a helpful hint when you have revenue logged but no expenses — the most common reason profit looks weird.",
   "✏️ Edit a batch with pantry usage and it just works — the picker now preloads your original pantry rows when you reopen a saved batch / bake / ferment in Canning, Fermentation, Freeze Drying, Dehydrating, or Sourdough. Editing refunds the old deductions and re-applies the new ones, so stock numbers stay clean even if you change quantities or swap ingredients.",
   "📜 Pantry usage history — tap any pantry item to see exactly which bakes, batches, and ferments consumed from it, with amounts and dates. Answers \"where did all my flour go?\" at a glance. Shows the 50 most recent entries with a running total at the top.",
   "🍞 Sourdough joins the pantry rollout — log a bake and pick your flour/salt/etc. from pantry. Cost-per-loaf auto-calculates from total pantry cost ÷ loaves baked. Stock deducts on save and refunds if you delete the bake. With Sourdough wrapped up, all 6 kitchen hobbies (Baking, Sourdough, Canning, Fermentation, Freeze Drying, Dehydrating) now share the same pantry.",
@@ -8793,10 +8794,24 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
   const tractorFeet = tractorMoves.reduce((s, e) => s + (Number(e.distanceFeet) || 0), 0);
   const tractorMoveCount = tractorMoves.length;
 
-  // egg trend
+  // egg trend — keep full ISO date so multi-year data sorts correctly
+  // and so we can render an axis label that includes year context for
+  // ranges that span more than one year (otherwise "01-04" from 2024 and
+  // 2025 collapse into a confusing duplicate).
   const byDate = {};
   eggs.forEach((e) => { byDate[e.date] = (byDate[e.date] || 0) + (Number(e.count) || 0); });
-  const eggTrend = Object.entries(byDate).map(([date, count]) => ({ date: date.slice(5), count })).sort((a, b) => a.date.localeCompare(b.date));
+  const eggTrendRaw = Object.entries(byDate)
+    .map(([date, count]) => ({ date, count }))
+    .sort((a, b) => a.date.localeCompare(b.date));
+  // Detect multi-year span — if spread, switch the axis label to YYYY-MM-DD
+  // (Recharts will still thin ticks via interval/minTickGap below). Single-
+  // year ranges stay on the friendlier MM-DD format.
+  const eggTrendYears = new Set(eggTrendRaw.map(p => (p.date || "").slice(0, 4)));
+  const eggTrendMultiYear = eggTrendYears.size > 1;
+  const eggTrend = eggTrendRaw.map(p => ({
+    date: eggTrendMultiYear ? p.date : (p.date || "").slice(5),
+    count: p.count,
+  }));
 
   return (
     <div>
@@ -8922,8 +8937,15 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
       {eggTrend.length > 0 && (
         <ChartCard title="Egg production">
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={eggTrend}>
-              <XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11} />
+            <LineChart data={eggTrend} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+              <XAxis
+                dataKey="date"
+                stroke={palette.inkSoft}
+                fontSize={11}
+                interval="preserveStartEnd"
+                minTickGap={40}
+                tickMargin={6}
+              />
               <YAxis stroke={palette.inkSoft} fontSize={11} />
               <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} />
               <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />

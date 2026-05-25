@@ -17,7 +17,7 @@ import React, { useState, useMemo } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney } from "./units.js";
-import { computeFifoStats, resolveWindow, WINDOW_OPTIONS } from "./expenseFifo.js";
+import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS } from "./expenseFifo.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1417,6 +1417,18 @@ export default function SalesPage({ data, update }) {
   // narrow it with the chip selector below the revenue cards.
   const [profitWindow, setProfitWindow] = useState("twelve_months");
 
+  // PROFIT_MODE — toggles between FIFO accounting (true cost-per-unit math)
+  // and Simple cash-in / cash-out math (sums revenue and expenses dated in
+  // the window, ignores expense-to-sale matching). Default is "simple" since
+  // it matches the homesteader mental model — FIFO is opt-in for users who
+  // want the deeper analysis. Persisted to data.profitMode so the choice
+  // sticks across sessions.
+  const [profitMode, setProfitMode] = useState(data.profitMode || "simple");
+  const setProfitModeAndPersist = (mode) => {
+    setProfitMode(mode);
+    update(d => { d.profitMode = mode; return d; });
+  };
+
   const sales = data.sales || [];
   const customers = data.customers || [];
 
@@ -1535,16 +1547,19 @@ export default function SalesPage({ data, update }) {
   }, [allSales, customers]);
 
   // ---------------------------------------------------------------------------
-  // FIFO profit/expense stats — per-hobby, infrastructure excluded
+  // FIFO or Simple profit/expense stats — per-hobby, infrastructure excluded
   // ---------------------------------------------------------------------------
   // Pulls expenses from data.entries[hobbyId] (fed, bedding, fertilized,
   // supplies, restock) plus structural costs (flock buys, chick cost,
   // hive cost). Infrastructure is intentionally NOT included — it's one-time
   // capital and would distort ongoing profitability for years.
   //
-  // Sales window only filters the SALES side; expenses dated before the
-  // window are still consumable, because FIFO says "this revenue paid off
-  // my oldest unmatched cost," regardless of which window the user picked.
+  // FIFO mode: matches oldest expenses to sales chronologically; surfaces an
+  // unmatched-backlog list. Expenses outside the window are still consumable.
+  //
+  // Simple mode: cash in vs cash out within the window. No backlog tracking.
+  // Matches the standard homesteader mental model ("did I spend more than I
+  // made this month?").
   const fifoStats = useMemo(() => {
     const window = resolveWindow(profitWindow, new Date());
     // Build a synthetic data object that includes legacyEggSales merged into
@@ -1556,8 +1571,11 @@ export default function SalesPage({ data, update }) {
       ...(data.sales || []),
       ...legacyEggSales.filter(s => !saleIds.has(s.id)),
     ];
-    return computeFifoStats({ ...data, sales: mergedSales }, window);
-  }, [data, legacyEggSales, profitWindow]);
+    const mergedData = { ...data, sales: mergedSales };
+    return profitMode === "simple"
+      ? computeSimpleStats(mergedData, window)
+      : computeFifoStats(mergedData, window);
+  }, [data, legacyEggSales, profitWindow, profitMode]);
 
   const deleteSale = (id) => {
     update(d => {
@@ -1671,12 +1689,48 @@ export default function SalesPage({ data, update }) {
             </div>
           </div>
 
-          {/* Honest-numbers disclaimer — important: users need to know what
-              this includes and excludes, or the numbers will confuse them. */}
-          <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:12,lineHeight:1.4 }}>
-            FIFO matching: oldest expenses are paid off first by sales, within each hobby.
-            Excludes one-time infrastructure costs (coops, fencing, etc).
+          {/* Mode toggle — Simple (cash in vs cash out, matches homesteader
+              mental model) vs FIFO (true cost-per-unit accounting). Default
+              is Simple; FIFO is opt-in for users who want deeper analysis. */}
+          <div style={{ display:"flex",gap:0,marginBottom:10,background:palette.bgAlt,borderRadius:8,padding:3,border:`1px solid ${palette.line}` }}>
+            {[
+              { key: "simple", label: "Simple", help: "Cash in vs cash out, dated within the window" },
+              { key: "fifo", label: "FIFO", help: "Match expenses to sales chronologically for true cost-per-unit" },
+            ].map(opt => (
+              <button
+                key={opt.key}
+                onClick={() => setProfitModeAndPersist(opt.key)}
+                title={opt.help}
+                style={{
+                  flex:1,padding:"6px 10px",borderRadius:6,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+                  background: profitMode===opt.key ? palette.ink : "transparent",
+                  color: profitMode===opt.key ? palette.bg : palette.inkSoft,
+                  border:"none",cursor:"pointer",
+                }}
+              >
+                {opt.label}
+              </button>
+            ))}
           </div>
+
+          {/* Mode-specific disclaimer */}
+          <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:12,lineHeight:1.4 }}>
+            {profitMode === "simple"
+              ? "Simple math: revenue and expenses dated within the window above. Excludes one-time infrastructure costs (coops, fencing, etc)."
+              : "FIFO matching: oldest expenses are paid off first by sales, within each hobby. Excludes one-time infrastructure costs (coops, fencing, etc)."}
+          </div>
+
+          {/* Helpful nudge when revenue > 0 but expenses == 0 — most likely
+              the user hasn't logged expenses yet, which makes profit look
+              identical to revenue. Without this hint, users often think the
+              app is broken. */}
+          {fifoStats.totalRevenue > 0 && fifoStats.totalExpenses === 0 && (
+            <div style={{ fontSize:12,color:palette.ink,background:palette.bgAlt,border:`1px solid ${palette.line}`,borderRadius:8,padding:"10px 12px",marginBottom:12,lineHeight:1.5 }}>
+              💡 You have revenue but no expenses logged yet, so profit equals revenue.
+              Tap <strong>💵 Add Expense</strong> on any hobby's quick-log to track feed, bedding,
+              supplies, etc. — then you'll see real profit numbers here.
+            </div>
+          )}
 
           {/* Three headline cards: revenue, expenses, net profit */}
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:14 }}>
