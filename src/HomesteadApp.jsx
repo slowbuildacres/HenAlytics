@@ -3760,19 +3760,26 @@ useNativeBackButton(React.useCallback(() => {
     saveImmediateRef.current = false; // one-shot
     const fire = async () => {
       const result = await saveHomestead(user, data);
-      // A *skipped* cloud write is NOT a successful save. Previously this
-      // line treated `skipped` the same as `ok`, so when the refresh token
-      // had silently died the cloud write was correctly skipped — but the
-      // sync indicator lit up green "saved" anyway, hiding the failure. The
-      // data is in localStorage, but the cloud (and any other device, or a
-      // farmhand's view) never got it. Now:
-      //   - ok            → "saved"   (genuinely reached the cloud)
-      //   - skipped/fail  → "error"   (local only — surfaces the problem)
-      // For a signed-in user, "error" is honest: their save did not sync.
-      // For a local-only user (no account) saveHomestead returns ok:true,
-      // so this never false-alarms them.
-      setSyncStatus(result.ok ? "saved" : "error");
+      // Three outcome buckets, each with its own UX surface:
+      //
+      // 1. ok=true                → "saved" (fades to "idle" after 1.5s)
+      // 2. skipped (any reason)   → "idle"  + banner if appropriate
+      // 3. thrown error (no skip) → "error" (sticky; this is the only
+      //                              surface for non-auth thrown errors)
+      //
+      // The previous logic mapped every non-ok result to "error". That was
+      // an over-correction from the original "everything is saved" bug:
+      // it correctly stopped lying about success, but it also latched the
+      // indicator into a red "error" state on benign skips — most commonly
+      // stale-baseline (cloud is ahead of this device, save was correctly
+      // refused to avoid clobbering). For those, the orange top banner is
+      // already the user-facing surface, and the little indicator parroting
+      // "error" added noise without info. Worse, "error" had no idle
+      // timeout, so it stuck until the next save fired — i.e. "error until
+      // you edit an entry". With skipped cases routed to "idle" instead,
+      // the indicator stays quiet while the banner does the talking.
       if (result.ok) {
+        setSyncStatus("saved");
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
         // Absorb the refreshed cloud baseline into in-memory state so the
         // next save compares against the cloud state we just created — not
@@ -3787,25 +3794,44 @@ useNativeBackButton(React.useCallback(() => {
               : prev
           );
         }
-      } else if (result.skipped && result.reason === "stale-baseline") {
-        // This device tried to save but the cloud has changes it never saw
-        // (another device — e.g. a farmhand — wrote more recently). Saving
-        // now would clobber those unseen changes, so the write was correctly
-        // refused. We do NOT silently re-pull: that would discard the edit
-        // the user just made. Instead surface the banner so the user can
-        // choose to refresh — their local edit is safe in localStorage and
-        // still on screen until they do.
-        console.warn("[SYNC] save skipped — cloud is ahead of this device.");
+      } else if (result.skipped) {
+        // No cloud write happened, but no exception was thrown either — this
+        // is the safety-check path, not a failure. Drop the indicator back
+        // to "idle" and let the banner handle the messaging for the cases
+        // that need it.
+        setSyncStatus("idle");
+        if (result.reason === "stale-baseline" || result.reason === "would-clobber") {
+          // Cloud is ahead of this device (another device — e.g. a farmhand,
+          // another tab, another phone — wrote more recently than this
+          // device has seen). Saving now would clobber those unseen changes,
+          // so the write was correctly refused. We do NOT silently re-pull:
+          // that would discard the edit the user just made. Instead surface
+          // the banner so the user can choose to refresh — their local edit
+          // is safe in localStorage and still on screen until they do.
+          console.warn("[SYNC] save skipped — cloud is ahead of this device.");
+          setSyncBannerReason("stale");
+          setSignedOutRemotely(true);
+        } else if (result.reason === "read-failed" || result.reason === "auth") {
+          // A skip caused by a failed cloud read / dead session is the
+          // signature of the refresh-token bug. Surface the signed-out
+          // banner so the user knows to re-authenticate — their recent
+          // changes are saved locally but not synced.
+          setSyncBannerReason("auth");
+          setSignedOutRemotely(true);
+        }
+        // else: reason is undefined (cloudReady=false during boot) — silent
+        // no-op, no banner needed, no error to surface.
+      } else {
+        // Thrown error: result.ok=false, result.skipped is absent.
+        // saveHomestead's catch block returns { ok:false, error, reason }
+        // where reason is 'auth' or 'error'. The indicator is the only
+        // surface for non-auth thrown errors, so it sticks at "error"
+        // until the next save fires.
         setSyncStatus("error");
-        setSyncBannerReason("stale");
-        setSignedOutRemotely(true);
-      } else if (result.skipped && (result.reason === "read-failed" || result.reason === "auth")) {
-        // A skip caused by a failed cloud read / dead session is the
-        // signature of the refresh-token bug. Surface the signed-out
-        // banner so the user knows to re-authenticate — their recent
-        // changes are saved locally but not synced.
-        setSyncBannerReason("auth");
-        setSignedOutRemotely(true);
+        if (result.reason === "auth") {
+          setSyncBannerReason("auth");
+          setSignedOutRemotely(true);
+        }
       }
     };
     if (immediate) {
