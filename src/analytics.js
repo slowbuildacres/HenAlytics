@@ -229,3 +229,138 @@ export function LockedStatOverlay({ earlyAccessConfig, isSupporter, palette, fon
     )
   );
 }
+
+// ============================================================================
+// GARDEN HARVEST COLLECTION
+// ----------------------------------------------------------------------------
+// BUG FIX: total-harvest stats across the app were missing perennial and
+// orchard harvests. Annual garden harvests live in data.entries.garden with
+// action === "harvested"; perennial/orchard harvests live on the garden
+// hobby's perennials[i].harvests[] arrays. Every stat that wanted "all
+// harvests" was filtering entries only and missing the perennial path.
+//
+// This helper returns a single normalized list combining both. Records have
+// the shape:
+//
+//   {
+//     date:     "YYYY-MM-DD",
+//     quantity: number,         // legacy field name (annuals)
+//     qty:      number,         // same value, kept for harvestTotalsByUnit
+//     unit:     "lbs"|"each"|...,
+//     plant:    string,         // plant name for top-plant stats
+//     seasonId: string|null,    // annuals have it, perennials don't
+//     source:   "annual"|"perennial",
+//   }
+//
+// Pass through harvestTotalsByUnit / harvestSummary from HomesteadApp.jsx
+// just like before — those helpers already accept both `quantity` and `qty`.
+//
+// FILTERING — opts is { range, seasonId, season }:
+//   - range:    { start, end } ISO date window (matches priorDateRange shape)
+//   - seasonId: only annual harvests with this seasonId pass through.
+//               Perennials have no seasonId; pair with `season` to clip them
+//               to the matching date window instead.
+//   - season:   { startDate, endDate? } season object whose start/end date
+//               clips perennial harvests. End is exclusive of today if not
+//               set on the season (current season case).
+//
+// Returns an array. Caller decides what to do with it.
+// ============================================================================
+export function collectGardenHarvests(data, opts) {
+  const range = opts && opts.range ? opts.range : null;
+  const seasonId = opts && opts.seasonId ? opts.seasonId : null;
+  const season = opts && opts.season ? opts.season : null;
+
+  const inDateRange = (dateStr) => {
+    if (!range) return true;
+    if (!dateStr) return false;
+    if (range.start && dateStr < range.start) return false;
+    if (range.end && dateStr > range.end) return false;
+    return true;
+  };
+
+  const inSeasonWindow = (dateStr) => {
+    if (!season) return true;
+    if (!dateStr) return false;
+    const start = season.startDate || season.start || null;
+    const end = season.endDate || season.end || null;
+    if (start && dateStr < start) return false;
+    if (end && dateStr > end) return false;
+    return true;
+  };
+
+  const out = [];
+
+  // ---- Annuals (data.entries.garden, action: "harvested") ----
+  const gardenEntries = (data && data.entries && data.entries.garden) || [];
+  for (const e of gardenEntries) {
+    if (!e || e.action !== "harvested") continue;
+    if (seasonId && e.seasonId !== seasonId) continue;
+    if (!inDateRange(e.date)) continue;
+    const qty = Number(e.quantity != null ? e.quantity : e.qty) || 0;
+    out.push({
+      date: e.date || "",
+      quantity: qty,
+      qty,
+      unit: e.unit || "lbs", // legacy annual entries had no unit; were always lbs
+      plant: (e.plant || "Unknown").trim() || "Unknown",
+      seasonId: e.seasonId || null,
+      source: "annual",
+    });
+  }
+
+  // ---- Perennials and orchard trees (hobby.perennials[i].harvests[]) ----
+  // Walk every garden hobby (there's typically one but be defensive).
+  // Perennial records have no seasonId, so when seasonId filter is set we
+  // clip them by the season's date window instead. Caller passes `season`
+  // alongside `seasonId` when this is what they want; if they only pass
+  // seasonId without a season window, perennials are excluded entirely
+  // (matches existing season-scoped behavior — we can't guess the window).
+  const skipPerennials = seasonId && !season;
+  if (!skipPerennials) {
+    const hobbies = (data && Array.isArray(data.hobbies)) ? data.hobbies : [];
+    for (const h of hobbies) {
+      if (!h || h.type !== "garden") continue;
+      const perennials = Array.isArray(h.perennials) ? h.perennials : [];
+      for (const p of perennials) {
+        const harvests = Array.isArray(p && p.harvests) ? p.harvests : [];
+        const plantName = (p && p.name ? String(p.name).trim() : "") || "Unknown";
+        for (const harv of harvests) {
+          if (!harv) continue;
+          if (!inDateRange(harv.date)) continue;
+          if (!inSeasonWindow(harv.date)) continue;
+          const qty = Number(harv.qty != null ? harv.qty : harv.quantity) || 0;
+          out.push({
+            date: harv.date || "",
+            quantity: qty,
+            qty,
+            unit: harv.unit || "lbs",
+            plant: plantName,
+            seasonId: null,
+            source: "perennial",
+          });
+        }
+      }
+    }
+  }
+
+  return out;
+}
+
+// Sum harvest records *in lbs only* — for stats that want a single number.
+// Non-lbs records (each, bunch, cups, etc.) are correctly excluded rather
+// than summed in as if they were lbs. This was a separate bug in the prior
+// "totalHarvestLbs" reducer that summed `quantity` regardless of unit.
+//
+// Pass the output of collectGardenHarvests() (or any compatible list).
+export function totalHarvestLbs(harvestRecords) {
+  let total = 0;
+  for (const r of harvestRecords || []) {
+    if (!r) continue;
+    const unit = r.unit || "lbs";
+    if (unit !== "lbs") continue;
+    total += Number(r.quantity != null ? r.quantity : r.qty) || 0;
+  }
+  return total;
+}
+

@@ -7,6 +7,13 @@ import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRai
 import { getPhotoUrl } from "./sync.js";
 import { fmtMoney, fmtTemp } from "./units.js";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
+// BUGFIX: total-harvest stat was missing perennial/orchard harvests.
+// collectGardenHarvests walks both data.entries.garden and the perennials[]
+// trees, and sumHarvestLbs sums only lbs records (filtering out the bunch/each
+// rows that the old reducer was incorrectly summing as if they were lbs).
+// Imported under an alias so the existing `totalHarvestLbs` local-variable
+// name downstream can be reused without collision.
+import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs } from "./analytics.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -2253,15 +2260,28 @@ function computeStats(data, year) {
   }
 
   // Garden
-  const harvestEntries = allEntries.filter((e) => e.action === "harvested");
-  const totalHarvestLbs = harvestEntries.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
-  const harvestsCount = harvestEntries.length;
+  // BUGFIX: previously this only summed annual garden entries (action===
+  // "harvested" on data.entries.garden), missing perennial and orchard
+  // harvests entirely. Also the prior sum added `quantity` regardless of
+  // unit so "3 bunches" got summed in as 3 lbs. Both are fixed here.
+  //
+  // collectGardenHarvests returns annuals + perennials, normalized; we then
+  // filter to the current YIR year and feed to sumHarvestLbs which counts
+  // only lbs-unit records. topPlants likewise only counts lbs (other units
+  // can't be ranked against each other meaningfully).
+  const allGardenHarvests = collectGardenHarvests(data, {
+    range: { start: `${yearStr}-01-01`, end: `${yearStr}-12-31` },
+  });
+  const harvestEntries = allGardenHarvests; // kept name for legacy downstream refs
+  const totalHarvestLbs = sumHarvestLbs(allGardenHarvests);
+  const harvestsCount = allGardenHarvests.length;
   const plantingsCount = allEntries.filter((e) => e.action === "planted").length;
   const plantTotals = {};
-  harvestEntries.forEach((e) => {
-    const name = (e.plant || "Unknown").trim();
+  allGardenHarvests.forEach((h) => {
+    if (h.unit !== "lbs") return;
+    const name = (h.plant || "Unknown").trim();
     if (!name) return;
-    plantTotals[name] = (plantTotals[name] || 0) + (Number(e.quantity) || 0);
+    plantTotals[name] = (plantTotals[name] || 0) + (Number(h.quantity) || 0);
   });
   const topPlants = Object.entries(plantTotals).map(([plant, lbs]) => ({ plant, lbs })).sort((a, b) => b.lbs - a.lbs);
 

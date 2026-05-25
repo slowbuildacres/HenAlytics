@@ -10,9 +10,12 @@ import {
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 // ADV_ANALYTICS: shared advanced-analytics layer (leaf module — see analytics.js).
+// collectGardenHarvests + totalHarvestLbs are the unified harvest collector that
+// includes perennials/orchards (annuals-only collection missed those before).
 import {
   ADV_ANALYTICS_FEATURE_KEY, priorDateRange, computeDelta, StatTrend,
   personalRecord, monthlySeries, LockedStatOverlay,
+  collectGardenHarvests, totalHarvestLbs,
 } from "./analytics.js";
 import AuthModal from "./AuthModal.jsx";
 import FarmhandModal from "./FarmhandModal.jsx";
@@ -7458,8 +7461,11 @@ function GardenSummary({ hobby, data, update, setModal }) {
   }
   const season = hobby.currentSeason;
   const seasonEntries = (data.entries.garden || []).filter((e) => e.seasonId === season.id);
-  const harvests = seasonEntries.filter((e) => e.action === "harvested");
-  const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
+  // BUGFIX: include perennials + orchard harvests, not just annuals.
+  // collectGardenHarvests walks both data.entries.garden AND hobby.perennials[].harvests[]
+  // and applies the seasonId + season-date-window clip so perennials in the
+  // current season's date range count too.
+  const harvests = collectGardenHarvests(data, { seasonId: season.id, season });
   const plantings = seasonEntries.filter((e) => e.action === "planted").length;
   const days = Math.floor((Date.now() - new Date(season.startDate).getTime()) / (1000 * 60 * 60 * 24));
   // Garden map shape changed from { photoPath, pins } to { areas: [{ photoPath, pins }] }.
@@ -8494,8 +8500,31 @@ function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spous
 }
 
 function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spouseMode }) {
-  const harvests = entries.filter((e) => e.action === "harvested");
-  const totalHarvestRaw = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
+  // BUGFIX: total + by-plant stats need to include perennials and orchards,
+  // not just annuals. The seed-start funnel below intentionally stays
+  // annuals-only (perennials don't come from seed-starts).
+  //
+  // Resolve which perennial harvests to include based on the season filter:
+  //   - "all"           → every perennial harvest ever
+  //   - current season  → perennials within currentSeason.startDate..today
+  //   - archived season → perennials within that season's startDate..endDate
+  let perennialOpts = {};
+  if (seasonFilter !== "all" && hobby) {
+    const currentMatch = hobby.currentSeason && hobby.currentSeason.id === seasonFilter
+      ? hobby.currentSeason : null;
+    const archivedMatch = !currentMatch
+      ? (hobby.archivedSeasons || []).find((s) => s.id === seasonFilter)
+      : null;
+    const matchedSeason = currentMatch || archivedMatch || null;
+    if (matchedSeason) {
+      perennialOpts = { seasonId: seasonFilter, season: matchedSeason };
+    } else {
+      // Unknown season — skip perennials to avoid double-counting all-time
+      perennialOpts = { seasonId: "__none__" };
+    }
+  }
+  const harvests = collectGardenHarvests(data, perennialOpts);
+  const totalHarvestRaw = totalHarvestLbs(harvests);
   const totalHarvest = spouseProd(totalHarvestRaw, spouseMode);
   const totalCostRaw = entries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const totalCost = spouseCost(totalCostRaw, spouseMode);
@@ -8503,11 +8532,12 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
   const fertilizations = entries.filter((e) => e.action === "fertilized").length;
   const plantings = entries.filter((e) => e.action === "planted").length;
 
-  // by-plant aggregate
+  // by-plant aggregate (lbs only — non-lbs units mix poorly in a bar chart)
   const byPlant = {};
-  harvests.forEach((e) => {
-    const p = e.plant || "Unknown";
-    byPlant[p] = (byPlant[p] || 0) + (Number(e.quantity) || 0);
+  harvests.forEach((h) => {
+    if (h.unit !== "lbs") return;
+    const p = h.plant || "Unknown";
+    byPlant[p] = (byPlant[p] || 0) + (Number(h.quantity) || 0);
   });
   const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value }));
 
@@ -9837,7 +9867,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
-  if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
+  if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} data={data} update={update} onClose={close} />;
   if (modal.type === "log") {
     // Normally the LogModal operates on the currently-active hobby. When the
     // Journal opens an entry from a non-active hobby, it passes a
@@ -15876,7 +15906,7 @@ function StartGardenSeasonModal({ hobby, update, onClose }) {
   );
 }
 
-function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
+function CloseGardenSeasonModal({ hobby, entries, data, update, onClose }) {
   const season = hobby.currentSeason;
   if (!season) {
     return (
@@ -15886,8 +15916,14 @@ function CloseGardenSeasonModal({ hobby, entries, update, onClose }) {
     );
   }
   const seasonEntries = entries.filter((e) => e.seasonId === season.id);
-  const harvests = seasonEntries.filter((e) => e.action === "harvested");
-  const totalHarvest = harvests.reduce((s, e) => s + (Number(e.quantity) || 0), 0);
+  // BUGFIX: include perennials + orchard harvests dated within this season's
+  // window. Perennial harvests aren't tied to a seasonId, so the helper
+  // clips them to the season's date range. data may be undefined for
+  // legacy callers — fall back to annuals-only in that case.
+  const harvests = data
+    ? collectGardenHarvests(data, { seasonId: season.id, season })
+    : seasonEntries.filter((e) => e.action === "harvested");
+  const totalHarvest = totalHarvestLbs(harvests);
   const totalCost = seasonEntries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
 
   return (
@@ -18101,7 +18137,9 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       return { emoji: "🍗", label: "Meat Birds", stats };
     }
     if (hobby.type === "garden") {
-      const harvests = entries.filter(e => e.action === "harvested");
+      // BUGFIX: include perennials + orchards. Use all-time scope to match
+      // what users see elsewhere in ShareStats (it shows lifetime stats).
+      const harvests = collectGardenHarvests(data);
       const plantings = entries.filter(e => e.action === "planted").length;
       const waterings = entries.filter(e => e.action === "watered").length;
       const seasonName = hobby.currentSeason ? hobby.currentSeason.name : "—";
