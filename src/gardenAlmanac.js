@@ -507,8 +507,17 @@ export function generateCropEvents(cropId, method, frostDates, variety = null) {
         });
       }
     }
-  } else if (method === "direct" && crop.methods.direct) {
-    const sowDate = addWeeks(lf, crop.methods.direct.weeksRelativeToLastFrost);
+  } else if (method === "direct") {
+    // Fall back to "1 week after last frost" when the crop's almanac entry
+    // doesn't define direct-sow timing (e.g. tomatoes, peppers). The user
+    // can adjust the date in the modal's editable-dates step. We also need
+    // a harvestDays fallback for the harvest event — use the indoor or
+    // transplant entry's days-to-harvest if available (same plant, same
+    // maturation), otherwise skip the harvest event.
+    const directWeeks = crop.methods.direct
+      ? crop.methods.direct.weeksRelativeToLastFrost
+      : 1;
+    const sowDate = addWeeks(lf, directWeeks);
     events.push({
       id: `crop-${cropId}${varietySuffix}-direct-${sowDate.getTime()}`,
       date: dateToISO(sowDate),
@@ -597,7 +606,12 @@ export function methodsForCrop(cropId) {
   if (!crop) return [];
   const methods = [];
   if (crop.methods.indoor) methods.push({ id: "indoor", label: "Start seeds indoors" });
-  if (crop.methods.direct) methods.push({ id: "direct", label: "Direct sow outdoors" });
+  // Direct sow is always offered, even on crops that don't traditionally
+  // get direct-sown (tomatoes, peppers, etc.) — users have asked for the
+  // option universally. When the crop's almanac entry doesn't define
+  // direct-sow timing, generateCropEvents falls back to "1 week after
+  // last frost" as a safe suggestion (user can override the date).
+  methods.push({ id: "direct", label: "Direct sow outdoors" });
   if (crop.methods.transplant) methods.push({ id: "transplant", label: "Transplant store-bought starts" });
   return methods;
 }

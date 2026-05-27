@@ -1112,6 +1112,43 @@ function harvestSummary(harvestEntries) {
   return parts.length ? parts.join(" · ") : "0 lbs";
 }
 
+// Returns a per-plant breakdown of harvests as an array of:
+//   { plant: "Tomatoes", totals: { lbs: 24.5, each: 3 }, displayTotal: "24.5 lbs · 3 each", sortValue: 24.5 }
+// Sorted descending by sortValue (lbs preferred — if no lbs, falls back to
+// the largest unit count so plants with non-lbs harvests still rank).
+// Used by the analytics "Harvest by plant" list and the garden home
+// "Harvest breakdown" collapsible.
+function harvestBreakdownByPlant(harvestEntries) {
+  const byPlant = {};
+  (harvestEntries || []).forEach((e) => {
+    if (!e) return;
+    const plant = (e.plant || "Unknown").toString().trim() || "Unknown";
+    const unit = e.unit || "lbs";
+    const raw = e.quantity != null ? e.quantity : e.qty;
+    const qty = Number(raw) || 0;
+    if (!byPlant[plant]) byPlant[plant] = {};
+    byPlant[plant][unit] = (byPlant[plant][unit] || 0) + qty;
+  });
+  const rows = Object.keys(byPlant).map((plant) => {
+    const totals = byPlant[plant];
+    const parts = Object.keys(totals).map((unit) => {
+      const n = totals[unit];
+      const label = HARVEST_UNIT_LABELS[unit] || unit;
+      const isWhole = unit === "each" || unit === "count" || unit === "bunch";
+      const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
+      return `${num} ${label}`;
+    });
+    // Sort key: lbs first, then any other unit max. Lets the list rank
+    // "Tomatoes — 24 lbs" above "Lettuce — 6 lbs" above "Basil — 6 bunches".
+    const sortValue = totals.lbs != null
+      ? totals.lbs + 1e-9 // tiny boost so 0 lbs still beats no-lbs-at-all
+      : Math.max(0, ...Object.values(totals));
+    return { plant, totals, displayTotal: parts.join(" · ") || "0", sortValue };
+  });
+  rows.sort((a, b) => b.sortValue - a.sortValue);
+  return rows;
+}
+
 // ============================================================================
 // SHARED PANTRY — usage history helper
 // ----------------------------------------------------------------------------
@@ -5166,6 +5203,50 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
     // then the crop's display name, then the raw cropName fallback for custom.
     const plantName = (variety && variety.name) || cropName || "Unknown";
     update((d) => {
+      const gh = d.hobbies.find(x => x.type === "garden");
+      const sid = gh?.currentSeason?.id || "";
+
+      // Push a `planted` entry into data.entries.garden so Recent Activity,
+      // analytics, and the journal pick it up. Without this the planting was
+      // silently missing from Recent Activity (BUGFIX: previously this flow
+      // only created plantings[] + annuals[] but skipped the entry, so users
+      // saw the calendar event but no "Planted X" row appeared in recent
+      // activity. Mirrors step 1 of the legacy seed-start-transplant save.)
+      //
+      // Date selection for the Recent Activity row:
+      //   - Custom crop path: use customDate (user-picked).
+      //   - User edited the date in the modal: use plantingDate (they
+      //     deliberately backdated/forward-dated, respect that).
+      //   - User didn't edit: use today. plantingDate is the almanac's
+      //     suggested sow/transplant date and is usually weeks off — using
+      //     it as the entry date would bury the row far down the feed.
+      // The `plantings[]` record below keeps `plantingDate` regardless —
+      // that record represents the actual planting event/plan.
+      let entryDate;
+      if (isCustom) {
+        entryDate = plantingDate; // already user-picked
+      } else {
+        const matchKind = method === "indoor" ? "indoor"
+          : method === "direct" ? "direct"
+          : method === "transplant" ? "transplant"
+          : null;
+        const matchEvent = matchKind && Array.isArray(events)
+          ? events.find(e => e.kind === matchKind)
+          : null;
+        entryDate = (matchEvent && matchEvent.userEdited) ? plantingDate : todayStr();
+      }
+      if (!d.entries) d.entries = {};
+      if (!Array.isArray(d.entries.garden)) d.entries.garden = [];
+      d.entries.garden.push({
+        id: newId(),
+        date: entryDate,
+        action: "planted",
+        plant: plantName,
+        quantity: "",
+        seasonId: sid,
+        created: Date.now(),
+      });
+
       // Create planting record
       d.plantings = d.plantings || [];
       d.plantings.push({
@@ -5177,11 +5258,9 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       });
       // Ensure annual record exists for this plant in the current season.
       // Mirrors the logic in the legacy quick-log "planted" save handler.
-      const gh = d.hobbies.find(x => x.type === "garden");
       if (gh) {
         if (!Array.isArray(gh.annuals)) gh.annuals = [];
         const nm = plantName.trim() || "Unnamed";
-        const sid = gh.currentSeason?.id || "";
         const exists = gh.annuals.some(
           a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
                (a.seasonId || "") === sid
@@ -7559,6 +7638,11 @@ function GardenSummary({ hobby, data, update, setModal }) {
         setModal={setModal}
       />
 
+      {/* Harvest breakdown — collapsible per-plant tally for this season.
+          Defaults closed so it doesn't clutter the home page; users who
+          want the breakdown can expand it. Scoped to the active season. */}
+      <HarvestBreakdownSection harvests={harvests} />
+
       {/* Garden Map card — opens the photo-based visualizer */}
       <div
         onClick={() => setModal({ type: "gardenMap" })}
@@ -7595,6 +7679,77 @@ function GardenSummary({ hobby, data, update, setModal }) {
           )}
         </div>
       </div>
+    </div>
+  );
+}
+
+// Collapsible per-plant harvest breakdown for the garden home page.
+// Defaults closed. When opened, shows a tidy list of every plant that's
+// been harvested this season with its total in whatever unit(s) were
+// logged. Hidden entirely when no harvests have been recorded yet.
+function HarvestBreakdownSection({ harvests }) {
+  const [open, setOpen] = useState(false);
+  if (!harvests || harvests.length === 0) return null;
+  const rows = harvestBreakdownByPlant(harvests);
+  return (
+    <div style={{
+      background: palette.card,
+      border: `1.5px solid ${palette.line}`,
+      borderRadius: 12,
+      marginBottom: 10,
+      overflow: "hidden",
+    }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        style={{
+          width: "100%",
+          padding: 14,
+          background: "transparent",
+          border: "none",
+          cursor: "pointer",
+          display: "flex", alignItems: "center", gap: 12,
+          textAlign: "left",
+          fontFamily: FONT_BODY,
+        }}
+      >
+        <div style={{
+          width: 48, height: 48, borderRadius: 10, background: palette.leafSoft,
+          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+          fontSize: 24,
+        }}>
+          🧺
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
+            Harvest breakdown
+          </div>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2 }}>
+            {rows.length} {rows.length === 1 ? "plant" : "plants"} harvested
+          </div>
+        </div>
+        <div style={{ fontSize: 18, color: palette.inkSoft, transform: open ? "rotate(90deg)" : "none", transition: "transform 120ms ease" }}>
+          ▸
+        </div>
+      </button>
+      {open && (
+        <div style={{ padding: "0 14px 14px", display: "flex", flexDirection: "column", gap: 6 }}>
+          {rows.map((row) => (
+            <div
+              key={row.plant}
+              style={{
+                display: "flex", justifyContent: "space-between", alignItems: "center",
+                padding: "8px 12px", background: palette.bgAlt, borderRadius: 6,
+                gap: 10,
+              }}
+            >
+              <span style={{ fontWeight: 600, color: palette.ink, fontSize: 14 }}>{row.plant}</span>
+              <span style={{ color: palette.inkSoft, fontSize: 13, textAlign: "right" }}>
+                {row.displayTotal}
+              </span>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -8567,6 +8722,11 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
   });
   const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value }));
 
+  // Full per-plant breakdown across ALL units — used by the "Harvest by
+  // plant" list below the bar chart so users see cucumbers/squash/etc.
+  // logged in "each", herbs in "bunches", and weight crops together.
+  const harvestBreakdown = harvestBreakdownByPlant(harvests);
+
   const issues = entries.filter((e) => e.action === "issue");
   const issueTypes = {};
   issues.forEach((e) => { issueTypes[e.issueType || "other"] = (issueTypes[e.issueType || "other"] || 0) + 1; });
@@ -8690,6 +8850,31 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
               <Bar dataKey="value" fill={palette.leaf} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
+        </ChartCard>
+      )}
+
+      {harvestBreakdown.length > 0 && (
+        <ChartCard title="Harvest by plant">
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.4 }}>
+            All harvests grouped by plant — including non-weight units (each, bunches, cups).
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {harvestBreakdown.map((row) => (
+              <div
+                key={row.plant}
+                style={{
+                  display: "flex", justifyContent: "space-between", alignItems: "center",
+                  padding: "8px 12px", background: palette.bgAlt, borderRadius: 6,
+                  gap: 10,
+                }}
+              >
+                <span style={{ fontWeight: 600, color: palette.ink }}>{row.plant}</span>
+                <span style={{ color: palette.inkSoft, fontSize: 13, textAlign: "right" }}>
+                  {row.displayTotal}
+                </span>
+              </div>
+            ))}
+          </div>
         </ChartCard>
       )}
 

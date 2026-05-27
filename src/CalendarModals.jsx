@@ -320,10 +320,16 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
     // Compute the finalEvents again outside the update so we can pass them
     // to onConfirm — update() runs inside a state setter so its locals don't
     // escape. This is the same map as above; cheap to recompute.
+    // Also annotate each event with `userEdited: true` if the user changed
+    // its date in step 3, so callers can tell "user explicitly picked this
+    // date" from "almanac suggested this date." Plant Annual quick-log uses
+    // this to date the Recent Activity row correctly (today if untouched,
+    // user's date if they backdated).
     const finalEvents = generatedEvents.map((e) => ({
       ...e,
       date: getDate(e),
       planYear: year,
+      userEdited: Object.prototype.hasOwnProperty.call(editableDates, e.id),
     }));
     // If caller provided onConfirm (e.g. quick-log Plant Annual), pass back
     // the crop selection AND the generated events so they can pick the right
