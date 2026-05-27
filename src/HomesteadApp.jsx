@@ -678,12 +678,22 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
         (a) => `${String(a.name || "").trim().toLowerCase()}|${a.seasonId || ""}`
       )
     );
+    // STEP_ANNUAL_DELETE: respect tombstones for user-deleted annuals.
+    // When the user taps Delete in AnnualDetailModal we remove the annual
+    // record AND record its key in gardenHobby.deletedAnnualKeys. Without
+    // this tombstone the indexing pass below would resurrect the annual on
+    // the very next load (since the underlying planted/harvested entries
+    // are intentionally preserved per the user's stated intent). The keys
+    // use the same shape as existingKeys: name.lower()|seasonId.
+    if (!Array.isArray(gardenHobby.deletedAnnualKeys)) gardenHobby.deletedAnnualKeys = [];
+    const deletedKeySet = new Set(gardenHobby.deletedAnnualKeys);
     gardenEntries.forEach((e) => {
       if (!e || e.action !== "planted") return;
       const name = (e.plant || "Unnamed").trim() || "Unnamed";
       const seasonId = e.seasonId || "";
       const key = `${name.toLowerCase()}|${seasonId}`;
       if (existingKeys.has(key)) return;
+      if (deletedKeySet.has(key)) return; // tombstoned — leave deleted
       existingKeys.add(key);
       gardenHobby.annuals.push({
         id: newId(),
@@ -5261,6 +5271,13 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       if (gh) {
         if (!Array.isArray(gh.annuals)) gh.annuals = [];
         const nm = plantName.trim() || "Unnamed";
+        // If this annual was previously deleted (tombstoned), the new
+        // planting expresses intent to bring it back. Clear the tombstone
+        // so migrateData rebuilds the record on next load too.
+        const tombKey = `${nm.toLowerCase()}|${sid}`;
+        if (Array.isArray(gh.deletedAnnualKeys) && gh.deletedAnnualKeys.includes(tombKey)) {
+          gh.deletedAnnualKeys = gh.deletedAnnualKeys.filter(k => k !== tombKey);
+        }
         const exists = gh.annuals.some(
           a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
                (a.seasonId || "") === sid
@@ -6481,6 +6498,28 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
     return d;
   });
 
+  // STEP_ANNUAL_DELETE: delete the annual record from the list.
+  // Scope: just the annual record + its action log; plantings and harvests
+  // (which live in data.entries.garden) are deliberately preserved so the
+  // user's Recent Activity, journal, and analytics are unaffected. To stop
+  // migrateData from resurrecting the record on next load (it indexes from
+  // planted entries), we add a tombstone key to hobby.deletedAnnualKeys.
+  // The tombstone is cleared automatically the next time the user logs a
+  // planting under this name+season, so re-planting brings the annual back.
+  const deleteAnnual = () => {
+    if (!confirm(`Delete "${annual.name}" from your annuals list?\n\nYour plantings and harvests for this plant will stay in Recent Activity — only the annual list entry is removed.`)) return;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobbyId);
+      if (!h) return d;
+      h.annuals = (h.annuals || []).filter(x => x.id !== annual.id);
+      if (!Array.isArray(h.deletedAnnualKeys)) h.deletedAnnualKeys = [];
+      const tombKey = `${String(annual.name || "").trim().toLowerCase()}|${annual.seasonId || ""}`;
+      if (!h.deletedAnnualKeys.includes(tombKey)) h.deletedAnnualKeys.push(tombKey);
+      return d;
+    });
+    onClose();
+  };
+
   // Edit/delete for plantings & harvests. Both live in data.entries.garden as
   // action:"planted" or action:"harvested" rows. Editing routes through the
   // existing LogModal flow (same one Garden Home uses). Deleting also cleans
@@ -6585,6 +6624,12 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
       } else {
         me.name = next;
       }
+      // Clear tombstone for the new name (if any). Renaming to a previously
+      // deleted name means the user wants that annual to exist again.
+      const newTombKey = `${newKeyLc}|${sid}`;
+      if (Array.isArray(h.deletedAnnualKeys) && h.deletedAnnualKeys.includes(newTombKey)) {
+        h.deletedAnnualKeys = h.deletedAnnualKeys.filter(k => k !== newTombKey);
+      }
       return d;
     });
 
@@ -6625,6 +6670,9 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
           </Btn>
           <Btn onClick={() => { setRenameValue(annual.name || ""); setRenameOpen(true); }}>
             Rename
+          </Btn>
+          <Btn variant="ghost" onClick={deleteAnnual}>
+            Delete
           </Btn>
         </div>
       )}
@@ -7211,6 +7259,11 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
       if (!Array.isArray(gh.annuals)) gh.annuals = [];
       const nm = plantName.trim() || "Unnamed";
       const sid = b.seasonId || "";
+      // Clear tombstone if the user is bringing this annual back.
+      const tombKey = `${nm.toLowerCase()}|${sid}`;
+      if (Array.isArray(gh.deletedAnnualKeys) && gh.deletedAnnualKeys.includes(tombKey)) {
+        gh.deletedAnnualKeys = gh.deletedAnnualKeys.filter(k => k !== tombKey);
+      }
       const exists = gh.annuals.some(
         (a) => String(a.name || "").toLowerCase() === nm.toLowerCase() &&
                (a.seasonId || "") === sid
@@ -16469,6 +16522,11 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             if (!Array.isArray(gh.annuals)) gh.annuals = [];
             const nm = (cleanFields.plant || "Unnamed").trim() || "Unnamed";
             const sid = entry.seasonId || "";
+            // Clear tombstone if the user is bringing this annual back.
+            const tombKey = `${nm.toLowerCase()}|${sid}`;
+            if (Array.isArray(gh.deletedAnnualKeys) && gh.deletedAnnualKeys.includes(tombKey)) {
+              gh.deletedAnnualKeys = gh.deletedAnnualKeys.filter(k => k !== tombKey);
+            }
             const exists = gh.annuals.some(
               a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
                    (a.seasonId || "") === sid
