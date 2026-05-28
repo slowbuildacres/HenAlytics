@@ -1923,6 +1923,45 @@ const useNativeKeyboardInset = () => {
   }, []);
 };
 
+// Tracks the browser/webview's online status. Returns a boolean.
+//
+// Why this exists: when the device is offline, every saveHomestead call
+// still tries the cloud round-trip, which (a) generates spurious console
+// errors, (b) ties up the save effect on a timeout, and (c) can't possibly
+// succeed. With this hook, the save effect can pass cloudReady=false to
+// saveHomestead — which sync.js already handles by skipping the cloud
+// write cleanly and returning a benign { skipped:true } result.
+//
+// navigator.onLine is the standard cross-platform signal. It can be a
+// little optimistic (it reports "online" if there's a network connection
+// of any kind, even if the cloud is unreachable behind a captive portal),
+// but it's the right signal for "should we even bother trying." Genuine
+// reachability failures are still caught by saveHomestead's existing
+// try/catch and surface via the "network" banner reason.
+//
+// Initial value uses navigator.onLine if available, otherwise true (we'd
+// rather over-try the cloud than wrongly assume offline on a platform
+// where the flag is missing).
+const useOnlineStatus = () => {
+  const [online, setOnline] = React.useState(() =>
+    typeof navigator !== "undefined" && typeof navigator.onLine === "boolean"
+      ? navigator.onLine
+      : true
+  );
+  React.useEffect(() => {
+    if (typeof window === "undefined") return;
+    const handleOnline = () => setOnline(true);
+    const handleOffline = () => setOnline(false);
+    window.addEventListener("online", handleOnline);
+    window.addEventListener("offline", handleOffline);
+    return () => {
+      window.removeEventListener("online", handleOnline);
+      window.removeEventListener("offline", handleOffline);
+    };
+  }, []);
+  return online;
+};
+
 // Hardware back-button handler for Android. iOS doesn't have one. On the web
 // this is a no-op. Pass a function that returns true if it handled the press
 // (e.g. closed a modal), false to let the default Capacitor behavior run
@@ -3464,6 +3503,27 @@ useEffect(() => {
   // "fix" it later by adding it to deps and breaking the intent.
 
   const [syncStatus, setSyncStatus] = useState("idle");
+  // Tracks the device's online status. Used to short-circuit cloud writes
+  // when the device is offline (sync.js handles cloudReady=false as a
+  // benign skip) and to trigger an automatic save when the device comes
+  // back online. Banner messaging is also gated on this so the user sees
+  // "Offline" instead of "Can't reach the cloud" when they're actually
+  // disconnected (the latter implies something is broken; the former is
+  // a normal, expected state that doesn't need alarm).
+  const online = useOnlineStatus();
+  // Tracks the offline→online edge so we can trigger one auto-save when
+  // connectivity returns. Without this the user has to make another edit
+  // before any of their offline work gets pushed to the cloud — easy to
+  // forget when you came inside thinking you were done.
+  const onlineEdgeRef = useRef(online);
+  // Refs to the latest data and user. Originally used only by the
+  // visibilitychange flush effect below, now also needed by the retry-on-
+  // reconnect effect so it captures any offline edits made between the
+  // last render and the moment connectivity returned. Defined up here
+  // (rather than next to the flush effect) because the retry effect lives
+  // earlier in the body and JS evaluation order matters for useRef.
+  const latestDataRef = useRef(null);
+  const latestUserRef = useRef(null);
   // Drives the top "not synced" banner. true = show it. signedOutRemotely is
   // the long-standing name; it now covers both a genuinely dead session and
   // a failed cloud read. syncBannerReason refines the message:
@@ -3806,7 +3866,14 @@ useNativeBackButton(React.useCallback(() => {
     const immediate = saveImmediateRef.current;
     saveImmediateRef.current = false; // one-shot
     const fire = async () => {
-      const result = await saveHomestead(user, data);
+      // When offline, pass cloudReady=false so saveHomestead returns a
+      // benign skip without attempting the cloud round-trip. This keeps
+      // the save effect fast offline and avoids generating false errors.
+      // The local mirror still writes — saveHomestead does the local
+      // write unconditionally before checking cloudReady. The retry-on-
+      // reconnect effect below bumps the save effect when online flips
+      // back true so the data still pushes when connectivity returns.
+      const result = await saveHomestead(user, data, online);
       // Three outcome buckets, each with its own UX surface:
       //
       // 1. ok=true                → "saved" (fades to "idle" after 1.5s)
@@ -3892,6 +3959,54 @@ useNativeBackButton(React.useCallback(() => {
     return () => clearTimeout(saveTimerRef.current);
   }, [data, user]);
 
+  // ---- Retry-on-reconnect ----
+  // When the device transitions from offline to online, kick off one save
+  // so any work done offline gets pushed to the cloud. Without this, the
+  // user has to make an additional edit (which retriggers the save effect)
+  // before their offline changes sync — easy to forget, especially since
+  // they may not realize they were offline at all.
+  //
+  // We use a ref to track the previous online value so we only fire on the
+  // false→true edge, not the initial mount and not the true→false edge.
+  // The actual save uses the same fire-and-forget pattern as the
+  // visibilitychange flush — we can't reliably await here either.
+  useEffect(() => {
+    const wasOnline = onlineEdgeRef.current;
+    onlineEdgeRef.current = online;
+    if (online && !wasOnline) {
+      // Came back online. Use the latest data ref so we capture any edits
+      // made while offline (not whatever snapshot was current when this
+      // effect was last set up).
+      const d = latestDataRef.current;
+      const u = latestUserRef.current;
+      if (!d) return;
+      if (skipNextSaveRef.current) return;
+      setSyncStatus("saving");
+      try {
+        // Fire-and-forget — same pattern as the background flush.
+        // saveHomestead handles its own outcome reporting via the next
+        // render's status; we just need to kick it off.
+        saveHomestead(u, d, true).then((result) => {
+          if (result && result.ok) {
+            setSyncStatus("saved");
+            setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
+            // Refresh cloud baseline same as the main save effect does.
+            if (result.newBaselineAt) {
+              skipNextSaveRef.current = true;
+              setData((prev) =>
+                prev && prev.cloudBaselineAt !== result.newBaselineAt
+                  ? { ...prev, cloudBaselineAt: result.newBaselineAt }
+                  : prev
+              );
+            }
+          } else {
+            setSyncStatus("idle");
+          }
+        }).catch(() => setSyncStatus("idle"));
+      } catch (_) { setSyncStatus("idle"); }
+    }
+  }, [online]);
+
   // ---- Save-on-background flush ----
   // The 500ms debounce above means recently-edited data can be lost if the
   // user backgrounds the app inside that window. Classic example: tap
@@ -3907,8 +4022,7 @@ useNativeBackButton(React.useCallback(() => {
   //
   // We use a ref to the latest data so the listener (attached once on mount)
   // always sees the current snapshot, not the snapshot from when it was wired.
-  const latestDataRef = useRef(data);
-  const latestUserRef = useRef(user);
+  // (Refs themselves declared earlier; here we just keep them in sync.)
   useEffect(() => { latestDataRef.current = data; }, [data]);
   useEffect(() => { latestUserRef.current = user; }, [user]);
 
@@ -4034,7 +4148,7 @@ useNativeBackButton(React.useCallback(() => {
       fontFamily: FONT_BODY,
       color: sp.ink,
       paddingBottom: 100,
-      paddingTop: signedOutRemotely ? "calc(env(safe-area-inset-top) + 56px)" : "env(safe-area-inset-top)",
+      paddingTop: (signedOutRemotely || !online) ? "calc(env(safe-area-inset-top) + 56px)" : "env(safe-area-inset-top)",
     }}>
       <style>{`
         @import url('https://fonts.googleapis.com/css2?family=DM+Serif+Display:ital@0;1&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap');
@@ -4069,6 +4183,32 @@ useNativeBackButton(React.useCallback(() => {
           transition: padding-bottom 0.2s ease;
         }
       `}</style>
+
+      {/* Offline banner — informational, not an error. Shows whenever the
+          device reports offline. Suppressed if the more-severe red banner
+          (signedOutRemotely) is already showing — one banner at a time, and
+          that one is more urgent (auth failure or cloud-conflict needs user
+          action). The offline state itself needs no user action; we just
+          let them know their work is being saved locally. The retry-on-
+          reconnect effect handles the actual sync when connectivity comes
+          back. */}
+      {!online && !signedOutRemotely && (
+        <div
+          data-no-keyboard-shift
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 199,
+            background: palette.feather, color: "#FAF5EA",
+            padding: "12px 20px",
+            paddingTop: "calc(12px + env(safe-area-inset-top))",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 10,
+            fontFamily: "'Be Vietnam Pro', sans-serif",
+            fontWeight: 600, fontSize: 14,
+          }}
+        >
+          📡 Offline — your changes will sync when you reconnect
+        </div>
+      )}
 
       {signedOutRemotely && (
         <div
