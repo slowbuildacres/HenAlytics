@@ -5545,13 +5545,21 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       {/* HOBBY-SPECIFIC SUMMARY */}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
-      {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} />}
+      {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} onPlanAnnualConfirm={handlePlanAnnualConfirm} />}
 
-      {/* QUICK LOG TILES */}
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "24px 0 12px", color: palette.ink }}>
-        quick log
-      </h2>
-      <QuickLogTiles hobby={hobby} setModal={setModal} onPlanAnnualConfirm={handlePlanAnnualConfirm} />
+      {/* QUICK LOG TILES — for garden, the quick log is rendered at the TOP
+          of GardenSummary instead (users asked for it to be the first thing
+          on the page, since the garden home is long). So we suppress the
+          shared one here for garden only; every other hobby keeps it here. */}
+      {hobby.type !== "garden" && (
+        <>
+          <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "24px 0 12px", color: palette.ink }}>
+            quick log
+          </h2>
+          <QuickLogTiles hobby={hobby} setModal={setModal} onPlanAnnualConfirm={handlePlanAnnualConfirm} />
+        </>
+      )}
+
 
       {/* RECENT ACTIVITY */}
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "28px 0 12px", color: palette.ink }}>
@@ -6518,6 +6526,10 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
 // ============================================================================
 
 function PlantScannerSection({ setModal }) {
+  // Default collapsed — users asked for the scanner to start condensed like
+  // the other sections, expanding on demand. Collapsed shows just a compact
+  // header row; expanded reveals the description + scan button.
+  const [open, setOpen] = useState(false);
   return (
     <div style={{
       background: palette.card,
@@ -6526,7 +6538,15 @@ function PlantScannerSection({ setModal }) {
       padding: "14px 16px",
       marginBottom: 14,
     }}>
-      <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+      <button
+        onClick={() => setOpen(o => !o)}
+        aria-expanded={open}
+        style={{
+          width: "100%", background: "none", border: "none", padding: 0,
+          cursor: "pointer", display: "flex", alignItems: "center", gap: 12,
+          textAlign: "left", fontFamily: FONT_BODY,
+        }}
+      >
         <div style={{
           width: 44, height: 44, flexShrink: 0,
           borderRadius: 10, background: palette.leafSoft || "#A8C078",
@@ -6537,14 +6557,22 @@ function PlantScannerSection({ setModal }) {
         </div>
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{
-            fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink,
-            lineHeight: 1.2, marginBottom: 4,
+            fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2,
           }}>
-            Plant & Disease Scanner
+            Plant &amp; Disease Scanner
           </div>
+          {!open && (
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>
+              Tap to identify a plant or check for disease
+            </div>
+          )}
+        </div>
+        <span style={{ fontSize: 12, color: palette.inkSoft, transform: open ? "rotate(90deg)" : "rotate(0deg)", transition: "transform 0.15s", flexShrink: 0 }}>▶</span>
+      </button>
+      {open && (
+        <div style={{ marginTop: 10 }}>
           <div style={{
-            fontSize: 13, color: palette.inkSoft, lineHeight: 1.5,
-            marginBottom: 10,
+            fontSize: 13, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 10,
           }}>
             Snap a photo of any plant in your garden to identify the species
             and check for diseases. AI-powered, results in seconds.
@@ -6571,14 +6599,54 @@ function PlantScannerSection({ setModal }) {
             Scan a Plant
           </button>
         </div>
-      </div>
+      )}
+    </div>
+  );
+}
+
+// ============ REORDER ARROWS (shared) ============
+// Up/down controls used in the garden section headers (Annuals / Perennials
+// / Orchard) so users can arrange the blocks. Chosen over drag-and-drop
+// because tap targets are far more reliable on mobile than touch-drag. Each
+// arrow disables itself at the ends of the list. Clicks stopPropagation so
+// tapping an arrow doesn't also toggle the section's collapse state.
+function ReorderArrows({ reorder }) {
+  const { canUp, canDown, onUp, onDown } = reorder;
+  const btn = (enabled, onClick, label, glyph) => (
+    <button
+      onClick={(e) => { e.stopPropagation(); if (enabled) onClick(); }}
+      disabled={!enabled}
+      aria-label={label}
+      style={{
+        background: "none",
+        border: `1.5px solid ${palette.line}`,
+        borderRadius: 6,
+        width: 26, height: 26,
+        display: "flex", alignItems: "center", justifyContent: "center",
+        cursor: enabled ? "pointer" : "default",
+        opacity: enabled ? 1 : 0.3,
+        color: palette.inkSoft,
+        fontSize: 12, lineHeight: 1,
+        padding: 0,
+        fontFamily: FONT_BODY,
+      }}
+    >
+      {glyph}
+    </button>
+  );
+  return (
+    <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+      {btn(canUp, onUp, "Move section up", "▲")}
+      {btn(canDown, onDown, "Move section down", "▼")}
     </div>
   );
 }
 
 // ============ PERENNIAL SECTION (collapsible) ============
-function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, setModal }) {
-  const [open, setOpen] = useState(true);
+function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, setModal, reorder = null }) {
+  // Default collapsed — users asked for sections to start condensed and
+  // expand on demand, rather than starting expanded and collapsing.
+  const [open, setOpen] = useState(false);
   return (
     <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:14 }}>
       <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom: open ? 10 : 0 }}>
@@ -6593,12 +6661,15 @@ function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, set
             {items.length > 0 ? `(${items.length})` : ""}
           </span>
         </button>
-        <button
-          onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id,category:defaultCategory })}
-          style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
-        >
-          + Add
-        </button>
+        <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+          {reorder && <ReorderArrows reorder={reorder} />}
+          <button
+            onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id,category:defaultCategory })}
+            style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
+          >
+            + Add
+          </button>
+        </div>
       </div>
       {open && (
         <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
@@ -6635,8 +6706,9 @@ function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, set
 // Annuals are records — one per plant-name per season — that index the
 // season's `planted` / `harvested` entries and own their own `actions[]`
 // log. Modeled on PerennialSection. Tapping a row opens AnnualDetailModal.
-function AnnualSection({ hobby, season, seasonEntries, setModal }) {
-  const [open, setOpen] = useState(true);
+function AnnualSection({ hobby, season, seasonEntries, setModal, reorder = null, onPlanAnnualConfirm = null }) {
+  // Default collapsed — see PerennialSection note.
+  const [open, setOpen] = useState(false);
   // Annual records for the current season.
   const annuals = (hobby.annuals || []).filter(
     (a) => a.seasonId === (season && season.id)
@@ -6672,6 +6744,15 @@ function AnnualSection({ hobby, season, seasonEntries, setModal }) {
             {rowsData.length > 0 ? `(${rowsData.length})` : ""}
           </span>
         </button>
+        <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+          {reorder && <ReorderArrows reorder={reorder} />}
+          <button
+            onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })}
+            style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
+          >
+            + Add
+          </button>
+        </div>
       </div>
       {open && (
         <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
@@ -7102,8 +7183,9 @@ function seedStartStatus(batch) {
 }
 
 // SeedStartSection — collapsible card shown above Annuals on the garden home.
-function SeedStartSection({ hobby, season, setModal }) {
-  const [open, setOpen] = useState(true);
+function SeedStartSection({ hobby, season, setModal, reorder = null }) {
+  // Default collapsed to match the other garden sections.
+  const [open, setOpen] = useState(false);
   const all = (hobby.seedStarts || []).filter(
     (b) => b.seasonId === (season && season.id)
   );
@@ -7145,18 +7227,19 @@ function SeedStartSection({ hobby, season, setModal }) {
             {active.length > 0 ? `(${active.length} active)` : ""}
           </span>
         </button>
-        {open && (
+        <div style={{ display:"flex",alignItems:"center",gap:6 }}>
+          {reorder && <ReorderArrows reorder={reorder} />}
           <button
             onClick={() => setModal({ type: "addSeedStart", hobbyId: hobby.id })}
             style={{
-              background: palette.bgAlt, border: `1px solid ${palette.line}`,
-              borderRadius: 6, padding: "4px 10px", fontSize: 12, color: palette.ink,
+              background: "none", border: `1.5px dashed ${palette.line}`,
+              borderRadius: 8, padding: "4px 10px", fontSize: 12, color: palette.inkSoft,
               cursor: "pointer", fontFamily: FONT_BODY,
             }}
           >
-            + Start seeds
+            + Add
           </button>
-        )}
+        </div>
       </div>
       {open && (
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
@@ -7829,7 +7912,7 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
 }
 
 // ============ HOBBY SUMMARIES ============
-function GardenSummary({ hobby, data, update, setModal }) {
+function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
   // Perennials section shown at bottom of garden home regardless of season
   const perennials = hobby.perennials || [];
 
@@ -7871,34 +7954,154 @@ function GardenSummary({ hobby, data, update, setModal }) {
   const pinCount = gmAreas
     ? gmAreas.reduce((n, a) => n + (Array.isArray(a.pins) ? a.pins.length : 0), 0)
     : (season.gardenMap?.pins?.length || 0);
+
+  // ---- Reorderable sections (Seed Starts / Annuals / Perennials / Orchard) ----
+  // Users can arrange these four blocks in whatever order suits them, via
+  // up/down arrows on each section header. The order is persisted per-garden
+  // in hobby.gardenSectionOrder so it sticks across sessions and devices.
+  // Default order: seed starts, perennials, orchard, annuals.
+  const DEFAULT_SECTION_ORDER = ["seed_starts", "perennials", "orchard", "annuals"];
+  const savedOrder = Array.isArray(hobby.gardenSectionOrder) ? hobby.gardenSectionOrder : null;
+  // Sanitize: keep only known keys, dedupe, and append any missing ones so a
+  // stale/partial saved order can never drop a section entirely. (This also
+  // transparently upgrades older saved orders that predate seed_starts being
+  // reorderable — the missing key gets appended in its default position.)
+  const sectionOrder = (() => {
+    const known = new Set(DEFAULT_SECTION_ORDER);
+    const seen = new Set();
+    const out = [];
+    (savedOrder || DEFAULT_SECTION_ORDER).forEach((k) => {
+      if (known.has(k) && !seen.has(k)) { out.push(k); seen.add(k); }
+    });
+    DEFAULT_SECTION_ORDER.forEach((k) => { if (!seen.has(k)) out.push(k); });
+    return out;
+  })();
+  // Move a section up (dir -1) or down (dir +1) and persist.
+  const moveSection = (key, dir) => {
+    const idx = sectionOrder.indexOf(key);
+    const target = idx + dir;
+    if (idx < 0 || target < 0 || target >= sectionOrder.length) return;
+    const next = sectionOrder.slice();
+    [next[idx], next[target]] = [next[target], next[idx]];
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h) h.gardenSectionOrder = next;
+      return d;
+    });
+  };
+  const reorderFor = (key) => ({
+    canUp: sectionOrder.indexOf(key) > 0,
+    canDown: sectionOrder.indexOf(key) < sectionOrder.length - 1,
+    onUp: () => moveSection(key, -1),
+    onDown: () => moveSection(key, 1),
+  });
+  // Build the section elements keyed by name.
+  const plantPerennials = perennials.filter(p => (p.category || "plant") === "plant");
+  const treePerennials = perennials.filter(p => p.category === "tree");
+  const sectionEls = {
+    seed_starts: (
+      <SeedStartSection
+        key="sec-seedstarts"
+        hobby={hobby}
+        season={season}
+        setModal={setModal}
+        reorder={reorderFor("seed_starts")}
+      />
+    ),
+    perennials: (
+      <PerennialSection
+        key="sec-perennials"
+        title="🌿 Perennial Plants"
+        emptyHint="Berry bushes, asparagus, rhubarb, vines..."
+        items={plantPerennials}
+        defaultCategory="plant"
+        hobby={hobby}
+        setModal={setModal}
+        reorder={reorderFor("perennials")}
+      />
+    ),
+    orchard: (
+      <PerennialSection
+        key="sec-orchard"
+        title="🌳 Orchard"
+        emptyHint="Fruit and nut trees"
+        items={treePerennials}
+        defaultCategory="tree"
+        hobby={hobby}
+        setModal={setModal}
+        reorder={reorderFor("orchard")}
+      />
+    ),
+    annuals: (
+      <AnnualSection
+        key="sec-annuals"
+        hobby={hobby}
+        season={season}
+        seasonEntries={seasonEntries}
+        setModal={setModal}
+        reorder={reorderFor("annuals")}
+        onPlanAnnualConfirm={onPlanAnnualConfirm}
+      />
+    ),
+  };
+
+  // Garden map card (extracted so it can sit right under the season summary
+  // per the requested layout).
+  const gardenMapCard = (
+    <div
+      onClick={() => setModal({ type: "gardenMap" })}
+      style={{
+        background: palette.card,
+        border: `1.5px solid ${palette.line}`,
+        borderRadius: 12,
+        padding: 14,
+        marginBottom: 10,
+        cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 12,
+      }}
+    >
+      <div style={{
+        width: 48, height: 48, borderRadius: 10, background: palette.leafSoft,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+        fontSize: 24,
+      }}>
+        🗺️
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
+          Garden map
+        </div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2 }}>
+          {hasMap
+            ? `${pinCount} ${pinCount === 1 ? "plant pinned" : "plants pinned"}`
+            : "Tap to start mapping"}
+        </div>
+        {!hasMap && (
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
+            Upload a photo, drop pins where things grow
+          </div>
+        )}
+      </div>
+    </div>
+  );
+
   return (
     <div>
-      <PlantScannerSection setModal={setModal} />
-      {/* Perennials section — split into Plants and Orchard */}
-      {perennials.length === 0 ? (
-        <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"10px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
-          🌳 Track perennials (fruit trees, asparagus, berry bushes...)
-        </button>
-      ) : (
-        <>
-          <PerennialSection
-            title="🌿 Perennial Plants"
-            emptyHint="Berry bushes, asparagus, rhubarb, vines..."
-            items={perennials.filter(p => (p.category || "plant") === "plant")}
-            defaultCategory="plant"
-            hobby={hobby}
-            setModal={setModal}
-          />
-          <PerennialSection
-            title="🌳 Orchard"
-            emptyHint="Fruit and nut trees"
-            items={perennials.filter(p => p.category === "tree")}
-            defaultCategory="tree"
-            hobby={hobby}
-            setModal={setModal}
-          />
-        </>
-      )}
+      {/* Layout order (per user request):
+          quick log → active season summary → garden map →
+          [reorderable: seed starts / perennials / orchard / annuals] →
+          harvest breakdown → plant & disease scanner (bottom). */}
+
+      {/* QUICK LOG — first thing on the garden home. The shared hobby-page
+          quick log is suppressed for garden (see HobbyHome). */}
+      <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "4px 0 12px", color: palette.ink }}>
+        quick log
+      </h2>
+      <QuickLogTiles hobby={hobby} setModal={setModal} onPlanAnnualConfirm={onPlanAnnualConfirm} />
+
+      <div style={{ height: 18 }} />
+
+      {/* Active season summary */}
       <div style={{
         background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
         marginBottom: 10,
@@ -7912,62 +8115,31 @@ function GardenSummary({ hobby, data, update, setModal }) {
         </div>
       </div>
 
-      {/* Seed Starts — sown indoors, awaiting germination or transplant.
-          Lives above Annuals so the seed -> sprout -> transplant flow reads
-          top-to-bottom matching the season's actual progression. */}
-      <SeedStartSection hobby={hobby} season={season} setModal={setModal} />
+      {/* Garden map — right under the summary so the overview reads together. */}
+      {gardenMapCard}
 
-      {/* Annuals — collapsible section. Each annual is a record (one per
-          plant-name per season) with its own action log; tapping one opens
-          its detail view. See AnnualSection / AnnualDetailModal. */}
-      <AnnualSection
-        hobby={hobby}
-        season={season}
-        seasonEntries={seasonEntries}
-        setModal={setModal}
-      />
+      {/* When the user has no perennials at all, show the "track perennials"
+          prompt instead of two empty perennial/orchard cards. */}
+      {perennials.length === 0 && (
+        <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"10px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
+          🌳 Track perennials (fruit trees, asparagus, berry bushes...)
+        </button>
+      )}
 
-      {/* Harvest breakdown — collapsible per-plant tally for this season.
-          Defaults closed so it doesn't clutter the home page; users who
-          want the breakdown can expand it. Scoped to the active season. */}
+      {/* Reorderable sections — Seed Starts / Perennials / Orchard / Annuals.
+          Order is user-controlled via up/down arrows in each header and
+          persisted in hobby.gardenSectionOrder. When there are no perennials,
+          the two perennial cards are skipped (the prompt above covers that). */}
+      {sectionOrder.map((key) => {
+        if ((key === "perennials" || key === "orchard") && perennials.length === 0) return null;
+        return sectionEls[key];
+      })}
+
+      {/* Harvest breakdown — collapsible per-plant tally for this season. */}
       <HarvestBreakdownSection harvests={harvests} />
 
-      {/* Garden Map card — opens the photo-based visualizer */}
-      <div
-        onClick={() => setModal({ type: "gardenMap" })}
-        style={{
-          background: palette.card,
-          border: `1.5px solid ${palette.line}`,
-          borderRadius: 12,
-          padding: 14,
-          marginBottom: 10,
-          cursor: "pointer",
-          display: "flex", alignItems: "center", gap: 12,
-        }}
-      >
-        <div style={{
-          width: 48, height: 48, borderRadius: 10, background: palette.leafSoft,
-          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-          fontSize: 24,
-        }}>
-          🗺️
-        </div>
-        <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 2 }}>
-            Garden map
-          </div>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2 }}>
-            {hasMap
-              ? `${pinCount} ${pinCount === 1 ? "plant pinned" : "plants pinned"}`
-              : "Tap to start mapping"}
-          </div>
-          {!hasMap && (
-            <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>
-              Upload a photo, drop pins where things grow
-            </div>
-          )}
-        </div>
-      </div>
+      {/* Plant & Disease Scanner — at the bottom, collapsible. */}
+      <PlantScannerSection setModal={setModal} />
     </div>
   );
 }
