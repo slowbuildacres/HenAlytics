@@ -4095,9 +4095,105 @@ useNativeBackButton(React.useCallback(() => {
   // the app right after clicking — debounce isn't safe there.
   const saveImmediateRef = useRef(false);
 
+  // ---- Per-record updatedAt stamping (Phase 2 offline conflict resolution) ----
+  // Every data mutation flows through update(). After the mutator runs we walk
+  // the old and new trees in parallel and stamp `updatedAt = Date.now()` onto
+  // any id'd record whose content actually changed (or that's brand new). This
+  // is what makes "newer wins" real for multi-device offline merges: when two
+  // devices edit the same record offline, mergeUnsyncedEntries compares these
+  // stamps and keeps the more recent edit instead of always taking cloud.
+  //
+  // Why diff-based (not stamp-everything): only records that genuinely changed
+  // should advance their timestamp. Stamping untouched records would make a
+  // device that merely opened the app "win" every conflict against a device
+  // that actually made edits. The diff keeps stamps honest.
+  //
+  // Why here (not at call sites): there are dozens of update() callers. Doing
+  // it in one place is both exhaustive and impossible to forget. update()
+  // already deep-clones prev, so we have a clean before/after to diff.
+  //
+  // `updatedAt` is intentionally excluded from the change comparison so that
+  // re-stamping doesn't itself count as a change (which would loop).
+  const stampChangedRecords = (oldNode, newNode) => {
+    if (Array.isArray(newNode)) {
+      // Build id→oldItem lookup if the old side was a comparable array.
+      const oldById = new Map();
+      if (Array.isArray(oldNode)) {
+        for (const it of oldNode) {
+          if (it && typeof it === "object" && it.id) oldById.set(it.id, it);
+        }
+      }
+      for (const item of newNode) {
+        if (!item || typeof item !== "object") continue;
+        if (Array.isArray(item)) { stampChangedRecords(null, item); continue; }
+        if (item.id) {
+          const oldItem = oldById.get(item.id);
+          if (!oldItem) {
+            // Brand-new record — stamp it (unless it already carries one).
+            if (item.updatedAt == null) item.updatedAt = Date.now();
+            // Still recurse so nested id-arrays inside get stamped too.
+            stampChangedRecords(null, item);
+          } else {
+            // Existing record — recurse first (nested changes), then decide
+            // whether THIS record's own fields changed.
+            stampChangedRecords(oldItem, item);
+            if (recordContentChanged(oldItem, item)) {
+              item.updatedAt = Date.now();
+            }
+          }
+        } else {
+          // Object without an id — recurse in case it holds id-arrays.
+          stampChangedRecords(oldItem_forNonId(oldNode), item);
+        }
+      }
+      return;
+    }
+    if (newNode && typeof newNode === "object") {
+      const oldObj = (oldNode && typeof oldNode === "object" && !Array.isArray(oldNode)) ? oldNode : null;
+      for (const key of Object.keys(newNode)) {
+        const nv = newNode[key];
+        if (nv && typeof nv === "object") {
+          stampChangedRecords(oldObj ? oldObj[key] : null, nv);
+        }
+      }
+    }
+  };
+  // Helper: for a non-id object encountered inside an array we don't have a
+  // clean old match, so pass null (can't correlate). Kept as a named fn for
+  // readability at the call site above.
+  const oldItem_forNonId = () => null;
+
+  // Compares two records' own scalar/shallow fields, ignoring updatedAt and
+  // ignoring nested objects/arrays (those are handled by recursion). Returns
+  // true if any own field differs — i.e. THIS record was edited in place.
+  const recordContentChanged = (oldItem, newItem) => {
+    const keys = new Set([...Object.keys(oldItem), ...Object.keys(newItem)]);
+    for (const k of keys) {
+      if (k === "updatedAt") continue;
+      const ov = oldItem[k];
+      const nv = newItem[k];
+      // Skip nested objects/arrays — recursion stamps those independently and
+      // we don't want a deep change inside a child to re-stamp the parent.
+      if ((ov && typeof ov === "object") || (nv && typeof nv === "object")) continue;
+      if (ov !== nv) return true;
+    }
+    return false;
+  };
+
   const update = (mutator, opts) => {
     if (opts && opts.immediate) saveImmediateRef.current = true;
-    setData((prev) => mutator(JSON.parse(JSON.stringify(prev))));
+    setData((prev) => {
+      const next = mutator(JSON.parse(JSON.stringify(prev)));
+      // Stamp updatedAt on records that changed, comparing against prev.
+      // Wrapped in try/catch so a stamping edge case can never break a save —
+      // worst case we miss a stamp and that record falls back to cloud-wins.
+      try {
+        if (prev && next) stampChangedRecords(prev, next);
+      } catch (e) {
+        console.warn("[stamp] updatedAt stamping skipped:", e);
+      }
+      return next;
+    });
   };
 
   // ---- Switch the active homestead ----

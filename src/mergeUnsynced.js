@@ -47,22 +47,54 @@ function isIdArrayOfObjects(arr) {
   return true;
 }
 
-// Merge two id-arrays: cloud is the base, append any local items whose id
-// isn't present in cloud. Preserves cloud's existing ordering, appends
-// new local items at the end.
+// Merge two id-arrays. Cloud is the base. Two things happen:
+//   1. ADDITIONS: any local item whose id isn't in cloud is appended.
+//   2. CONFLICTS: any local item whose id IS in cloud is compared by
+//      `updatedAt` — if local's stamp is strictly newer, local's version
+//      replaces cloud's in place (newer-wins). Without a newer local stamp,
+//      cloud's version is kept (preserves the original cloud-wins behavior,
+//      including for legacy records that have no updatedAt at all).
+//
+// This is the Phase 2 conflict-resolution change. Records are stamped with
+// updatedAt by HomesteadApp's update() whenever they're edited, so "newer"
+// means "more recently edited", not "more recently synced". Two devices that
+// edit the same record offline resolve to whichever edit happened later.
+//
+// Returns { result, added, replaced } where `added` counts new appends and
+// `replaced` counts conflict resolutions that took the local version.
 function mergeIdArrays(cloudArr, localArr) {
-  if (!Array.isArray(localArr)) return { result: cloudArr, added: 0 };
-  const cloudIds = new Set();
-  for (const item of cloudArr) cloudIds.add(item.id);
+  if (!Array.isArray(localArr)) return { result: cloudArr, added: 0, replaced: 0 };
+  const cloudIndexById = new Map();
+  cloudArr.forEach((item, i) => {
+    if (isPlainObject(item) && item.id) cloudIndexById.set(item.id, i);
+  });
   const additions = [];
+  let replaced = 0;
+  // Start from a shallow copy so we can replace conflicting entries in place
+  // without mutating the caller's array.
+  let result = cloudArr.slice();
   for (const localItem of localArr) {
     if (!isPlainObject(localItem) || !localItem.id) continue;
-    if (!cloudIds.has(localItem.id)) {
+    if (cloudIndexById.has(localItem.id)) {
+      // Same id on both sides — resolve by updatedAt (newer wins).
+      const idx = cloudIndexById.get(localItem.id);
+      const cloudItem = result[idx];
+      const cloudStamp = Number(cloudItem && cloudItem.updatedAt) || 0;
+      const localStamp = Number(localItem.updatedAt) || 0;
+      if (localStamp > cloudStamp) {
+        result[idx] = localItem;
+        replaced++;
+      }
+      // else cloud wins (newer or tied or both unstamped) — leave as-is.
+    } else {
       additions.push(localItem);
     }
   }
-  if (additions.length === 0) return { result: cloudArr, added: 0 };
-  return { result: [...cloudArr, ...additions], added: additions.length };
+  if (additions.length === 0 && replaced === 0) {
+    return { result: cloudArr, added: 0, replaced: 0 };
+  }
+  if (additions.length > 0) result = [...result, ...additions];
+  return { result, added: additions.length, replaced };
 }
 
 // Recursive merge. Walks both objects in lock-step, applying rules:
@@ -81,7 +113,10 @@ function mergeRecursive(cloud, local) {
       // Allow merging even if cloud is empty (e.g., user added their first
       // entries on a stale-baseline device — cloud has [] but local has data).
       const base = Array.isArray(cloud) ? cloud : [];
-      const { result, added } = mergeIdArrays(base, local);
+      const { result, added, replaced } = mergeIdArrays(base, local);
+      // Count both clean additions and conflict-resolutions (local won) as
+      // "merged" so the load path reports/persists when either happened.
+      const mergedHere = added + (replaced || 0);
 
       // We also recurse INTO each merged item if both sides had it — that
       // way nested id-arrays inside, e.g., a flock's `namedBirds`, also get
@@ -101,9 +136,9 @@ function mergeRecursive(cloud, local) {
           nestedAdded += addedCount;
           return mergedItem;
         });
-        return { merged: finalResult, addedCount: added + nestedAdded };
+        return { merged: finalResult, addedCount: mergedHere + nestedAdded };
       }
-      return { merged: result, addedCount: added };
+      return { merged: result, addedCount: mergedHere };
     }
     // Non-id arrays — cloud wins, no merging attempted.
     return { merged: cloud, addedCount: 0 };
