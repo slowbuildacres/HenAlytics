@@ -80,6 +80,10 @@ import {
   sendFeedback, acceptInvite, deleteAccount,
   listMyHomesteads, setActiveHomestead,
 } from "./sync.js";
+import {
+  areRemindersSupported, getReminderPermission, requestReminderPermission,
+  reconcileReminders, cancelAllReminders, initReminderTapHandling,
+} from "./notifications.js";
 import { apiUrl } from './apiBase.js';
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
@@ -207,6 +211,7 @@ const defaultData = () => ({
   accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   weeklyDigestOptIn: false, // master switch for the weekly homestead summary email
+  localRemindersOptIn: false, // master switch for on-device reminders from calendar events (native only)
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
   // STEP3_REVIEW_PROMPT: in-app review prompt state (iOS + Android only).
@@ -325,6 +330,9 @@ function migrateData(data) {
   }
   if (typeof data.weeklyDigestOptIn !== "boolean") {
     data.weeklyDigestOptIn = false;
+  }
+  if (typeof data.localRemindersOptIn !== "boolean") {
+    data.localRemindersOptIn = false;
   }
   if (typeof data.userHasTipped !== "boolean") {
     data.userHasTipped = false;
@@ -3389,6 +3397,42 @@ useEffect(() => {
   useEffect(() => {
     setUserUnits(data?.units, data?.homesteadLocation);
   }, [data?.units?.currency, data?.units?.temperature, data?.units?.hemisphere, data?.units?.weight, data?.units?.volume, data?.homesteadLocation?.lat]);
+
+  // ---- Local reminders (Phase 1) ----------------------------------------
+  // When the user has opted in (and on a native build with permission), keep
+  // the device's scheduled notifications in sync with the upcoming calendar
+  // events. Reconcile runs on mount and whenever the events change; it cancels
+  // our previous window and reschedules the nearest ~60 (iOS caps at 64). It's
+  // a no-op on web and when not opted in, so it's safe to run unconditionally.
+  const calendarEventsKey = React.useMemo(
+    () => JSON.stringify((data?.calendarEvents || []).map((e) => [e.id, e.date, e.title])),
+    [data?.calendarEvents]
+  );
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(await areRemindersSupported())) return;
+      if (cancelled) return;
+      if (data?.localRemindersOptIn) {
+        reconcileReminders(data?.calendarEvents || []);
+      } else {
+        cancelAllReminders();
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [data?.localRemindersOptIn, calendarEventsKey]);
+
+  // Route a tapped reminder to the calendar page. Registered once.
+  useEffect(() => {
+    let unsub = () => {};
+    (async () => {
+      unsub = await initReminderTapHandling(() => {
+        try { setPage("calendar"); } catch (_) {}
+      });
+    })();
+    return () => { try { unsub(); } catch (_) {} };
+  }, []);
+
 
   // ---- Default active hobby to user's first visible hobby on first load ----
   // The activeHobby state starts as "garden", but the user might have
@@ -11230,6 +11274,30 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
               d.weeklyChoreEmailOptIn = !d.weeklyChoreEmailOptIn;
               return d;
             });
+          }}
+        />
+      )}
+
+      {isNativeApp() && (
+        <SectionBtn
+          icon={Calendar}
+          label={data.localRemindersOptIn ? "Reminder notifications: ON" : "Reminder notifications: off"}
+          sub={data.localRemindersOptIn
+            ? "We'll nudge you on this device when calendar reminders are due (germination, breeding, brooder, and your own events)"
+            : "Get a notification on this device when your homestead reminders come due"}
+          accent={data.localRemindersOptIn ? palette.leaf : palette.inkSoft}
+          onClick={() => {
+            if (data.localRemindersOptIn) {
+              update((d) => { d.localRemindersOptIn = false; return d; });
+            } else {
+              requestReminderPermission().then((granted) => {
+                if (granted) {
+                  update((d) => { d.localRemindersOptIn = true; return d; });
+                } else {
+                  alert("Notifications are turned off for Henalytics. Turn them on in your device Settings to get reminders.");
+                }
+              });
+            }
           }}
         />
       )}
