@@ -133,6 +133,8 @@ import TincturePage, { TinctureAnalytics } from "./Tincture.jsx";
 import CelebrationCard, {
   defaultCelebrationState, migrateCelebrationState,
   detectCelebrations, getCelebrationById, isReviewWorthy, celebrationHobby,
+  ObservationCard, defaultObservationState, migrateObservationState,
+  detectObservations, snoozeObservationUntil, observationHobby,
 } from "./Suggestions.jsx";
 import OilInfusionPage, { OilInfusionAnalytics } from "./OilInfusion.jsx";
 import SalvePage, { SalveAnalytics } from "./Salve.jsx";
@@ -222,6 +224,7 @@ const defaultData = () => ({
   // celebrationsShown locks each id forever; pendingCelebration is the one
   // queued to show on the home card right now (or null).
   ...defaultCelebrationState(),
+  ...defaultObservationState(),
   // STEP3_REVIEW_PROMPT: in-app review prompt state (iOS + Android only).
   // userTappedReview locks the prompt forever after the user agrees to review.
   // permanentlyDismissed locks after "No thanks". promptCount enforces Apple's
@@ -312,6 +315,7 @@ function migrateData(data) {
   // Celebrations (Suggestions.jsx) — ensure state exists and back-mark any
   // already-earned milestones so they never fire retroactively.
   migrateCelebrationState(data);
+  migrateObservationState(data);
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
@@ -3378,6 +3382,28 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.entries, data?.hobbies, tryOpenReviewPrompt]);
 
+  // Observations (Suggestions.jsx) — condition-based, hedged nudges. Unlike
+  // celebrations there's no baseline: each run recomputes live conditions. We
+  // persist the surfaced observation and clear snoozes whose condition went
+  // false (the "auto-clear when they log again" behavior). Never triggers the
+  // review prompt — a nudge is not a "rate us" moment.
+  useEffect(() => {
+    if (!data?.entries) return;
+    const { observation, snoozeClears } = detectObservations(data);
+    const currentId = data.activeObservation ? data.activeObservation.id : null;
+    const nextId = observation ? observation.id : null;
+    // Only write when something actually changes, to avoid an update loop.
+    const needsClears = snoozeClears && snoozeClears.length > 0;
+    if (nextId === currentId && !needsClears) return;
+    update(d => {
+      if (!d.observationSnooze || typeof d.observationSnooze !== "object") d.observationSnooze = {};
+      (snoozeClears || []).forEach(id => { delete d.observationSnooze[id]; });
+      d.activeObservation = observation || null;
+      return d;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.entries, data?.hobbies]);
+
   // STEP3_REVIEW_PROMPT: YIR scroll-then-exit trigger.
   // YearInReviewPage sets yirHasScrolledRef.current = true via the
   // onScrolled prop when the user scrolls the page. When the user
@@ -4997,6 +5023,24 @@ useNativeBackButton(React.useCallback(() => {
             celebration={getCelebrationById(data.pendingCelebration)}
             palette={palette}
             onDismiss={() => update(d => { d.pendingCelebration = null; return d; })}
+          />
+        )}
+        {/* Observation card (Suggestions.jsx) — hedged nudge, shows ONLY on its
+            tab AND only when no celebration is pending here (joy wins over
+            nudge). Dismissing snoozes it; it auto-clears when the user logs. */}
+        {data?.activeObservation
+          && observationHobby(data.activeObservation) === activeHobby
+          && !(data?.pendingCelebration
+               && celebrationHobby(data.pendingCelebration) === activeHobby) && (
+          <ObservationCard
+            observation={data.activeObservation}
+            palette={palette}
+            onDismiss={(obsId) => update(d => {
+              if (!d.observationSnooze || typeof d.observationSnooze !== "object") d.observationSnooze = {};
+              d.observationSnooze[obsId] = snoozeObservationUntil();
+              d.activeObservation = null;
+              return d;
+            })}
           />
         )}
         {page === "home" && (

@@ -646,3 +646,282 @@ export function CelebrationCard({ celebration, onDismiss, palette }) {
 }
 
 export default CelebrationCard;
+
+// ============================================================================
+// OBSERVATIONS — the harder, riskier half. A wise neighbor who NOTICES, hedges,
+// and offers a thought — never diagnoses, never accuses, never claims to know
+// the user's animals better than they do.
+// ----------------------------------------------------------------------------
+// DESIGN CONTRACT (differs from celebrations — read carefully):
+//   1. CONDITION-based, not milestone-based. Each observation computes a live
+//      boolean from current data ("is there a 5+ day egg-logging gap right now").
+//   2. We observe the LOG, not the animal. "Haven't seen eggs logged" is true
+//      and safe. "Your hens stopped laying" is a diagnosis we CANNOT make (could
+//      be molt, a break, a broody hen) — so we never say it. We always hedge.
+//   3. AUTO-CLEAR: the moment the condition goes false (they log eggs/water), the
+//      observation vanishes — no stale nudges. Falls out of being condition-based.
+//   4. SNOOZE on dismiss (not forever): dismissing sets a 14-day snooze. The
+//      situation is recurring, so a permanent kill would mean never hearing about
+//      a real gap months later. When the condition goes false we also clear the
+//      snooze, so a NEW gap later is treated fresh.
+//   5. Celebrations win. If a celebration is pending on a tab, the observation
+//      yields — joy over nudge. The caller enforces this in render order.
+//   6. Field paths verified against real data. Age-based observations are
+//      deliberately ABSENT: flock.startDate is acquisition date, not hatch date,
+//      so "your hens are X years old" would frequently be wrong. Not built.
+// ============================================================================
+
+const OBSERVATION_GAP_DAYS = 5; // gap length before an observation surfaces
+const OBSERVATION_SNOOZE_DAYS = 14; // how long a dismiss quiets it
+
+// Catalog. Each: id, emoji, hobby (activeHobby match), and a builder that the
+// detector calls with the computed context to produce the title + body. Copy is
+// hedged per the tone guide: name the gap, offer the gentle "could be" causes,
+// never prescribe.
+const OBSERVATIONS = {
+  egg_gap: {
+    id: "egg_gap",
+    emoji: "🥚",
+    hobby: "egg_layers",
+    build: (ctx) => ({
+      title: `No eggs logged from the ${ctx.flockName} in ${ctx.days} days.`,
+      body: "Could be a molt or a winter slowdown, could just be a break in logging — you'd know better than us.",
+    }),
+  },
+  water_gap: {
+    id: "water_gap",
+    emoji: "💧",
+    hobby: "garden",
+    build: (ctx) => ({
+      title: `The garden hasn't been watered in the log for ${ctx.days} days.`,
+      body: "Could be rain's been doing the work, could just be unlogged. Just flagging it in case.",
+    }),
+  },
+};
+
+// ---- Observation state ------------------------------------------------------
+// snoozedUntil: { observationId: ISO-date-string } — observation hidden until
+//   that date. activeObservation: the id currently shown on a tab (or null),
+//   plus the context needed to render its copy.
+export function defaultObservationState() {
+  return {
+    observationSnooze: {}, // { obsId: ISO date until which it's snoozed }
+    activeObservation: null, // { id, hobby, ctx } currently surfaced, or null
+  };
+}
+
+export function migrateObservationState(data) {
+  if (!data) return data;
+  if (!data.observationSnooze || typeof data.observationSnooze !== "object")
+    data.observationSnooze = {};
+  if (typeof data.activeObservation === "undefined")
+    data.activeObservation = null;
+  return data;
+}
+
+// Days between an ISO date string (YYYY-MM-DD or full ISO) and now.
+function daysSince(dateStr) {
+  if (!dateStr) return Infinity;
+  const then = new Date(dateStr);
+  if (isNaN(then.getTime())) return Infinity;
+  const ms = Date.now() - then.getTime();
+  return Math.floor(ms / (1000 * 60 * 60 * 24));
+}
+
+// Most recent date among entries matching a predicate. null if none.
+function latestEntryDate(entries, pred) {
+  let latest = null;
+  (entries || []).forEach((e) => {
+    if (!e || !pred(e) || !e.date) return;
+    if (latest === null || e.date > latest) latest = e.date;
+  });
+  return latest;
+}
+
+// ---- Condition detectors ----------------------------------------------------
+// Each returns { active: bool, ctx } — active=true means the condition holds
+// RIGHT NOW. ctx carries display data (flock name, day count). Pure reads.
+
+function detectEggGap(data) {
+  const eggHobby = (data?.hobbies || []).find((h) => h && h.type === "egg_layers");
+  if (!eggHobby || !Array.isArray(eggHobby.flocks) || eggHobby.flocks.length === 0)
+    return { active: false };
+  // Only flocks that actually have birds — a sold/empty flock shouldn't nag.
+  const liveFlocks = eggHobby.flocks.filter((f) => f && (Number(f.birdCount) || 0) > 0);
+  if (liveFlocks.length === 0) return { active: false };
+
+  const eggEntries = Array.isArray(data?.entries?.egg_layers)
+    ? data.entries.egg_layers
+    : [];
+
+  // Find the flock with the longest egg-logging gap (and a real history — we
+  // don't fire on a brand-new flock that's never been logged yet; that's not a
+  // "gap", that's just new. We require at least one prior egg log for the flock).
+  let worst = null;
+  for (const f of liveFlocks) {
+    const flockEggDates = eggEntries.filter(
+      (e) => e && (e.action === "eggs" || e.action === "eggs_laid") && e.flockId === f.id
+    );
+    if (flockEggDates.length === 0) continue; // never logged → not a "gap"
+    const last = latestEntryDate(flockEggDates, () => true);
+    const gap = daysSince(last);
+    if (gap >= OBSERVATION_GAP_DAYS && (!worst || gap > worst.days)) {
+      worst = { days: gap, flockName: f.name || "flock", flockId: f.id };
+    }
+  }
+  if (!worst) return { active: false };
+  return { active: true, ctx: worst };
+}
+
+function detectWaterGap(data) {
+  const gardenHobby = (data?.hobbies || []).find((h) => h && h.type === "garden");
+  // Only when something is actively growing — currentSeason gates out winter.
+  if (!gardenHobby || !gardenHobby.currentSeason) return { active: false };
+
+  const gardenEntries = Array.isArray(data?.entries?.garden)
+    ? data.entries.garden
+    : [];
+  // Require an active planting this season, else "you haven't watered" is moot.
+  const hasPlanting = gardenEntries.some((e) => e && e.action === "planted");
+  if (!hasPlanting) return { active: false };
+
+  const lastWater = latestEntryDate(gardenEntries, (e) => e.action === "watered");
+  // Never watered at all but has plantings → could be a real gap; anchor to the
+  // most recent planting date so a just-started garden isn't nagged immediately.
+  const anchor = lastWater || latestEntryDate(gardenEntries, (e) => e.action === "planted");
+  const gap = daysSince(anchor);
+  if (gap >= OBSERVATION_GAP_DAYS) {
+    return { active: true, ctx: { days: gap } };
+  }
+  return { active: false };
+}
+
+const OBSERVATION_DETECTORS = {
+  egg_gap: detectEggGap,
+  water_gap: detectWaterGap,
+};
+
+// ---- Detection orchestration ------------------------------------------------
+// Returns { observation, snoozeClears } — observation to surface now (or null),
+// plus ids whose snooze should be cleared because their condition went false
+// (this is the "auto-clear when they log again" behavior). The caller persists
+// the snooze clears back into data.
+export function detectObservations(data) {
+  const snooze = data?.observationSnooze || {};
+  const now = Date.now();
+  const snoozeClears = [];
+  let surfaced = null;
+
+  for (const id of Object.keys(OBSERVATIONS)) {
+    const det = OBSERVATION_DETECTORS[id];
+    const result = det ? det(data) : { active: false };
+
+    if (!result.active) {
+      // Condition no longer holds → clear any snooze so a future occurrence is
+      // treated fresh (the "auto-clear when they log again" behavior).
+      if (snooze[id]) snoozeClears.push(id);
+      continue;
+    }
+    // Condition holds. Honor an active snooze.
+    const until = snooze[id] ? new Date(snooze[id]).getTime() : 0;
+    if (until && until > now) continue; // still snoozed
+    // Eligible to surface. Take the first eligible (egg before water by order).
+    if (!surfaced) {
+      const obs = OBSERVATIONS[id];
+      surfaced = {
+        id: obs.id, emoji: obs.emoji, hobby: obs.hobby, ...obs.build(result.ctx),
+      };
+    }
+  }
+
+  return { observation: surfaced, snoozeClears };
+}
+
+// Snooze an observation for the standard window. Returns the ISO date string.
+export function snoozeObservationUntil() {
+  const d = new Date();
+  d.setDate(d.getDate() + OBSERVATION_SNOOZE_DAYS);
+  return d.toISOString();
+}
+
+// The activeHobby an observation belongs to.
+export function observationHobby(obs) {
+  return obs && obs.hobby ? obs.hobby : null;
+}
+
+// ---- The observation card ---------------------------------------------------
+// Same shape as CelebrationCard but a quieter, cooler accent (the app's water
+// blue) so it reads as a gentle note, not a celebration. Carries a title +
+// hedged body and a single dismiss (which snoozes, per the caller).
+export function ObservationCard({ observation, onDismiss, palette }) {
+  const [leaving, setLeaving] = React.useState(false);
+  const [mounted, setMounted] = React.useState(false);
+
+  React.useEffect(() => {
+    const t = requestAnimationFrame(() => setMounted(true));
+    return () => cancelAnimationFrame(t);
+  }, []);
+
+  if (!observation) return null;
+
+  const p = palette || {
+    bg: "#F4EDE0", card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530",
+    accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030",
+  };
+  // Cooler accent than celebrations — the app's watering blue, calm not festive.
+  const accent = "#3F7CAC";
+
+  const handleDismiss = () => {
+    setLeaving(true);
+    setTimeout(() => onDismiss && onDismiss(observation.id), 220);
+  };
+
+  return (
+    <div
+      role="status"
+      aria-live="polite"
+      style={{
+        position: "relative",
+        display: "flex",
+        alignItems: "flex-start",
+        gap: 14,
+        background: p.card,
+        border: `1.5px solid ${p.line}`,
+        borderLeft: `4px solid ${accent}`,
+        borderRadius: 14,
+        padding: "16px 18px",
+        margin: "12px 0",
+        boxShadow: `2px 2px 0 ${p.line}`,
+        color: p.ink,
+        opacity: leaving ? 0 : mounted ? 1 : 0,
+        transform: leaving ? "translateY(-4px)" : mounted ? "translateY(0)" : "translateY(6px)",
+        transition: "opacity 220ms ease, transform 220ms ease",
+      }}
+    >
+      <div style={{ fontSize: 24, lineHeight: 1, marginTop: 1 }} aria-hidden>
+        {observation.emoji}
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 600, lineHeight: 1.3, marginBottom: 3 }}>
+          {observation.title}
+        </div>
+        <div style={{ fontSize: 14, color: p.inkSoft, lineHeight: 1.5 }}>
+          {observation.body}
+        </div>
+      </div>
+      <button
+        onClick={handleDismiss}
+        aria-label="Dismiss"
+        style={{
+          flexShrink: 0, background: "transparent", border: "none", cursor: "pointer",
+          color: p.inkSoft, fontSize: 18, lineHeight: 1, padding: 4, margin: -4,
+          borderRadius: 6, opacity: 0.6,
+        }}
+        onMouseEnter={(e) => (e.currentTarget.style.opacity = "1")}
+        onMouseLeave={(e) => (e.currentTarget.style.opacity = "0.6")}
+      >
+        ✕
+      </button>
+    </div>
+  );
+}
