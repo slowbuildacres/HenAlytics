@@ -25,24 +25,32 @@ export default async function handler(req, res) {
   const SERVICE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
 
   try {
-    const homesteadsRes = await fetch(`${SUPABASE}/rest/v1/homesteads?select=id,data,updated_at`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (!homesteadsRes.ok) {
-      const errText = await homesteadsRes.text();
-      return res.status(502).json({ error: 'Failed to fetch homesteads', detail: errText });
+    // WEEKLY_DIGEST_PAGINATION: Supabase caps a single response at db-max-rows
+    // (1000 by default). An unpaginated fetch silently dropped every homestead
+    // past the first 1000 — owners beyond that never got a digest. Filter to
+    // opted-in homesteads server-side (also avoids loading every data blob into
+    // memory) and page through in case opt-ins ever exceed the cap.
+    let homesteads;
+    try {
+      homesteads = await fetchAllRows(
+        `${SUPABASE}/rest/v1/homesteads?select=id,data,updated_at&data->>weeklyDigestOptIn=eq.true`,
+        SERVICE_KEY,
+        'id.asc'
+      );
+    } catch (e) {
+      return res.status(502).json({ error: 'Failed to fetch homesteads', detail: e.detail || e.message });
     }
-    const homesteads = await homesteadsRes.json();
 
-    const membersRes = await fetch(
-      `${SUPABASE}/rest/v1/homestead_members?select=homestead_id,user_id,role&role=eq.owner`,
-      { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
-    );
-    if (!membersRes.ok) {
-      const errText = await membersRes.text();
-      return res.status(502).json({ error: 'Failed to fetch members', detail: errText });
+    let owners;
+    try {
+      owners = await fetchAllRows(
+        `${SUPABASE}/rest/v1/homestead_members?select=homestead_id,user_id,role&role=eq.owner`,
+        SERVICE_KEY,
+        'homestead_id.asc'
+      );
+    } catch (e) {
+      return res.status(502).json({ error: 'Failed to fetch members', detail: e.detail || e.message });
     }
-    const owners = await membersRes.json();
     const ownerByHomestead = {};
     owners.forEach((m) => { ownerByHomestead[m.homestead_id] = m.user_id; });
 
@@ -88,8 +96,9 @@ export default async function handler(req, res) {
 
       const stats = computeWeeklyStats(data);
 
-      if (stats.totalEntries === 0) { skipped.push({ id: h.id, reason: 'no activity this week' }); continue; }
-
+      // Quiet weeks still get a digest (a warm "all quiet" note), matching the
+      // chore email's behavior. buildDigestEmail renders the empty-state body
+      // when there's nothing to report.
       const payload = buildDigestEmail(email, data, stats);
 
       // Resend caps at 5 requests/sec. 250ms between sends keeps us at 4/sec
@@ -139,6 +148,39 @@ export default async function handler(req, res) {
     console.error('Weekly digest error', err);
     return res.status(500).json({ error: 'Internal error', detail: String(err) });
   }
+}
+
+// ============================================================================
+// PAGINATED POSTGREST FETCH
+// ============================================================================
+// Supabase caps a single REST response at db-max-rows (1000 by default), so an
+// unpaginated list fetch silently truncates once a table grows past it. Page
+// through with limit/offset plus a stable order until a short page signals the
+// end. `urlBase` should already include any select/filter; `order` is the
+// column(s) that make offset paging deterministic (e.g. 'id.asc').
+async function fetchAllRows(urlBase, serviceKey, order, pageSize = 1000) {
+  const all = [];
+  const MAX_PAGES = 200; // 200k-row safety brake
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * pageSize;
+    const sep = urlBase.includes('?') ? '&' : '?';
+    const url = `${urlBase}${sep}order=${order}&limit=${pageSize}&offset=${offset}`;
+    const r = await fetch(url, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+    });
+    if (!r.ok) {
+      const detail = await r.text();
+      const err = new Error(`Paginated fetch failed (${r.status})`);
+      err.status = r.status;
+      err.detail = detail;
+      throw err;
+    }
+    const rows = await r.json();
+    const list = Array.isArray(rows) ? rows : [];
+    all.push(...list);
+    if (list.length < pageSize) break;
+  }
+  return all;
 }
 
 // ============================================================================
@@ -430,6 +472,7 @@ function buildDigestEmail(email, data, stats) {
   }
 
   const totalEntries = stats.totalEntries;
+  const quiet = lines.length === 0;
 
   const html = `
     <div style="font-family:-apple-system,BlinkMacSystemFont,sans-serif;max-width:560px;margin:0 auto;color:#2C1810">
@@ -442,10 +485,17 @@ function buildDigestEmail(email, data, stats) {
         </h1>
 
         <div style="background:#FAF5EA;padding:16px 20px;border-radius:10px;border-left:4px solid #E8B547;margin-bottom:16px">
-          <div style="font-size:13px;color:#5C4530;margin-bottom:8px">You logged <strong style="color:#2C1810">${totalEntries}</strong> ${totalEntries === 1 ? 'entry' : 'entries'} this week.</div>
-          <div style="font-size:14px;line-height:1.8;color:#2C1810">
-            ${lines.map((l) => `<div>${l}</div>`).join('')}
-          </div>
+          ${quiet ? `
+            <div style="font-family:Georgia,serif;font-size:18px;color:#2C1810;margin-bottom:6px">☕ A quiet week</div>
+            <div style="font-size:14px;line-height:1.6;color:#5C4530">
+              Nothing logged in the last seven days — and that's perfectly alright. Some weeks the homestead just hums along on its own. Pour a cup of coffee, watch the birds, and we'll see you next Sunday.
+            </div>
+          ` : `
+            <div style="font-size:13px;color:#5C4530;margin-bottom:8px">You logged <strong style="color:#2C1810">${totalEntries}</strong> ${totalEntries === 1 ? 'entry' : 'entries'} this week.</div>
+            <div style="font-size:14px;line-height:1.8;color:#2C1810">
+              ${lines.map((l) => `<div>${l}</div>`).join('')}
+            </div>
+          `}
         </div>
 
         <p style="font-size:13px;color:#5C4530;line-height:1.6">
@@ -471,9 +521,9 @@ function buildDigestEmail(email, data, stats) {
   const text = `
 This week at ${homesteadName}
 
-You logged ${totalEntries} ${totalEntries === 1 ? 'entry' : 'entries'} this week.
-
-${lines.map((l) => '- ' + l.replace(/<[^>]+>/g, '')).join('\n')}
+${quiet
+  ? "A quiet week — nothing logged in the last seven days, and that's perfectly alright. Some weeks the homestead just hums along on its own. We'll see you next Sunday."
+  : `You logged ${totalEntries} ${totalEntries === 1 ? 'entry' : 'entries'} this week.\n\n${lines.map((l) => '- ' + l.replace(/<[^>]+>/g, '')).join('\n')}`}
 
 Open Henalytics: https://henalytics.com
 
@@ -483,7 +533,7 @@ To stop these emails, open Henalytics > Settings > Weekly summary email.
   return {
     from: FROM_ADDRESS,
     to: [email],
-    subject: `🐔 This week at ${homesteadName}`,
+    subject: quiet ? `🐔 A quiet week at ${homesteadName}` : `🐔 This week at ${homesteadName}`,
     html,
     text,
   };

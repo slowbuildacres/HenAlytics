@@ -206,6 +206,7 @@ const defaultData = () => ({
   appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time)
   accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
+  weeklyDigestOptIn: false, // master switch for the weekly homestead summary email
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
   // STEP3_REVIEW_PROMPT: in-app review prompt state (iOS + Android only).
@@ -321,6 +322,9 @@ function migrateData(data) {
   }
   if (typeof data.weeklyChoreEmailOptIn !== "boolean") {
     data.weeklyChoreEmailOptIn = false;
+  }
+  if (typeof data.weeklyDigestOptIn !== "boolean") {
+    data.weeklyDigestOptIn = false;
   }
   if (typeof data.userHasTipped !== "boolean") {
     data.userHasTipped = false;

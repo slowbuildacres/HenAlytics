@@ -58,26 +58,37 @@ export default async function handler(req, res) {
   console.log('[chore-email] cron started', { weekStart: weekStartIso, dryRun });
 
   try {
-    // ---- Fetch all homesteads ----
-    const homesteadsRes = await fetch(`${SUPABASE}/rest/v1/homesteads?select=id,data`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    if (!homesteadsRes.ok) {
-      const errText = await homesteadsRes.text();
-      return res.status(502).json({ error: 'Failed to fetch homesteads', detail: errText });
+    // ---- Fetch opted-in homesteads (server-side filtered + paginated) ----
+    // Supabase caps a single response at db-max-rows (1000 by default), so the
+    // old unpaginated fetch silently dropped every homestead past the first
+    // 1000 — opted-in owners beyond that never got an email. Filtering to
+    // opted-in homesteads server-side both sidesteps the cap for the common
+    // case and avoids pulling every homestead's full data blob into memory;
+    // pagination covers the case where opt-ins ever exceed the cap.
+    let homesteads;
+    try {
+      homesteads = await fetchAllRows(
+        `${SUPABASE}/rest/v1/homesteads?select=id,data&data->>weeklyChoreEmailOptIn=eq.true`,
+        SERVICE_KEY,
+        'id.asc'
+      );
+    } catch (e) {
+      return res.status(502).json({ error: 'Failed to fetch homesteads', detail: e.detail || e.message });
     }
-    const homesteads = await homesteadsRes.json();
 
-    // ---- Fetch all memberships (with the new chore_emails_opt_in column) ----
-    const membersRes = await fetch(
-      `${SUPABASE}/rest/v1/homestead_members?select=homestead_id,user_id,role,chore_emails_opt_in`,
-      { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
-    );
-    if (!membersRes.ok) {
-      const errText = await membersRes.text();
-      return res.status(502).json({ error: 'Failed to fetch members', detail: errText });
+    // ---- Fetch all memberships (paginated; with chore_emails_opt_in) ----
+    // Unpaginated, this truncated at 1000 rows — members past the cap vanished
+    // from the lookup and their homestead looked memberless. Page through all.
+    let allMembers;
+    try {
+      allMembers = await fetchAllRows(
+        `${SUPABASE}/rest/v1/homestead_members?select=homestead_id,user_id,role,chore_emails_opt_in`,
+        SERVICE_KEY,
+        'homestead_id.asc,user_id.asc'
+      );
+    } catch (e) {
+      return res.status(502).json({ error: 'Failed to fetch members', detail: e.detail || e.message });
     }
-    const allMembers = await membersRes.json();
     const membersByHomestead = {};
     allMembers.forEach((m) => {
       if (!membersByHomestead[m.homestead_id]) membersByHomestead[m.homestead_id] = [];
@@ -112,11 +123,17 @@ export default async function handler(req, res) {
       }
     }
 
-    // ---- Fetch the unsubscribe blocklist ----
-    const unsubRes = await fetch(`${SUPABASE}/rest/v1/chore_email_unsubscribes?select=email`, {
-      headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` },
-    });
-    const unsubList = unsubRes.ok ? await unsubRes.json() : [];
+    // ---- Fetch the unsubscribe blocklist (paginated) ----
+    let unsubList = [];
+    try {
+      unsubList = await fetchAllRows(
+        `${SUPABASE}/rest/v1/chore_email_unsubscribes?select=email`,
+        SERVICE_KEY,
+        'email.asc'
+      );
+    } catch (e) {
+      console.warn('[chore-email] unsubscribe fetch failed; proceeding without blocklist', e.message);
+    }
     const unsubSet = new Set(unsubList.map((r) => r.email));
 
     // ---- Process each homestead ----
@@ -273,6 +290,39 @@ export default async function handler(req, res) {
     console.error('[chore-email] handler crashed', e);
     return res.status(500).json({ error: 'Cron crashed', message: e.message });
   }
+}
+
+// ============================================================================
+// Paginated PostgREST fetch
+// ============================================================================
+// Supabase caps a single REST response at db-max-rows (1000 by default), so an
+// unpaginated list fetch silently truncates once a table grows past it. Page
+// through with limit/offset plus a stable order until a short page signals the
+// end. `urlBase` should already include any select/filter; `order` is the
+// column(s) that make offset paging deterministic (e.g. 'id.asc').
+async function fetchAllRows(urlBase, serviceKey, order, pageSize = 1000) {
+  const all = [];
+  const MAX_PAGES = 200; // 200k-row safety brake
+  for (let page = 0; page < MAX_PAGES; page++) {
+    const offset = page * pageSize;
+    const sep = urlBase.includes('?') ? '&' : '?';
+    const url = `${urlBase}${sep}order=${order}&limit=${pageSize}&offset=${offset}`;
+    const r = await fetch(url, {
+      headers: { apikey: serviceKey, Authorization: `Bearer ${serviceKey}` },
+    });
+    if (!r.ok) {
+      const detail = await r.text();
+      const err = new Error(`Paginated fetch failed (${r.status})`);
+      err.status = r.status;
+      err.detail = detail;
+      throw err;
+    }
+    const rows = await r.json();
+    const list = Array.isArray(rows) ? rows : [];
+    all.push(...list);
+    if (list.length < pageSize) break;
+  }
+  return all;
 }
 
 // ============================================================================
