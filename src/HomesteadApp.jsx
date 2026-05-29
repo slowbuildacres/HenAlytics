@@ -130,6 +130,10 @@ import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
 import DehydratingPage, { DehydratingAnalytics } from "./Dehydrating.jsx";
 import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
 import TincturePage, { TinctureAnalytics } from "./Tincture.jsx";
+import CelebrationCard, {
+  defaultCelebrationState, migrateCelebrationState,
+  detectCelebrations, getCelebrationById, isReviewWorthy, celebrationHobby,
+} from "./Suggestions.jsx";
 import OilInfusionPage, { OilInfusionAnalytics } from "./OilInfusion.jsx";
 import SalvePage, { SalveAnalytics } from "./Salve.jsx";
 import TeaPage, { TeaAnalytics } from "./Tea.jsx";
@@ -214,6 +218,10 @@ const defaultData = () => ({
   localRemindersOptIn: false, // master switch for on-device reminders from calendar events (native only)
   userHasTipped: false, // set true after a Stripe checkout completes (manual flag user can mark themselves)
   seenMilestones: [], // milestone keys (e.g. "milestone_2k") the user has already been shown the popup for
+  // Celebrations (Suggestions.jsx) — one-time "neighbor on the fence" moments.
+  // celebrationsShown locks each id forever; pendingCelebration is the one
+  // queued to show on the home card right now (or null).
+  ...defaultCelebrationState(),
   // STEP3_REVIEW_PROMPT: in-app review prompt state (iOS + Android only).
   // userTappedReview locks the prompt forever after the user agrees to review.
   // permanentlyDismissed locks after "No thanks". promptCount enforces Apple's
@@ -301,6 +309,9 @@ function migrateData(data) {
   if (!data || typeof data !== "object") return defaultData();
   if (!Array.isArray(data.hobbies)) data.hobbies = defaultData().hobbies;
   if (!data.entries || typeof data.entries !== "object") data.entries = {};
+  // Celebrations (Suggestions.jsx) — ensure state exists and back-mark any
+  // already-earned milestones so they never fire retroactively.
+  migrateCelebrationState(data);
   if (!Array.isArray(data.plantings)) data.plantings = [];
   if (!Array.isArray(data.calendarEvents)) data.calendarEvents = [];
   if (!Array.isArray(data.sales)) data.sales = [];
@@ -3344,6 +3355,29 @@ useEffect(() => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [data?.entries, data?.eggMilestonesCelebrated, tryOpenReviewPrompt]);
 
+  // Celebrations (Suggestions.jsx) — "neighbor on the fence" moments. Mirrors
+  // the egg-milestone effect: a silent first-pass baseline guards against
+  // firing on app open for someone who already qualifies, then we react only to
+  // genuine in-session increases. Review-worthy wins (100 jars, 100 lbs) also
+  // piggyback on tryOpenReviewPrompt; first-egg deliberately does not.
+  const celebrationSignalsRef = React.useRef(null);
+  useEffect(() => {
+    if (!data?.entries) return;
+    const prev = celebrationSignalsRef.current;
+    const { celebration, nextSignals, crossedIds } = detectCelebrations(data, prev);
+    celebrationSignalsRef.current = nextSignals;
+    if (prev === null) return;       // silent baseline pass
+    if (!celebration) return;
+    update(d => {
+      if (!Array.isArray(d.celebrationsShown)) d.celebrationsShown = [];
+      crossedIds.forEach(id => { if (!d.celebrationsShown.includes(id)) d.celebrationsShown.push(id); });
+      d.pendingCelebration = celebration.id;
+      return d;
+    });
+    if (isReviewWorthy(celebration.id)) tryOpenReviewPrompt();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data?.entries, data?.hobbies, tryOpenReviewPrompt]);
+
   // STEP3_REVIEW_PROMPT: YIR scroll-then-exit trigger.
   // YearInReviewPage sets yirHasScrolledRef.current = true via the
   // onScrolled prop when the user scrolls the page. When the user
@@ -4953,6 +4987,18 @@ useNativeBackButton(React.useCallback(() => {
       {/* MAIN */}
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "20px 20px 40px" }}>
         <ErrorBoundary resetKey={`${page}|${activeHobby}`} label={`${page}/${activeHobby}`}>
+        {/* Celebration card (Suggestions.jsx) — shows ONLY on the tab the
+            celebration belongs to. "One hundred jars" appears on canning, not
+            on garden or egg-layers. activeHobby is the match key. */}
+        {data?.pendingCelebration
+          && getCelebrationById(data.pendingCelebration)
+          && celebrationHobby(data.pendingCelebration) === activeHobby && (
+          <CelebrationCard
+            celebration={getCelebrationById(data.pendingCelebration)}
+            palette={palette}
+            onDismiss={() => update(d => { d.pendingCelebration = null; return d; })}
+          />
+        )}
         {page === "home" && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
