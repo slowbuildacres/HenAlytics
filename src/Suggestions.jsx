@@ -119,6 +119,98 @@ const CELEBRATIONS = {
     hobby: "canning",
     reviewWorthy: true,
   },
+  // --- Livestock births. Fire only when offspring were born (>= 1) and NEVER
+  // cite the count — a birth record may also carry losses, and "6 puppies!" on a
+  // litter that lost two would land terribly. A warm, count-free nod is safe. ---
+  first_litter_dogs: {
+    id: "first_litter_dogs",
+    emoji: "🐶",
+    title: "Your first litter.",
+    body: "Whelping box to wagging tails. Long nights ahead, good ones too.",
+    hobby: "dogs",
+    reviewWorthy: false, // emotional moment, not a "rate us" moment
+  },
+  first_litter_cats: {
+    id: "first_litter_cats",
+    emoji: "🐱",
+    title: "Your first litter.",
+    body: "Kittens on the homestead. The barn just got busier.",
+    hobby: "cats",
+    reviewWorthy: false,
+  },
+  first_lambing: {
+    id: "first_lambing",
+    emoji: "🐑",
+    title: "Your first lambing.",
+    body: "Lambs on the ground. The flock carries forward.",
+    hobby: "sheep",
+    reviewWorthy: false,
+  },
+  first_foal: {
+    id: "first_foal",
+    emoji: "🐴",
+    title: "Your first foal.",
+    body: "Long-legged and brand new. That's a morning you don't forget.",
+    hobby: "horses",
+    reviewWorthy: false,
+  },
+  first_calf: {
+    id: "first_calf",
+    emoji: "🐄",
+    title: "Your first calf.",
+    body: "New on the pasture. The herd grows.",
+    hobby: "cows",
+    reviewWorthy: false,
+  },
+  first_kid: {
+    id: "first_kid",
+    emoji: "🐐",
+    title: "Your first kid.",
+    body: "Wobbly and already climbing things. Goats will be goats.",
+    hobby: "goats",
+    reviewWorthy: false,
+  },
+  // --- Output / volume firsts and milestones ---
+  first_syrup: {
+    id: "first_syrup",
+    emoji: "🍁",
+    title: "First syrup off the evaporator.",
+    body: "Forty gallons of sap for this. Worth every hour of boiling.",
+    hobby: "maple_syrup",
+    reviewWorthy: false,
+  },
+  first_meat_batch: {
+    id: "first_meat_batch",
+    emoji: "🐔",
+    title: "First batch raised to harvest.",
+    body: "Start to finish, you saw it through. That's the whole point.",
+    hobby: "meat_chickens",
+    reviewWorthy: true,
+  },
+  freeze_25: {
+    id: "freeze_25",
+    emoji: "❄️",
+    title: "Twenty-five batches freeze-dried.",
+    body: "A pantry that'll outlast the power going out.",
+    hobby: "freeze_drying",
+    reviewWorthy: true,
+  },
+  dehydrate_25: {
+    id: "dehydrate_25",
+    emoji: "🌬️",
+    title: "Twenty-five batches dried.",
+    body: "Jerky, fruit, herbs — the dehydrator's earned its shelf space.",
+    hobby: "dehydrating",
+    reviewWorthy: true,
+  },
+  ferment_25: {
+    id: "ferment_25",
+    emoji: "🫧",
+    title: "Twenty-five ferments going.",
+    body: "Kraut, kimchi, a crock always bubbling. The good kind of busy.",
+    hobby: "fermentation",
+    reviewWorthy: true,
+  },
 };
 
 // Repeating milestones (e.g. 200, 300 jars) would extend the catalog with
@@ -140,7 +232,11 @@ export function defaultCelebrationState() {
 // ---- Raw signal computation -------------------------------------------------
 // Pure read of the three numbers the detectors care about. No side effects.
 export function computeCelebrationSignals(data) {
-  if (!data) return { eggTotal: 0, jarsTotal: 0, harvestLbs: 0, bakesTotal: 0, hatchedTotal: 0 };
+  if (!data) return {
+    eggTotal: 0, jarsTotal: 0, harvestLbs: 0, bakesTotal: 0, hatchedTotal: 0,
+    puppiesBorn: 0, kittensBorn: 0, lambsBorn: 0, foalsBorn: 0, calvesBorn: 0, kidsBorn: 0,
+    syrupTotal: 0, meatBatches: 0, freezeBatches: 0, dehydrateBatches: 0, fermentCount: 0,
+  };
 
   // Eggs: sum count across egg_layers entries that are egg actions.
   const eggEntries = Array.isArray(data?.entries?.egg_layers)
@@ -198,7 +294,85 @@ export function computeCelebrationSignals(data) {
       0
     );
 
-  return { eggTotal, jarsTotal, harvestLbs, bakesTotal, hatchedTotal };
+  // --- Livestock births. Each returns the count of offspring BORN so the
+  // detector can gate on >= 1. Field shapes verified against Year in Review.
+
+  // Dogs/cats: litters[] with totalBorn (or puppies/kittens array length).
+  const litterBorn = (type, kidField) =>
+    hobbies
+      .filter((h) => h && h.type === type && Array.isArray(h.litters))
+      .reduce(
+        (s, h) =>
+          s +
+          h.litters.reduce(
+            (ls, l) =>
+              ls +
+              (Number(l && l.totalBorn) ||
+                (Array.isArray(l && l[kidField]) ? l[kidField].length : 0)),
+            0
+          ),
+        0
+      );
+  const puppiesBorn = litterBorn("dogs", "puppies");
+  const kittensBorn = litterBorn("cats", "kittens");
+
+  // Sheep/horses: breedings[] with a completed-birth date + a born count.
+  const breedingBorn = (type, dateField, countField) =>
+    hobbies
+      .filter((h) => h && h.type === type && Array.isArray(h.breedings))
+      .reduce(
+        (s, h) =>
+          s +
+          h.breedings
+            .filter((b) => b && b[dateField])
+            .reduce((bs, b) => bs + (Number(b[countField]) || 0), 0),
+        0
+      );
+  const lambsBorn = breedingBorn("sheep", "lambedDate", "lambsBorn");
+  const foalsBorn = breedingBorn("horses", "foaledDate", "foalsBorn");
+
+  // Cows/goats: birth is an ENTRY with an action ("calf" / "kid"), count field.
+  const entryActionTotal = (hobbyType, action) => {
+    const arr = Array.isArray(data?.entries?.[hobbyType])
+      ? data.entries[hobbyType]
+      : [];
+    return arr
+      .filter((e) => e && e.action === action)
+      .reduce((s, e) => s + (Number(e.count) || 1), 0);
+  };
+  const calvesBorn = entryActionTotal("cows", "calf");
+  const kidsBorn = entryActionTotal("goats", "kid");
+
+  // Maple: syrup volume summed from entries (e.syrupGal).
+  const mapleEntries = Array.isArray(data?.entries?.maple_syrup)
+    ? data.entries.maple_syrup
+    : [];
+  const syrupTotal = mapleEntries.reduce(
+    (s, e) => s + (Number(e && e.syrupGal) || 0),
+    0
+  );
+
+  // Meat birds: count of FINALIZED batches (archivedBatches[]).
+  const meatBatches = hobbies
+    .filter(
+      (h) => h && h.type === "meat_chickens" && Array.isArray(h.archivedBatches)
+    )
+    .reduce((s, h) => s + h.archivedBatches.length, 0);
+
+  // Preserving siblings: countable batch/ferment arrays.
+  const countArr = (type, field) =>
+    hobbies
+      .filter((h) => h && h.type === type && Array.isArray(h[field]))
+      .reduce((s, h) => s + h[field].length, 0);
+  const freezeBatches = countArr("freeze_drying", "batches");
+  const dehydrateBatches = countArr("dehydrating", "batches");
+  const fermentCount = countArr("fermentation", "ferments");
+
+  return {
+    eggTotal, jarsTotal, harvestLbs, bakesTotal, hatchedTotal,
+    puppiesBorn, kittensBorn, lambsBorn, foalsBorn, calvesBorn, kidsBorn,
+    syrupTotal, meatBatches, freezeBatches, dehydrateBatches, fermentCount,
+  };
 }
 
 // ---- Migration: back-mark already-passed milestones -------------------------
@@ -214,21 +388,31 @@ export function migrateCelebrationState(data) {
   // Only back-mark on the very first introduction of this feature, signaled by
   // the absence of our marker. After that, real crossings are handled live.
   if (!data._celebrationsInitialized) {
-    const { eggTotal, jarsTotal, harvestLbs, bakesTotal, hatchedTotal } =
-      computeCelebrationSignals(data);
+    const sig = computeCelebrationSignals(data);
     const markIf = (cond, id) => {
       if (cond && !data.celebrationsShown.includes(id))
         data.celebrationsShown.push(id);
     };
-    markIf(eggTotal >= 1, CELEBRATIONS.first_egg.id);
-    markIf(eggTotal >= 1000, CELEBRATIONS.eggs_1000.id);
-    markIf(eggTotal >= 5000, CELEBRATIONS.eggs_5000.id);
-    markIf(jarsTotal >= 100, CELEBRATIONS.jars_100.id);
-    markIf(jarsTotal >= 500, CELEBRATIONS.jars_500.id);
-    markIf(harvestLbs >= 100, CELEBRATIONS.harvest_100lb.id);
-    markIf(bakesTotal >= 50, CELEBRATIONS.bakes_50.id);
-    markIf(hatchedTotal >= 1, CELEBRATIONS.first_hatch.id);
-    markIf(hatchedTotal >= 100, CELEBRATIONS.hatched_100.id);
+    markIf(sig.eggTotal >= 1, CELEBRATIONS.first_egg.id);
+    markIf(sig.eggTotal >= 1000, CELEBRATIONS.eggs_1000.id);
+    markIf(sig.eggTotal >= 5000, CELEBRATIONS.eggs_5000.id);
+    markIf(sig.jarsTotal >= 100, CELEBRATIONS.jars_100.id);
+    markIf(sig.jarsTotal >= 500, CELEBRATIONS.jars_500.id);
+    markIf(sig.harvestLbs >= 100, CELEBRATIONS.harvest_100lb.id);
+    markIf(sig.bakesTotal >= 50, CELEBRATIONS.bakes_50.id);
+    markIf(sig.hatchedTotal >= 1, CELEBRATIONS.first_hatch.id);
+    markIf(sig.hatchedTotal >= 100, CELEBRATIONS.hatched_100.id);
+    markIf(sig.puppiesBorn >= 1, CELEBRATIONS.first_litter_dogs.id);
+    markIf(sig.kittensBorn >= 1, CELEBRATIONS.first_litter_cats.id);
+    markIf(sig.lambsBorn >= 1, CELEBRATIONS.first_lambing.id);
+    markIf(sig.foalsBorn >= 1, CELEBRATIONS.first_foal.id);
+    markIf(sig.calvesBorn >= 1, CELEBRATIONS.first_calf.id);
+    markIf(sig.kidsBorn >= 1, CELEBRATIONS.first_kid.id);
+    markIf(sig.syrupTotal > 0, CELEBRATIONS.first_syrup.id);
+    markIf(sig.meatBatches >= 1, CELEBRATIONS.first_meat_batch.id);
+    markIf(sig.freezeBatches >= 25, CELEBRATIONS.freeze_25.id);
+    markIf(sig.dehydrateBatches >= 25, CELEBRATIONS.dehydrate_25.id);
+    markIf(sig.fermentCount >= 25, CELEBRATIONS.ferment_25.id);
     data._celebrationsInitialized = true;
   }
   return data;
@@ -288,6 +472,17 @@ export function detectCelebrations(data, prevSignals) {
     next.hatchedTotal,
     100
   );
+  consider(CELEBRATIONS.first_litter_dogs.id, prevSignals.puppiesBorn, next.puppiesBorn, 1);
+  consider(CELEBRATIONS.first_litter_cats.id, prevSignals.kittensBorn, next.kittensBorn, 1);
+  consider(CELEBRATIONS.first_lambing.id, prevSignals.lambsBorn, next.lambsBorn, 1);
+  consider(CELEBRATIONS.first_foal.id, prevSignals.foalsBorn, next.foalsBorn, 1);
+  consider(CELEBRATIONS.first_calf.id, prevSignals.calvesBorn, next.calvesBorn, 1);
+  consider(CELEBRATIONS.first_kid.id, prevSignals.kidsBorn, next.kidsBorn, 1);
+  consider(CELEBRATIONS.first_syrup.id, prevSignals.syrupTotal, next.syrupTotal, 0.0001);
+  consider(CELEBRATIONS.first_meat_batch.id, prevSignals.meatBatches, next.meatBatches, 1);
+  consider(CELEBRATIONS.freeze_25.id, prevSignals.freezeBatches, next.freezeBatches, 25);
+  consider(CELEBRATIONS.dehydrate_25.id, prevSignals.dehydrateBatches, next.dehydrateBatches, 25);
+  consider(CELEBRATIONS.ferment_25.id, prevSignals.fermentCount, next.fermentCount, 25);
 
   if (candidates.length === 0) {
     return { celebration: null, nextSignals: next, crossedIds: [] };
@@ -296,14 +491,26 @@ export function detectCelebrations(data, prevSignals) {
   // If two cross at once (rare), show the "biggest" and mark both so neither
   // re-queues. Order = priority shown to the user; higher milestones first so a
   // big single log that crosses two thresholds shows the more impressive one.
+  // Births and big numbers rank above small "first" milestones.
   const priority = [
     CELEBRATIONS.eggs_5000.id,
     CELEBRATIONS.jars_500.id,
     CELEBRATIONS.hatched_100.id,
     CELEBRATIONS.eggs_1000.id,
     CELEBRATIONS.bakes_50.id,
+    CELEBRATIONS.freeze_25.id,
+    CELEBRATIONS.dehydrate_25.id,
+    CELEBRATIONS.ferment_25.id,
     CELEBRATIONS.jars_100.id,
     CELEBRATIONS.harvest_100lb.id,
+    CELEBRATIONS.first_litter_dogs.id,
+    CELEBRATIONS.first_litter_cats.id,
+    CELEBRATIONS.first_lambing.id,
+    CELEBRATIONS.first_foal.id,
+    CELEBRATIONS.first_calf.id,
+    CELEBRATIONS.first_kid.id,
+    CELEBRATIONS.first_syrup.id,
+    CELEBRATIONS.first_meat_batch.id,
     CELEBRATIONS.first_hatch.id,
     CELEBRATIONS.first_egg.id,
   ];
