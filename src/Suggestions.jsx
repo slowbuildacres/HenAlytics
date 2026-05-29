@@ -69,6 +69,56 @@ const CELEBRATIONS = {
     hobby: "garden",
     reviewWorthy: true,
   },
+  eggs_1000: {
+    id: "eggs_1000",
+    emoji: "🥚",
+    title: "A thousand eggs collected.",
+    body: "The coop's earned its keep.",
+    hobby: "egg_layers",
+    // The existing egg-milestone system already owns the review ask at 1,000,
+    // so the celebration card stays a pure nod — no double prompt.
+    reviewWorthy: false,
+  },
+  eggs_5000: {
+    id: "eggs_5000",
+    emoji: "🥚",
+    title: "Five thousand eggs.",
+    body: "That's a lot of mornings out to the coop.",
+    hobby: "egg_layers",
+    reviewWorthy: false,
+  },
+  bakes_50: {
+    id: "bakes_50",
+    emoji: "🍞",
+    title: "Fifty loaves out of your oven.",
+    body: "The starter's earned its name by now.",
+    hobby: "sourdough",
+    reviewWorthy: true,
+  },
+  first_hatch: {
+    id: "first_hatch",
+    emoji: "🐣",
+    title: "First chicks hatched.",
+    body: "From egg to peeping in three weeks — never not a small miracle.",
+    hobby: "incubator",
+    reviewWorthy: false, // first-of-something, often early — keep it pure joy
+  },
+  hatched_100: {
+    id: "hatched_100",
+    emoji: "🐣",
+    title: "A hundred chicks hatched.",
+    body: "That's a real hatchery you're running.",
+    hobby: "incubator",
+    reviewWorthy: true,
+  },
+  jars_500: {
+    id: "jars_500",
+    emoji: "🫙",
+    title: "Five hundred jars.",
+    body: "The pantry's the envy of the county.",
+    hobby: "canning",
+    reviewWorthy: true,
+  },
 };
 
 // Repeating milestones (e.g. 200, 300 jars) would extend the catalog with
@@ -90,7 +140,7 @@ export function defaultCelebrationState() {
 // ---- Raw signal computation -------------------------------------------------
 // Pure read of the three numbers the detectors care about. No side effects.
 export function computeCelebrationSignals(data) {
-  if (!data) return { eggTotal: 0, jarsTotal: 0, harvestLbs: 0 };
+  if (!data) return { eggTotal: 0, jarsTotal: 0, harvestLbs: 0, bakesTotal: 0, hatchedTotal: 0 };
 
   // Eggs: sum count across egg_layers entries that are egg actions.
   const eggEntries = Array.isArray(data?.entries?.egg_layers)
@@ -134,7 +184,21 @@ export function computeCelebrationSignals(data) {
       return s + (Number(raw) || 0);
     }, 0);
 
-  return { eggTotal, jarsTotal, harvestLbs };
+  // Sourdough: bakes are a countable array on the sourdough hobby (hobby.bakes[]).
+  const bakesTotal = hobbies
+    .filter((h) => h && h.type === "sourdough" && Array.isArray(h.bakes))
+    .reduce((s, h) => s + h.bakes.length, 0);
+
+  // Incubator: hatched chicks live on hobby.runs[].eggsHatched (NOT `hatched`).
+  const hatchedTotal = hobbies
+    .filter((h) => h && h.type === "incubator" && Array.isArray(h.runs))
+    .reduce(
+      (s, h) =>
+        s + h.runs.reduce((rs, r) => rs + (Number(r && r.eggsHatched) || 0), 0),
+      0
+    );
+
+  return { eggTotal, jarsTotal, harvestLbs, bakesTotal, hatchedTotal };
 }
 
 // ---- Migration: back-mark already-passed milestones -------------------------
@@ -150,14 +214,21 @@ export function migrateCelebrationState(data) {
   // Only back-mark on the very first introduction of this feature, signaled by
   // the absence of our marker. After that, real crossings are handled live.
   if (!data._celebrationsInitialized) {
-    const { eggTotal, jarsTotal, harvestLbs } = computeCelebrationSignals(data);
+    const { eggTotal, jarsTotal, harvestLbs, bakesTotal, hatchedTotal } =
+      computeCelebrationSignals(data);
     const markIf = (cond, id) => {
       if (cond && !data.celebrationsShown.includes(id))
         data.celebrationsShown.push(id);
     };
     markIf(eggTotal >= 1, CELEBRATIONS.first_egg.id);
+    markIf(eggTotal >= 1000, CELEBRATIONS.eggs_1000.id);
+    markIf(eggTotal >= 5000, CELEBRATIONS.eggs_5000.id);
     markIf(jarsTotal >= 100, CELEBRATIONS.jars_100.id);
+    markIf(jarsTotal >= 500, CELEBRATIONS.jars_500.id);
     markIf(harvestLbs >= 100, CELEBRATIONS.harvest_100lb.id);
+    markIf(bakesTotal >= 50, CELEBRATIONS.bakes_50.id);
+    markIf(hatchedTotal >= 1, CELEBRATIONS.first_hatch.id);
+    markIf(hatchedTotal >= 100, CELEBRATIONS.hatched_100.id);
     data._celebrationsInitialized = true;
   }
   return data;
@@ -194,11 +265,27 @@ export function detectCelebrations(data, prevSignals) {
   };
 
   consider(CELEBRATIONS.first_egg.id, prevSignals.eggTotal, next.eggTotal, 1);
+  consider(CELEBRATIONS.eggs_1000.id, prevSignals.eggTotal, next.eggTotal, 1000);
+  consider(CELEBRATIONS.eggs_5000.id, prevSignals.eggTotal, next.eggTotal, 5000);
   consider(CELEBRATIONS.jars_100.id, prevSignals.jarsTotal, next.jarsTotal, 100);
+  consider(CELEBRATIONS.jars_500.id, prevSignals.jarsTotal, next.jarsTotal, 500);
   consider(
     CELEBRATIONS.harvest_100lb.id,
     prevSignals.harvestLbs,
     next.harvestLbs,
+    100
+  );
+  consider(CELEBRATIONS.bakes_50.id, prevSignals.bakesTotal, next.bakesTotal, 50);
+  consider(
+    CELEBRATIONS.first_hatch.id,
+    prevSignals.hatchedTotal,
+    next.hatchedTotal,
+    1
+  );
+  consider(
+    CELEBRATIONS.hatched_100.id,
+    prevSignals.hatchedTotal,
+    next.hatchedTotal,
     100
   );
 
@@ -206,11 +293,18 @@ export function detectCelebrations(data, prevSignals) {
     return { celebration: null, nextSignals: next, crossedIds: [] };
   }
 
-  // If two cross at once (rare), show the "biggest" by catalog order but mark
-  // both so neither re-queues. Order here = priority shown to the user.
+  // If two cross at once (rare), show the "biggest" and mark both so neither
+  // re-queues. Order = priority shown to the user; higher milestones first so a
+  // big single log that crosses two thresholds shows the more impressive one.
   const priority = [
+    CELEBRATIONS.eggs_5000.id,
+    CELEBRATIONS.jars_500.id,
+    CELEBRATIONS.hatched_100.id,
+    CELEBRATIONS.eggs_1000.id,
+    CELEBRATIONS.bakes_50.id,
     CELEBRATIONS.jars_100.id,
     CELEBRATIONS.harvest_100lb.id,
+    CELEBRATIONS.first_hatch.id,
     CELEBRATIONS.first_egg.id,
   ];
   const toShowId =
