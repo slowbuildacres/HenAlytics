@@ -20754,18 +20754,20 @@ function MilestoneModal({ config, userCount, milestone, onClose, onOpenSupport }
 // Generic thank-you to everyone who's chipped in.
 // Includes mission statement and two Stripe Payment Link buttons (one-time + monthly).
 // Marks the month as dismissed when the user closes OR taps a tip button.
-// Format a supporter's start date (ISO) as a short "Mon YYYY" — e.g. the
-// "est May 2026" tag on the supporter wall. Returns "" on a bad/empty date
-// so the tag simply doesn't render.
-function fmtSupporterSince(iso) {
-  if (!iso) return "";
-  try {
-    const d = new Date(iso);
-    if (isNaN(d.getTime())) return "";
-    return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
-  } catch (_) {
-    return "";
-  }
+// Format a supporter's start date as a short "Mon YYYY" — e.g. the "est May
+// 2026" tag on the supporter wall. Accepts "YYYY-MM", "YYYY-MM-DD", or a full
+// ISO timestamp and reads the year + month straight from the string, with NO
+// Date()/timezone conversion — so a start logged just after midnight UTC never
+// slips to the previous month for users in western timezones. Returns "" on a
+// bad/empty value so the tag simply doesn't render.
+function fmtSupporterSince(s) {
+  if (!s || typeof s !== "string") return "";
+  const m = s.match(/^(\d{4})-(\d{2})/);
+  if (!m) return "";
+  const months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+  const idx = parseInt(m[2], 10) - 1;
+  if (idx < 0 || idx > 11) return "";
+  return `${months[idx]} ${m[1]}`;
 }
 
 function SupporterThanksModal({ onClose, onLeaveTip }) {

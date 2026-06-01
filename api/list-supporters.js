@@ -175,11 +175,12 @@ export default async function handler(req, res) {
     uniqueNames.push({
       name: row.homestead_name.trim(),
       tier: row.payment_type === 'monthly' ? 'monthly' : 'one_time',
-      // Earliest start for this name. Rows are ordered started_at ascending
-      // and we keep the first occurrence, so this is their longest-tenured
-      // record. Prefer original_started_at (survives re-subscribes) and fall
-      // back to started_at. Powers the "est May 2026" tag on the wall.
-      since: row.original_started_at || row.started_at || null,
+      // Earliest start for this name, trimmed to month granularity (YYYY-MM).
+      // Rows are ordered started_at ascending and we keep the first occurrence,
+      // so this is their longest-tenured record. Prefer original_started_at
+      // (survives re-subscribes), fall back to started_at. Powers the "est May
+      // 2026" tag — month + year only; no day or time leaves the server.
+      since: ((row.original_started_at || row.started_at || "").slice(0, 7)) || null,
       _key: key,
     });
   }
