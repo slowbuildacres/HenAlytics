@@ -1626,7 +1626,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 50;
+const CURRENT_VERSION = 51;
 
 // STEP3_REVIEW_PROMPT: custom pre-prompt modal.
 // Apple-compliant pattern: we show our own modal first asking if the
@@ -1684,6 +1684,9 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "💛 Supporter popup polish — the monthly supporter wall now shows when each supporter first started chipping in (e.g. \"est May 2026\"), and a long list now scrolls in place so the tip buttons are always within reach instead of buried below everyone. The Tip heart in the bottom nav also stays filled for the whole time you're an active monthly supporter, instead of going dark at the start of each new month.",
+  "🧾 Your hobby-logged costs now show in the Sales log — when you type a cost on a quick-log (a feed cost, bedding, fertilizer, etc.) or record a flock/chick/animal purchase, it now appears as a line item in the Sales & expenses log, matching the total it was already counted in. Before, those costs counted toward your profit numbers but never showed as a row, so a logged feed cost looked like it vanished. These rows are read-only here (tap into the hobby's page to edit them).",
+  "🪺 Broody logging now works per-flock — if you keep more than one flock, the Broody log lets you pick which flock the broody hen belongs to. Before, every broody entry was filed under your first flock no matter which one you meant, so broody counts only ever showed on flock #1. Fixed.",
   "💵 Profit math now defaults to Simple mode — cash in vs cash out, dated within the window you pick. Matches the homesteader mental model: \"did I spend more than I made this month?\" The FIFO option (true cost-per-unit accounting) is still there for users who want deeper analysis, just one tap away in the Sales tab. New homesteads default to Simple; existing data is unaffected. Also added a helpful hint when you have revenue logged but no expenses — the most common reason profit looks weird.",
   "✏️ Edit a batch with pantry usage and it just works — the picker now preloads your original pantry rows when you reopen a saved batch / bake / ferment in Canning, Fermentation, Freeze Drying, Dehydrating, or Sourdough. Editing refunds the old deductions and re-applies the new ones, so stock numbers stay clean even if you change quantities or swap ingredients.",
   "📜 Pantry usage history — tap any pantry item to see exactly which bakes, batches, and ferments consumed from it, with amounts and dates. Answers \"where did all my flour go?\" at a glance. Shows the 50 most recent entries with a running total at the top.",
@@ -3228,14 +3231,23 @@ useEffect(() => {
     })();
     return () => { cancelled = true; };
   }, [user]);
-  // ---- Tipped this month ----
-  // Drives the Tip button visual. Queries supporters table for any record
-  // this user has created in the current calendar month. Re-runs when user
-  // changes. Falls back to data.userHasTipped if DB query fails so degraded
-  // conditions don't lose the supporter feedback.
+  // ---- Tip button heart ----
+  // The nav heart fills red when the user is currently supporting. Two ways
+  // to qualify:
+  //   1. Active monthly supporter (isSupporter, from /api/supporter-status) —
+  //      stays red for the whole subscription, NOT just the month a renewal
+  //      row happens to land. This is the fix for the heart going dark at the
+  //      start of each new month before that month's renewal row was written.
+  //   2. Any supporters row created in the current calendar month — covers
+  //      one-time tippers, who light up the heart for the month they tipped.
+  // Re-runs when the user OR their subscription status changes. Falls back to
+  // data.userHasTipped if the DB query fails so degraded conditions don't lose
+  // the supporter feedback.
   useEffect(() => {
     let cancelled = false;
     const checkTipped = async () => {
+      // Active monthly subscriber → red all month, no DB round-trip needed.
+      if (isSupporter) { if (!cancelled) setTippedThisMonth(true); return; }
       if (!user || !isSupabaseConfigured) {
         if (!cancelled) setTippedThisMonth(!!data?.userHasTipped);
         return;
@@ -3265,7 +3277,7 @@ useEffect(() => {
     };
     checkTipped();
     return () => { cancelled = true; };
-  }, [user, data?.userHasTipped]);
+  }, [user, isSupporter, data?.userHasTipped]);
 
 
   // Compute the current milestone — the highest threshold in the config
@@ -17337,7 +17349,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           all flocks" which divides the count using largest-remainder (e.g.
           13 across 4 flocks → 4/3/3/3) and creates one entry per flock. */}
       {hobby.type === "egg_layers" && Array.isArray(hobby.flocks) && hobby.flocks.length > 1 &&
-        ["fed","bedding","death","eggs","sold_eggs","note","issue","custom"].includes(action) && (
+        ["fed","bedding","death","eggs","sold_eggs","note","issue","broody","custom"].includes(action) && (
         <Field label="Which flock?">
           <select
             style={inputStyle}
@@ -20661,6 +20673,20 @@ function MilestoneModal({ config, userCount, milestone, onClose, onOpenSupport }
 // Generic thank-you to everyone who's chipped in.
 // Includes mission statement and two Stripe Payment Link buttons (one-time + monthly).
 // Marks the month as dismissed when the user closes OR taps a tip button.
+// Format a supporter's start date (ISO) as a short "Mon YYYY" — e.g. the
+// "est May 2026" tag on the supporter wall. Returns "" on a bad/empty date
+// so the tag simply doesn't render.
+function fmtSupporterSince(iso) {
+  if (!iso) return "";
+  try {
+    const d = new Date(iso);
+    if (isNaN(d.getTime())) return "";
+    return d.toLocaleDateString("en-US", { month: "short", year: "numeric" });
+  } catch (_) {
+    return "";
+  }
+}
+
 function SupporterThanksModal({ onClose, onLeaveTip }) {
   // Two buttons matching the prior layout — one-time ($5) and monthly ($5).
   // New checkout flow goes through /api/create-checkout-session so the
@@ -20674,12 +20700,8 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
   //     without a name list (no error UI in a celebratory popup)
   //   - No supporters last month → also fall back to generic thank-you
   //   - Loading → show a small "loading…" line while the fetch runs
-  const [supporterNames, setSupporterNames] = React.useState(null); // null = loading, [] = none, [...] = list
+  const [supporterNames, setSupporterNames] = React.useState(null); // null = loading, [] = none, [...] = list of { name, since }
   const [priorMonthLabel, setPriorMonthLabel] = React.useState("");
-  // STEP2B_TOP_SPONSOR: name(s) of the highest single contributor(s) for the
-  // prior month. Computed server-side by /api/list-supporters. [] when
-  // there is no rankable amount (or the endpoint predates Step 2B).
-  const [topSponsors, setTopSponsors] = React.useState([]);
 
   React.useEffect(() => {
     const now = new Date();
@@ -20697,11 +20719,15 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
         }
         const j = await r.json();
         if (cancelled) return;
-        const list = Array.isArray(j.supporters) ? j.supporters.map(s => s.name).filter(Boolean) : [];
+        // Keep name + since (start date) so the wall can show "est May 2026".
+        // `since` may be absent on older endpoint builds — that's fine, the
+        // est line just won't render for that supporter.
+        const list = Array.isArray(j.supporters)
+          ? j.supporters
+              .filter(s => s && s.name)
+              .map(s => ({ name: s.name, since: s.since || null }))
+          : [];
         setSupporterNames(list);
-        // STEP2B_TOP_SPONSOR: topSponsors is a names array from the endpoint.
-        // Older endpoint builds omit it — default to [] so nothing breaks.
-        setTopSponsors(Array.isArray(j.topSponsors) ? j.topSponsors.filter(Boolean) : []);
       } catch (_) {
         if (!cancelled) setSupporterNames([]);
       }
@@ -20742,44 +20768,6 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
               Loading this month's supporter list…
             </div>
           )}
-          {/* STEP2B_TOP_SPONSOR: Top Sponsor(s) — highlighted above the full
-              supporter list. Renders only when the endpoint returned at
-              least one top sponsor. Heading pluralizes on ties. */}
-          {Array.isArray(topSponsors) && topSponsors.length > 0 && (
-            <div style={{
-              margin:"4px 0 12px",
-              padding:"14px 16px",
-              background:palette.yolk,
-              border:`2px solid ${palette.ink}`,
-              borderRadius:12,
-              boxShadow:`2px 2px 0 ${palette.line}`,
-            }}>
-              <div style={{
-                fontFamily:FONT_DISPLAY,fontSize:15,color:palette.ink,
-                marginBottom:8,textAlign:"center",
-              }}>
-                ⭐ {topSponsors.length > 1 ? "Top Sponsors" : "Top Sponsor"}
-              </div>
-              <div style={{
-                display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",
-              }}>
-                {topSponsors.map((n, i) => (
-                  <span key={i} style={{
-                    fontSize:13,fontWeight:700,color:palette.ink,
-                    background:palette.bg,
-                    border:`2px solid ${palette.ink}`,
-                    borderRadius:999,padding:"5px 12px",
-                  }}>{n}</span>
-                ))}
-              </div>
-              <div style={{
-                fontSize:11,color:palette.ink,textAlign:"center",
-                marginTop:10,fontStyle:"italic",opacity:0.8,
-              }}>
-                {priorMonthLabel ? `Most generous in ${priorMonthLabel}` : "Most generous this month"} 💛
-              </div>
-            </div>
-          )}
           {Array.isArray(supporterNames) && supporterNames.length > 0 && (
             <div style={{
               margin:"4px 0 16px",
@@ -20794,16 +20782,29 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
               }}>
                 🌾 {priorMonthLabel} supporters
               </div>
+              {/* Capped, scrollable chip area — a long supporter list used to
+                  push the donate buttons below the fold so you had to scroll
+                  past everyone to tip. The list now scrolls inside this box
+                  (about 4–5 rows tall) while the buttons below stay reachable. */}
               <div style={{
                 display:"flex",flexWrap:"wrap",gap:6,justifyContent:"center",
+                maxHeight:148,overflowY:"auto",
               }}>
-                {supporterNames.map((n, i) => (
+                {supporterNames.map((s, i) => (
                   <span key={i} style={{
                     fontSize:12,fontWeight:600,color:palette.ink,
                     background:palette.bg,
                     border:`1.5px solid ${palette.line}`,
                     borderRadius:999,padding:"4px 10px",
-                  }}>{n}</span>
+                    display:"inline-flex",alignItems:"baseline",gap:5,
+                  }}>
+                    {s.name}
+                    {s.since && (
+                      <span style={{ fontSize:10,fontWeight:500,color:palette.inkSoft }}>
+                        est {fmtSupporterSince(s.since)}
+                      </span>
+                    )}
+                  </span>
                 ))}
               </div>
               <div style={{

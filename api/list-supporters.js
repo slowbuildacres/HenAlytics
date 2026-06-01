@@ -119,7 +119,7 @@ export default async function handler(req, res) {
     const supabase = getSupabaseAdmin();
     const { data, error } = await supabase
       .from('supporters')
-      .select('homestead_name, payment_type, amount_dollars, started_at, canceled_at')
+      .select('homestead_name, payment_type, amount_dollars, started_at, original_started_at, canceled_at')
       .eq('homestead_name_visible', true)
       .eq('homestead_name_flagged', false)
       .not('homestead_name', 'is', null)
@@ -175,28 +175,20 @@ export default async function handler(req, res) {
     uniqueNames.push({
       name: row.homestead_name.trim(),
       tier: row.payment_type === 'monthly' ? 'monthly' : 'one_time',
+      // Earliest start for this name. Rows are ordered started_at ascending
+      // and we keep the first occurrence, so this is their longest-tenured
+      // record. Prefer original_started_at (survives re-subscribes) and fall
+      // back to started_at. Powers the "est May 2026" tag on the wall.
+      since: row.original_started_at || row.started_at || null,
       _key: key,
     });
   }
 
-  // STEP 2B: compute Top Sponsor(s) — the name(s) with the highest known
-  // amount_dollars this month. Null amounts are ignored entirely. Ties all
-  // win (co-Top-Sponsors). If nobody has a known amount, topSponsors is [].
-  let maxAmount = null;
-  for (const u of uniqueNames) {
-    const amt = amountByName.get(u._key);
-    if (amt === null || amt === undefined) continue;
-    if (maxAmount === null || amt > maxAmount) maxAmount = amt;
-  }
-  const topSponsors = (maxAmount === null)
-    ? []
-    : uniqueNames
-        .filter(u => amountByName.get(u._key) === maxAmount)
-        .map(u => u.name);
-
   // Strip the internal _key before returning. The public list keeps name +
-  // tier exactly as before (no amounts exposed).
-  const supporters = uniqueNames.map(u => ({ name: u.name, tier: u.tier }));
+  // tier, and now also `since` (the supporter's earliest start date) so the
+  // wall can show an "est May 2026" tag. Still no Stripe IDs, emails, user_ids,
+  // or amounts.
+  const supporters = uniqueNames.map(u => ({ name: u.name, tier: u.tier, since: u.since }));
 
   // Cache for 1 hour at the edge — supporter list changes at most a few
   // times per month, no need to hit Supabase on every modal open.
@@ -206,6 +198,5 @@ export default async function handler(req, res) {
     month,
     count: supporters.length,
     supporters,
-    topSponsors, // STEP 2B: array of name(s); [] when no rankable amount exists
   });
 }

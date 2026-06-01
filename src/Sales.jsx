@@ -17,7 +17,7 @@ import React, { useState, useMemo } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney } from "./units.js";
-import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS } from "./expenseFifo.js";
+import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses } from "./expenseFifo.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -998,7 +998,7 @@ function CustomerModal({ customer, onSave, onClose }) {
 // ============================================================================
 // SALE ROW
 // ============================================================================
-function ExpenseRow({ expense, hobbies, onEdit, onDelete }) {
+function ExpenseRow({ expense, hobbies, onEdit, onDelete, readOnly }) {
   const hobby = (hobbies || []).find(h => h.id === expense.hobbyId);
   const hobbyLabel = hobby ? hobby.name : "General overhead";
   return (
@@ -1010,11 +1010,22 @@ function ExpenseRow({ expense, hobbies, onEdit, onDelete }) {
           <span style={{ fontSize:11,background:palette.accent+"25",color:palette.ink,padding:"1px 6px",borderRadius:4,fontWeight:500 }}>{expense.category || "Expense"}</span>
         </div>
         <div style={{ fontSize:12,color:palette.inkSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>
-          {fmtDate(expense.date)} · {hobbyLabel}{expense.note ? ` · ${expense.note}` : ""}
+          {fmtDate(expense.date)} · {hobbyLabel}{expense.note ? ` · ${expense.note}` : ""}{readOnly ? " · logged on hobby page" : ""}
         </div>
       </div>
-      <button onClick={onEdit} aria-label="Edit expense" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Edit3 size={16}/></button>
-      <button onClick={onDelete} aria-label="Delete expense" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Trash2 size={16}/></button>
+      {readOnly ? (
+        // Entry-sourced cost (logged on a hobby's quick-log, e.g. a feed cost,
+        // or a structural buy like a flock/chick purchase). It lives in
+        // data.entries / the hobby object, not data.expenses, so it can't be
+        // edited or deleted from here — the user edits it on the hobby page.
+        // Shown read-only so the log reconciles with the profit total.
+        <span style={{ fontSize:11,color:palette.inkSoft,fontStyle:"italic",flexShrink:0,whiteSpace:"nowrap" }}>hobby page</span>
+      ) : (
+        <>
+          <button onClick={onEdit} aria-label="Edit expense" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Edit3 size={16}/></button>
+          <button onClick={onDelete} aria-label="Delete expense" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Trash2 size={16}/></button>
+        </>
+      )}
     </div>
   );
 }
@@ -1883,9 +1894,53 @@ export default function SalesPage({ data, update }) {
               const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
               return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
             });
+
+        // Entry-sourced expenses — costs that were logged on a hobby's page
+        // (feed/bedding/fertilizer/supplies/restock) PLUS structural buys
+        // (flock/chick/hive/animal purchases). These live in data.entries and
+        // the hobby objects, NOT in data.expenses, so historically they never
+        // showed up in this log even though they DO count toward the profit
+        // totals — which is exactly why a logged feed cost "disappeared."
+        // We surface them here as READ-ONLY rows so the log reconciles with
+        // the headline total. They're edited on the hobby page, not here.
+        //
+        // We exclude source "logged_expense": those ARE data.expenses rows and
+        // are already rendered from allExpensesExpanded above — pulling them in
+        // again would show every Add-Expense row twice.
+        const ENTRY_EXP_LABEL = {
+          fed: "Feed", bedding: "Bedding", fertilized: "Fertilizer",
+          supplies: "Supplies", restock: "Restock",
+          flock_purchase: "Birds", chick_purchase: "Chicks",
+          hive_purchase: "Hive", animal_purchase: "Animal",
+        };
+        const entrySourcedExpenses = [];
+        for (const h of (data.hobbies || [])) {
+          const rows = extractHobbyExpenses(data, h.id);
+          for (let i = 0; i < rows.length; i++) {
+            const r = rows[i];
+            if (r.source === "logged_expense") continue; // already shown via data.expenses
+            entrySourcedExpenses.push({
+              id: `entry:${h.id}:${r.date}:${r.source}:${i}`,
+              date: r.date,
+              amount: r.cost,
+              category: ENTRY_EXP_LABEL[r.source] || "Expense",
+              hobbyId: h.id,
+              note: r.note || "",
+              _entrySourced: true,
+            });
+          }
+        }
+        const filteredEntrySourced = filterType === "all"
+          ? entrySourcedExpenses
+          : entrySourcedExpenses.filter(ex => {
+              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
+              return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
+            });
+
         const merged = [
           ...filtered.map(s => ({ kind: "sale", item: s, date: s.date || "" })),
           ...filteredExpenses.map(e => ({ kind: "expense", item: e, date: e.date || "" })),
+          ...filteredEntrySourced.map(e => ({ kind: "expense", item: e, date: e.date || "" })),
         ].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
         if (merged.length === 0) {
@@ -1917,6 +1972,7 @@ export default function SalesPage({ data, update }) {
                 key={"e:" + (row.item._occKey || row.item.id)}
                 expense={row.item}
                 hobbies={data.hobbies}
+                readOnly={!!row.item._entrySourced}
                 onEdit={() => {
                   // Virtual instance from a recurring template: open the
                   // template (parent) so user can edit the series — OR pick
