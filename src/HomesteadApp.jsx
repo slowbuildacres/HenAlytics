@@ -107,7 +107,7 @@ import {
 import GardenMapModal from "./GardenMap.jsx";
 import PlantScannerModal from "./PlantScannerModal.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
-import SalesPage, { AddExpenseModal } from "./Sales.jsx";
+import SalesPage, { AddExpenseModal, expandRecurringExpenses } from "./Sales.jsx";
 import {
   PANTRY_CATEGORIES, PANTRY_CATEGORY_LABELS, INGREDIENT_DENSITIES,
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
@@ -1688,6 +1688,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🥚 Cost/Egg now counts every expense you log on your layers — including costs added through the 💵 Add Expense tile, not just the feed and bedding typed onto a quick-log. Before, an Add Expense feed cost showed up in the Sales tab but never moved your cost-per-egg, which was confusing. Now feed, bedding, supplies, vet — every attributed category folds in, broken out in the Cost breakdown card. New: a toggle there to include or exclude one-time infrastructure (coops, fencing) from the cost-per-egg figure, so you can see ongoing cost alone.",
   "💛 Supporter popup polish — the monthly supporter wall now shows when each supporter first started chipping in (e.g. \"est May 2026\"), and a long list now scrolls in place so the tip buttons are always within reach instead of buried below everyone. The Tip heart in the bottom nav also stays filled for the whole time you're an active monthly supporter, instead of going dark at the start of each new month.",
   "🧾 Your hobby-logged costs now show in the Sales log — when you type a cost on a quick-log (a feed cost, bedding, fertilizer, etc.) or record a flock/chick/animal purchase, it now appears as a line item in the Sales & expenses log, matching the total it was already counted in. Before, those costs counted toward your profit numbers but never showed as a row, so a logged feed cost looked like it vanished. These rows are read-only here (tap into the hobby's page to edit them).",
   "🪺 Broody logging now works per-flock — if you keep more than one flock, the Broody log lets you pick which flock the broody hen belongs to. Before, every broody entry was filed under your first flock no matter which one you meant, so broody counts only ever showed on flock #1. Fixed.",
@@ -9249,7 +9250,7 @@ function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter,
         />
       </div>
 
-      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} /* ADV_ANALYTICS */ dateRange={range} allEntries={allEntries} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />}
+      {hobby.type === "egg_layers" && <EggLayersAnalytics hobby={hobby} entries={entries} spouseMode={spouseMode} /* ADV_ANALYTICS */ dateRange={range} allEntries={allEntries} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} data={data} />}
       {hobby.type === "meat_chickens" && <MeatChickensAnalytics hobby={hobby} entries={entries} dateRange={range} spouseMode={spouseMode} /* ADV_ANALYTICS */ allEntries={allEntries} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />}
     </div>
   );
@@ -9737,8 +9738,12 @@ function computeCoopPayoff(eggEntries, infraCost, allEntries) {
   };
 }
 
-function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
+function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false, data = null }) {
   if (!hobby) return <EmptyState text="Loading…" />;
+  // Toggle: include one-time infrastructure (coops, fencing, brooders) in the
+  // Cost/Egg figure. Defaults ON to preserve the historical number; turning it
+  // off shows the ongoing/operating cost per egg only.
+  const [includeInfra, setIncludeInfra] = useState(true);
   // Count both "eggs" (manual quick-tile) and "eggs_laid" (egg basket commits)
   const eggs = entries.filter((e) => e.action === "eggs" || e.action === "eggs_laid");
   const feeds = entries.filter((e) => e.action === "fed");
@@ -9755,7 +9760,44 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
   const feedCost = spouseCost(feedCostRaw, spouseMode);
   const beddingCost = spouseCost(beddingCostRaw, spouseMode);
   const infraCost = spouseCost(infraCostRaw, spouseMode);
-  const totalCost = feedCost + beddingCost + infraCost;
+
+  // Logged expenses attributed to this egg-layer hobby via the "Add Expense"
+  // tile (data.expenses[] with hobbyId === hobby.id). The Cost/Egg card used
+  // to ignore these entirely — only the Sales tab saw them — so a feed cost
+  // logged through Add Expense never moved cost/egg. Now every attributed
+  // category counts. Recurring templates are expanded but capped at today
+  // (cost/egg is money spent so far, not future scheduled spend), then
+  // filtered to the same date range as the entry-based stats above.
+  const _today = todayStr();
+  const _loggedRaw = (data && Array.isArray(data.expenses))
+    ? data.expenses.filter((x) => x && x.hobbyId === hobby.id)
+    : [];
+  const loggedExpenses = filterByDateRange(
+    expandRecurringExpenses(_loggedRaw).filter((x) => x.date && x.date <= _today),
+    dateRange,
+    (x) => x.date,
+  );
+  const _cat = (x) => String((x && x.category) || "").trim().toLowerCase();
+  const _sumLogged = (pred) =>
+    loggedExpenses.filter(pred).reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  // Logged Feed/Bedding/Infrastructure fold into their matching buckets so the
+  // breakdown rows stay meaningful; everything else lands in "Other".
+  const loggedFeed = spouseCost(_sumLogged((x) => _cat(x) === "feed"), spouseMode);
+  const loggedBedding = spouseCost(_sumLogged((x) => _cat(x) === "bedding"), spouseMode);
+  const loggedInfra = spouseCost(_sumLogged((x) => _cat(x) === "infrastructure"), spouseMode);
+  const loggedOther = spouseCost(
+    _sumLogged((x) => !["feed", "bedding", "infrastructure"].includes(_cat(x))),
+    spouseMode,
+  );
+
+  // Combined buckets (entry-based + logged).
+  const feedTotal = feedCost + loggedFeed;
+  const beddingTotal = beddingCost + loggedBedding;
+  const otherTotal = loggedOther;
+  const infraTotal = infraCost + loggedInfra; // all one-time/capital costs
+  const operatingCost = feedTotal + beddingTotal + otherTotal; // recurring/consumable
+
+  const totalCost = operatingCost + (includeInfra ? infraTotal : 0);
   const costPerEgg = totalEggs > 0 ? totalCost / totalEggs : 0;
   const costPerDozen = costPerEgg * 12;
   const flocks = hobby.flocks || [];
@@ -9793,7 +9835,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Total Eggs Laid" value={totalEggs} accent={palette.yolk} />
-        <StatCard label="Cost / Egg" value={fmtMoney(costPerEgg)} sub={`${fmtMoney(costPerDozen)}/dozen`} accent={palette.accent} />
+        <StatCard label="Cost / Egg" value={fmtMoney(costPerEgg)} sub={`${fmtMoney(costPerDozen)}/dozen${(infraTotal > 0 && !includeInfra) ? " · excl. infra" : ""}`} accent={palette.accent} />
         <StatCard label="Eggs / Hen" value={eggsPerHen} sub="lifetime" accent={palette.leaf} />
         {totalDeathCount > 0 && <StatCard label="Deaths" value={totalDeathCount} accent={palette.ink} />}
         {tractorFeet > 0 && (
@@ -9807,10 +9849,22 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
       </div>
 
       <ChartCard title="📊 Cost breakdown">
+        {infraTotal > 0 && (
+          <button
+            onClick={() => setIncludeInfra((v) => !v)}
+            style={{ display:"flex",alignItems:"center",gap:8,background:"none",border:"none",cursor:"pointer",padding:"2px 2px",marginBottom:10,fontFamily:FONT_BODY,fontSize:12,color:palette.inkSoft }}
+          >
+            <span style={{ width:34,height:18,borderRadius:9,background: includeInfra ? palette.accent : palette.line,position:"relative",transition:"background 0.15s",flexShrink:0,display:"inline-block" }}>
+              <span style={{ position:"absolute",top:2,left: includeInfra ? 18 : 2,width:14,height:14,borderRadius:7,background:palette.bg,transition:"left 0.15s" }} />
+            </span>
+            Include infrastructure in cost/egg
+          </button>
+        )}
         <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-          <CostRow label="Feed" value={feedCost} total={totalCost} />
-          <CostRow label="Bedding" value={beddingCost} total={totalCost} />
-          {infraCost > 0 && <CostRow label="Infrastructure" value={infraCost} total={totalCost} />}
+          {feedTotal > 0 && <CostRow label="Feed" value={feedTotal} total={totalCost} />}
+          {beddingTotal > 0 && <CostRow label="Bedding" value={beddingTotal} total={totalCost} />}
+          {otherTotal > 0 && <CostRow label="Other expenses" value={otherTotal} total={totalCost} />}
+          {includeInfra && infraTotal > 0 && <CostRow label="Infrastructure" value={infraTotal} total={totalCost} />}
           <div style={{
             display: "flex", justifyContent: "space-between", padding: "10px 12px",
             background: palette.ink, color: palette.bg, borderRadius: 6, marginTop: 4, fontWeight: 600,
@@ -9823,9 +9877,11 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
 
       {/* COOP_PAYOFF: coop payoff fun stat. computeCoopPayoff returns
           null (nothing to show), a laborOfLove message, or a full
-          result. The card handles all three. */}
+          result. The card handles all three. Payoff always uses the full
+          infrastructure total (entry-based + logged), independent of the
+          cost/egg include-infra toggle. */}
       {(() => {
-        const payoff = computeCoopPayoff(eggs, infraCost, entries);
+        const payoff = computeCoopPayoff(eggs, infraTotal, entries);
         if (!payoff) return null;
         return (
           <ChartCard title="🥚 Coop payoff">
@@ -19272,7 +19328,33 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
       const eggs = entries.filter(e => e.action === "eggs" || e.action === "eggs_laid");
       const totalEggs = eggs.reduce((s, e) => s + (Number(e.count)||0), 0);
       const feeds = entries.filter(e => e.action === "fed");
-      const totalCost = feeds.reduce((s, e) => s + (Number(e.cost)||0), 0);
+      // Costs match the analytics Cost/Egg figure: entry-based fed/bedding/
+      // infrastructure PLUS expenses logged via the Add Expense tile
+      // (data.expenses[] for this hobby). Recurring expenses expand and cap
+      // at today, then filter to the same share period as the entries.
+      const beddingEntries = entries.filter(e => e.action === "bedding");
+      const infraEntries = entries.filter(e => e.action === "infrastructure");
+      const entryFeed = feeds.reduce((s, e) => s + (Number(e.cost)||0), 0);
+      const entryRest = beddingEntries.reduce((s, e) => s + (Number(e.cost)||0), 0)
+                      + infraEntries.reduce((s, e) => s + (Number(e.cost)||0), 0);
+      const loggedRaw = (data && Array.isArray(data.expenses))
+        ? data.expenses.filter(x => x && x.hobbyId === hobby.id) : [];
+      const inPeriod = (dateStr) => {
+        if (!dateStr) return filter === "all";
+        if (filter === "all") return true;
+        const d = new Date(dateStr + "T12:00");
+        if (filter === "today") return dateStr === todayStr;
+        if (filter === "week")  return d >= oneWeekAgo;
+        if (filter === "year")  return d >= oneYearAgo;
+        return true;
+      };
+      const logged = expandRecurringExpenses(loggedRaw)
+        .filter(x => x.date && x.date <= todayStr && inPeriod(x.date));
+      const _ecat = (x) => String((x && x.category) || "").trim().toLowerCase();
+      const loggedFeed = logged.filter(x => _ecat(x) === "feed").reduce((s,x)=>s+(Number(x.amount)||0),0);
+      const loggedRest = logged.filter(x => _ecat(x) !== "feed").reduce((s,x)=>s+(Number(x.amount)||0),0);
+      const feedCost = entryFeed + loggedFeed;
+      const totalCost = feedCost + entryRest + loggedRest;
       const costPerDozen = totalEggs > 0 ? (totalCost / totalEggs * 12) : 0;
       const flocks = hobby.flocks || [];
       const totalBirds = flocks.reduce((s, f) => s + (f.birdCount||0), 0);
@@ -19285,7 +19367,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
         { label: "Eggs collected", value: totalEggs.toLocaleString() },
         { label: "Birds in flock", value: totalBirds },
         { label: "Cost / dozen", value: costPerDozen > 0 ? fmtMoney(costPerDozen) : "—" },
-        { label: "Feed cost", value: totalCost > 0 ? fmtMoney(totalCost) : "—" },
+        { label: "Feed cost", value: feedCost > 0 ? fmtMoney(feedCost) : "—" },
       ];
       if (tractorFeet > 0) stats.push({ label: "Tractor moved", value: fmtTractorDistance(tractorFeet) });
       return { emoji: "🥚", label: "Egg Layers", stats };
