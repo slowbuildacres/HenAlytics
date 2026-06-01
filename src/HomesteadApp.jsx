@@ -213,7 +213,8 @@ const defaultData = () => ({
   freezerLog: [],       // universal butcher records: { id, date, hobbyId, flockId, flockName, birdType, count, avgWeight, note }
   supportersDismissedMonth: null, // "YYYY-MM" of last dismissed monthly thank-you
   appStoreFundDismissedMonth: null, // "YYYY-MM" of last dismissed app-store-fundraiser popup
-  appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time)
+  appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time, iOS/desktop web)
+  playStoreLaunchDismissed: false, // true once the user dismisses the "we're on Google Play" launch popup (one-time, Android web)
   accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   weeklyDigestOptIn: false, // master switch for the weekly homestead summary email
@@ -336,6 +337,9 @@ function migrateData(data) {
   }
   if (typeof data.appStoreLaunchDismissed !== "boolean") {
     data.appStoreLaunchDismissed = false;
+  }
+  if (typeof data.playStoreLaunchDismissed !== "boolean") {
+    data.playStoreLaunchDismissed = false;
   }
   if (typeof data.accountNudgeDismissed !== "boolean") {
     data.accountNudgeDismissed = false;
@@ -1782,6 +1786,23 @@ const getNativePlatform = () => {
   return "web";
 };
 
+// For WEB users (not the native shell), sniff the mobile OS from userAgent so
+// the store-launch popup can lead with the right store. Returns "android",
+// "ios", or "other" (desktop / unknown). Detection only drives copy + which
+// flag gates the popup — the popup itself always shows BOTH store badges, so
+// a missed sniff never hides a store from someone.
+const getWebMobileOS = () => {
+  try {
+    if (typeof navigator === "undefined") return "other";
+    const ua = navigator.userAgent || "";
+    if (/android/i.test(ua)) return "android";
+    if (/iphone|ipad|ipod/i.test(ua)) return "ios";
+    // iPadOS 13+ masquerades as desktop Safari; treat touch "Macs" as iOS.
+    if (/Macintosh/i.test(ua) && typeof document !== "undefined" && "ontouchend" in document) return "ios";
+  } catch (_) {}
+  return "other";
+};
+
 // STEP3_REVIEW_PROMPT: native in-app review request.
 // Uses @capacitor-community/in-app-review which wraps iOS SKStoreReviewController
 // and Android Play In-App Review API. The OS controls whether the dialog
@@ -3059,7 +3080,16 @@ useEffect(() => {
     if (appStoreLaunchShownRef.current) return;
     if (isNativeApp()) return;                   // native users already have the app
     if (!data?.onboardedAt) return;              // don't interrupt onboarding
-    if (data?.appStoreLaunchDismissed) return;   // already seen + dismissed
+    // Gate by the web user's platform so each store re-announces independently.
+    // An Android web user who dismissed the old iOS-only popup
+    // (appStoreLaunchDismissed = true) still has playStoreLaunchDismissed =
+    // false, so they get the Google Play announcement. iOS/desktop users who
+    // already dismissed are not re-nagged.
+    const webOS = getWebMobileOS();
+    const alreadyDismissed = webOS === "android"
+      ? data?.playStoreLaunchDismissed
+      : data?.appStoreLaunchDismissed;
+    if (alreadyDismissed) return;
     // Hold off until the account is at least two days old. Note this means
     // the popup appears on the first app open AFTER the 2-day mark, not
     // exactly 48h later — it needs the user to come back, which is fine
@@ -3073,7 +3103,7 @@ useEffect(() => {
     appStoreLaunchShownRef.current = true;
     const timer = setTimeout(() => setShowAppStoreLaunch(true), 1800);
     return () => clearTimeout(timer);
-  }, [data?.onboardedAt, data?.appStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
+  }, [data?.onboardedAt, data?.appStoreLaunchDismissed, data?.playStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
 
   // ---- "Create an account" nudge for signed-out users ----
   // A gentle, one-time, dismissible prompt. Fires once a signed-out user has
@@ -4565,12 +4595,20 @@ useNativeBackButton(React.useCallback(() => {
         }} />
       )}
 
-      {/* "We're on the App Store" launch popup — web users only, one-time */}
+      {/* App launch popup — "we're on the App Store / Google Play". Web users
+          only, one-time per platform. Always shows both store badges; the
+          detected OS just leads the copy and picks which dismiss flag to set. */}
       {showAppStoreLaunch && !showWhatsNew && (
         <AppStoreLaunchModal
+          webOS={getWebMobileOS()}
           onClose={() => {
             setShowAppStoreLaunch(false);
-            update(d => { d.appStoreLaunchDismissed = true; return d; });
+            const webOS = getWebMobileOS();
+            update(d => {
+              if (webOS === "android") d.playStoreLaunchDismissed = true;
+              else d.appStoreLaunchDismissed = true;
+              return d;
+            });
           }}
         />
       )}
@@ -20227,8 +20265,20 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
 // "coming soon to Google Play" line. The confetti and badge are all inline
 // SVG/CSS — nothing external to host, sharp at any size.
 // ============================================================================
-function AppStoreLaunchModal({ onClose }) {
+function AppStoreLaunchModal({ onClose, webOS }) {
   const APP_STORE_URL = "https://apps.apple.com/us/app/henalytics/id6768749008";
+  // ⚠️ CONFIRM this package name matches your Android applicationId
+  // (android/app/build.gradle → applicationId, or capacitor.config appId).
+  // If it's wrong the Google Play link 404s.
+  const PLAY_STORE_URL = "https://play.google.com/store/apps/details?id=com.henalytics.app";
+  const isAndroid = webOS === "android";
+  const isIOS = webOS === "ios";
+  // Lead copy adapts to the detected platform; both badges always render below.
+  const leadCopy = isAndroid
+    ? "Henalytics is now on Google Play — get it on your Android phone or tablet and take your homestead with you."
+    : isIOS
+      ? "Henalytics is now on the App Store — get it on your iPhone or iPad and take your homestead with you."
+      : "Henalytics now has a mobile app — get it on your iPhone, iPad, or Android device and take your homestead with you.";
 
   // Confetti pieces — randomized once on mount so each open looks lively but
   // stable during the popup's lifetime.
@@ -20381,36 +20431,67 @@ function AppStoreLaunchModal({ onClose }) {
             fontFamily: FONT_BODY, fontSize: 14, color: "rgba(255,255,255,0.92)",
             lineHeight: 1.5, marginBottom: 18,
           }}>
-            Henalytics is now on the App Store — get it on your iPhone or iPad
-            and take your homestead with you.
+            {leadCopy}
           </div>
 
-          {/* Official "Download on the App Store" badge — inline SVG */}
-          <a
-            href={APP_STORE_URL}
-            target="_blank"
-            rel="noopener noreferrer"
-            onClick={onClose}
-            style={{ display: "inline-block", textDecoration: "none", marginBottom: 14 }}
-          >
-            <svg width="170" height="56" viewBox="0 0 170 56" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Download on the App Store">
-              <rect x="1" y="1" width="168" height="54" rx="11" fill="#000" stroke="#A6A6A6" strokeWidth="1"/>
-              {/* Apple logo */}
-              <path d="M38.1 28.2c0-3.3 2.7-4.9 2.8-5-1.5-2.2-3.9-2.5-4.7-2.6-2-.2-3.9 1.2-4.9 1.2-1 0-2.6-1.2-4.2-1.1-2.2 0-4.2 1.3-5.3 3.2-2.3 3.9-.6 9.7 1.6 12.9 1.1 1.5 2.4 3.3 4 3.2 1.6-.1 2.2-1 4.1-1 1.9 0 2.5 1 4.2 1 1.7 0 2.8-1.6 3.9-3.1 1.2-1.8 1.7-3.5 1.7-3.6-.1 0-3.3-1.3-3.3-5.1z" fill="#fff"/>
-              <path d="M34.9 18.5c.9-1.1 1.5-2.5 1.3-4-1.3.1-2.8.9-3.7 1.9-.8.9-1.5 2.4-1.3 3.8 1.4.1 2.8-.7 3.7-1.7z" fill="#fff"/>
-              {/* text */}
-              <text x="56" y="24" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="9">Download on the</text>
-              <text x="56" y="42" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="19" fontWeight="600">App Store</text>
-            </svg>
-          </a>
-
-          {/* Coming soon to Google Play */}
-          <div style={{
-            fontFamily: FONT_BODY, fontSize: 12, color: "rgba(255,255,255,0.7)",
-            marginBottom: 18,
-          }}>
-            🤖 Coming soon to Google Play
-          </div>
+          {/* Both store badges. The detected platform's badge is rendered
+              first (on top) so it's the obvious tap, but both always show so
+              nobody is locked out by a bad userAgent sniff. */}
+          {(() => {
+            const appStoreBadge = (
+              <a
+                key="appstore"
+                href={APP_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onClose}
+                style={{ display: "inline-block", textDecoration: "none" }}
+              >
+                <svg width="170" height="56" viewBox="0 0 170 56" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Download on the App Store">
+                  <rect x="1" y="1" width="168" height="54" rx="11" fill="#000" stroke="#A6A6A6" strokeWidth="1"/>
+                  {/* Apple logo */}
+                  <path d="M38.1 28.2c0-3.3 2.7-4.9 2.8-5-1.5-2.2-3.9-2.5-4.7-2.6-2-.2-3.9 1.2-4.9 1.2-1 0-2.6-1.2-4.2-1.1-2.2 0-4.2 1.3-5.3 3.2-2.3 3.9-.6 9.7 1.6 12.9 1.1 1.5 2.4 3.3 4 3.2 1.6-.1 2.2-1 4.1-1 1.9 0 2.5 1 4.2 1 1.7 0 2.8-1.6 3.9-3.1 1.2-1.8 1.7-3.5 1.7-3.6-.1 0-3.3-1.3-3.3-5.1z" fill="#fff"/>
+                  <path d="M34.9 18.5c.9-1.1 1.5-2.5 1.3-4-1.3.1-2.8.9-3.7 1.9-.8.9-1.5 2.4-1.3 3.8 1.4.1 2.8-.7 3.7-1.7z" fill="#fff"/>
+                  {/* text */}
+                  <text x="56" y="24" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="9">Download on the</text>
+                  <text x="56" y="42" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="19" fontWeight="600">App Store</text>
+                </svg>
+              </a>
+            );
+            const playStoreBadge = (
+              <a
+                key="playstore"
+                href={PLAY_STORE_URL}
+                target="_blank"
+                rel="noopener noreferrer"
+                onClick={onClose}
+                style={{ display: "inline-block", textDecoration: "none" }}
+              >
+                <svg width="170" height="56" viewBox="0 0 170 56" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Get it on Google Play">
+                  <rect x="1" y="1" width="168" height="54" rx="11" fill="#000" stroke="#A6A6A6" strokeWidth="1"/>
+                  {/* Google Play triangle */}
+                  <g transform="translate(20 16)">
+                    <path d="M0 1.2 L0 22.8 C0 23.6 0.8 24.1 1.5 23.7 L13.5 12.9 L1.5 0.3 C0.8 -0.1 0 0.4 0 1.2 Z" fill="#00D3FF"/>
+                    <path d="M1.5 0.3 L13.5 12.9 L17.8 9.0 L4.2 1.2 C3.2 0.6 2.2 0.0 1.5 0.3 Z" fill="#00F076"/>
+                    <path d="M1.5 23.7 L13.5 12.9 L17.8 16.0 L4.2 23.8 C3.2 24.4 2.2 24.0 1.5 23.7 Z" fill="#FF3A44"/>
+                    <path d="M13.5 12.9 L17.8 9.0 L23.5 12.3 C24.4 12.8 24.4 13.2 23.5 13.7 L17.8 16.0 Z" fill="#FFC900"/>
+                  </g>
+                  {/* text */}
+                  <text x="56" y="24" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="9">GET IT ON</text>
+                  <text x="56" y="42" fill="#fff" fontFamily="Helvetica, Arial, sans-serif" fontSize="18" fontWeight="600">Google Play</text>
+                </svg>
+              </a>
+            );
+            const order = isAndroid ? [playStoreBadge, appStoreBadge] : [appStoreBadge, playStoreBadge];
+            return (
+              <div style={{
+                display: "flex", flexDirection: "column", alignItems: "center",
+                gap: 10, marginBottom: 18,
+              }}>
+                {order}
+              </div>
+            );
+          })()}
 
           {/* Dismiss */}
           <div>
