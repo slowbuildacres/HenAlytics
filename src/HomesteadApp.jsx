@@ -6394,7 +6394,7 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
           color={palette.accent}
           onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}
         />
-        <Tile icon={Leaf} label="Close Season" color={palette.ink} onClick={() => setModal({ type: "closeGardenSeason" })} />
+        <Tile icon={Leaf} label="Close Out" color={palette.ink} onClick={() => setModal({ type: "closeOutCrops", hobbyId: hobby.id })} />
       </div>
     );
   }
@@ -6894,12 +6894,30 @@ function PerennialSection({ title, emptyHint, items, defaultCategory, hobby, set
 // Annuals are records — one per plant-name per season — that index the
 // season's `planted` / `harvested` entries and own their own `actions[]`
 // log. Modeled on PerennialSection. Tapping a row opens AnnualDetailModal.
-function AnnualSection({ hobby, season, seasonEntries, setModal, reorder = null, onPlanAnnualConfirm = null }) {
+function AnnualSection({ hobby, season, seasonEntries, setModal, update = null, reorder = null, onPlanAnnualConfirm = null }) {
   // Default collapsed — see PerennialSection note.
   const [open, setOpen] = useState(false);
-  // Annual records for the current season.
+  // Whether the archived (closed-out) crops footer is expanded.
+  const [showArchived, setShowArchived] = useState(false);
+
+  // Restore a closed-out crop back into the active list.
+  const restoreAnnual = (annualId) => {
+    if (!update) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      const a = h && (h.annuals || []).find((x) => x.id === annualId);
+      if (a) { delete a.archived; delete a.archivedDate; }
+      return d;
+    });
+  };
+  // Annual records for the current season (excluding ones closed out/archived).
   const annuals = (hobby.annuals || []).filter(
-    (a) => a.seasonId === (season && season.id)
+    (a) => a.seasonId === (season && season.id) && !a.archived
+  );
+  // Archived (closed-out) crops for this season — shown in a collapsible
+  // footer so they can be reviewed or restored without cluttering the list.
+  const archivedAnnuals = (hobby.annuals || []).filter(
+    (a) => a.seasonId === (season && season.id) && a.archived
   );
   // Subtitle data per record: gather this plant's planted/harvested entries.
   const rowsData = annuals
@@ -6934,6 +6952,14 @@ function AnnualSection({ hobby, season, seasonEntries, setModal, reorder = null,
         </button>
         <div style={{ display:"flex",alignItems:"center",gap:6 }}>
           {reorder && <ReorderArrows reorder={reorder} />}
+          {annuals.length > 0 && (
+            <button
+              onClick={() => setModal({ type: "closeOutCrops", hobbyId: hobby.id })}
+              style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
+            >
+              ✓ Close out
+            </button>
+          )}
           <button
             onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })}
             style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
@@ -6969,6 +6995,47 @@ function AnnualSection({ hobby, season, seasonEntries, setModal, reorder = null,
               </button>
             );
           })}
+
+          {/* Closed-out (archived) crops for this season — collapsed by
+              default, restorable with one tap. */}
+          {archivedAnnuals.length > 0 && (
+            <div style={{ marginTop: 4 }}>
+              <button
+                onClick={() => setShowArchived((s) => !s)}
+                style={{ background:"none",border:"none",padding:"4px 2px",cursor:"pointer",fontFamily:FONT_BODY,fontSize:12,color:palette.inkSoft,display:"flex",alignItems:"center",gap:6 }}
+              >
+                <span style={{ fontSize:10,display:"inline-block",transform: showArchived ? "rotate(90deg)" : "rotate(0deg)",transition:"transform 0.15s" }}>▶</span>
+                Closed out ({archivedAnnuals.length})
+              </button>
+              {showArchived && (
+                <div style={{ display:"flex",flexDirection:"column",gap:6,marginTop:6 }}>
+                  {archivedAnnuals
+                    .slice()
+                    .sort((x,y) => String(x.name).localeCompare(String(y.name)))
+                    .map((record) => (
+                    <div
+                      key={record.id}
+                      style={{ display:"flex",alignItems:"center",gap:8,padding:"8px 10px",background:palette.bg,borderRadius:8,border:`1px dashed ${palette.line}`,opacity:0.85 }}
+                    >
+                      <Archive size={14} color={palette.inkSoft} strokeWidth={1.8} style={{ flexShrink:0 }} />
+                      <div style={{ flex:1,minWidth:0 }}>
+                        <div style={{ fontWeight:600,fontSize:13,color:palette.inkSoft,textDecoration:"line-through" }}>{record.name}</div>
+                        {record.archivedDate && (
+                          <div style={{ fontSize:11,color:palette.inkSoft }}>Closed {record.archivedDate}</div>
+                        )}
+                      </div>
+                      <button
+                        onClick={() => restoreAnnual(record.id)}
+                        style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:6,padding:"4px 10px",fontSize:12,color:palette.ink,cursor:"pointer",fontFamily:FONT_BODY,flexShrink:0 }}
+                      >
+                        Restore
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -7002,6 +7069,21 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
     if (a) a.actions = (a.actions || []).filter(x => x.id !== id);
     return d;
   });
+
+  // STEP_ANNUAL_CLOSEOUT: archive (close out) this single crop. Unlike Delete,
+  // this keeps the record (with archived:true) so it's reversible — it just
+  // moves out of the active list into the "Closed out" footer, where Restore
+  // brings it back. Underlying plantings/harvests are untouched. No tombstone:
+  // because the record persists, migrateData's indexing won't re-create it.
+  const closeOutAnnual = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobbyId);
+      const a = h && (h.annuals || []).find((x) => x.id === annual.id);
+      if (a) { a.archived = true; a.archivedDate = todayStr(); }
+      return d;
+    });
+    onClose();
+  };
 
   // STEP_ANNUAL_DELETE: delete the annual record from the list.
   // Scope: just the annual record + its action log; plantings and harvests
@@ -7175,6 +7257,9 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
           </Btn>
           <Btn onClick={() => { setRenameValue(annual.name || ""); setRenameOpen(true); }}>
             Rename
+          </Btn>
+          <Btn onClick={closeOutAnnual}>
+            ✓ Close out
           </Btn>
           <Btn variant="ghost" onClick={deleteAnnual}>
             Delete
@@ -8227,6 +8312,7 @@ function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
         season={season}
         seasonEntries={seasonEntries}
         setModal={setModal}
+        update={update}
         reorder={reorderFor("annuals")}
         onPlanAnnualConfirm={onPlanAnnualConfirm}
       />
@@ -10728,6 +10814,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} data={data} update={update} onClose={close} />;
+  if (modal.type === "closeOutCrops") return <CloseOutCropsModal hobbyId={modal.hobbyId || "garden"} data={data} update={update} setModal={setModal} onClose={close} />;
   if (modal.type === "log") {
     // Normally the LogModal operates on the currently-active hobby. When the
     // Journal opens an entry from a non-active hobby, it passes a
@@ -16750,6 +16837,40 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
 }
 
 // ============ GARDEN SEASON MODALS ============
+// Find the beds (garden-map areas) from the most recent season — the current
+// one if it somehow still has a map, otherwise the latest archived season that
+// had a map. Source for carrying beds forward into a new season.
+function lastSeasonGardenAreas(hobby) {
+  const cur = hobby && hobby.currentSeason && hobby.currentSeason.gardenMap && hobby.currentSeason.gardenMap.areas;
+  if (Array.isArray(cur) && cur.length) return cur;
+  const archived = (hobby && hobby.archivedSeasons || [])
+    .filter((s) => s.gardenMap && Array.isArray(s.gardenMap.areas) && s.gardenMap.areas.length)
+    .sort((a, b) => (b.startDate || "").localeCompare(a.startDate || ""));
+  return archived.length ? archived[0].gardenMap.areas : [];
+}
+
+// Clone beds forward into a fresh season: preserve each bed's id (stable
+// identity for rotation), name, layout (mode + grid dimensions) and its photo,
+// but start with NO pins — a new season means empty beds ready to plant. The
+// shared photoPath is safe because photo delete/replace in GardenMap now keeps
+// any image an archived season still references.
+function carryForwardAreas(areas) {
+  return (areas || []).map((a) => {
+    const next = {
+      id: a.id,
+      name: a.name,
+      mode: a.mode || "photo",
+      photoPath: a.photoPath || null,
+      pins: [],
+    };
+    if ((a.mode || "photo") === "grid") {
+      next.rows = a.rows;
+      next.cols = a.cols;
+    }
+    return next;
+  });
+}
+
 function StartGardenSeasonModal({ hobby, update, onClose }) {
   const guess = (() => {
     const m = new Date().getMonth();
@@ -16762,6 +16883,10 @@ function StartGardenSeasonModal({ hobby, update, onClose }) {
   const [name, setName] = useState(guess);
   const [date, setDate] = useState(todayStr());
 
+  // Beds available to carry over from last season.
+  const carriable = lastSeasonGardenAreas(hobby);
+  const [carry, setCarry] = useState(true);
+
   return (
     <Modal open onClose={onClose} title="🌱 Start new garden season">
       <Field label="Season name">
@@ -16770,6 +16895,34 @@ function StartGardenSeasonModal({ hobby, update, onClose }) {
       <Field label="Start date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
+
+      {carriable.length > 0 && (
+        <div
+          onClick={() => setCarry((c) => !c)}
+          style={{
+            display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+            padding: 12, marginBottom: 14, borderRadius: 8,
+            background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+          }}
+        >
+          <span style={{
+            width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: 1,
+            border: `1.5px solid ${carry ? palette.leaf : palette.line}`,
+            background: carry ? palette.leaf : "transparent",
+            color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+            fontSize: 12, lineHeight: 1,
+          }}>{carry ? "✓" : ""}</span>
+          <div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink }}>
+              Carry over my {carriable.length} bed{carriable.length === 1 ? "" : "s"} from last season
+            </div>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, lineHeight: 1.45 }}>
+              Keeps your beds and layout (empty, ready to plant) so you don't rebuild the map — and powers crop-rotation tips. You can still add beds or upload new photos.
+            </div>
+          </div>
+        </div>
+      )}
+
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14 }}>
         Plantings, harvests, waterings, issues, and notes you log during this season will be archived together when you close it out.
       </div>
@@ -16777,11 +16930,17 @@ function StartGardenSeasonModal({ hobby, update, onClose }) {
         if (!name.trim()) return;
         update((d) => {
           const h = d.hobbies.find((x) => x.id === hobby.id);
+          // Capture beds to carry BEFORE replacing currentSeason (otherwise an
+          // active season's map would be lost before we read it).
+          const src = carry ? lastSeasonGardenAreas(h) : [];
           h.currentSeason = {
             id: newId(),
             name: name.trim(),
             startDate: date,
           };
+          if (src.length) {
+            h.currentSeason.gardenMap = { areas: carryForwardAreas(src) };
+          }
           return d;
         });
         onClose();
@@ -16851,6 +17010,134 @@ function CloseGardenSeasonModal({ hobby, entries, data, update, onClose }) {
         }}>Yes, close season</Btn>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
       </div>
+    </Modal>
+  );
+}
+
+// ============ CLOSE OUT CROPS MODAL ============
+// Per-crop close-out. Lists the season's active annuals with checkboxes (plus
+// a Select all toggle, like the multi-horse treatment flow) so the user can
+// retire one crop, several, or all of them at once. "Closing out" sets
+// archived:true on each selected annual record — the underlying plantings and
+// harvests stay put, and the crop drops into the Annuals section's "Closed
+// out" footer where it can be restored. The season itself stays open; a link
+// at the bottom routes to the full season wrap-up for users who want that.
+function CloseOutCropsModal({ hobbyId, data, update, setModal, onClose }) {
+  const hobby = data.hobbies.find((h) => h.id === hobbyId);
+  const season = hobby && hobby.currentSeason;
+  const active = (hobby && Array.isArray(hobby.annuals))
+    ? hobby.annuals
+        .filter((a) => a.seasonId === (season && season.id) && !a.archived)
+        .slice()
+        .sort((x, y) => String(x.name).localeCompare(String(y.name)))
+    : [];
+
+  const [selected, setSelected] = useState(() => new Set());
+
+  const toggle = (id) => setSelected((prev) => {
+    const next = new Set(prev);
+    if (next.has(id)) next.delete(id); else next.add(id);
+    return next;
+  });
+  const allSelected = active.length > 0 && selected.size === active.length;
+  const toggleAll = () => setSelected(allSelected ? new Set() : new Set(active.map((a) => a.id)));
+
+  const confirm = () => {
+    if (selected.size === 0) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobbyId);
+      if (!h || !Array.isArray(h.annuals)) return d;
+      const today = todayStr();
+      h.annuals.forEach((a) => {
+        if (selected.has(a.id)) { a.archived = true; a.archivedDate = today; }
+      });
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Close out crops">
+      {active.length === 0 ? (
+        <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.5 }}>
+          No active crops to close out in {season?.name || "this season"}.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+            Pick the crops you're done with — they'll move to “Closed out” and out of your active list. Plantings and harvests stay in your history, and you can restore any crop later.
+          </div>
+
+          {/* Select all */}
+          <button
+            onClick={toggleAll}
+            style={{
+              width: "100%", padding: "8px 12px", marginBottom: 8,
+              background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+              borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+              fontSize: 13, fontWeight: 600, color: palette.ink,
+              display: "flex", alignItems: "center", gap: 10,
+            }}
+          >
+            <span style={{
+              width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+              border: `1.5px solid ${allSelected ? palette.leaf : palette.line}`,
+              background: allSelected ? palette.leaf : "transparent",
+              color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+              fontSize: 12, lineHeight: 1,
+            }}>{allSelected ? "✓" : ""}</span>
+            Select all ({active.length})
+          </button>
+
+          {/* Crop checkboxes */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 6, maxHeight: 320, overflowY: "auto", marginBottom: 14 }}>
+            {active.map((a) => {
+              const on = selected.has(a.id);
+              return (
+                <button
+                  key={a.id}
+                  onClick={() => toggle(a.id)}
+                  style={{
+                    display: "flex", alignItems: "center", gap: 10,
+                    padding: "10px 12px", textAlign: "left", width: "100%",
+                    background: on ? palette.yolkSoft : palette.card,
+                    border: `1.5px solid ${on ? palette.yolk : palette.line}`,
+                    borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+                  }}
+                >
+                  <span style={{
+                    width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                    border: `1.5px solid ${on ? palette.leaf : palette.line}`,
+                    background: on ? palette.leaf : "transparent",
+                    color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: 12, lineHeight: 1,
+                  }}>{on ? "✓" : ""}</span>
+                  <span style={{ fontSize: 14, fontWeight: 600, color: palette.ink }}>{a.name}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Btn variant="primary" disabled={selected.size === 0} onClick={confirm}>
+              Close out {selected.size || ""} crop{selected.size === 1 ? "" : "s"}
+            </Btn>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+          </div>
+        </>
+      )}
+
+      {/* Escape hatch to the full season wrap-up. */}
+      <button
+        onClick={() => { onClose(); setTimeout(() => setModal({ type: "closeGardenSeason" }), 0); }}
+        style={{
+          marginTop: 16, background: "none", border: "none", padding: 4,
+          cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12,
+          color: palette.inkSoft, textDecoration: "underline",
+        }}
+      >
+        Or wrap up the entire season instead →
+      </button>
     </Modal>
   );
 }

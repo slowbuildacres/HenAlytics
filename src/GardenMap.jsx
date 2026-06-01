@@ -20,7 +20,8 @@
 
 import React, { useState, useRef, useEffect } from "react";
 import { X, Trash2, Upload, ChevronLeft, ChevronRight, Plus, Edit3, Archive } from "lucide-react";
-import { CROPS } from "./gardenAlmanac.js";
+import { CROPS, getCropFamily } from "./gardenAlmanac.js";
+import { CompanionPanel, RotationNote } from "./CompanionInfo.jsx";
 import { uploadPhoto, getPhotoUrl, deletePhoto } from "./sync.js";
 
 const palette = {
@@ -56,6 +57,42 @@ const CROP_COLORS = {
   sweet_corn: "#E8B547",
 };
 const colorForCrop = (cropId) => CROP_COLORS[cropId] || palette.feather;
+
+// Carry-forward safety: a bed carried into a new season keeps the SAME
+// photoPath as its archived self, so two seasons can point at one stored image.
+// Before deleting a stored photo (on area delete or photo replace) we check
+// whether any ARCHIVED season still references it — if so, keep the file so the
+// past-years viewer doesn't break. Returns true when the path is still needed.
+function photoSharedByArchived(archivedSeasons, photoPath) {
+  if (!photoPath || !Array.isArray(archivedSeasons)) return false;
+  return archivedSeasons.some((s) => {
+    const areas = (s && s.gardenMap && s.gardenMap.areas) || [];
+    return areas.some((a) => a.photoPath === photoPath);
+  });
+}
+
+// Crops that grew in THIS bed in past seasons. Beds carried forward keep a
+// stable `id`, so we match by id first (rename-proof); older history from
+// before carry-forward matches by area name. Used for the rotation cues both
+// at placement time (crop picker) and on the pin detail panel.
+function priorCropIdsForArea(area, archivedSeasons) {
+  if (!area || !Array.isArray(archivedSeasons)) return [];
+  const targetName = String(area.name || "").trim().toLowerCase();
+  const ids = [];
+  for (const s of archivedSeasons) {
+    const areas = s && s.gardenMap && s.gardenMap.areas;
+    if (!Array.isArray(areas)) continue;
+    for (const a of areas) {
+      const idMatch = area.id && a.id === area.id;
+      const nameMatch = targetName && String(a.name || "").trim().toLowerCase() === targetName;
+      if (!idMatch && !nameMatch) continue;
+      for (const p of (a.pins || [])) {
+        if (p.cropId && p.cropId !== "other") ids.push(p.cropId);
+      }
+    }
+  }
+  return ids;
+}
 
 // Resolves the display info for a pin. Supports the "other" / custom-plant
 // option where the user typed a free-form name when placing the pin.
@@ -253,6 +290,7 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
             areaIdx={activeIdx}
             user={user}
             update={update}
+            archivedSeasons={archivedSeasons}
             onRenameArea={() => {
               const name = prompt("Rename area:", activeArea.name);
               if (!name?.trim()) return;
@@ -272,7 +310,7 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
                 h.currentSeason.gardenMap.areas.splice(activeIdx, 1);
                 return d;
               });
-              if (oldPath) deletePhoto(oldPath).catch(() => {});
+              if (oldPath && !photoSharedByArchived(archivedSeasons, oldPath)) deletePhoto(oldPath).catch(() => {});
               setActiveIdx(0);
             }}
           />
@@ -617,7 +655,7 @@ function AreaTabs({ areas, activeIdx, setActiveIdx, onAddArea }) {
 // ============================================================================
 // AREA EDITOR — the photo + pins for one area
 // ============================================================================
-function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea }) {
+function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenameArea, onDeleteArea }) {
   const [photoUrl, setPhotoUrl] = useState(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -658,7 +696,7 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
         h.currentSeason.gardenMap.areas[areaIdx].photoPath = path;
         return d;
       });
-      if (oldPath) deletePhoto(oldPath).catch(() => {});
+      if (oldPath && !photoSharedByArchived(archivedSeasons, oldPath)) deletePhoto(oldPath).catch(() => {});
     } catch (e) {
       setUploadError(e.message || "Upload failed.");
     }
@@ -746,6 +784,7 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
         area={area}
         areaIdx={areaIdx}
         update={update}
+        archivedSeasons={archivedSeasons}
         onRenameArea={onRenameArea}
         onDeleteArea={onDeleteArea}
       />
@@ -921,6 +960,8 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
           pin={activePin}
           areaIdx={areaIdx}
           update={update}
+          area={area}
+          archivedSeasons={archivedSeasons}
           onClose={() => setActivePin(null)}
         />
       )}
@@ -929,6 +970,7 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
       {showCropPicker && (
         <CropPicker
           onPick={placePin}
+          priorCropIds={priorCropIdsForArea(area, archivedSeasons)}
           onCancel={() => setShowCropPicker(null)}
         />
       )}
@@ -944,7 +986,7 @@ function AreaEditor({ area, areaIdx, user, update, onRenameArea, onDeleteArea })
 // PinInfoPanel. Resize: grow adds empty cells; shrink warns-and-discards
 // any plantings outside the new bounds.
 // ============================================================================
-function GridEditor({ area, areaIdx, update, onRenameArea, onDeleteArea }) {
+function GridEditor({ area, areaIdx, update, archivedSeasons = [], onRenameArea, onDeleteArea }) {
   const [activePin, setActivePin] = useState(null);
   const [showCropPicker, setShowCropPicker] = useState(null); // { row, col }
 
@@ -1073,12 +1115,15 @@ function GridEditor({ area, areaIdx, update, onRenameArea, onDeleteArea }) {
           pin={activePin}
           areaIdx={areaIdx}
           update={update}
+          area={area}
+          archivedSeasons={archivedSeasons}
           onClose={() => setActivePin(null)}
         />
       )}
       {showCropPicker && (
         <CropPicker
           onPick={placePin}
+          priorCropIds={priorCropIdsForArea(area, archivedSeasons)}
           onCancel={() => setShowCropPicker(null)}
         />
       )}
@@ -1089,12 +1134,17 @@ function GridEditor({ area, areaIdx, update, onRenameArea, onDeleteArea }) {
 // ============================================================================
 // PIN INFO PANEL (now editable)
 // ============================================================================
-function PinInfoPanel({ pin, areaIdx, update, onClose }) {
+function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [], onClose }) {
   const crop = CROPS.find((c) => c.id === pin.cropId);
   const isCustom = pin.cropId === "other";
   const [editing, setEditing] = useState(false);
   const [date, setDate] = useState(pin.plantedDate || todayStr());
   const [note, setNote] = useState(pin.note || "");
+
+  // Crops that grew in THIS bed in past seasons (see priorCropIdsForArea).
+  const priorCropIds = priorCropIdsForArea(area, archivedSeasons);
+
+  const companionFonts = { display: FONT_DISPLAY, body: FONT_BODY };
 
   // Allow display for "other" pins (no crop entry in CROPS list) and for
   // legacy/unknown cropIds (just show a placeholder rather than blank).
@@ -1215,6 +1265,11 @@ function PinInfoPanel({ pin, areaIdx, update, onClose }) {
               <Trash2 size={12} /> Remove
             </button>
           </div>
+
+          {/* Rotation heads-up (only if this bed grew a same-family crop
+              before) + companion planting guidance. */}
+          <RotationNote cropId={pin.cropId} priorCropIds={priorCropIds} palette={palette} fonts={companionFonts} />
+          <CompanionPanel cropId={pin.cropId} palette={palette} fonts={companionFonts} />
         </>
       ) : (
         <>
@@ -1284,7 +1339,7 @@ function PinInfoPanel({ pin, areaIdx, update, onClose }) {
 // ============================================================================
 // CROP PICKER (unchanged from v1)
 // ============================================================================
-function CropPicker({ onPick, onCancel }) {
+function CropPicker({ onPick, onCancel, priorCropIds = [] }) {
   // Inline state for the "Other" / custom-plant flow: when the user taps
   // the Other tile, we switch this small picker into an input mode so they
   // can type any plant name. Pressing Enter (or Add) pins it as cropId:"other"
@@ -1292,6 +1347,27 @@ function CropPicker({ onPick, onCancel }) {
   const [customMode, setCustomMode] = useState(false);
   const [customName, setCustomName] = useState("");
   const customInputRef = useRef(null);
+
+  // Placement-time rotation cues. Families that grew in this bed before →
+  // any candidate crop in one of those families is flagged. Also a friendly
+  // de-duped list of what grew here, for the banner.
+  const priorFamilyCodes = new Set(
+    priorCropIds.map((id) => getCropFamily(id) && getCropFamily(id).code).filter(Boolean)
+  );
+  const priorNames = (() => {
+    const seen = new Set();
+    const names = [];
+    for (const id of priorCropIds) {
+      const crop = CROPS.find((c) => c.id === id);
+      const nm = crop ? crop.name : null;
+      if (nm && !seen.has(nm)) { seen.add(nm); names.push(nm); }
+    }
+    return names;
+  })();
+  const conflictsWith = (cropId) => {
+    const fam = getCropFamily(cropId);
+    return !!(fam && priorFamilyCodes.has(fam.code));
+  };
 
   useEffect(() => {
     if (customMode) {
@@ -1372,37 +1448,55 @@ function CropPicker({ onPick, onCancel }) {
         </div>
       ) : (
         // ---- Default crop-tile grid ----
-        <div style={{
-          display: "grid",
-          gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
-          gap: 6,
-          maxHeight: 280,
-          overflowY: "auto",
-        }}>
-          {CROPS.map((c) => (
+        <>
+          {priorNames.length > 0 && (
+            <div style={{
+              padding: "8px 10px", marginBottom: 10, borderRadius: 8,
+              background: palette.bgAlt, border: `1px solid ${palette.line}`,
+              fontSize: 12, color: palette.inkSoft, lineHeight: 1.45,
+            }}>
+              🔄 This bed grew <strong style={{ color: palette.ink }}>{priorNames.join(", ")}</strong> before.
+              Crops marked <span style={{ color: palette.accent, fontWeight: 700 }}>⚠</span> share a family — rotating to something else helps the soil.
+            </div>
+          )}
+          <div style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(auto-fill, minmax(110px, 1fr))",
+            gap: 6,
+            maxHeight: 280,
+            overflowY: "auto",
+          }}>
+            {CROPS.map((c) => {
+              const conflict = conflictsWith(c.id);
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => onPick(c.id)}
+                  title={conflict ? "Grew a same-family crop here recently — consider rotating" : undefined}
+                  style={{
+                    padding: "8px 6px",
+                    background: conflict ? "#FBE5DE" : palette.bg,
+                    border: `1.5px solid ${conflict ? palette.accent : palette.line}`,
+                    borderRadius: 8,
+                    cursor: "pointer",
+                    fontFamily: FONT_BODY, fontSize: 11, color: palette.ink,
+                    textAlign: "center", position: "relative",
+                    display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
+                  }}
+                >
+                  {conflict && (
+                    <span style={{ position: "absolute", top: 3, right: 5, fontSize: 11, color: palette.accent, fontWeight: 700 }} aria-hidden="true">⚠</span>
+                  )}
+                  <span style={{ fontSize: 18 }}>{c.emoji}</span>
+                  <span>{c.name}</span>
+                </button>
+              );
+            })}
+            {/* "Other" tile — opens the custom-name input */}
             <button
-              key={c.id}
-              onClick={() => onPick(c.id)}
+              onClick={() => setCustomMode(true)}
               style={{
                 padding: "8px 6px",
-                background: palette.bg,
-                border: `1.5px solid ${palette.line}`,
-                borderRadius: 8,
-                cursor: "pointer",
-                fontFamily: FONT_BODY, fontSize: 11, color: palette.ink,
-                textAlign: "center",
-                display: "flex", flexDirection: "column", alignItems: "center", gap: 2,
-              }}
-            >
-              <span style={{ fontSize: 18 }}>{c.emoji}</span>
-              <span>{c.name}</span>
-            </button>
-          ))}
-          {/* "Other" tile — opens the custom-name input */}
-          <button
-            onClick={() => setCustomMode(true)}
-            style={{
-              padding: "8px 6px",
               background: palette.bg,
               border: `1.5px dashed ${palette.feather}`,
               borderRadius: 8,
@@ -1416,7 +1510,8 @@ function CropPicker({ onPick, onCancel }) {
             <span style={{ fontSize: 18 }}>🌱</span>
             <span>Other…</span>
           </button>
-        </div>
+          </div>
+        </>
       )}
     </div>
   );

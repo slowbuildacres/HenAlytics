@@ -12,8 +12,9 @@
 
 import React, { useState } from "react";
 import {
-  ZONE_INFO, CROPS, methodsForCrop, generateCropEvents, getFrostDates, estimateZone,
+  ZONE_INFO, CROPS, cropsForSeason, methodsForCrop, generateCropEvents, getFrostDates, estimateZone,
 } from "./gardenAlmanac.js";
+import { CompanionPanel } from "./CompanionInfo.jsx";
 import {
   HARDINESS_SYSTEMS, estimateZoneForSystem, getZoneInfo,
 } from "./hardiness.js";
@@ -137,6 +138,28 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
   );
 }
 
+// Decide which planting season to default the planner to. In the run-up to
+// the first frost (roughly its preceding ~5 months) people are planning fall
+// crops; the rest of the year they're thinking spring. Resolved from the
+// user's own zone so it's correct in both hemispheres (southern-hemisphere
+// zones already carry their inverted frost dates).
+function defaultPlantingSeason(data) {
+  try {
+    const system = data.userZoneSystem || "USDA";
+    const zone = data.userZone || estimateZoneForSystem(
+      system, data.homesteadLocation?.lat, data.homesteadLocation?.lon
+    );
+    const now = new Date();
+    const fd = getFrostDates(zone, now.getFullYear(), system);
+    const ff = fd.firstFrost.getTime();
+    const dayMs = 24 * 60 * 60 * 1000;
+    if (now.getTime() >= ff - 150 * dayMs && now.getTime() <= ff) return "fall";
+    return "spring";
+  } catch (_) {
+    return "spring";
+  }
+}
+
 // ============================================================================
 // PLAN CROP MODAL — pick a crop, pick a method, generate events
 // ============================================================================
@@ -149,6 +172,10 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
   //   3   = editable date preview
   //   4   = "Other / custom" free-text crop flow (bypasses variety entirely)
   const [step, setStep] = useState(1);
+  // Spring vs fall planting. Spring is anchored to last frost (grow into the
+  // warming year); fall is anchored to first frost (mature as it cools).
+  // Defaults to whichever the calendar is approaching.
+  const [season, setSeason] = useState(() => defaultPlantingSeason(data));
   const [cropId, setCropId] = useState(null);
   const [method, setMethod] = useState(null);
   const [year, setYear] = useState(new Date().getFullYear());
@@ -189,17 +216,34 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
   const frostDates = getFrostDates(userZone, year, userSystem);
   const zoneLabel = getZoneInfo(userSystem, userZone).label;
   const crop = CROPS.find((c) => c.id === cropId);
-  const methods = cropId ? methodsForCrop(cropId) : [];
+  const methods = cropId ? methodsForCrop(cropId, season) : [];
   // Saved varieties for the chosen crop. data.varieties may be undefined
   // (legacy users); default to empty array, never crash.
   const savedVarieties = (cropId && data.varieties && Array.isArray(data.varieties[cropId]))
     ? data.varieties[cropId]
     : [];
   // Pass selectedVariety into the event generator. null = use crop-wide defaults
-  // (legacy behavior preserved).
+  // (legacy behavior preserved). `season` selects spring (last-frost) vs fall
+  // (first-frost) timing math.
   const generatedEvents = (cropId && method)
-    ? generateCropEvents(cropId, method, frostDates, selectedVariety)
+    ? generateCropEvents(cropId, method, frostDates, selectedVariety, season)
     : [];
+
+  // Crops offered for the active season — fall shows only cool-season crops.
+  const seasonCrops = cropsForSeason(season);
+
+  // Flip the planting season. Crop/method sets differ between seasons, so
+  // start the picker over to avoid carrying a spring-only crop into fall.
+  const handleSetSeason = (s) => {
+    if (s === season) return;
+    setSeason(s);
+    setCropId(null);
+    setMethod(null);
+    setSelectedVariety(null);
+    setShowAddVariety(false);
+    setEditableDates({});
+    setStep(1);
+  };
 
   // When year, method, or variety changes, reset editable dates so suggestions
   // refresh from the new harvest-day math.
@@ -301,12 +345,24 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
       d.calendarEvents = d.calendarEvents || [];
       d.calendarEvents = d.calendarEvents.filter((e) => {
         if (e.cropId !== cropId) return true;
-        if (!e.date.startsWith(String(year))) return true;
-        // Same crop, same year — now compare variety scope.
+        // Match by the plan's year. Prefer the stored planYear — robust for
+        // fall plans whose harvest spills into the next calendar year (garlic
+        // planted in October, harvested the following June). Fall back to the
+        // date prefix for legacy events saved before planYear existed.
+        const eventYear = e.planYear != null
+          ? e.planYear
+          : parseInt((e.date || "").slice(0, 4), 10);
+        if (eventYear !== year) return true;
+        // Season scope — a fall plan must not clobber the spring plan for the
+        // same crop in the same year (and vice-versa). Legacy events with no
+        // season field are treated as spring.
+        const eventSeason = e.season || "spring";
+        if (eventSeason !== season) return true;
+        // Same crop + year + season — now compare variety scope.
         const eventVarietyId = e.varietyId || null;
         if (eventVarietyId !== planVarietyId) return true;
-        // Same crop + same year + same variety scope → this is a stale
-        // copy of the plan we're about to re-create. Drop it.
+        // Same crop + same year + same season + same variety scope → this is a
+        // stale copy of the plan we're about to re-create. Drop it.
         return false;
       });
       const finalEvents = generatedEvents.map((e) => ({
@@ -342,6 +398,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
         variety: selectedVariety,
         method,
         year,
+        season,
         events: finalEvents,
         isCustom: false,
       });
@@ -359,8 +416,49 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
     }>
       {step === 1 && (
         <>
+          {/* Spring vs fall planting toggle. Spring counts forward from the
+              last frost; fall counts backward from the first frost. */}
+          <div style={{
+            display: "flex", gap: 6, marginBottom: 14,
+            background: palette.bgAlt, padding: 4, borderRadius: 10,
+            border: `1.5px solid ${palette.line}`,
+          }}>
+            {[
+              { id: "spring", label: "🌱 Spring planting" },
+              { id: "fall",   label: "🍂 Fall planting" },
+            ].map((opt) => {
+              const active = season === opt.id;
+              return (
+                <button
+                  key={opt.id}
+                  onClick={() => handleSetSeason(opt.id)}
+                  style={{
+                    flex: 1, padding: "8px 6px", borderRadius: 7,
+                    border: "none", cursor: "pointer",
+                    fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+                    background: active ? palette.ink : "transparent",
+                    color: active ? palette.bg : palette.inkSoft,
+                  }}
+                >
+                  {opt.label}
+                </button>
+              );
+            })}
+          </div>
+
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: -8, marginBottom: 14, fontStyle: "italic", textAlign: "center" }}>
+            Spring and fall are separate planting windows — switch anytime.
+          </div>
+
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
-            Pick a crop and we'll generate planting dates based on your zone ({zoneLabel}).
+            {season === "fall" ? (
+              <>Pick a cool-season crop — we'll work backward from your first frost
+                (≈ {fmtMonthDay(frostDates.firstFrost)}) so it matures as the season cools.
+                Zone {zoneLabel}.</>
+            ) : (
+              <>Pick a crop and we'll generate planting dates from your last frost
+                (≈ {fmtMonthDay(frostDates.lastFrost)}). Zone {zoneLabel}.</>
+            )}
           </div>
           <div style={{
             display: "grid",
@@ -370,7 +468,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
             overflowY: "auto",
             paddingRight: 4,
           }}>
-            {CROPS.map((c) => (
+            {seasonCrops.map((c) => (
               <button
                 key={c.id}
                 onClick={() => { setCropId(c.id); setStep(2); }}
@@ -529,6 +627,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
               </button>
             ))}
           </div>
+          <CompanionPanel cropId={cropId} palette={palette} fonts={{ display: FONT_DISPLAY, body: FONT_BODY }} />
           <div style={{ marginTop: 14 }}>
             <Btn variant="ghost" onClick={() => setStep(1)}>← Pick a different crop</Btn>
           </div>
@@ -667,7 +766,13 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
             />
           </Field>
           <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
-            Dates are suggested based on your zone. Tap any date to adjust it.
+            {season === "fall" ? (
+              <>🍂 Fall timing — worked back from your first frost
+                (≈ {fmtMonthDay(frostDates.firstFrost)}) and padded for slower
+                late-season growth. Tap any date to adjust it.</>
+            ) : (
+              <>Dates are suggested based on your zone. Tap any date to adjust it.</>
+            )}
           </div>
           <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
             {generatedEvents.map((e) => (
@@ -1247,6 +1352,13 @@ function PlanChoice({ icon, label, sub, onClick }) {
 function fmtFullDate(isoStr) {
   const d = new Date(isoStr + "T12:00");
   return d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric", year: "numeric" });
+}
+
+// Short "Month Day" label for a Date object (e.g. "Oct 15"). Used for the
+// frost-date hints in the crop planner.
+function fmtMonthDay(d) {
+  if (!d) return "";
+  return d.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
 
 function isoDateOf(d) {
