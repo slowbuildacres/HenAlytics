@@ -1688,6 +1688,9 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "💸 Tips are here for Farmstand & Sales — when a customer leaves a little extra, log it. There's now a Tip field on the Farmstand quick-sell screen and on the Sales tab's Log Sale form, kept separate from revenue so your prices stay clean. The Sales tab shows total tips, and Farmstand stats add a Tips total plus a \"Most tipped items\" list so you can see what earns the most love.",
+  "🥚 Logged expenses can now be tagged to a specific flock. When you add an expense on a hobby that has flocks, you'll see a \"Which flock?\" picker — choose a flock and that cost rolls into that flock's cost/egg in the Per flock breakdown, or leave it \"All flocks / general\" to keep it at the hobby level. General and untagged costs show in a new summary line so nothing's hidden.",
+  "🐔 Naming a bird now lets you set sex (hen/rooster) and notes right in the Add a bird form, instead of having to open the bird's card afterward. (Photos are still added from the card, once the bird exists.) Plus: breed lists are alphabetized and expanded with more common breeds, color qualifiers were trimmed (e.g. \"Buff Orpington\" is now just \"Orpington\") so one entry covers buff, chocolate, jubilee, lavender, and the rest, and a breed you add via \"Other\" is saved to the dropdown for that bird type so you don't have to retype it.",
   "🥚 Cost/Egg now counts every expense you log on your layers — including costs added through the 💵 Add Expense tile, not just the feed and bedding typed onto a quick-log. Before, an Add Expense feed cost showed up in the Sales tab but never moved your cost-per-egg, which was confusing. Now feed, bedding, supplies, vet — every attributed category folds in, broken out in the Cost breakdown card. New: a toggle there to include or exclude one-time infrastructure (coops, fencing) from the cost-per-egg figure, so you can see ongoing cost alone.",
   "💛 Supporter popup polish — the monthly supporter wall now shows when each supporter first started chipping in (e.g. \"est May 2026\"), and a long list now scrolls in place so the tip buttons are always within reach instead of buried below everyone. The Tip heart in the bottom nav also stays filled for the whole time you're an active monthly supporter, instead of going dark at the start of each new month.",
   "🧾 Your hobby-logged costs now show in the Sales log — when you type a cost on a quick-log (a feed cost, bedding, fertilizer, etc.) or record a flock/chick/animal purchase, it now appears as a line item in the Sales & expenses log, matching the total it was already counted in. Before, those costs counted toward your profit numbers but never showed as a row, so a logged feed cost looked like it vanished. These rows are read-only here (tap into the hobby's page to edit them).",
@@ -10007,8 +10010,13 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
               const flockEggs = eggs.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.count)||0),0);
               const flockFeedCost = feeds.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.cost)||0),0);
               const flockBeddingCost = beddings.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.cost)||0),0);
+              // Logged expenses (Add Expense tile) tagged to this specific
+              // flock. General/untagged expenses are intentionally excluded
+              // here — same convention as untagged quick-log entries — and are
+              // surfaced in the "general costs" note below instead.
+              const flockLoggedCost = loggedExpenses.filter(x => x.flockId === fl.id).reduce((s,x)=>s+(Number(x.amount)||0),0);
               const flockDeaths = deaths.filter(e => e.flockId === fl.id).reduce((s,e)=>s+(Number(e.count)||1),0);
-              const flockTotalCost = flockFeedCost + flockBeddingCost;
+              const flockTotalCost = flockFeedCost + flockBeddingCost + flockLoggedCost;
               const flockCostPerEgg = flockEggs > 0 ? flockTotalCost / flockEggs : 0;
               const birdEmoji = { Chicken:"🐔", Duck:"🦆", Turkey:"🦃", Quail:"🐦", Goose:"🪿", Guinea:"🐦", Peafowl:"🦚", Other:"🐣" };
               return (
@@ -10033,6 +10041,21 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
                 </div>
               );
             })}
+            {/* General / unassigned costs: logged expenses and quick-log
+                entries not tied to any specific flock. Shown so these dollars
+                aren't invisible even though they don't land in a flock row. */}
+            {(() => {
+              const generalLogged = loggedExpenses.filter(x => !x.flockId).reduce((s,x)=>s+(Number(x.amount)||0),0);
+              const generalFeed = feeds.filter(e => !e.flockId).reduce((s,e)=>s+(Number(e.cost)||0),0);
+              const generalBedding = beddings.filter(e => !e.flockId).reduce((s,e)=>s+(Number(e.cost)||0),0);
+              const generalTotal = generalLogged + generalFeed + generalBedding;
+              if (generalTotal <= 0) return null;
+              return (
+                <div style={{ padding:"10px 14px",background:"transparent",border:`1px dashed ${palette.line}`,borderRadius:8,fontSize:11,color:palette.inkSoft,lineHeight:1.5 }}>
+                  💰 {fmtMoney(generalTotal)} in general costs not assigned to a flock. Tag a flock when logging an expense to fold it into that flock's cost/egg.
+                </div>
+              );
+            })()}
           </div>
         </ChartCard>
       )}
@@ -10782,7 +10805,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "namedBirds") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <NamedBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} update={update} user={user} onClose={close} />;
+    return <NamedBirdsModal hobbyId={modal.hobbyId} flockId={modal.flockId} hobby={targetHobby} data={data} update={update} user={user} onClose={close} />;
   }
   if (modal.type === "hatchEggs") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -14607,7 +14630,7 @@ function BirdPhotoSection({ bird, user, onCommit }) {
   );
 }
 
-function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
+function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose }) {
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
   const [birds, setBirds] = useState(() =>
     (flock?.namedBirds || []).map(b => ({ ...b }))
@@ -14620,6 +14643,10 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
   // not in our preset list.
   const [newBreed, setNewBreed] = useState("");
   const [newBreedOther, setNewBreedOther] = useState("");
+  // Sex + notes captured right in the add form, so a new bird can be fully
+  // described in one place instead of having to find its card afterward.
+  const [newSex, setNewSex] = useState("");
+  const [newNotes, setNewNotes] = useState("");
   // Per-bird death confirm state. When set, that bird's row expands to ask
   // for date + cause and commit immediately (death isn't undoable via Cancel).
   const [dyingBirdId, setDyingBirdId] = useState(null);
@@ -14642,19 +14669,52 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
   ];
 
   // Breed lists per bird type. Curated to the most common breeds homesteaders
-  // raise — covering the 90% case while keeping the dropdown short enough to
-  // scan. Users with rare/uncommon breeds pick "Other" and type the name.
-  const BREEDS_BY_TYPE = {
-    Chicken: ["Rhode Island Red", "Plymouth Rock", "Barred Rock", "Buff Orpington", "Australorp", "Leghorn", "Wyandotte", "Easter Egger", "Ameraucana", "Marans", "Brahma", "Cochin", "Silkie", "Sussex", "Welsummer", "Speckled Sussex", "ISA Brown", "Cornish Cross", "Polish", "Sebright", "Mixed", "Other"],
-    Duck: ["Pekin", "Khaki Campbell", "Runner", "Welsh Harlequin", "Cayuga", "Rouen", "Muscovy", "Saxony", "Magpie", "Buff", "Mixed", "Other"],
-    Turkey: ["Broad Breasted White", "Broad Breasted Bronze", "Bourbon Red", "Narragansett", "Royal Palm", "Heritage", "Midget White", "Mixed", "Other"],
-    Quail: ["Coturnix", "Bobwhite", "Button", "California", "Gambel's", "Mixed", "Other"],
-    Goose: ["Embden", "Toulouse", "African", "Chinese", "Pilgrim", "American Buff", "Sebastopol", "Mixed", "Other"],
-    Guinea: ["Pearl", "White", "Lavender", "Royal Purple", "Buff", "Mixed", "Other"],
-    Peafowl: ["Indian Blue", "White", "Black-Shouldered", "Pied", "Spalding", "Mixed", "Other"],
-    Other: ["Mixed", "Other"],
+  // raise, alphabetized so they're quick to scan. Color/variety qualifiers are
+  // stripped where the breed comes in several colors (e.g. "Orpington" rather
+  // than "Buff Orpington") so one entry covers buff, lavender, chocolate,
+  // jubilee, etc. — note the specific color on the bird if it matters. Users
+  // with breeds not listed pick "Other" and type the name; that custom breed
+  // is then remembered per bird-type (see customBreeds below) so they don't
+  // have to retype it. "Mixed" and "Other" are pinned to the end as they're
+  // functional choices, not breeds.
+  const BASE_BREEDS_BY_TYPE = {
+    Chicken: ["Ameraucana", "Andalusian", "Australorp", "Barnevelder", "Barred Rock", "Brahma", "Buckeye", "Cochin", "Cornish Cross", "Cream Legbar", "Dominique", "Easter Egger", "Faverolles", "ISA Brown", "Jersey Giant", "Leghorn", "Marans", "New Hampshire Red", "Olive Egger", "Orpington", "Plymouth Rock", "Polish", "Rhode Island Red", "Sebright", "Silkie", "Sussex", "Welsummer", "Wyandotte"],
+    Duck: ["Buff", "Cayuga", "Khaki Campbell", "Magpie", "Muscovy", "Pekin", "Rouen", "Runner", "Saxony", "Welsh Harlequin"],
+    Turkey: ["Bourbon Red", "Broad Breasted Bronze", "Broad Breasted White", "Heritage", "Midget White", "Narragansett", "Royal Palm"],
+    Quail: ["Bobwhite", "Button", "California", "Coturnix", "Gambel's"],
+    Goose: ["African", "American Buff", "Chinese", "Embden", "Pilgrim", "Sebastopol", "Toulouse"],
+    Guinea: ["Buff", "Lavender", "Pearl", "Royal Purple", "White"],
+    Peafowl: ["Black-Shouldered", "Indian Blue", "Pied", "Spalding", "White"],
+    Other: [],
   };
-  const breedOptions = BREEDS_BY_TYPE[flock.birdType] || BREEDS_BY_TYPE.Other;
+  // User-saved custom breeds for this bird type, merged into the picker so a
+  // breed typed once via "Other" is available from the dropdown thereafter.
+  const customBreeds = (data && data.customBreeds && data.customBreeds[flock.birdType]) || [];
+  const baseBreeds = BASE_BREEDS_BY_TYPE[flock.birdType] || BASE_BREEDS_BY_TYPE.Other;
+  const breedOptions = [
+    ...Array.from(new Set([...baseBreeds, ...customBreeds]))
+      .sort((a, b) => a.localeCompare(b)),
+    "Mixed",
+    "Other",
+  ];
+
+  // Remember a free-text ("Other") breed so it joins the dropdown next time.
+  // No-ops for blanks and for names already in the preset/sentinel list
+  // (case-insensitive), so we don't store dupes of built-ins.
+  const rememberBreed = (name) => {
+    const breed = (name || "").trim();
+    if (!breed) return;
+    const known = [...baseBreeds, "Mixed", "Other"].some(o => o.toLowerCase() === breed.toLowerCase());
+    if (known) return;
+    update(d => {
+      if (!d.customBreeds) d.customBreeds = {};
+      const list = d.customBreeds[flock.birdType] || [];
+      if (!list.some(x => x.toLowerCase() === breed.toLowerCase())) {
+        d.customBreeds[flock.birdType] = [...list, breed];
+      }
+      return d;
+    });
+  };
 
   const addBird = () => {
     if (!newName.trim()) return;
@@ -14663,18 +14723,21 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
     const resolvedBreed = newBreed === "Other"
       ? newBreedOther.trim()
       : newBreed;
+    if (newBreed === "Other") rememberBreed(resolvedBreed);
     setBirds(prev => [...prev, {
       id: Math.random().toString(36).slice(2, 10),
       name: newName.trim(),
       bandColor: newBandColor,
       breed: resolvedBreed,
-      sex: "",
-      notes: "",
+      sex: newSex,
+      notes: newNotes.trim(),
     }]);
     setNewName("");
     setNewBandColor("");
     setNewBreed("");
     setNewBreedOther("");
+    setNewSex("");
+    setNewNotes("");
   };
 
   const updateBird = (id, patch) => {
@@ -14908,6 +14971,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
                         style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                         value={!inList ? savedBreed : ""}
                         onChange={(e) => updateBird(b.id, { breed: e.target.value })}
+                        onBlur={(e) => rememberBreed(e.target.value)}
                         placeholder="Breed name"
                       />
                     )}
@@ -15023,9 +15087,46 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, update, user, onClose }) {
             placeholder="Breed name"
           />
         )}
+        {/* Sex — mirrors the per-bird control on the cards below. */}
+        <div style={{ display: "flex", gap: 4, marginTop: 8 }}>
+          {[
+            { val: "", label: "—" },
+            { val: "hen", label: "🐔 Hen" },
+            { val: "rooster", label: "🐓 Rooster" },
+          ].map(opt => {
+            const active = newSex === opt.val;
+            return (
+              <button
+                key={opt.val || "unset"}
+                type="button"
+                onClick={() => setNewSex(opt.val)}
+                style={{
+                  flex: 1, padding: "6px 4px",
+                  background: active ? palette.ink : "transparent",
+                  color: active ? palette.bg : palette.inkSoft,
+                  border: `1.5px solid ${active ? palette.ink : palette.line}`,
+                  borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+                  fontSize: 12, fontWeight: 600,
+                }}
+              >
+                {opt.label}
+              </button>
+            );
+          })}
+        </div>
+        <input
+          style={{ ...inputStyle, marginTop: 8 }}
+          value={newNotes}
+          onChange={(e) => setNewNotes(e.target.value)}
+          placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
+          onKeyDown={(e) => { if (e.key === "Enter") addBird(); }}
+        />
         <Btn small variant="leaf" onClick={addBird} disabled={!newName.trim()} style={{ marginTop: 8, width: "100%" }}>
           + Add bird
         </Btn>
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, textAlign: "center" }}>
+          Add a photo from the bird's card once it's created.
+        </div>
       </div>
 
       {/* Past birds (archived) — collapsed by default. Tap a row to restore. */}
@@ -18774,6 +18875,13 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
               Pick whichever apply. You can always change this later.
             </p>
 
+            <div style={{
+              marginTop: 4, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🌱 Homestead basics
+            </div>
             <HobbyCheckbox
               checked={hobbies.garden}
               onToggle={() => setHobbies((h) => ({ ...h, garden: !h.garden }))}
@@ -18815,6 +18923,13 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
               label="Incubator (Beta)"
               sub="Track hatching runs and hatch rates"
             />
+            <div style={{
+              marginTop: 14, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🐐 Livestock
+            </div>
             <HobbyCheckbox
               checked={hobbies.goats || false}
               onToggle={() => setHobbies((h) => ({ ...h, goats: !h.goats }))}
@@ -18850,6 +18965,13 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
               label="Horses"
               sub="Per-horse rides, farrier, vet, deworming, breeding"
             />
+            <div style={{
+              marginTop: 14, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🍳 Kitchen
+            </div>
             <HobbyCheckbox
               checked={hobbies.sourdough || false}
               onToggle={() => setHobbies((h) => ({ ...h, sourdough: !h.sourdough }))}
@@ -18911,6 +19033,13 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
               sub="Day-by-day logs, recipes, reflection notes"
             />
 
+            <div style={{
+              marginTop: 14, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🐾 Dogs & cats
+            </div>
             <HobbyCheckbox
               checked={hobbies.dogs || false}
               onToggle={() => setHobbies((h) => ({ ...h, dogs: !h.dogs }))}
@@ -18927,6 +19056,13 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
               sub="Breeding, litters, vet/meds, barn-cat kill log"
             />
 
+            <div style={{
+              marginTop: 14, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🍁 Maple syrup
+            </div>
             <HobbyCheckbox
               checked={hobbies.maple_syrup || false}
               onToggle={() => setHobbies((h) => ({ ...h, maple_syrup: !h.maple_syrup }))}

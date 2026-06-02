@@ -230,6 +230,9 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
   const [date, setDate] = useState(existingSale?.date || todayStr());
   const [qty, setQty] = useState(existingSale?.qty != null ? String(existingSale.qty) : "");
   const [note, setNote] = useState(existingSale?.note || "");
+  // Tip — extra a customer leaves beyond the item price. Optional, applies to
+  // any sale type. Kept separate from revenue so it shows as its own line.
+  const [tip, setTip] = useState(existingSale?.tip != null ? String(existingSale.tip) : "");
   const [buyerId, setBuyerId] = useState(existingSale?.buyerId || "");
   const [newBuyerName, setNewBuyerName] = useState("");
   const [showNewBuyer, setShowNewBuyer] = useState(false);
@@ -330,6 +333,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       id: existingSale?.id || newId(),
       date, hobbyType, qty: Number(qty) || 0,
       note, buyerId: buyerId || null,
+      tip: Number(tip) || 0,
       created: existingSale?.created || Date.now(),
     };
 
@@ -957,6 +961,10 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Farmers market, neighbor, online..." />
               </Field>
 
+              <Field label="Tip (optional)">
+                <input type="number" step="0.01" min={0} style={inputStyle} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
+              </Field>
+
               <Btn variant="primary" onClick={save} style={{ width:"100%" }}>
                 {isEdit ? "Save changes" : "Log sale"}
               </Btn>
@@ -1104,6 +1112,9 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
         <div style={{ fontWeight:600,fontSize:14,color:palette.ink,display:"flex",alignItems:"center",gap:8 }}>
           {fmtMoney(revenue)}
           <span style={{ fontSize:11,background:meta.color+"25",color:palette.ink,padding:"1px 6px",borderRadius:4,fontWeight:500 }}>{meta.label}</span>
+          {(Number(sale.tip) || 0) > 0 && (
+            <span style={{ fontSize:11,background:palette.leaf+"22",color:palette.leaf,padding:"1px 6px",borderRadius:4,fontWeight:600 }}>+{fmtMoney(Number(sale.tip))} tip</span>
+          )}
         </div>
         <div style={{ fontSize:12,color:palette.inkSoft,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis" }}>
           {fmtDate(sale.date)} · {detail}{customer ? ` · ${customer.name}` : ""}{sale.note ? ` · ${sale.note}` : ""}
@@ -1202,6 +1213,9 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   const [amount, setAmount] = useState(existingExpense?.amount != null ? String(existingExpense.amount) : "");
   const [category, setCategory] = useState(existingExpense?.category || "Feed");
   const [hobbyId, setHobbyId] = useState(existingExpense?.hobbyId || initialHobbyId || "");
+  // Optional flock attribution. Only meaningful for hobbies that have flocks
+  // (egg layers, meat chickens); lets per-flock cost/egg include this expense.
+  const [flockId, setFlockId] = useState(existingExpense?.flockId || "");
   const [note, setNote] = useState(existingExpense?.note || "");
   const [recurrence, setRecurrence] = useState(existingExpense?.recurrence || "none");
   const [recurEnd, setRecurEnd] = useState(existingExpense?.recurEnd || "");
@@ -1216,10 +1230,15 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
     const n = parseFloat(amount);
     if (!n || n <= 0) { setError("Enter a valid amount."); return null; }
     if (!category.trim()) { setError("Pick or type a category."); return null; }
+    // Only persist flockId if the chosen hobby actually has that flock — guards
+    // against a stale selection if the hobby was changed after picking a flock.
+    const selHobby = visibleHobbies.find(h => h.id === hobbyId);
+    const flockValid = !!(flockId && selHobby && (selHobby.flocks || []).some(f => f.id === flockId));
     return {
       amount: n,
       category: category.trim(),
       hobbyId: hobbyId || null,
+      flockId: flockValid ? flockId : null,
       note: note.trim(),
     };
   };
@@ -1347,13 +1366,32 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       </Field>
 
       <Field label="For which hobby? (optional)">
-        <select style={inputStyle} value={hobbyId} onChange={(e) => setHobbyId(e.target.value)}>
+        <select style={inputStyle} value={hobbyId} onChange={(e) => { setHobbyId(e.target.value); setFlockId(""); }}>
           <option value="">— All / unspecified —</option>
           {visibleHobbies.map(h => (
             <option key={h.id} value={h.id}>{h.name}</option>
           ))}
         </select>
       </Field>
+
+      {/* Flock attribution — only shown when the chosen hobby has flocks.
+          Tagging a flock lets the expense roll into that flock's cost/egg;
+          "All flocks / general" leaves it at the hobby level only. */}
+      {(() => {
+        const selHobby = visibleHobbies.find(h => h.id === hobbyId);
+        const flocks = (selHobby && selHobby.flocks) || [];
+        if (flocks.length === 0) return null;
+        return (
+          <Field label="Which flock? (optional)">
+            <select style={inputStyle} value={flockId} onChange={(e) => setFlockId(e.target.value)}>
+              <option value="">— All flocks / general —</option>
+              {flocks.map(f => (
+                <option key={f.id} value={f.id}>{f.name}</option>
+              ))}
+            </select>
+          </Field>
+        );
+      })()}
 
       <Field label="Note (optional)">
         <input
@@ -1505,6 +1543,9 @@ export default function SalesPage({ data, update }) {
   const totalRevenue = allSales.reduce((s,sale) => s + computeRevenue(sale), 0);
   const thisMonth = thisMonthStr();
   const thisMonthRevenue = allSales.filter(s => s.date?.startsWith(thisMonth)).reduce((s,sale) => s + computeRevenue(sale), 0);
+  // Tips are tracked separately from revenue (they're extra a customer leaves,
+  // not item price), so they get their own total rather than inflating revenue.
+  const totalTips = allSales.reduce((s,sale) => s + (Number(sale.tip) || 0), 0);
 
   // Revenue by hobby type (for bar chart)
   const byType = useMemo(() => {
@@ -1670,6 +1711,13 @@ export default function SalesPage({ data, update }) {
             <div style={{ fontSize:12,color:palette.inkSoft,marginTop:4 }}>{fmtMoney(t.revenue)}</div>
           </div>
         ))}
+        {totalTips > 0 && (
+          <div style={{ flex:"1 1 140px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
+            <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Tips</div>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:32,color:palette.leaf,lineHeight:1 }}>{fmtMoney(totalTips)}</div>
+            <div style={{ fontSize:11,color:palette.inkSoft,marginTop:4 }}>on top of revenue</div>
+          </div>
+        )}
       </div>
 
       {/* ============================================================== */}

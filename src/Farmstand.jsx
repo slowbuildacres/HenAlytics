@@ -237,12 +237,14 @@ function QuickSellModal({ item, onSell, onClose }) {
   const [qty, setQty] = useState("1");
   const [date, setDate] = useState(todayStr());
   const [note, setNote] = useState("");
+  const [tip, setTip] = useState("");
   const [pricePerUnit, setPricePerUnit] = useState(String(item.pricePerUnit || 0));
   const [costPerUnit, setCostPerUnit] = useState(String(item.costPerUnit || 0));
 
   const q = parseFloat(qty) || 0;
   const p = parseFloat(pricePerUnit) || 0;
   const c = parseFloat(costPerUnit) || 0;
+  const t = parseFloat(tip) || 0;
   const revenue = q * p;
   const cost = q * c;
   const profit = revenue - cost;
@@ -269,6 +271,7 @@ function QuickSellModal({ item, onSell, onClose }) {
       revenue,
       cost,
       profit,
+      tip: t,
       note: note.trim(),
     });
     onClose();
@@ -341,6 +344,9 @@ function QuickSellModal({ item, onSell, onClose }) {
           <Field label="Note (optional)">
             <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Repeat customer, payment type, etc." />
           </Field>
+          <Field label="Tip (optional)">
+            <input type="number" step="0.01" min={0} style={inputStyle} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
+          </Field>
           <div style={{ background:palette.bgAlt,borderRadius:8,padding:"12px 14px",marginBottom:14 }}>
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}>
               <span style={{ color:palette.inkSoft }}>Revenue</span>
@@ -350,9 +356,15 @@ function QuickSellModal({ item, onSell, onClose }) {
               <span style={{ color:palette.inkSoft }}>Cost</span>
               <span>{fmtMoney(cost)}</span>
             </div>
+            {t > 0 && (
+              <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}>
+                <span style={{ color:palette.inkSoft }}>Tip</span>
+                <span style={{ color:palette.leaf }}>{fmtMoney(t)}</span>
+              </div>
+            )}
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:14,paddingTop:6,borderTop:`1px solid ${palette.line}` }}>
-              <strong>Profit</strong>
-              <strong style={{ color: profit >= 0 ? palette.leaf : palette.accent }}>{fmtMoney(profit)}</strong>
+              <strong>Profit{t > 0 ? " + tip" : ""}</strong>
+              <strong style={{ color: (profit + t) >= 0 ? palette.leaf : palette.accent }}>{fmtMoney(profit + t)}</strong>
             </div>
           </div>
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
@@ -699,6 +711,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
         costPerUnit: saleData.costPerUnit,
         totalRevenue: saleData.revenue,
         totalCost: saleData.cost,
+        tip: Number(saleData.tip) || 0,
         note: saleData.note || "",
         buyerId: null,
         created: Date.now(),
@@ -1043,16 +1056,22 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
   const totalProfit = totalRevenue - totalCost;
   const margin = totalRevenue > 0 ? (totalProfit / totalRevenue) * 100 : 0;
   const avgSale = totalRevenue / farmstandSales.length;
+  // Tips — extra customers leave beyond item price. Tracked separately from
+  // revenue. Fudged in spouse mode like the other money figures.
+  const totalTips = farmstandSales.reduce((s, sale) => s + fudge(Number(sale.tip) || 0), 0);
+  const tippedSaleCount = farmstandSales.filter(s => (Number(s.tip) || 0) > 0).length;
 
   // By item
   const byItem = {};
   farmstandSales.forEach(sale => {
     const name = sale.crop || "Other";
-    if (!byItem[name]) byItem[name] = { revenue: 0, cost: 0, qty: 0, count: 0 };
+    if (!byItem[name]) byItem[name] = { revenue: 0, cost: 0, qty: 0, count: 0, tips: 0, tipCount: 0 };
     byItem[name].revenue += fudge(Number(sale.totalRevenue) || 0);
     byItem[name].cost += Number(sale.totalCost) || 0;
     byItem[name].qty += Number(sale.qty) || 0;
     byItem[name].count += 1;
+    const saleTip = fudge(Number(sale.tip) || 0);
+    if (saleTip > 0) { byItem[name].tips += saleTip; byItem[name].tipCount += 1; }
   });
   const itemList = Object.entries(byItem)
     .map(([name, d]) => ({ name, ...d, profit: d.revenue - d.cost }))
@@ -1060,6 +1079,8 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
 
   const topByRevenue = itemList.slice(0, 5);
   const topByProfit = itemList.slice().sort((a,b) => b.profit - a.profit).slice(0, 5);
+  // Items that have actually received tips, most-tipped first.
+  const topByTips = itemList.filter(d => d.tips > 0).sort((a,b) => b.tips - a.tips).slice(0, 5);
 
   // By month for chart
   const byMonth = {};
@@ -1084,6 +1105,9 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
         <StatCard label="Sales" value={farmstandSales.length} sub={`avg ${fmtMoney(avgSale)}`} accent={palette.feather} />
         {customers.size > 0 && (
           <StatCard label="Customers" value={customers.size} sub="repeat buyers" accent={palette.yolk} />
+        )}
+        {totalTips > 0 && (
+          <StatCard label="Tips" value={fmtMoney(totalTips)} sub={`across ${tippedSaleCount} sale${tippedSaleCount===1?"":"s"}`} accent={palette.leaf} />
         )}
         {(() => {
           const infraTotal = (entries || []).filter(e => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
@@ -1138,6 +1162,29 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
                 </div>
                 <div style={{ fontWeight: 700, color: row.profit >= 0 ? palette.leaf : palette.accent, fontFamily: FONT_DISPLAY, fontSize: 16 }}>
                   {fmtMoney(row.profit)}
+                </div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+
+      {topByTips.length > 0 && (
+        <>
+          <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>Most tipped items 💸</h3>
+          <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,overflow:"hidden",marginBottom:18 }}>
+            {topByTips.map((row, i) => (
+              <div key={row.name} style={{
+                padding: "10px 14px",
+                borderBottom: i < topByTips.length - 1 ? `1px solid ${palette.line}` : "none",
+                display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink, wordBreak: "break-word" }}>{row.name}</div>
+                  <div style={{ fontSize: 11, color: palette.inkSoft }}>{row.tipCount} tipped sale{row.tipCount===1?"":"s"}</div>
+                </div>
+                <div style={{ fontWeight: 700, color: palette.leaf, fontFamily: FONT_DISPLAY, fontSize: 16 }}>
+                  {fmtMoney(row.tips)}
                 </div>
               </div>
             ))}
