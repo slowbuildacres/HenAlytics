@@ -8458,7 +8458,7 @@ function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
                     )}
                   </div>
                   <button
-                    onClick={() => reopenGardenSeason(update, hobby.id, s.id)}
+                    onClick={() => { reopenGardenSeason(update, hobby.id, s.id); toast(`${s.name} reopened.`); }}
                     style={{
                       flexShrink: 0, padding: "6px 12px", borderRadius: 8,
                       border: `1.5px solid ${palette.leaf}`, background: palette.leaf,
@@ -8654,6 +8654,18 @@ function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
           <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {harvestSummary(harvests)} harvested · day {days}</div>
         </div>
       </div>
+
+      {/* Switch season — make a past season active again (current one is set
+          aside, not deleted). Discoverable even while a season is active
+          (e.g. someone wrapped up the wrong season, then started a new one). */}
+      {(hobby.archivedSeasons || []).length > 0 && (
+        <button
+          onClick={() => setModal({ type: "reopenSeason" })}
+          style={{ width: "100%", marginBottom: 10, padding: "8px 10px", background: "transparent", border: `1.5px dashed ${palette.line}`, borderRadius: 10, cursor: "pointer", fontSize: 12, color: palette.inkSoft, fontFamily: FONT_BODY }}
+        >
+          ↩ Switch season
+        </button>
+      )}
 
       {/* Garden map — right under the summary so the overview reads together. */}
       {gardenMapCard}
@@ -9655,6 +9667,81 @@ function reopenGardenSeason(update, hobbyId, seasonId) {
     h.archivedSeasons.splice(idx, 1);
     return d;
   });
+}
+
+// Modal listing closed seasons with a Reopen action. Used from the garden home
+// in both states (active season or not). When a season is currently active,
+// reopening archives it first, so we confirm before doing it.
+function ReopenSeasonModal({ hobby, update, onClose }) {
+  const archived = (hobby && hobby.archivedSeasons) || [];
+  const current = hobby && hobby.currentSeason;
+  const list = archived.slice().reverse(); // most recent first
+  const [pendingId, setPendingId] = useState(null);
+
+  const rowBtn = {
+    flexShrink: 0, padding: "6px 12px", borderRadius: 8,
+    border: `1.5px solid ${palette.leaf}`, background: palette.leaf, color: "#fff",
+    fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
+  };
+  const ghostBtn = {
+    padding: "7px 13px", borderRadius: 8, border: `1.5px solid ${palette.line}`,
+    background: palette.card, color: palette.ink, fontFamily: FONT_BODY,
+    fontWeight: 600, fontSize: 12, cursor: "pointer",
+  };
+
+  return (
+    <Modal open onClose={onClose} title={current ? "Switch season" : "Reopen a closed season"}>
+      <div style={{ fontFamily: FONT_BODY, color: palette.ink, fontSize: 14, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+          {current
+            ? "Switching makes a past season active again — its garden map, annuals, and seedlings come back. Your current season is set aside (nothing's deleted) and you can switch back anytime."
+            : "Reopening a closed season brings back its garden map, annuals, and seedlings — they were hidden when it closed, never deleted."}
+        </div>
+        {list.length === 0 ? (
+          <div style={{ fontSize: 12, color: palette.inkSoft, fontStyle: "italic" }}>No closed seasons to reopen.</div>
+        ) : (
+          <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+            {list.map((s) => (
+              <div key={s.id} style={{ padding: "10px 12px", background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+                {pendingId === s.id ? (
+                  <div>
+                    <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.5, marginBottom: 10 }}>
+                      {current
+                        ? <>Switch to <strong>{s.name}</strong>? Your current season (<strong>{current.name}</strong>) gets set aside — all its plants, map, and logs are kept, and you can switch back anytime.</>
+                        : <>Reopen <strong>{s.name}</strong> as your active season? Its plants, map, and logs come right back.</>}
+                    </div>
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <button
+                        onClick={() => {
+                          reopenGardenSeason(update, hobby.id, s.id);
+                          toast(current
+                            ? `Now tracking ${s.name}. ${current.name} set aside — switch back anytime.`
+                            : `${s.name} reopened.`);
+                          onClose();
+                        }}
+                        style={rowBtn}
+                      >
+                        {current ? "Yes, switch" : "Yes, reopen"}
+                      </button>
+                      <button onClick={() => setPendingId(null)} style={ghostBtn}>Cancel</button>
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10 }}>
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.name}</div>
+                      {s.endDate && <div style={{ fontSize: 11, color: palette.inkSoft }}>Closed {fmtDate(s.endDate)}</div>}
+                    </div>
+                    <button onClick={() => setPendingId(s.id)} style={rowBtn}>{current ? "Switch" : "↩ Reopen"}</button>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </Modal>
+  );
 }
 
 function GardenAnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilter, spouseMode }) {
@@ -11238,6 +11325,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
+  if (modal.type === "reopenSeason") return <ReopenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} data={data} update={update} onClose={close} />;
   if (modal.type === "closeOutCrops") return <CloseOutCropsModal hobbyId={modal.hobbyId || "garden"} data={data} update={update} setModal={setModal} onClose={close} />;
   if (modal.type === "log") {
