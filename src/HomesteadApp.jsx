@@ -5332,7 +5332,7 @@ useNativeBackButton(React.useCallback(() => {
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
-          <AnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
@@ -9432,13 +9432,13 @@ function EntryPhotoThumb({ path, size = 40 }) {
 }
 
 // ============ ANALYTICS PAGE ============
-function AnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
+function AnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilter, dateFilter, setDateFilter, customStart, setCustomStart, customEnd, setCustomEnd, spouseMode, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const [showShare, setShowShare] = useState(false);
   // Defensive: hobby may be undefined for one render frame during transitions
   if (!hobby) return <EmptyState text="Loading…" />;
   // Garden uses explicit user-created seasons; other hobbies use date ranges.
   if (hobby.type === "garden") {
-    return <GardenAnalyticsPage hobby={hobby} data={data} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={spouseMode} />;
+    return <GardenAnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} spouseMode={spouseMode} />;
   }
 
   // Resolve dateFilter → {start, end} as ISO date strings (inclusive). null
@@ -9570,8 +9570,51 @@ function dateRangeLabel(range) {
 // LockedStatOverlay take this file's `palette`/fonts as props — see usage in
 // the per-hobby Stats sections.
 
-function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spouseMode }) {
+// Reverse a season close-out: pull an archived season back to active. Restores
+// its snapshotted log entries and makes it currentSeason again — which brings
+// back its garden map, annuals, and seed starts automatically (they were never
+// deleted on close, just hidden because their seasonId no longer matched any
+// active season). If a different season is active, it's archived first so
+// nothing is lost.
+function reopenGardenSeason(update, hobbyId, seasonId) {
+  update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobbyId);
+    if (!h || !Array.isArray(h.archivedSeasons)) return d;
+    if (!d.entries[hobbyId]) d.entries[hobbyId] = [];
+
+    // If a different season is active right now, archive it first.
+    if (h.currentSeason && h.currentSeason.id !== seasonId) {
+      const cur = JSON.parse(JSON.stringify(h.currentSeason));
+      cur.endDate = cur.endDate || todayStr();
+      cur.finalEntries = d.entries[hobbyId].filter((e) => e.seasonId === cur.id);
+      h.archivedSeasons.push(cur);
+      d.entries[hobbyId] = d.entries[hobbyId].filter((e) => e.seasonId !== cur.id);
+    }
+
+    const idx = h.archivedSeasons.findIndex((s) => s.id === seasonId);
+    if (idx === -1) return d;
+    const season = h.archivedSeasons[idx];
+
+    // Restore its snapshotted entries to the active log (skip any dupes by id).
+    const existingIds = new Set(d.entries[hobbyId].map((e) => e.id));
+    (season.finalEntries || []).forEach((e) => {
+      if (!existingIds.has(e.id)) d.entries[hobbyId].push(e);
+    });
+
+    // Make it active again, stripping archive-only fields.
+    const reopened = JSON.parse(JSON.stringify(season));
+    delete reopened.endDate;
+    delete reopened.finalEntries;
+    h.currentSeason = reopened;
+
+    h.archivedSeasons.splice(idx, 1);
+    return d;
+  });
+}
+
+function GardenAnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilter, spouseMode }) {
   const [showShare, setShowShare] = useState(false);
+  const [confirmReopen, setConfirmReopen] = useState(false);
   if (!hobby) return <EmptyState text="Loading…" />;
   // Build season list: archived + (currently active, if any)
   const archived = hobby.archivedSeasons || [];
@@ -9625,6 +9668,47 @@ function GardenAnalyticsPage({ hobby, data, seasonFilter, setSeasonFilter, spous
             </Btn>
           ))}
         </div>
+
+        {/* Reopen a closed season — un-archives it and brings its map, annuals,
+            and seedlings back (they were hidden on close, not deleted). This is
+            the escape hatch for "wrap up the entire season" done by accident.
+            Shown only when a closed season is the current view. */}
+        {update && (() => {
+          const archivedSel = archived.find((s) => s.id === seasonFilter);
+          if (!archivedSel) return null;
+          const reopenBtnStyle = {
+            padding: "7px 13px", borderRadius: 8, border: `1.5px solid ${palette.line}`,
+            background: palette.card, color: palette.ink, fontFamily: FONT_BODY,
+            fontWeight: 600, fontSize: 12, cursor: "pointer", flexShrink: 0,
+          };
+          return (
+            <div style={{ marginTop: 10, padding: 12, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+              {!confirmReopen ? (
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, flexWrap: "wrap" }}>
+                  <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.45, flex: 1, minWidth: 150 }}>
+                    Closed this season by mistake? Reopening brings back its garden map, annuals, and seedlings.
+                  </div>
+                  <button onClick={() => setConfirmReopen(true)} style={reopenBtnStyle}>↩ Reopen season</button>
+                </div>
+              ) : (
+                <div>
+                  <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.5, marginBottom: 10 }}>
+                    Reopen <strong>{archivedSel.name}</strong> as your active season?{current ? ` Your current season (${current.name}) will be archived so nothing's lost.` : ""}
+                  </div>
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <button
+                      onClick={() => { reopenGardenSeason(update, hobby.id, archivedSel.id); setConfirmReopen(false); setSeasonFilter(archivedSel.id); }}
+                      style={{ ...reopenBtnStyle, background: palette.leaf, color: "#fff", borderColor: palette.leaf }}
+                    >
+                      Yes, reopen
+                    </button>
+                    <button onClick={() => setConfirmReopen(false)} style={reopenBtnStyle}>Cancel</button>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })()}
       </div>
 
       {allSeasons.length === 0 && !analyticsEntries.length && (
