@@ -318,3 +318,69 @@ export async function getForecast(lat, lon) {
     return null;
   }
 }
+
+// ============================================================================
+// WEEKLY PRECIPITATION — "how much has it rained this week"
+// ----------------------------------------------------------------------------
+// One forecast call (past_days=6 + today = 7 days) summed into a single total,
+// so the garden watering nudge can tell the user whether they even need to
+// water. Cached 3h like the forecast — rain totals don't change minute to
+// minute. Returns { totalIn, days, throughDate } or null.
+// ============================================================================
+
+const WEEKPRECIP_CACHE_KEY_PREFIX = 'henalytics_weekprecip_';
+const WEEKPRECIP_CACHE_TTL_MS = 3 * 60 * 60 * 1000; // 3 hours
+
+function weekPrecipCacheKey(lat, lon) {
+  return `${WEEKPRECIP_CACHE_KEY_PREFIX}${lat.toFixed(2)}-${lon.toFixed(2)}`;
+}
+
+function readWeekPrecipCache(lat, lon) {
+  try {
+    const raw = localStorage.getItem(weekPrecipCacheKey(lat, lon));
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (parsed.t && Date.now() - parsed.t < WEEKPRECIP_CACHE_TTL_MS) return parsed.data;
+  } catch (e) {}
+  return null;
+}
+
+function writeWeekPrecipCache(lat, lon, data) {
+  try {
+    localStorage.setItem(weekPrecipCacheKey(lat, lon), JSON.stringify({ t: Date.now(), data }));
+  } catch (e) {}
+}
+
+export async function getWeeklyPrecip(lat, lon) {
+  if (lat == null || lon == null) return null;
+
+  const cached = readWeekPrecipCache(lat, lon);
+  if (cached) return cached;
+
+  // past_days=6 + today = a 7-day window ending today, local calendar days.
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=precipitation_sum&timezone=auto&past_days=6&forecast_days=1`;
+
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const arr = json.daily && json.daily.precipitation_sum;
+    const times = json.daily && json.daily.time;
+    if (!Array.isArray(arr) || arr.length === 0) return null;
+
+    let mm = 0;
+    for (const v of arr) { if (typeof v === 'number' && !Number.isNaN(v)) mm += v; }
+    const totalIn = Math.round(mm * 0.0393701 * 100) / 100;
+
+    const result = {
+      totalIn,
+      days: arr.length,
+      throughDate: Array.isArray(times) && times.length ? times[times.length - 1] : null,
+    };
+    writeWeekPrecipCache(lat, lon, result);
+    return result;
+  } catch (e) {
+    console.warn('Weekly precip fetch failed', e);
+    return null;
+  }
+}

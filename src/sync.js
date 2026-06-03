@@ -72,7 +72,52 @@ function writeActiveHomesteadId(id) {
   try { localStorage.setItem(HOMESTEAD_ID_KEY, id); } catch (e) {}
 }
 
+// ---- Hidden homesteads (per-user view preference) --------------------------
+// A device-local, per-user set of homestead ids the user has chosen to hide
+// from their switcher dropdown. This is purely a display preference: it never
+// deletes a homestead, its data, or the membership row, and unhiding restores
+// the entry. Stored as { [userId]: [ids] } so multiple accounts on one device
+// don't clobber each other.
+const HIDDEN_HOMESTEADS_KEY = 'homestead_hidden_ids_v1';
+
+function readHiddenMap() {
+  try { return JSON.parse(localStorage.getItem(HIDDEN_HOMESTEADS_KEY) || '{}') || {}; }
+  catch (e) { return {}; }
+}
+function writeHiddenMap(map) {
+  try { localStorage.setItem(HIDDEN_HOMESTEADS_KEY, JSON.stringify(map)); } catch (e) {}
+}
+export function getHiddenHomesteadIds(userId) {
+  if (!userId) return [];
+  const arr = readHiddenMap()[userId];
+  return Array.isArray(arr) ? arr : [];
+}
+export function setHomesteadHidden(userId, homesteadId, hidden) {
+  if (!userId || !homesteadId) return;
+  const map = readHiddenMap();
+  const cur = Array.isArray(map[userId]) ? map[userId] : [];
+  const next = hidden
+    ? Array.from(new Set([...cur, homesteadId]))
+    : cur.filter((x) => x !== homesteadId);
+  map[userId] = next;
+  writeHiddenMap(map);
+}
+
+// Dedupe concurrent calls for the same user. Two cold-start callers (e.g. the
+// load path firing twice during auth settling) could each see "no memberships"
+// and each create a homestead — a source of phantom duplicates. Sharing one
+// in-flight promise per user prevents that.
+const _ensureInFlight = new Map();
+
 async function ensureHomestead(userId) {
+  if (_ensureInFlight.has(userId)) return _ensureInFlight.get(userId);
+  const p = (async () => _ensureHomesteadImpl(userId))();
+  _ensureInFlight.set(userId, p);
+  try { return await p; }
+  finally { _ensureInFlight.delete(userId); }
+}
+
+async function _ensureHomesteadImpl(userId) {
   const cachedId = readActiveHomesteadId();
 
   const { data: memberships, error: mErr } = await supabase
@@ -132,6 +177,27 @@ async function ensureHomestead(userId) {
     //    fall back to the highest-scored shared homestead.
     scored.sort((a, b) => b.score - a.score);
     const chosen = scored[0].membership;
+    return { id: chosen.homestead_id, role: chosen.role };
+  }
+
+  // Defensive guard before creating. An empty membership result with NO error
+  // can also occur transiently — e.g. during an auth token refresh when
+  // auth.uid() is briefly null, RLS matches no rows and returns []. Creating a
+  // homestead in that window is how some users ended up with phantom empty
+  // duplicates. So before creating: (a) confirm there's a live session for THIS
+  // user, and (b) re-query once. Only create if it's still genuinely empty.
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session || !session.user || session.user.id !== userId) {
+    throw new Error('Not signed in yet — skipping homestead creation');
+  }
+  const { data: recheck, error: rErr } = await supabase
+    .from('homestead_members')
+    .select('homestead_id, role, joined_at')
+    .eq('user_id', userId)
+    .order('joined_at', { ascending: true });
+  if (!rErr && recheck && recheck.length > 0) {
+    const ownedNow = recheck.filter((m) => m.role === 'owner');
+    const chosen = ownedNow[0] || recheck[0];
     return { id: chosen.homestead_id, role: chosen.role };
   }
 
@@ -660,6 +726,7 @@ export async function listMyHomesteads(user) {
   }
 
   const activeId = readActiveHomesteadId();
+  const hiddenSet = new Set(getHiddenHomesteadIds(user.id));
 
   return (memberships || [])
     .map((m) => {
@@ -691,6 +758,7 @@ export async function listMyHomesteads(user) {
         hint,
         entryCount,
         isActive: m.homestead_id === activeId,
+        hidden: hiddenSet.has(m.homestead_id),
       };
     })
     .sort((a, b) => {

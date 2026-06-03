@@ -27,8 +27,7 @@ const MAX_SCHEDULED = 60;      // headroom under the iOS hard cap of 64
 const REMINDER_HOUR = 8;       // 8:00 AM local — change here to retune
 const ID_BASE = 100000;        // namespace our ids away from any other source
 
-// --- Capacitor access (mirrors HomesteadApp's loadCapacitor indirection so
-//     Vite/Rollup don't try to statically resolve the plugin at build time) ---
+// --- Capacitor access ------------------------------------------------------
 const isNativeApp = () => {
   try {
     return !!(typeof window !== "undefined" && window.Capacitor &&
@@ -36,14 +35,37 @@ const isNativeApp = () => {
   } catch (_) { return false; }
 };
 
-const loadPlugin = (pkg) => {
-  const spec = /* @vite-ignore */ pkg;
-  return import(/* @vite-ignore */ spec);
-};
-
-async function getLN() {
-  const mod = await loadPlugin("@capacitor/local-notifications");
-  return mod.LocalNotifications;
+// Resolve the native LocalNotifications plugin SYNCHRONOUSLY and memoize it.
+//
+// Two things matter here, both learned the hard way:
+//   1. window.Capacitor.registerPlugin("LocalNotifications") returns a Proxy
+//      bound to the compiled-in native plugin. We must NOT return it from an
+//      async function or `await` it: awaiting a value reads its `.then`, and
+//      the proxy turns that read into a native call `LocalNotifications.then()`,
+//      which doesn't exist → "not implemented on ios". So this accessor is sync
+//      and callers use the proxy directly, only awaiting its METHOD calls.
+//   2. registerPlugin must be called once. Calling it repeatedly logs
+//      "plugin already registered". Hence the memo in `_ln`.
+//
+// Returns null when not inside the native shell (web/dev), so every public fn
+// degrades to a no-op there.
+//
+// IMPORTANT: we only cache a SUCCESSFUL resolution. An earlier version cached
+// null too, so if lnPlugin() ran once before window.Capacitor.registerPlugin
+// was ready, it locked in null forever and every later call (including the
+// toggle) saw hasLN:false even though the plugin was available by then.
+let _ln = null;
+function lnPlugin() {
+  if (_ln) return _ln;
+  try {
+    if (typeof window !== "undefined" && window.Capacitor &&
+        typeof window.Capacitor.registerPlugin === "function") {
+      const p = window.Capacitor.registerPlugin("LocalNotifications");
+      if (p) _ln = p;            // cache only on success; retry next time if not
+      return _ln;
+    }
+  } catch (_) { /* not ready / unavailable — leave _ln null and retry later */ }
+  return _ln;
 }
 
 // Parse a "YYYY-MM-DD" string into a local Date at the given hour. Built from
@@ -61,14 +83,14 @@ function eventFireDate(dateStr, hour) {
 // True only inside the native shell with the plugin available.
 export async function areRemindersSupported() {
   if (!isNativeApp()) return false;
-  try { await getLN(); return true; } catch (_) { return false; }
+  return !!lnPlugin();
 }
 
 // Returns the permission state without prompting: 'granted' | 'denied' | 'prompt'.
 export async function getReminderPermission() {
-  if (!(await areRemindersSupported())) return "unsupported";
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return "unsupported";
   try {
-    const LN = await getLN();
     const res = await LN.checkPermissions();
     return res?.display || "prompt";
   } catch (_) { return "unsupported"; }
@@ -76,9 +98,9 @@ export async function getReminderPermission() {
 
 // Prompts for permission if needed. Returns true iff granted.
 export async function requestReminderPermission() {
-  if (!(await areRemindersSupported())) return false;
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return false;
   try {
-    const LN = await getLN();
     let res = await LN.checkPermissions();
     if (res?.display !== "granted") {
       res = await LN.requestPermissions();
@@ -97,9 +119,9 @@ export async function requestReminderPermission() {
 // Cancel every reminder we previously scheduled. Cancels by our id namespace
 // only, so it won't touch notifications scheduled by anything else.
 export async function cancelAllReminders() {
-  if (!(await areRemindersSupported())) return;
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return;
   try {
-    const LN = await getLN();
     const pending = await LN.getPending();
     const ours = (pending?.notifications || []).filter(
       (n) => typeof n.id === "number" && n.id >= ID_BASE && n.id < ID_BASE + MAX_SCHEDULED + 5
@@ -155,7 +177,8 @@ export function buildReminderSchedule(calendarEvents, opts = {}) {
 // our previously-scheduled set, then schedule the fresh window. Safe to call
 // often (on app open, on calendarEvents change). No-op on web / when disabled.
 export async function reconcileReminders(calendarEvents, opts = {}) {
-  if (!(await areRemindersSupported())) return { scheduled: 0, skipped: "unsupported" };
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return { scheduled: 0, skipped: "unsupported" };
   // Don't prompt here — only schedule if permission is already granted.
   const perm = await getReminderPermission();
   if (perm !== "granted") return { scheduled: 0, skipped: perm };
@@ -166,7 +189,6 @@ export async function reconcileReminders(calendarEvents, opts = {}) {
   if (notifications.length === 0) return { scheduled: 0 };
 
   try {
-    const LN = await getLN();
     await LN.schedule({ notifications });
     return { scheduled: notifications.length };
   } catch (e) {
@@ -178,9 +200,9 @@ export async function reconcileReminders(calendarEvents, opts = {}) {
 // Optional: route a tapped reminder somewhere useful. `onOpen(extra)` receives
 // the { eventId, type } we stashed. Returns an unsubscribe fn (or no-op).
 export async function initReminderTapHandling(onOpen) {
-  if (!(await areRemindersSupported())) return () => {};
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return () => {};
   try {
-    const LN = await getLN();
     const handle = await LN.addListener("localNotificationActionPerformed", (action) => {
       const extra = action?.notification?.extra || {};
       try { onOpen && onOpen(extra); } catch (_) {}

@@ -43,6 +43,27 @@
      between page load and React mount where inline-style rules don't yet apply. */
   html, body { overflow-x: hidden; max-width: 100vw; }
   body { background: #F4EDE0; }
+
+  /* --- Safe-area handling for system bars (Android nav bar, iOS home indicator) ---
+     Android 15+ forces edge-to-edge: the WebView draws behind the bottom nav bar,
+     which can hide bottom buttons like "Next". viewport-fit=cover (set above)
+     exposes these insets; here we expose them as variables and apply a baseline. */
+  :root {
+    --safe-area-bottom: env(safe-area-inset-bottom, 0px);
+    --safe-area-top: env(safe-area-inset-top, 0px);
+  }
+  /* Baseline: inset the whole app from the bottom so normal-flow content
+     never sits under the nav bar. Harmless if your layout already handles it. */
+  #root {
+    box-sizing: border-box;
+    min-height: 100vh;
+    padding-bottom: var(--safe-area-bottom);
+  }
+  /* Utility class: add this to any fixed/sticky bottom bar inside your React
+     components (a fixed footer ignores #root padding and needs its own inset). */
+  .safe-bottom {
+    padding-bottom: var(--safe-area-bottom);
+  }
 </style>
 </head>
 <body>

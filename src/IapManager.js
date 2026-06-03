@@ -280,6 +280,12 @@ export async function purchaseProduct(productId) {
 export async function restorePurchases() {
   if (!isNative()) return { success: false, error: "Not on native platform" };
   if (!_initialized || !_purchases) {
+    // The init effect can lose its race with a quick tap on some Android
+    // devices, leaving _initialized false even though IAP is configured.
+    // Try one lazy (re)init with the last-known user before giving up.
+    try { await initIap(_currentUserId); } catch (_) {}
+  }
+  if (!_initialized || !_purchases) {
     return { success: false, error: "IAP not initialized" };
   }
 

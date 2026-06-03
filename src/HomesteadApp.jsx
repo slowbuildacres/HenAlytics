@@ -79,6 +79,7 @@ import {
   uploadPhoto, getPhotoUrl, deletePhoto,
   sendFeedback, acceptInvite, deleteAccount,
   listMyHomesteads, setActiveHomestead,
+  getHiddenHomesteadIds, setHomesteadHidden,
 } from "./sync.js";
 import {
   areRemindersSupported, getReminderPermission, requestReminderPermission,
@@ -94,6 +95,7 @@ import {
 } from "./animalPhotos.js";
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
+  getWeeklyPrecip,
 } from "./weather.js";
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
@@ -1688,6 +1690,12 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "💧 Watering reminder actually clears now — logging a watering on a specific plant (from its detail screen) used to leave the \"time to water\" nudge stuck on. Now any watering — quick-log, or logged against an annual or perennial — counts, so the reminder clears when it should.",
+  "🌧️ Rain this week, right on your garden — the watering reminder now shows how much rain you've gotten in the last 7 days, so you can skip watering when the sky already handled it. (Needs a saved homestead location.)",
+  "🌱 Start a Seed, one tap from the garden — added a \"Start a Seed\" quick-log tile so you can jump straight into a seed-starting batch without scrolling down to the Seed Starts section first.",
+  "📅 Planted dates on your annuals — annuals (including ones you plant from the calendar planner) now show the date they went in the ground, not just \"1 planting.\"",
+  "🍎 Subscribed on the web? Link it in the app — if you became a monthly supporter on the website, you can now link that subscription inside the app from Support → Restore Purchases, so your supporter status shows up on your phone.",
+  "🏡 Tidy up your homestead list — a new \"Manage homesteads\" option lets you hide extra or empty homesteads from your switcher (and unhide them anytime). Hiding never deletes anything.",
   "💸 Tips are here for Farmstand & Sales — when a customer leaves a little extra, log it. There's now a Tip field on the Farmstand quick-sell screen and on the Sales tab's Log Sale form, kept separate from revenue so your prices stay clean. The Sales tab shows total tips, and Farmstand stats add a Tips total plus a \"Most tipped items\" list so you can see what earns the most love.",
   "🥚 Logged expenses can now be tagged to a specific flock. When you add an expense on a hobby that has flocks, you'll see a \"Which flock?\" picker — choose a flock and that cost rolls into that flock's cost/egg in the Per flock breakdown, or leave it \"All flocks / general\" to keep it at the hobby level. General and untagged costs show in a new summary line so nothing's hidden.",
   "🐔 Naming a bird now lets you set sex (hen/rooster) and notes right in the Add a bird form, instead of having to open the bird's card afterward. (Photos are still added from the card, once the bird exists.) Plus: breed lists are alphabetized and expanded with more common breeds, color qualifiers were trimmed (e.g. \"Buff Orpington\" is now just \"Orpington\") so one entry covers buff, chocolate, jubilee, lavender, and the rest, and a breed you add via \"Other\" is saved to the dropdown for that bird type so you don't have to retype it.",
@@ -1865,10 +1873,47 @@ function shouldPromptForReview(reviewPrompt, accountAgeDays) {
 // analyzer — otherwise the web build fails to resolve @capacitor/* before
 // Capacitor is installed (Phase 3 of the native build). Once installed, the
 // runtime import resolves normally inside the native shell.
-const loadCapacitor = (pkg) => {
-  // Indirection: Vite/Rollup can't statically analyze a string built at
-  // runtime, so it leaves this alone at build time. The try/catch around the
-  // call site handles "package not installed" by falling back to web behavior.
+// Maps each Capacitor package specifier to the runtime plugin name it
+// registers under (the same name the call sites destructure).
+const CAP_PLUGIN_NAMES = {
+  "@capacitor/browser": "Browser",
+  "@capacitor/app": "App",
+  "@capacitor-community/in-app-review": "InAppReview",
+};
+
+// Memo of resolved native plugin proxies, keyed by plugin name. registerPlugin
+// should be called once per name; repeat calls log "plugin already registered".
+const _capPluginProxies = {};
+
+const loadCapacitor = async (pkg) => {
+  // Prefer Capacitor's runtime plugin registry. window.Capacitor.registerPlugin
+  // returns a proxy bound directly to the compiled-in native plugin, with no JS
+  // module resolution. This is the correct path in the native shell.
+  //
+  // We return the proxy WRAPPED in an object ({ [name]: proxy }) — never the
+  // bare proxy — because callers `await loadCapacitor(...)`, and awaiting the
+  // proxy directly would read its `.then` and fire a bogus native call. A plain
+  // wrapper object awaits safely; callers then use the proxy via its methods.
+  //
+  // The dynamic import() fallback below leaves the bare specifier untouched in
+  // the production build (@vite-ignore + runtime variable), and a WebView can't
+  // resolve a bare module name without an import map — so it THROWS. That throw
+  // is why these calls were silently falling through to their fallbacks (e.g.
+  // external links landing on window.location.href instead of the in-app
+  // browser, and the Android back button / deep-link listeners never attaching).
+  try {
+    const name = CAP_PLUGIN_NAMES[pkg];
+    if (name && typeof window !== "undefined" && window.Capacitor &&
+        typeof window.Capacitor.registerPlugin === "function") {
+      let proxy = _capPluginProxies[name];
+      if (!proxy) {
+        proxy = window.Capacitor.registerPlugin(name);
+        _capPluginProxies[name] = proxy;
+      }
+      if (proxy) return { [name]: proxy };
+    }
+  } catch (_) { /* fall through to dynamic import (dev server / web) */ }
+
   const spec = /* @vite-ignore */ pkg;
   return import(/* @vite-ignore */ spec);
 };
@@ -2845,6 +2890,12 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
   const [homesteads, setHomesteads] = useState(null); // null = not loaded yet
   const [switching, setSwitching] = useState(false);
   const [error, setError] = useState("");
+  const [manageOpen, setManageOpen] = useState(false);
+
+  // Re-pull the list after a hide/unhide so the dropdown reflects the change.
+  const refresh = async () => {
+    try { setHomesteads(await listMyHomesteads(user)); } catch (_) {}
+  };
 
   // Load the list once on mount. It's a single lightweight query and it's
   // the only way to know whether to show the switcher at all — users with
@@ -2921,7 +2972,7 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
           )}
 
           <div>
-            {homesteads.map((h) => (
+            {homesteads.filter((h) => !h.hidden).map((h) => (
               <button
                 key={h.homesteadId}
                 onClick={() => pick(h)}
@@ -2951,6 +3002,22 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
               </button>
             ))}
 
+            {/* Manage homesteads — hide/unhide the ones cluttering this list
+                (e.g. accidental empty duplicates). Always present so a hidden
+                homestead can be brought back even when only one stays visible. */}
+            <button
+              onClick={() => { setOpen(false); setManageOpen(true); }}
+              style={{
+                display: "flex", alignItems: "center", gap: 7, width: "100%",
+                padding: "11px 13px", background: "transparent", border: "none",
+                borderTop: `1px solid ${palette.line}`,
+                cursor: "pointer", textAlign: "left",
+                fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.inkSoft,
+              }}
+            >
+              <Settings size={14} /> Manage homesteads
+            </button>
+
             {/* Manage farmhands — owner only. Sits at the bottom of the
                 panel so the common action (switching) stays on top. */}
             {role === "owner" && (
@@ -2969,7 +3036,73 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
           </div>
         </div>
       )}
+      {manageOpen && (
+        <ManageHomesteadsModal
+          user={user}
+          homesteads={homesteads}
+          onToggle={async (id, hidden) => { setHomesteadHidden(user.id, id, hidden); await refresh(); }}
+          onClose={() => setManageOpen(false)}
+        />
+      )}
     </div>
+  );
+}
+
+// ============ MANAGE HOMESTEADS MODAL ============
+// Hide/unhide homesteads from the switcher. Hiding is a per-user, device-local
+// view preference (see sync.js) — it never deletes a homestead or its data.
+// The active homestead can't be hidden, so you're never stranded on one that
+// isn't in your list.
+function ManageHomesteadsModal({ user, homesteads, onToggle, onClose }) {
+  const list = Array.isArray(homesteads) ? homesteads : [];
+  return (
+    <Modal open onClose={onClose} title="Manage homesteads">
+      <div style={{ fontFamily: FONT_BODY, color: palette.ink, fontSize: 14, lineHeight: 1.6 }}>
+        <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+          Hide homesteads you don't want cluttering your switcher — handy for empty duplicates. Hiding only affects this list on this device; it never deletes the homestead or its data, and you can unhide anytime from here.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {list.length === 0 && (
+            <div style={{ fontSize: 12, color: palette.inkSoft, fontStyle: "italic" }}>No homesteads to manage.</div>
+          )}
+          {list.map((h) => (
+            <div
+              key={h.homesteadId}
+              style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "10px 12px",
+                background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+                borderRadius: 10, opacity: h.hidden ? 0.6 : 1,
+              }}
+            >
+              <div style={{ flex: 1, minWidth: 0 }}>
+                <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {h.name}{h.isActive ? " · current" : ""}{h.hidden ? " · hidden" : ""}
+                </div>
+                <div style={{ fontSize: 11, color: palette.inkSoft }}>
+                  {(h.role === "owner" ? "Owner" : "Farmhand")}{h.hint ? ` · ${h.hint}` : ""}
+                </div>
+              </div>
+              {h.isActive ? (
+                <span style={{ fontSize: 11, color: palette.inkSoft, flexShrink: 0 }}>can't hide</span>
+              ) : (
+                <button
+                  onClick={() => onToggle(h.homesteadId, !h.hidden)}
+                  style={{
+                    flexShrink: 0, padding: "6px 12px", borderRadius: 8,
+                    border: `1.5px solid ${palette.line}`,
+                    background: h.hidden ? palette.ink : "transparent",
+                    color: h.hidden ? palette.bg : palette.inkSoft,
+                    fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
+                  }}
+                >
+                  {h.hidden ? "Unhide" : "Hide"}
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </Modal>
   );
 }
 
@@ -3789,6 +3922,28 @@ useEffect(() => {
     window.addEventListener("henalytics-iap-success", onIapSuccess);
     return () => window.removeEventListener("henalytics-iap-success", onIapSuccess);
   }, [user]);
+
+  // ---- Supporter-claimed listener (web Stripe sub linked from Restore flow) ----
+  // SupportModal's "link a web subscription" path (and a restore that turns up
+  // an existing server-side subscription) can't reach this component's state
+  // directly, so they fire a window event. We re-check /api/supporter-status,
+  // flip the live supporter flag, and open the name prompt for the wall.
+  useEffect(() => {
+    const onClaimed = async () => {
+      try {
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session?.access_token) {
+          const r = await fetch(apiUrl("/api/supporter-status"), {
+            headers: { "Authorization": `Bearer ${session.access_token}` },
+          });
+          if (r.ok) { const j = await r.json(); setIsSupporter(j.isSupporter === true); }
+        }
+      } catch (_) {}
+      setModal({ type: "supporterName" });
+    };
+    window.addEventListener("henalytics-supporter-claimed", onClaimed);
+    return () => window.removeEventListener("henalytics-supporter-claimed", onClaimed);
+  }, []);
 
   // Refs let us detect transitions like "user just signed in"
   const prevUserRef = useRef(null);
@@ -5732,7 +5887,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       )}
 
       {/* WHAT NEEDS ATTENTION — proactive nudges based on entry history */}
-      <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} />
+      <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} data={data} />
 
       {/* HOBBY-SPECIFIC SUMMARY */}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
@@ -6373,6 +6528,9 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
         {/* Plant Annual and Close Season are flow controls (open their own modals),
             not log actions — they're not hideable and stay outside the filter. */}
         <Tile icon={Sprout} label="Plant Annual" color={palette.leaf} onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })} />
+        {/* Start a Seed — jumps straight to the seed-starting batch flow without
+            having to scroll to the Seed Starts section first. */}
+        <Tile icon={Sprout} label="Start a Seed" color={palette.leafSoft || palette.leaf} onClick={() => setModal({ type: "addSeedStart", hobbyId: hobby.id })} />
         {/* User-defined custom logs render between built-ins and the "+ Custom" tile. */}
         {customLogs.map(c => (
           <Tile
@@ -6548,11 +6706,29 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
 // etc.). Only renders when at least one nudge is active so the home page stays
 // clean for active users.
 // ============================================================================
-function NeedsAttentionCard({ hobby, entries, setModal }) {
+function NeedsAttentionCard({ hobby, entries, setModal, data = null }) {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
   const todayIso = localDateStr(today);
   const dayMs = 24 * 60 * 60 * 1000;
+
+  // Weekly rainfall for the garden watering nudge — so the user knows whether
+  // the sky already did their watering for them. Best-effort: needs a saved
+  // homestead location; null until (and unless) the fetch resolves.
+  const [weekRain, setWeekRain] = React.useState(null);
+  const gardenLoc = data && data.homesteadLocation;
+  React.useEffect(() => {
+    let cancelled = false;
+    if (hobby.type !== "garden" || !hobby.currentSeason) { setWeekRain(null); return; }
+    if (!gardenLoc || gardenLoc.lat == null || gardenLoc.lon == null) { setWeekRain(null); return; }
+    (async () => {
+      try {
+        const r = await getWeeklyPrecip(gardenLoc.lat, gardenLoc.lon);
+        if (!cancelled) setWeekRain(r);
+      } catch (_) { if (!cancelled) setWeekRain(null); }
+    })();
+    return () => { cancelled = true; };
+  }, [hobby.type, hobby.currentSeason, gardenLoc && gardenLoc.lat, gardenLoc && gardenLoc.lon]);
 
   const daysSince = (action) => {
     const matching = entries.filter((e) => e.action === action);
@@ -6597,16 +6773,51 @@ function NeedsAttentionCard({ hobby, entries, setModal }) {
   }
 
   if (hobby.type === "garden" && hobby.currentSeason) {
-    // Watered in the last 5 days?
-    const wateredDays = daysSince("watered");
+    // A watering can be logged three ways: the top-level "watered" quick-log,
+    // or a "Water" action against a specific annual or perennial. The nudge
+    // used to only see the first, so watering a plant from its detail screen
+    // left the "you haven't watered" reminder stuck on. Take the newest date
+    // across all three sources.
+    const waterDates = [];
+    entries.forEach((e) => { if (e.action === "watered" && e.date) waterDates.push(e.date); });
+    (hobby.annuals || []).forEach((a) => (a.actions || []).forEach((ac) => {
+      if (ac && ac.type === "Water" && ac.date) waterDates.push(ac.date);
+    }));
+    (hobby.perennials || []).forEach((p) => (p.actions || []).forEach((ac) => {
+      if (ac && ac.type === "Water" && ac.date) waterDates.push(ac.date);
+    }));
+    const newestWater = waterDates.length
+      ? waterDates.reduce((m, d) => (d > m ? d : m), waterDates[0])
+      : null;
+    const wateredDays = newestWater === null
+      ? null
+      : Math.floor((today.getTime() - new Date(newestWater + "T12:00").getTime()) / dayMs);
+
+    // Recent rainfall context — shown whether or not the nudge fires, so the
+    // user can decide for themselves. Only when we have a usable total.
+    const rainSub = weekRain && weekRain.totalIn != null
+      ? (weekRain.totalIn > 0
+          ? `${weekRain.totalIn}" of rain in the last 7 days`
+          : "No rain in the last 7 days")
+      : undefined;
+
     if (wateredDays === null || wateredDays > 5) {
       nudges.push({
         icon: "💧",
         text: wateredDays === null
           ? "No watering logged this season"
           : `Last watered ${wateredDays} days ago`,
+        sub: rainSub,
         action: () => setModal({ type: "log", action: "watered" }),
         actionLabel: "Log watering",
+      });
+    } else if (weekRain && weekRain.totalIn != null && weekRain.totalIn >= 0.5) {
+      // Watered recently AND meaningful rain — a gentle "you're covered" note
+      // so they don't over-water. Informational, no action button.
+      nudges.push({
+        icon: "🌧️",
+        text: `${weekRain.totalIn}" of rain in the last 7 days`,
+        sub: "Your beds may not need watering right now",
       });
     }
   }
@@ -6979,10 +7190,16 @@ function AnnualSection({ hobby, season, seasonEntries, setModal, update = null, 
               Plant an annual to start tracking it here.
             </div>
           ) : rowsData.map(({ record, plantings, harvests, lastAction }) => {
+            // The annual record itself stores no planting date, but its
+            // "planted" entries do — surface the earliest so a freshly-planted
+            // annual (incl. ones created from the calendar planner) shows WHEN
+            // it went in, not just "1 planting".
+            const firstPlanted = plantings.map((e) => e.date).filter(Boolean).sort()[0];
+            const plantedLabel = firstPlanted ? `Planted ${fmtDate(firstPlanted)}` : null;
             const subtitle =
-              lastAction ? `Last: ${lastAction.type} · ${lastAction.date}` :
-              harvests.length ? `${harvestSummary(harvests)} harvested` :
-              plantings.length ? `${plantings.length} planting${plantings.length === 1 ? "" : "s"}` :
+              harvests.length ? `${plantedLabel ? plantedLabel + " · " : ""}${harvestSummary(harvests)} harvested` :
+              lastAction ? `${plantedLabel ? plantedLabel + " · " : ""}Last: ${lastAction.type} · ${fmtDate(lastAction.date)}` :
+              plantedLabel ? plantedLabel :
               "No activity yet";
             return (
               <button
@@ -11980,6 +12197,63 @@ function SupportModal({ onClose }) {
   // the Henalytics user ID, which meant we couldn't connect a subscription
   // to a supporter wall entry.
 
+  // ---- Restore + "link a web subscription" (native) ----
+  // RevenueCat's restore only knows about App/Play Store purchases. A user who
+  // subscribed via Stripe on the website (then installed the app) has no IAP to
+  // restore, so we also expose the Stripe-email claim flow (/api/claim-supporter)
+  // right inside the Restore Purchases flow. On success we fire a window event
+  // the app listens for to refresh live supporter state + prompt for a wall name.
+  const [restoreBusy, setRestoreBusy] = useState(false);
+  const [claimOpen, setClaimOpen] = useState(false);
+  const [claimEmail, setClaimEmail] = useState("");
+  const [claimBusy, setClaimBusy] = useState(false);
+  const [claimError, setClaimError] = useState("");
+
+  const iapBtnStyle = {
+    padding: "8px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`,
+    background: "transparent", color: palette.inkSoft, fontFamily: FONT_BODY,
+    fontWeight: 600, fontSize: 12, cursor: "pointer",
+  };
+
+  const checkSupporterNow = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) return false;
+      const r = await fetch(apiUrl("/api/supporter-status"), {
+        headers: { "Authorization": `Bearer ${session.access_token}` },
+      });
+      if (!r.ok) return false;
+      const j = await r.json();
+      return j.isSupporter === true;
+    } catch (_) { return false; }
+  };
+
+  const submitClaim = async () => {
+    const email = claimEmail.trim().toLowerCase();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      setClaimError("Enter the email address from your receipt.");
+      return;
+    }
+    setClaimBusy(true); setClaimError("");
+    try {
+      const { data: { session } } = await supabase.auth.getSession();
+      if (!session?.access_token) { setClaimError("Please sign in first."); setClaimBusy(false); return; }
+      const r = await fetch(apiUrl("/api/claim-supporter"), {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+        body: JSON.stringify({ email }),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setClaimError(j.error || "We couldn't verify a subscription for that email."); setClaimBusy(false); return; }
+      setClaimBusy(false);
+      toast("Subscription linked — thank you for supporting Henalytics!");
+      try { window.dispatchEvent(new CustomEvent("henalytics-supporter-claimed")); } catch (_) {}
+    } catch (e) {
+      setClaimError("Something went wrong. Try again in a moment.");
+      setClaimBusy(false);
+    }
+  };
+
   return (
     <Modal open onClose={onClose} title="Support Henalytics">
       <div style={{ fontFamily: FONT_BODY, color: palette.ink, lineHeight: 1.7, fontSize: 14 }}>
@@ -12163,54 +12437,89 @@ function SupportModal({ onClose }) {
         {/* Apple requires a visible "Restore Purchases" button. We also expose
             "Manage Subscription" so users can cancel/change from inside the app. */}
         {isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true && (
-          <div style={{
-            marginTop: 16,
-            display: "flex",
-            gap: 8,
-            justifyContent: "center",
-            flexWrap: "wrap",
-          }}>
-            <button
-              type="button"
-              onClick={async () => {
-                const r = await restorePurchases();
-                if (r.success) {
-                  toast("Purchases restored. If you had an active subscription, it should now be reflected.");
-                } else {
-                  toast(r.error || "Couldn't restore purchases.", { kind: "error" });
-                }
-              }}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: `1.5px solid ${palette.line}`,
-                background: "transparent",
-                color: palette.inkSoft,
-                fontFamily: FONT_BODY,
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              Restore Purchases
-            </button>
-            <button
-              type="button"
-              onClick={() => openManageSubscriptions()}
-              style={{
-                padding: "8px 14px",
-                borderRadius: 8,
-                border: `1.5px solid ${palette.line}`,
-                background: "transparent",
-                color: palette.inkSoft,
-                fontFamily: FONT_BODY,
-                fontWeight: 600,
-                fontSize: 12,
-                cursor: "pointer",
-              }}
-            >
-              Manage Subscription
-            </button>
+          <div style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", gap: 8, justifyContent: "center", flexWrap: "wrap" }}>
+              <button
+                type="button"
+                disabled={restoreBusy}
+                onClick={async () => {
+                  // 1) Make sure RevenueCat is actually initialized before we
+                  //    restore. On Android the init can lose its race with a
+                  //    fast tap, which surfaced as a scary "IAP not initialized"
+                  //    banner. Re-init with the signed-in user, then restore.
+                  setRestoreBusy(true);
+                  try {
+                    const { data: { session } } = await supabase.auth.getSession();
+                    await initIap(session?.user?.id || null);
+                  } catch (_) {}
+                  let r;
+                  try { r = await restorePurchases(); } catch (_) { r = { success: false }; }
+                  // 2) Whatever the store says, the real "are they a supporter
+                  //    now" answer comes from the server, which also knows about
+                  //    Stripe web subs.
+                  const sup = await checkSupporterNow();
+                  setRestoreBusy(false);
+                  if (sup) {
+                    toast("Purchases restored — your supporter status is active.");
+                    try { window.dispatchEvent(new CustomEvent("henalytics-supporter-claimed")); } catch (_) {}
+                    return;
+                  }
+                  // 3) No store purchase AND not a supporter on the server.
+                  //    Don't surface a raw store error (e.g. "IAP not
+                  //    initialized") — most people hitting this subscribed on the
+                  //    web. Route them to the web-subscription link instead.
+                  if (r && !r.success && r.error && r.error !== "IAP not initialized") {
+                    toast(r.error, { kind: "error" });
+                  } else {
+                    toast("No App Store or Play purchase found on this device.");
+                  }
+                  setClaimError("");
+                  setClaimOpen(true);
+                }}
+                style={{ ...iapBtnStyle, opacity: restoreBusy ? 0.7 : 1, cursor: restoreBusy ? "default" : "pointer" }}
+              >
+                {restoreBusy ? "Restoring…" : "Restore Purchases"}
+              </button>
+              <button type="button" onClick={() => openManageSubscriptions()} style={iapBtnStyle}>
+                Manage Subscription
+              </button>
+            </div>
+
+            {/* Web-subscription bridge — for people who subscribed on the
+                website with Stripe and have no store purchase to restore. */}
+            <div style={{ textAlign: "center", marginTop: 10 }}>
+              <button
+                type="button"
+                onClick={() => { setClaimOpen((o) => !o); setClaimError(""); }}
+                style={{ background: "none", border: "none", padding: 4, color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12, textDecoration: "underline", cursor: "pointer" }}
+              >
+                Subscribed on the web? Link your subscription
+              </button>
+            </div>
+
+            {claimOpen && (
+              <div style={{ marginTop: 8, padding: 12, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderRadius: 10 }}>
+                <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 8 }}>
+                  Became a monthly supporter on the Henalytics website? Enter the email from your receipt and we'll link that subscription to this account.
+                </div>
+                <input
+                  type="email" inputMode="email" autoCapitalize="none" autoCorrect="off"
+                  value={claimEmail}
+                  onChange={(e) => { setClaimEmail(e.target.value); if (claimError) setClaimError(""); }}
+                  placeholder="you@example.com"
+                  style={{ width: "100%", boxSizing: "border-box", padding: "8px 10px", borderRadius: 8, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontSize: 14, marginBottom: 8 }}
+                />
+                {claimError && <div style={{ fontSize: 12, color: "#B4452F", marginBottom: 8 }}>{claimError}</div>}
+                <button
+                  type="button"
+                  disabled={claimBusy}
+                  onClick={submitClaim}
+                  style={{ width: "100%", padding: "9px 12px", borderRadius: 8, border: "none", background: palette.ink, color: palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: claimBusy ? "default" : "pointer", opacity: claimBusy ? 0.7 : 1 }}
+                >
+                  {claimBusy ? "Linking…" : "Link subscription"}
+                </button>
+              </div>
+            )}
           </div>
         )}
 
