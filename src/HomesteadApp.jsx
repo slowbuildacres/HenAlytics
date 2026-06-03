@@ -8411,7 +8411,10 @@ function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
   const perennials = hobby.perennials || [];
 
   if (!hobby.currentSeason) {
-    const seasonCount = (hobby.archivedSeasons || []).length;
+    const archivedList = hobby.archivedSeasons || [];
+    const seasonCount = archivedList.length;
+    // Most-recent first, capped — the full set is always available in Stats.
+    const recent = archivedList.slice().reverse().slice(0, 6);
     return (
       <div style={{
         background: palette.card, border: `2px dashed ${palette.ink}`, borderRadius: 12,
@@ -8427,6 +8430,48 @@ function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
         <Btn variant="accent" onClick={() => setModal({ type: "startGardenSeason" })}>
           🌱 Start new season
         </Btn>
+
+        {/* Reopen a closed season — the escape hatch for an accidental
+            "wrap up the entire season". Brings back its map, annuals, and
+            seedlings (they were hidden on close, never deleted). */}
+        {seasonCount > 0 && (
+          <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${palette.line}` }}>
+            <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.45 }}>
+              Closed a season by accident? Reopen it to bring back its garden map, annuals, and seedlings.
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+              {recent.map((s) => (
+                <div
+                  key={s.id}
+                  style={{
+                    display: "flex", alignItems: "center", justifyContent: "space-between",
+                    gap: 10, padding: "9px 12px", background: palette.bgAlt,
+                    border: `1.5px solid ${palette.line}`, borderRadius: 8, textAlign: "left",
+                  }}
+                >
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                      {s.name}
+                    </div>
+                    {s.endDate && (
+                      <div style={{ fontSize: 11, color: palette.inkSoft }}>Closed {fmtDate(s.endDate)}</div>
+                    )}
+                  </div>
+                  <button
+                    onClick={() => reopenGardenSeason(update, hobby.id, s.id)}
+                    style={{
+                      flexShrink: 0, padding: "6px 12px", borderRadius: 8,
+                      border: `1.5px solid ${palette.leaf}`, background: palette.leaf,
+                      color: "#fff", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
+                    }}
+                  >
+                    ↩ Reopen
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
     );
   }
