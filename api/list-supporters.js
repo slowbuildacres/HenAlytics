@@ -38,12 +38,7 @@
 //   SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from '@supabase/supabase-js';
-
-const ALLOWED_ORIGINS = new Set([
-  'https://henalytics.com',
-  'https://www.henalytics.com',
-  // capacitor:// and localhost handled separately below
-]);
+import { getCorsOrigin } from './_cors.js';
 
 let _supabaseAdmin = null;
 function getSupabaseAdmin() {
@@ -57,17 +52,8 @@ function getSupabaseAdmin() {
   return _supabaseAdmin;
 }
 
-function getCorsOrigin(origin) {
-  if (!origin) return 'https://henalytics.com';
-  if (ALLOWED_ORIGINS.has(origin)) return origin;
-  // Native app uses capacitor:// — be permissive there since this is a
-  // read-only public endpoint that returns no PII
-  if (origin.startsWith('capacitor://') || origin.startsWith('http://localhost')) return origin;
-  return 'https://henalytics.com';
-}
-
 export default async function handler(req, res) {
-  const corsOrigin = getCorsOrigin(req.headers.origin);
+  const corsOrigin = getCorsOrigin(req);
 
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', corsOrigin);

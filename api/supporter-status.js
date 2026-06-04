@@ -35,28 +35,7 @@
 //   SUPABASE_SERVICE_ROLE_KEY
 
 import { createClient } from '@supabase/supabase-js';
-
-const ALLOWED_ORIGINS = new Set([
-  'https://henalytics.com',
-  'https://www.henalytics.com',
-]);
-
-function getCorsOrigin(origin) {
-  if (!origin) return 'https://henalytics.com';
-  if (ALLOWED_ORIGINS.has(origin)) return origin;
-  // Native apps: iOS WebView origin is capacitor://localhost, Android's default
-  // (androidScheme: 'https') is https://localhost. Both must be allowed or the
-  // native fetch is CORS-blocked and the app can't read supporter status —
-  // which silently hid Stripe-web supporters on Android. http://localhost is
-  // for dev. This endpoint is JWT-authed and returns only the caller's own
-  // status, so allowing these is safe.
-  if (
-    origin.startsWith('capacitor://') ||
-    origin.startsWith('http://localhost') ||
-    origin.startsWith('https://localhost')
-  ) return origin;
-  return 'https://henalytics.com';
-}
+import { getCorsOrigin } from './_cors.js';
 
 let _supabaseAdmin = null;
 function getSupabaseAdmin() {
@@ -93,7 +72,7 @@ async function verifyAuth(req) {
 // MAIN HANDLER
 // ============================================================================
 export default async function handler(req, res) {
-  const corsOrigin = getCorsOrigin(req.headers.origin);
+  const corsOrigin = getCorsOrigin(req);
 
   if (req.method === 'OPTIONS') {
     res.setHeader('Access-Control-Allow-Origin', corsOrigin);
