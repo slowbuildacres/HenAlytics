@@ -44,9 +44,17 @@ const ALLOWED_ORIGINS = new Set([
 function getCorsOrigin(origin) {
   if (!origin) return 'https://henalytics.com';
   if (ALLOWED_ORIGINS.has(origin)) return origin;
-  // Native app uses capacitor://; localhost for dev. This endpoint requires
-  // auth and returns only the caller's own status, so this is safe.
-  if (origin.startsWith('capacitor://') || origin.startsWith('http://localhost')) return origin;
+  // Native apps: iOS WebView origin is capacitor://localhost, Android's default
+  // (androidScheme: 'https') is https://localhost. Both must be allowed or the
+  // native fetch is CORS-blocked and the app can't read supporter status —
+  // which silently hid Stripe-web supporters on Android. http://localhost is
+  // for dev. This endpoint is JWT-authed and returns only the caller's own
+  // status, so allowing these is safe.
+  if (
+    origin.startsWith('capacitor://') ||
+    origin.startsWith('http://localhost') ||
+    origin.startsWith('https://localhost')
+  ) return origin;
   return 'https://henalytics.com';
 }
 
