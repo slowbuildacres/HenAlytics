@@ -217,6 +217,7 @@ const defaultData = () => ({
   appStoreFundDismissedMonth: null, // "YYYY-MM" of last dismissed app-store-fundraiser popup
   appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time, iOS/desktop web)
   playStoreLaunchDismissed: false, // true once the user dismisses the "we're on Google Play" launch popup (one-time, Android web)
+  lastGiveawayPopupMonday: null, // "YYYY-MM-DD" Monday-key of the last week the giveaway popup was shown (weekly cadence)
   accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   weeklyDigestOptIn: false, // master switch for the weekly homestead summary email
@@ -339,6 +340,10 @@ function migrateData(data) {
   }
   if (typeof data.appStoreLaunchDismissed !== "boolean") {
     data.appStoreLaunchDismissed = false;
+  }
+  // Giveaway weekly-popup tracker (string "YYYY-MM-DD" or null).
+  if (typeof data.lastGiveawayPopupMonday !== "string" && data.lastGiveawayPopupMonday !== null) {
+    data.lastGiveawayPopupMonday = null;
   }
   if (typeof data.playStoreLaunchDismissed !== "boolean") {
     data.playStoreLaunchDismissed = false;
@@ -1632,7 +1637,45 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 51;
+const CURRENT_VERSION = 52;
+
+// ============================================================================
+// GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
+// ----------------------------------------------------------------------------
+// Compliance note: entry counts are assigned SERVER-SIDE in the
+// claim_giveaway_entry RPC. Supporter status is NEVER read for entries — a
+// paid supporter and a free user with the same actions have identical entries.
+// Support funds the SIZE of the giveaway, never the ODDS. Keep it that way.
+//
+// Display config is hardcoded here so the popup works even before the SQL is
+// run; entry tracking degrades silently if the backend isn't set up yet.
+// To run a new round: change the fields below, bump `key`, and seed a new
+// row in the `giveaways` table (see the SQL delivered alongside this patch).
+const GIVEAWAY = {
+  key: "2026_seeder",                    // must match the giveaways.key row in Supabase
+  prize: "Charles Walter single-row push seeder",
+  // TODO: host the seeder image (e.g. a public Supabase Storage URL) and paste it here.
+  imageUrl: "https://api.henalytics.com/storage/v1/object/public/Giveaways/IMG_0614.WEBP",
+  endsAt: "2026-09-01",                  // local date; popup stops + entries close after this
+  // TODO: replace with your actual Facebook PAGE url (the Follow target).
+  fbPageUrl: "https://www.facebook.com/profile.php?id=61589232196621",
+  fbPostUrl: "https://www.facebook.com/share/p/1CvuhxuTbk/?mibextid=wwXIfr",
+};
+const GIVEAWAY_ENDS_MS = new Date(GIVEAWAY.endsAt + "T00:00:00").getTime();
+
+// Monday (local) of the current week as a "YYYY-MM-DD" key. Used so the
+// giveaway popup shows on the first app open of each week (Mon-anchored):
+// if a user skips Monday, it still catches them Tue/Wed/etc. that same week.
+function mondayOfWeek(d) {
+  const x = d instanceof Date ? new Date(d) : new Date();
+  const day = x.getDay();                 // 0 Sun ... 6 Sat
+  x.setDate(x.getDate() + (day === 0 ? -6 : 1 - day));
+  x.setHours(0, 0, 0, 0);
+  const y = x.getFullYear();
+  const m = String(x.getMonth() + 1).padStart(2, "0");
+  const dd = String(x.getDate()).padStart(2, "0");
+  return `${y}-${m}-${dd}`;
+}
 
 // STEP3_REVIEW_PROMPT: custom pre-prompt modal.
 // Apple-compliant pattern: we show our own modal first asking if the
@@ -1690,6 +1733,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "\uD83C\uDF81 Monthly community giveaway \u2014 Henalytics is run by one person, no company or investors. When community support covers what it costs to keep the app running, that surplus goes back to you as giveaways. This season\u2019s prize: a Charles Walter single-row push seeder. A popup appears each week with free ways to enter (just having an account gets you in; following and sharing on Facebook earn more). No purchase necessary, and supporting never improves your odds \u2014 it just makes bigger, more frequent giveaways possible. Ends September 1.",  // GIVEAWAY_WHATSNEW
   "💧 Watering reminder actually clears now — logging a watering on a specific plant (from its detail screen) used to leave the \"time to water\" nudge stuck on. Now any watering — quick-log, or logged against an annual or perennial — counts, so the reminder clears when it should.",
   "🌧️ Rain this week, right on your garden — the watering reminder now shows how much rain you've gotten in the last 7 days, so you can skip watering when the sky already handled it. (Needs a saved homestead location.)",
   "🌱 Start a Seed, one tap from the garden — added a \"Start a Seed\" quick-log tile so you can jump straight into a seed-starting batch without scrolling down to the Seed Starts section first.",
@@ -3135,6 +3179,7 @@ useEffect(() => {
   const [showTutorial, setShowTutorial] = useState(false);
   const [showWhatsNew, setShowWhatsNew] = useState(false);
   const [showAppStoreLaunch, setShowAppStoreLaunch] = useState(false);
+  const [showGiveaway, setShowGiveaway] = useState(false);
   const [showAccountNudge, setShowAccountNudge] = useState(false);
   const [showSupporterThanks, setShowSupporterThanks] = useState(false);
   // Milestone popup — fetched from Supabase app_config table. Lets Riley
@@ -3241,6 +3286,25 @@ useEffect(() => {
     const timer = setTimeout(() => setShowAppStoreLaunch(true), 1800);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.appStoreLaunchDismissed, data?.playStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
+
+  // ---- Weekly community giveaway popup ----  // GIVEAWAY_EFFECT
+  // Shows on the first app open of each week (Monday-anchored via mondayOfWeek).
+  // Tracked in data.lastGiveawayPopupMonday so it appears once per week. Waits
+  // behind What's New and the tutorial so popups never stack, and stops once
+  // the giveaway end date passes. Dismissal writes the week-key in onClose.
+  const giveawayShownRef = React.useRef(false);
+  useEffect(() => {
+    if (giveawayShownRef.current) return;
+    if (!data?.onboardedAt) return;              // don't interrupt onboarding
+    if (passwordRecoveryPending) return;
+    if (showWhatsNew) return;                    // let What's New finish first
+    if (showTutorial || showTutorialPrompt) return;
+    if (Date.now() >= GIVEAWAY_ENDS_MS) return;  // giveaway is over
+    if (data?.lastGiveawayPopupMonday === mondayOfWeek()) return; // already shown this week
+    giveawayShownRef.current = true;
+    const timer = setTimeout(() => setShowGiveaway(true), 1400);
+    return () => clearTimeout(timer);
+  }, [data?.onboardedAt, data?.lastGiveawayPopupMonday, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
 
   // ---- "Create an account" nudge for signed-out users ----
   // A gentle, one-time, dismissible prompt. Fires once a signed-out user has
@@ -4045,6 +4109,7 @@ useNativeBackButton(React.useCallback(() => {
   if (modal) { setModal(null); return true; }
   if (showWhatsNew) { setShowWhatsNew(false); return true; }
   if (showAppStoreLaunch) { setShowAppStoreLaunch(false); return true; }
+  if (showGiveaway) { setShowGiveaway(false); return true; }
   if (showAccountNudge) { setShowAccountNudge(false); return true; }
   if (showSupporterThanks) { setShowSupporterThanks(false); return true; }
   if (showMilestone) { setShowMilestone(false); return true; }
@@ -4055,7 +4120,7 @@ useNativeBackButton(React.useCallback(() => {
   if (page !== "home") { setPage("home"); return true; }
   // Home, nothing open — exit the app.
   return false;
-}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page]));
+}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page]));
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
@@ -4768,6 +4833,27 @@ useNativeBackButton(React.useCallback(() => {
               else d.appStoreLaunchDismissed = true;
               return d;
             });
+          }}
+        />
+      )}
+
+      {/* Weekly community giveaway popup (no purchase necessary) */}
+      {showGiveaway && !showWhatsNew && (
+        <GiveawayModal
+          user={user}
+          onNeedAccount={() => {
+            setShowGiveaway(false);
+            update(d => { d.lastGiveawayPopupMonday = mondayOfWeek(); return d; });
+            setModal({ type: "signup" });
+          }}
+          onClose={() => {
+            setShowGiveaway(false);
+            update(d => { d.lastGiveawayPopupMonday = mondayOfWeek(); return d; });
+          }}
+          onSupport={() => {
+            setShowGiveaway(false);
+            update(d => { d.lastGiveawayPopupMonday = mondayOfWeek(); return d; });
+            setModal({ type: "support" });
           }}
         />
       )}
@@ -21296,6 +21382,162 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
 // "coming soon to Google Play" line. The confetti and badge are all inline
 // SVG/CSS — nothing external to host, sharp at any size.
 // ============================================================================
+// GIVEAWAY_FEATURE — weekly giveaway popup component (inline, matches the
+// AppStoreLaunchModal / SupporterThanksModal convention). Entry counts are
+// assigned server-side by the claim_giveaway_entry RPC; this UI only triggers
+// claims and shows the running total. If the backend isn't set up yet, claims
+// fail silently and the popup still displays.
+function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
+  const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
+  const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
+  const [total, setTotal] = React.useState(null);
+  const [claimed, setClaimed] = React.useState({});
+  const [showRules, setShowRules] = React.useState(false);
+
+  const claim = React.useCallback(async (source) => {
+    if (!user) { onNeedAccount(); return; }
+    try {
+      const { data, error } = await supabase.rpc("claim_giveaway_entry", {
+        p_key: GIVEAWAY.key, p_source: source,
+      });
+      if (!error && typeof data === "number") {
+        setTotal(data);
+        setClaimed((c) => ({ ...c, [source]: true }));
+      }
+    } catch (_) { /* backend not configured yet — popup still works */ }
+  }, [user, onNeedAccount]);
+
+  // Auto-claim the base "account" entry when the popup opens (idempotent).
+  React.useEffect(() => { if (user) claim("account"); }, [user, claim]);
+
+  const doFollow = async () => { openExternalUrl(GIVEAWAY.fbPageUrl); await claim("fb_follow"); };
+  const doShare  = async () => { openExternalUrl(GIVEAWAY.fbPostUrl); await claim("share"); };
+
+  const endLabel = new Date(GIVEAWAY.endsAt + "T00:00:00").toLocaleDateString(
+    undefined, { month: "long", day: "numeric", year: "numeric" }
+  );
+
+  const Row = ({ label, value, done, onClick, cta }) => (
+    <div style={{
+      display: "flex", alignItems: "center", justifyContent: "space-between",
+      gap: 10, padding: "10px 12px", borderRadius: 10,
+      border: `1.5px solid ${palette.line}`, background: "#fff", marginBottom: 8,
+    }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
+        <span style={{
+          fontSize: 13, fontWeight: 700, color: palette.leaf,
+          background: "#EAF1DD", borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap",
+        }}>+{value}</span>
+        <span style={{ fontSize: 13.5, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
+      </div>
+      {done ? (
+        <span style={{ fontSize: 13, fontWeight: 700, color: palette.leaf, whiteSpace: "nowrap" }}>Entered ✓</span>
+      ) : (
+        <button onClick={onClick} style={{
+          border: "none", background: palette.leaf, color: "#fff", fontFamily: FONT_BODY,
+          fontSize: 13, fontWeight: 600, borderRadius: 8, padding: "6px 12px",
+          cursor: "pointer", whiteSpace: "nowrap",
+        }}>{cta}</button>
+      )}
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{
+      position: "fixed", inset: 0, background: "rgba(20,30,15,0.55)",
+      display: "flex", alignItems: "center", justifyContent: "center",
+      zIndex: 250, padding: 16,
+    }}>
+      <div onClick={(e) => e.stopPropagation()} style={{
+        position: "relative", width: "100%", maxWidth: 400, maxHeight: "90vh",
+        overflowY: "auto", borderRadius: 20, border: `2px solid ${palette.ink}`,
+        boxShadow: "8px 10px 0 rgba(20,30,15,0.30)", background: palette.card,
+        fontFamily: FONT_BODY, color: palette.ink,
+      }}>
+        <button onClick={onClose} aria-label="Close" style={{
+          position: "absolute", top: 10, right: 10, zIndex: 2,
+          width: 30, height: 30, borderRadius: 15, border: "none",
+          background: "rgba(0,0,0,0.18)", color: "#fff", fontSize: 18,
+          lineHeight: "30px", cursor: "pointer",
+        }}>×</button>
+
+        {/* Prize image */}
+        <div style={{ background: "#EAF1DD", padding: "18px 16px 12px", textAlign: "center" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6, color: palette.leaf, textTransform: "uppercase", marginBottom: 8 }}>
+            🌱 Community Giveaway
+          </div>
+          <img src={GIVEAWAY.imageUrl} alt={GIVEAWAY.prize}
+            style={{ width: "100%", maxWidth: 240, height: "auto", margin: "0 auto", display: "block" }}
+            onError={(e) => { e.currentTarget.style.display = "none"; }} />
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 21, lineHeight: 1.2, marginTop: 10 }}>
+            {GIVEAWAY.prize}
+          </div>
+        </div>
+
+        <div style={{ padding: "16px 18px 20px" }}>
+          <p style={{ fontSize: 13.5, lineHeight: 1.55, color: palette.inkSoft, margin: "0 0 14px" }}>
+            Henalytics is run by one person — no company, no investors. When community
+            support covers what it costs to keep the app running (my time included),
+            that surplus goes back to you as giveaways. The more support, the bigger
+            and more often these can happen. 💚
+          </p>
+
+          {!user && (
+            <div style={{
+              fontSize: 13, color: palette.accent, background: "#FBEAE3",
+              border: `1.5px solid ${palette.accentSoft}`, borderRadius: 10,
+              padding: "8px 10px", marginBottom: 12,
+            }}>
+              Create a free account to enter — it takes a few seconds.
+            </div>
+          )}
+
+          <Row label="Have an account" value={10} done={!!claimed.account || !!user}
+               onClick={onNeedAccount} cta="Sign in" />
+          <Row label="Follow us on Facebook" value={10} done={!!claimed.fb_follow}
+               onClick={doFollow} cta="Follow" />
+          <Row label="Share the giveaway post" value={20} done={!!claimed.share}
+               onClick={doShare} cta="Share" />
+
+          {total != null && (
+            <div style={{ textAlign: "center", fontSize: 13.5, fontWeight: 700, color: palette.leaf, margin: "10px 0 2px" }}>
+              You have {total} {total === 1 ? "entry" : "entries"} 🌱
+            </div>
+          )}
+
+          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: palette.ink, margin: "12px 0 6px" }}>
+            ⏳ Ends {endLabel}
+          </div>
+
+          {/* GIVEAWAY_SUPPORT_LINK — funds the giveaways; never touches entries/odds */}
+          <button onClick={onSupport} style={{
+            width: "100%", background: "transparent", border: "none",
+            color: palette.accent, fontFamily: FONT_BODY, fontSize: 12.5,
+            fontWeight: 600, cursor: "pointer", padding: "4px 0 2px",
+          }}>💚 Support to keep giveaways happening</button>
+
+          <button onClick={() => setShowRules((s) => !s)} style={{
+            width: "100%", background: "transparent", border: "none",
+            color: palette.inkSoft, fontFamily: FONT_BODY, fontSize: 12,
+            textDecoration: "underline", cursor: "pointer", marginTop: 2,
+          }}>{showRules ? "Hide rules" : "Official rules"}</button>
+
+          {showRules && (
+            <div style={{ fontSize: 11.5, lineHeight: 1.5, color: palette.inkSoft, marginTop: 8 }}>
+              No purchase necessary to enter or win. Supporting the app does not improve
+              your odds of winning. Open to legal U.S. residents 18 or older. One set of
+              free entries per account (account, Facebook follow, post share). Winner
+              drawn at random from all entries after the giveaway closes on {endLabel} and
+              notified in-app. Sponsored solely by Henalytics; Apple and Google are not
+              sponsors of and are not involved in this giveaway. Void where prohibited.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function AppStoreLaunchModal({ onClose, webOS }) {
   const APP_STORE_URL = "https://apps.apple.com/us/app/henalytics/id6768749008";
   // ⚠️ CONFIRM this package name matches your Android applicationId
