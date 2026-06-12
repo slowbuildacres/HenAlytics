@@ -71,6 +71,45 @@ export function countryFlag(cc) {
 }
 
 // ----------------------------------------------------------------------------
+// Auto-placement — US states and Canadian provinces only.
+// The onboarding wizard already stores homesteadLocation.label like
+// "Atchison, KS" (from the zip lookup the user did for weather). If the
+// trailing token is a US state or Canadian province abbreviation, we can
+// place the homestead on its team with zero extra input — anonymous, never
+// from device GPS, county never inferred. The two abbreviation sets are
+// disjoint, so there's no ambiguity. Everything else (GB, AU, etc.) falls
+// back to the manual region prompt.
+// ----------------------------------------------------------------------------
+const US_STATE_ABBRS = new Set([
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA","HI","ID","IL","IN","IA",
+  "KS","KY","LA","ME","MD","MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC","SD","TN","TX","UT","VT",
+  "VA","WA","WV","WI","WY","DC","PR","GU","VI","AS","MP",
+]);
+const CA_PROV_ABBRS = new Set([
+  "AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT",
+]);
+
+// localStorage flag set when we auto-place — the hub shows a one-time
+// "you're on Team X" notice keyed off this, then clears it on dismiss.
+export const AUTO_JOIN_KEY = "games_auto_joined_v1";
+
+export function deriveRegionFromLocation(data) {
+  const label = data?.homesteadLocation?.label;
+  if (typeof label !== "string") return null;
+  const m = label.trim().match(/,\s*([A-Z]{2})$/);
+  if (!m) return null;
+  const abbr = m[1];
+  if (US_STATE_ABBRS.has(abbr)) {
+    return { country_code: "US", subdivision_code: `US-${abbr}` };
+  }
+  if (CA_PROV_ABBRS.has(abbr)) {
+    return { country_code: "CA", subdivision_code: `CA-${abbr}` };
+  }
+  return null;
+}
+
+// ----------------------------------------------------------------------------
 // Region row CRUD (homestead_regions — RLS lets users touch only their row)
 // ----------------------------------------------------------------------------
 export async function loadMyRegion() {
@@ -137,10 +176,22 @@ export async function pushGamesContribution(data, { force = false } = {}) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
-    // Region gate: no region row → not in the Games; hidden → contributes
-    // nothing. (Opted-in supporters' Year in Review pushes are unaffected —
-    // that flow has its own hook.)
-    const region = await loadMyRegion();
+    // Region gate — with auto-placement. No region row yet? If the homestead
+    // already has a weather location with a recognizable US state / Canadian
+    // province, place it on that team automatically (anonymous). Hidden
+    // homesteads contribute nothing. Other countries wait for the manual
+    // prompt on the Games page.
+    let region = await loadMyRegion();
+    if (!region) {
+      const derived = deriveRegionFromLocation(data);
+      if (derived) {
+        const res = await saveMyRegion({ ...derived, display_mode: "anonymous" });
+        if (res.ok) {
+          region = res.region;
+          try { localStorage.setItem(AUTO_JOIN_KEY, derived.subdivision_code); } catch (_) {}
+        }
+      }
+    }
     if (!region || region.display_mode === "hidden") return;
 
     const year = new Date().getFullYear();

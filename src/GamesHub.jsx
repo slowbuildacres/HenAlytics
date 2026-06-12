@@ -17,7 +17,7 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Trophy, MapPin, Pencil } from "lucide-react";
 import {
-  GAMES_CATEGORIES, REGION_K, countryFlag,
+  GAMES_CATEGORIES, REGION_K, countryFlag, AUTO_JOIN_KEY,
   loadMyRegion, saveMyRegion, fetchRegionBoards, pushGamesContribution,
 } from "./games.js";
 // Achievements tab reuses Year in Review's badge system wholesale — same
@@ -350,6 +350,13 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
   const [category, setCategory] = useState("eggs");
   const [showRegionModal, setShowRegionModal] = useState(false);
   const [tab, setTab] = useState("standings"); // 'standings' | 'achievements'
+  const [autoJoined, setAutoJoined] = useState(() => {
+    try { return !!localStorage.getItem(AUTO_JOIN_KEY); } catch (_) { return false; }
+  });
+  const dismissAutoJoin = () => {
+    try { localStorage.removeItem(AUTO_JOIN_KEY); } catch (_) {}
+    setAutoJoined(false);
+  };
   const yearStats = useMemo(
     () => (tab === "achievements" ? computeStats(data, year) : null),
     [tab, data, year]
@@ -365,8 +372,17 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
       setRegion(r);
       setBoards(b);
       setLoading(false);
-      if (r && r.display_mode !== "hidden") {
-        pushGamesContribution(data, { force: true });
+      if (!r || r.display_mode !== "hidden") {
+        // May auto-place a US/CA homestead from its weather location —
+        // re-read the row afterward so the boards reflect it immediately.
+        await pushGamesContribution(data, { force: true });
+        if (!r) {
+          const placed = await loadMyRegion();
+          if (!cancelled && placed) {
+            setRegion(placed);
+            try { setAutoJoined(!!localStorage.getItem(AUTO_JOIN_KEY)); } catch (_) {}
+          }
+        }
       }
     })();
     import("./data/subdivisions.json")
@@ -506,6 +522,42 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
         </Card>
       ) : (
         <>
+          {/* One-time auto-placement notice */}
+          {autoJoined && (
+            <Card accent={palette.leafSoft}>
+              <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.55, marginBottom: 10 }}>
+                <strong>🏛 Your homestead joined {regionName("subdivision", region.subdivision_code) || "its team"}.</strong>{" "}
+                We placed you using the town you already gave us for weather —
+                never your device's GPS — and you're always anonymous here:
+                only your region's combined totals are shown, never your numbers
+                or name.
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                <button
+                  onClick={dismissAutoJoin}
+                  style={{
+                    flex: 1, padding: "9px 0", borderRadius: 10, border: "none",
+                    background: palette.leaf, color: palette.card,
+                    fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  Looks right
+                </button>
+                <button
+                  onClick={() => { dismissAutoJoin(); setShowRegionModal(true); }}
+                  style={{
+                    flex: 1, padding: "9px 0", borderRadius: 10,
+                    border: `1.5px solid ${palette.line}`, background: palette.card,
+                    color: palette.ink, fontFamily: FONT_BODY, fontWeight: 600,
+                    fontSize: 13, cursor: "pointer",
+                  }}
+                >
+                  Change or leave
+                </button>
+              </div>
+            </Card>
+          )}
+
           {/* Level pills */}
           <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 8 }}>
             <Pill active={level === "country"} onClick={() => setLevel("country")}>🌍 Countries</Pill>
