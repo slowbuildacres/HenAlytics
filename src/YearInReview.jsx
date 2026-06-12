@@ -14,6 +14,10 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 // Imported under an alias so the existing `totalHarvestLbs` local-variable
 // name downstream can be reused without collision.
 import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs } from "./analytics.js";
+// HOMESTEAD_GAMES — closing-ceremony card reads the same pre-aggregated
+// region_stats the trophy hub uses. games.js imports THIS module dynamically,
+// so this static import does not form a cycle.
+import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES, countryFlag } from "./games.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -218,6 +222,9 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
           <GoalsCard data={data} update={update} year={year} />
           {isSupporter && <BadgesCard stats={stats} />}
           {isSupporter && <CommunityPanels stats={stats} year={year} />}
+          {/* HOMESTEAD_GAMES — closing ceremony; free for everyone, self-hides
+              when the user has no region or no placements for this year. */}
+          <GamesClosingCard year={year} />
           <HeadlinesCard stats={stats} eggLayersEnabled={eggLayersEnabled} gardenEnabled={gardenEnabled} meatChickensEnabled={meatChickensEnabled} rabbitsEnabled={rabbitsEnabled} beesEnabled={beesEnabled} goatsEnabled={goatsEnabled} cowsEnabled={cowsEnabled} pigsEnabled={pigsEnabled} sheepEnabled={sheepEnabled} sourdoughEnabled={sourdoughEnabled} horsesEnabled={horsesEnabled} farmstandEnabled={farmstandEnabled} bakingEnabled={bakingEnabled} canningEnabled={canningEnabled} />
           {eggLayersEnabled && <EggsCard stats={stats} />}
           {gardenEnabled && <GardenCard stats={stats} />}
@@ -1335,7 +1342,7 @@ function FooterCard({ year }) {
 // Deliberately framed as optional and appreciation-based, not as a feature
 // being withheld. The app and all of Year in Review work fully without it.
 // ============================================================================
-function StandingsLockedCard({ onOpenSupport }) {
+export function StandingsLockedCard({ onOpenSupport }) {
   return (
     <Card
       accent={palette.bgAlt}
@@ -1410,7 +1417,7 @@ function StandingsLockedCard({ onOpenSupport }) {
 // Renders earned badges and the next milestone to chase for each tracked
 // hobby. Purely local: reads `stats`, checks thresholds, no network.
 // ============================================================================
-function BadgesCard({ stats }) {
+export function BadgesCard({ stats }) {
   const badges = useMemo(() => {
     return BADGE_DEFS
       .filter((def) => def.enabled(stats))
@@ -1971,6 +1978,124 @@ function collectYears(data) {
 // `enabled` keeps a badge out of the list entirely if the user doesn't do
 // that hobby at all (no value, no zero-state clutter).
 // ============================================================================
+// ============================================================================
+// HOMESTEAD_GAMES — GamesClosingCard: the closing ceremony.
+// ----------------------------------------------------------------------------
+// Shows where YOUR regions finished in the Homestead Games for the selected
+// year — country, state, and county placement per category, medals for the
+// top 3. Free for everyone (the Games aren't a supporter perk). Self-hides
+// when the user has no region or no placements. Reads only the pre-aggregated
+// region_stats table; never another homestead's data.
+// ============================================================================
+function GamesClosingCard({ year }) {
+  const [region, setRegion] = useState(null);
+  const [boards, setBoards] = useState(null);
+  const [subsData, setSubsData] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      const [r, b] = await Promise.all([loadMyRegion(), fetchRegionBoards(year)]);
+      if (cancelled) return;
+      setRegion(r);
+      setBoards(b || []);
+      if (r) {
+        import("./data/subdivisions.json")
+          .then((m) => { if (!cancelled) setSubsData(m.default || m); })
+          .catch(() => {});
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [year]);
+
+  const placements = useMemo(() => {
+    if (!region || !boards) return [];
+    const levels = [
+      ["country", region.country_code, "🌍"],
+      ["subdivision", region.subdivision_code, "🏛"],
+      ["county", region.county_code, "📍"],
+    ];
+    const out = [];
+    GAMES_CATEGORIES.forEach((cat) => {
+      const chips = [];
+      levels.forEach(([lvl, code, lvlIcon]) => {
+        if (!code) return;
+        const rows = boards
+          .filter((b) => b.region_level === lvl && b.category === cat.key && b.visible)
+          .sort((a, b) => Number(b.total) - Number(a.total));
+        const idx = rows.findIndex((r) => r.region_code === code);
+        if (idx < 0) return;
+        const medal = idx === 0 ? "🥇" : idx === 1 ? "🥈" : idx === 2 ? "🥉" : null;
+        chips.push({ lvl, lvlIcon, rank: idx + 1, of: rows.length, medal });
+      });
+      if (chips.length > 0) out.push({ cat, chips });
+    });
+    return out;
+  }, [region, boards]);
+
+  if (!region || placements.length === 0) return null;
+
+  const medalCount = placements.reduce(
+    (n, p) => n + p.chips.filter((c) => c.medal).length, 0);
+  const stateName = (() => {
+    if (!region.subdivision_code) return null;
+    const cc = region.subdivision_code.split("-")[0];
+    const hit = (subsData?.[cc]?.subs || []).find(([c]) => c === region.subdivision_code);
+    return hit ? hit[1] : null;
+  })();
+
+  const ordinalStr = (n) => {
+    const s = ["th", "st", "nd", "rd"], v = n % 100;
+    return n + (s[(v - 20) % 10] || s[v] || s[0]);
+  };
+
+  return (
+    <Card accent={palette.yolkSoft}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 4 }}>
+        <span style={{ fontSize: 20 }}>🏅</span>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
+          Homestead Games — {year}
+        </div>
+      </div>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 14 }}>
+        Where {countryFlag(region.country_code)}{stateName ? ` ${stateName}` : " your region"} finished
+        this year{medalCount > 0 ? ` · ${medalCount} ${medalCount === 1 ? "medal" : "medals"}` : ""} —
+        powered by every homestead that logged
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 9 }}>
+        {placements.map(({ cat, chips }) => (
+          <div key={cat.key} style={{
+            display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap",
+            padding: "9px 12px", borderRadius: 10,
+            background: palette.card, border: `1.5px solid ${palette.line}`,
+          }}>
+            <div style={{ fontSize: 13, fontWeight: 700, color: palette.ink, flex: "1 1 130px" }}>
+              {cat.icon} {cat.label}
+            </div>
+            <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+              {chips.map((c) => (
+                <div key={c.lvl} style={{
+                  fontSize: 12, fontWeight: 600, color: palette.ink,
+                  padding: "4px 9px", borderRadius: 999,
+                  background: c.medal ? palette.yolkSoft : palette.bgAlt,
+                  border: `1.5px solid ${c.medal ? palette.yolk : palette.line}`,
+                }}>
+                  {c.lvlIcon} {c.medal ? `${c.medal} ` : ""}{ordinalStr(c.rank)} of {c.of}
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, fontStyle: "italic" }}>
+        Anonymous always — regions compete, never names. Find the full boards
+        under the trophy in the top bar.
+      </div>
+    </Card>
+  );
+}
+
+// ============================================================================
 const BADGE_DEFS = [
   {
     key: "eggs", icon: "🥚", label: "Eggs Collected", unit: "eggs",
@@ -2110,7 +2235,9 @@ const COMMUNITY_METRIC_META = {
 
 // Derive the flat metric object the client writes to community_contributions.
 // Mirrors the badge values so the two surfaces always agree.
-function extractCommunityMetrics(stats) {
+// Exported for games.js — the Homestead Games push the same metrics, so the
+// Games and Year in Review can never disagree about a homestead's numbers.
+export function extractCommunityMetrics(stats) {
   return {
     eggs:        Math.max(0, Math.round(stats.eggsCollected || 0)),
     dozens_sold: Math.max(0, Math.round(stats.eggsSold || 0)),
@@ -2146,7 +2273,9 @@ function standingFor(value, band) {
   return { tier: "mix", text: "Right in the mix with most homesteads" };
 }
 
-function computeStats(data, year) {
+// Exported for games.js (Homestead Games) — single source of truth for the
+// per-year stats both surfaces report.
+export function computeStats(data, year) {
   const yearStr = String(year);
   const inYear = (e) => e.date && e.date.startsWith(yearStr);
 

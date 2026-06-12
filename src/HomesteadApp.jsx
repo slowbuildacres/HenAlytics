@@ -6,7 +6,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle, Check,
-  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck
+  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck, Trophy
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 // ADV_ANALYTICS: shared advanced-analytics layer (leaf module — see analytics.js).
@@ -100,6 +100,8 @@ import {
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
+import GamesHubPage from "./GamesHub.jsx";              // HOMESTEAD_GAMES
+import { pushGamesContribution } from "./games.js";     // HOMESTEAD_GAMES
 import CalendarPage from "./Calendar.jsx";
 import {
   PlanCropModal, PlanBirdsModal, AddCalendarEventModal,
@@ -1637,7 +1639,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 52;
+const CURRENT_VERSION = 53;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1733,6 +1735,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🏅 The Homestead Games — tap the new trophy in the top bar! Country, state, and county standings built from what the whole community logs: eggs collected, garden harvest, chicks hatched, jars canned, honey, and milk. Pick your region once and your homestead's numbers join your area's team — always anonymous, your name is never shown, and only regional totals appear (and only once enough homesteads share a region). Check the Per-homestead boards too: that's where small homesteads beat big states, pound for pound. If your county isn't on the board yet, recruit a neighbor — every county unlocks at 5 homesteads. The trophy page also has a My Achievements tab (your Homestead Standings badges, now one tap away), and Year in Review gets a closing-ceremony card showing where your region finished.",  // HOMESTEAD_GAMES_WHATSNEW
   "\uD83C\uDF81 Monthly community giveaway \u2014 Henalytics is run by one person, no company or investors. When community support covers what it costs to keep the app running, that surplus goes back to you as giveaways. This season\u2019s prize: a Charles Walter single-row push seeder. A popup appears each week with free ways to enter (just having an account gets you in; following and sharing on Facebook earn more). No purchase necessary, and supporting never improves your odds \u2014 it just makes bigger, more frequent giveaways possible. Ends September 1.",  // GIVEAWAY_WHATSNEW
   "💧 Watering reminder actually clears now — logging a watering on a specific plant (from its detail screen) used to leave the \"time to water\" nudge stuck on. Now any watering — quick-log, or logged against an annual or perennial — counts, so the reminder clears when it should.",
   "🌧️ Rain this week, right on your garden — the watering reminder now shows how much rain you've gotten in the last 7 days, so you can skip watering when the sky already handled it. (Needs a saved homestead location.)",
@@ -3305,6 +3308,24 @@ useEffect(() => {
     const timer = setTimeout(() => setShowGiveaway(true), 1400);
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.lastGiveawayPopupMonday, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
+
+  // ---- HOMESTEAD_GAMES — keep this homestead's regional contribution fresh ----
+  // Fire-and-forget push of the current year's community metrics so the
+  // nightly region rollup includes today's logs. games.js gates internally:
+  // signed in + region set + not hidden, and throttles to once per 6 hours
+  // (the Games page forces an immediate push on open). A failed push just
+  // means yesterday's numbers for a day — never user-visible.
+  const gamesPushRef = React.useRef(false);
+  useEffect(() => {
+    if (gamesPushRef.current) return;
+    if (!user || !data?.onboardedAt) return;
+    gamesPushRef.current = true;
+    const timer = setTimeout(() => {
+      pushGamesContribution(data).catch(() => {});
+    }, 4000); // stay out of the startup sync's way
+    return () => clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user, data?.onboardedAt]);
 
   // ---- "Create an account" nudge for signed-out users ----
   // A gentle, one-time, dismissible prompt. Fires once a signed-out user has
@@ -5108,6 +5129,18 @@ useNativeBackButton(React.useCallback(() => {
             >
               <BarnIcon size={22} />
             </button>
+            {/* HOMESTEAD_GAMES — trophy hub entry */}
+            <button
+              onClick={() => setPage("games")}
+              style={{
+                background: "none", border: "none", cursor: "pointer", padding: 6,
+                color: page === "games" ? palette.accent : palette.ink,
+              }}
+              title="Homestead Games"
+              aria-label="Homestead Games"
+            >
+              <Trophy size={20} />
+            </button>
             <button
               onClick={() => setPage("journal")}
               style={{
@@ -5131,7 +5164,7 @@ useNativeBackButton(React.useCallback(() => {
         </div>
 
         {/* HOBBY PICKER (hidden on Photos page since it shows all hobbies) */}
-        {page !== "sales" && page !== "year" && page !== "calendar" && page !== "journal" && (
+        {page !== "sales" && page !== "year" && page !== "calendar" && page !== "journal" && page !== "games" && (
         <div style={{ maxWidth: 720, margin: "16px auto 0", position: "relative" }}>
           <button
             onClick={() => setHobbyMenuOpen(!hobbyMenuOpen)}
@@ -5425,6 +5458,10 @@ useNativeBackButton(React.useCallback(() => {
         )}
         {page === "year" && (
           <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /* STEP3_REVIEW_PROMPT */ />
+        )}
+        {/* HOMESTEAD_GAMES — regional standings hub (trophy icon in header) */}
+        {page === "games" && (
+          <GamesHubPage data={data} user={user} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
         )}
         {page === "bees" && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
