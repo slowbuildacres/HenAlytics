@@ -320,10 +320,6 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
 function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
-  // Acquisition cost — flows into the Sales tab's FIFO profitability
-  // (expenseFifo.js reads animal.purchaseCost + purchaseDate).
-  const[purchaseCost,setPurchaseCost]=useState(animal?.purchaseCost!=null?String(animal.purchaseCost):"");
-  const[purchaseDate,setPurchaseDate]=useState(animal?.purchaseDate||"");
   // Breed: dropdown + "Other" custom text field
   const initBreed = (animal?.breed || "").trim();
   const initIsKnown = RABBIT_BREEDS.includes(initBreed);
@@ -365,7 +361,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         damId:damId||null,dam:dam.trim(),
         registryNumber:registryNumber.trim(),
         registryName:registryName.trim(),
-        purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],
+        photos:animal?.photos||[],
         created:animal?.created||Date.now(),
         archived:animal?.archived||false,
         archivedReason:animal?.archivedReason,
@@ -439,7 +435,6 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         <div style={{flex:1}}><Field label="Purchase cost (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$"/></Field></div>
         <div style={{flex:1}}><Field label="Purchased from (optional)"><input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, friend, etc"/></Field></div>
       </div>
-      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, temperament..."/></Field>
 
       {/* Push 7a — Pedigree. Doe eligible for dam; Buck eligible for sire. */}
