@@ -22,7 +22,7 @@ import {
 } from "./games.js";
 // Achievements tab reuses Year in Review's badge system wholesale — same
 // component, same supporter gating, same computeStats source of truth.
-import { BadgesCard, StandingsLockedCard, computeStats, extractCommunityMetrics } from "./YearInReview.jsx";
+import { BadgesCard, StandingsLockedCard, computeStats } from "./YearInReview.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -593,10 +593,24 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
   };
 
   // Your own logged numbers this year — same source the boards aggregate,
-  // computed locally so the page always has something real to show.
-  const myMetrics = useMemo(() => {
-    try { return extractCommunityMetrics(computeStats(data, year)) || {}; }
-    catch { return {}; }
+  // computed locally so the page always has something real to show. We pull
+  // extractCommunityMetrics via dynamic import (the way games.js does) so the
+  // static build never hard-fails on its export surface; computeStats stays a
+  // direct import since it's already proven.
+  const [myMetrics, setMyMetrics] = useState({});
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const mod = await import("./YearInReview.jsx");
+        const fn = mod.extractCommunityMetrics;
+        const m = fn ? fn(computeStats(data, year)) : {};
+        if (!cancelled) setMyMetrics(m || {});
+      } catch {
+        if (!cancelled) setMyMetrics({});
+      }
+    })();
+    return () => { cancelled = true; };
   }, [data, year]);
 
   // The user's region code at the current level (used across all categories).
