@@ -90,6 +90,33 @@ const CA_PROV_ABBRS = new Set([
   "AB","BC","MB","NB","NL","NS","NT","NU","ON","PE","QC","SK","YT",
 ]);
 
+// Full-name → abbreviation maps, so a label like "Atchison, Kansas" or
+// "Brandon, Manitoba" auto-places just as well as the abbreviated form.
+const US_STATE_NAMES = {
+  "alabama":"AL","alaska":"AK","arizona":"AZ","arkansas":"AR","california":"CA",
+  "colorado":"CO","connecticut":"CT","delaware":"DE","florida":"FL","georgia":"GA",
+  "hawaii":"HI","idaho":"ID","illinois":"IL","indiana":"IN","iowa":"IA","kansas":"KS",
+  "kentucky":"KY","louisiana":"LA","maine":"ME","maryland":"MD","massachusetts":"MA",
+  "michigan":"MI","minnesota":"MN","mississippi":"MS","missouri":"MO","montana":"MT",
+  "nebraska":"NE","nevada":"NV","new hampshire":"NH","new jersey":"NJ","new mexico":"NM",
+  "new york":"NY","north carolina":"NC","north dakota":"ND","ohio":"OH","oklahoma":"OK",
+  "oregon":"OR","pennsylvania":"PA","rhode island":"RI","south carolina":"SC",
+  "south dakota":"SD","tennessee":"TN","texas":"TX","utah":"UT","vermont":"VT",
+  "virginia":"VA","washington":"WA","west virginia":"WV","wisconsin":"WI","wyoming":"WY",
+  "district of columbia":"DC","puerto rico":"PR","guam":"GU",
+};
+const CA_PROV_NAMES = {
+  "alberta":"AB","british columbia":"BC","manitoba":"MB","new brunswick":"NB",
+  "newfoundland and labrador":"NL","newfoundland":"NL","nova scotia":"NS",
+  "northwest territories":"NT","nunavut":"NU","ontario":"ON","prince edward island":"PE",
+  "quebec":"QC","québec":"QC","saskatchewan":"SK","yukon":"YT",
+};
+// Trailing country labels to skip past when scanning for the subdivision.
+const COUNTRY_TOKENS = new Set([
+  "us","usa","u.s.","u.s.a.","united states","united states of america",
+  "ca","can","canada",
+]);
+
 // localStorage flag set when we auto-place — the hub shows a one-time
 // "you're on Team X" notice keyed off this, then clears it on dismiss.
 export const AUTO_JOIN_KEY = "games_auto_joined_v1";
@@ -97,14 +124,24 @@ export const AUTO_JOIN_KEY = "games_auto_joined_v1";
 export function deriveRegionFromLocation(data) {
   const label = data?.homesteadLocation?.label;
   if (typeof label !== "string") return null;
-  const m = label.trim().match(/,\s*([A-Z]{2})$/);
-  if (!m) return null;
-  const abbr = m[1];
-  if (US_STATE_ABBRS.has(abbr)) {
-    return { country_code: "US", subdivision_code: `US-${abbr}` };
-  }
-  if (CA_PROV_ABBRS.has(abbr)) {
-    return { country_code: "CA", subdivision_code: `CA-${abbr}` };
+  // The state/province comes after the city, so scan comma-parts from the
+  // end. Each part may carry a trailing zip ("KS 66002") or be a full name
+  // ("Kansas"); a trailing country token ("US", "Canada") is skipped. This
+  // catches every label shape the zip lookup, GPS reverse-geocode, and place
+  // search produce — not just the bare "City, ST" form.
+  const parts = label.split(",").map((p) => p.trim()).filter(Boolean);
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const part = parts[i];
+    const lower = part.toLowerCase();
+    if (COUNTRY_TOKENS.has(lower)) continue;
+    const abbrTok = (part.match(/^([A-Za-z]{2})\b/) || [])[1];
+    if (abbrTok) {
+      const A = abbrTok.toUpperCase();
+      if (US_STATE_ABBRS.has(A)) return { country_code: "US", subdivision_code: `US-${A}` };
+      if (CA_PROV_ABBRS.has(A)) return { country_code: "CA", subdivision_code: `CA-${A}` };
+    }
+    if (US_STATE_NAMES[lower]) return { country_code: "US", subdivision_code: `US-${US_STATE_NAMES[lower]}` };
+    if (CA_PROV_NAMES[lower]) return { country_code: "CA", subdivision_code: `CA-${CA_PROV_NAMES[lower]}` };
   }
   return null;
 }
@@ -193,6 +230,16 @@ export async function pushGamesContribution(data, { force = false } = {}) {
       }
     }
     if (!region || region.display_mode === "hidden") return;
+
+    // The community_contributions RLS only admits an insert when the user has
+    // an opt-in row (community_stats_optin.opted_in = true). A non-hidden
+    // region IS that consent — the "count my homestead in" choice — so mirror
+    // it here. Without this every contribution silently fails the policy and
+    // the boards stay empty even though regions are set. We only ever set it
+    // true from here; opting back out is handled by the community-stats UI.
+    await supabase
+      .from("community_stats_optin")
+      .upsert({ user_id: session.user.id, opted_in: true }, { onConflict: "user_id" });
 
     const year = new Date().getFullYear();
     const { computeStats, extractCommunityMetrics } = await import("./YearInReview.jsx");

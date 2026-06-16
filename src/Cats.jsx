@@ -287,7 +287,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
 
       {photos.length === 0 && (
         <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 8, lineHeight: 1.5 }}>
-          Add a profile photo, then keep adding over time — the journal shows them as a timeline so you can see how this goat has grown.
+          Add a profile photo, then keep adding over time — the journal shows them as a timeline so you can see how this cat has grown.
         </div>
       )}
 

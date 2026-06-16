@@ -8148,6 +8148,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
   const [count, setCount] = useState(String(remaining));
   const [date, setDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
+  const [addToMap, setAddToMap] = useState(true);
   const n = Number(count);
   const canSave = n > 0 && n <= remaining && date;
 
@@ -8224,7 +8225,23 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
         entryId: plantedEntry.id,
       });
 
-      // 5) Auto-archive if nothing remains (all transplanted or lost).
+      // 5) Queue it for the garden map so the user can drop a pin with one
+      //    tap (plant pre-filled, linked to this planting) instead of
+      //    re-entering it. Scoped to the season; dismissible from the map.
+      if (addToMap) {
+        if (!Array.isArray(gh.pendingMapPins)) gh.pendingMapPins = [];
+        gh.pendingMapPins.push({
+          id: newId(),
+          plant: plantName,
+          plantingId,
+          seedStartId: b.id,
+          seasonId: b.seasonId || (gh.currentSeason && gh.currentSeason.id) || "",
+          date,
+          created: Date.now(),
+        });
+      }
+
+      // 6) Auto-archive if nothing remains (all transplanted or lost).
       if (seedStartRemaining(b) === 0) {
         b.archived = true;
       }
@@ -8236,9 +8253,11 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
 
   return (
     <Modal open onClose={onClose} title="🌿 Transplant seedlings">
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        {remaining} sprout{remaining === 1 ? "" : "s"} remaining from this batch.
-        Transplanting creates a planting record so harvests track back to it.
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+        {remaining} sprout{remaining === 1 ? "" : "s"} left in this batch. Transplanting
+        moves them out of the tray and into your garden — they become a planting in
+        your Annuals list (so harvests track back here), and you can drop them on your
+        garden map without re-entering anything.
       </div>
       <Field label="Transplanting *">
         <input
@@ -8269,6 +8288,30 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           placeholder="Bed, spacing, weather..."
         />
       </Field>
+      <div
+        onClick={() => setAddToMap((v) => !v)}
+        style={{
+          display: "flex", alignItems: "flex-start", gap: 10, cursor: "pointer",
+          padding: 12, marginBottom: 14, borderRadius: 8,
+          background: palette.bgAlt, border: `1.5px solid ${palette.line}`,
+        }}
+      >
+        <span style={{
+          width: 18, height: 18, borderRadius: 4, flexShrink: 0, marginTop: 1,
+          border: `1.5px solid ${addToMap ? palette.leaf : palette.line}`,
+          background: addToMap ? palette.leaf : "transparent",
+          color: "white", display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 12, lineHeight: 1,
+        }}>{addToMap ? "✓" : ""}</span>
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600, color: palette.ink }}>
+            Add to my garden map
+          </div>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, lineHeight: 1.45 }}>
+            We'll queue it so you can drop a pin in one tap next time you open the map — already filled in, nothing to re-enter.
+          </div>
+        </div>
+      </div>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Transplant</Btn>

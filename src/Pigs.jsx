@@ -246,6 +246,10 @@ function LivestockProfileCircle({animal,emoji,size=20}){
 function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
+  // Acquisition cost — flows into the Sales tab's FIFO profitability
+  // (expenseFifo.js reads animal.purchaseCost + purchaseDate).
+  const[purchaseCost,setPurchaseCost]=useState(animal?.purchaseCost!=null?String(animal.purchaseCost):"");
+  const[purchaseDate,setPurchaseDate]=useState(animal?.purchaseDate||"");
   // Breed: dropdown + "Other" custom text field
   const initBreed = (animal?.breed || "").trim();
   const initIsKnown = PIG_BREEDS.includes(initBreed);
@@ -268,7 +272,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -310,6 +314,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         })()}</div>
       </div>
       <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
 
       {/* Push 7a — Pedigree. Sow/Gilt for dam, Boar for sire. */}

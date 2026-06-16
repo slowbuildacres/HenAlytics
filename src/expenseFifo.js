@@ -237,7 +237,7 @@ export function extractHobbyExpenses(data, hobbyId) {
     for (const a of hobby.animals) {
       const c = Number(a.purchaseCost || a.cost) || 0;
       if (c <= 0) continue;
-      const d = a.purchaseDate || a.acquiredDate || a.dob || a.startDate;
+      const d = a.purchaseDate || a.acquiredDate || a.dob || a.birthdate || a.startDate;
       if (!d) continue;
       out.push({ date: d, cost: c, source: "animal_purchase", note: a.name || "Animal" });
     }

@@ -334,6 +334,10 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
 function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const isEdit=!!animal;
   const[name,setName]=useState(animal?.name||"");
+  // Acquisition cost — flows into the Sales tab's FIFO profitability
+  // (expenseFifo.js reads animal.purchaseCost + purchaseDate).
+  const[purchaseCost,setPurchaseCost]=useState(animal?.purchaseCost!=null?String(animal.purchaseCost):"");
+  const[purchaseDate,setPurchaseDate]=useState(animal?.purchaseDate||"");
   // Breed: dropdown with common breeds, "Other" shows a custom text field.
   // On edit, preselect "Other" if the saved breed isn't in the dropdown.
   const initBreed = (animal?.breed || "").trim();
@@ -359,7 +363,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -400,6 +404,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{GOAT_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
       </div>
       <Field label="Date of birth (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
       <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, ear tag, any notes..."/></Field>
 
       {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers

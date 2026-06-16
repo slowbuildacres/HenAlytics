@@ -107,6 +107,30 @@ const pinDisplay = (pin) => {
   return { name: "Unknown plant", emoji: "🌱" };
 };
 
+// Best-effort match of a free-text plant label (e.g. "Tomato (Cherokee
+// Purple)") from a seed-start batch to a CROPS id, so a transplanted
+// seedling lands on the map as a proper crop (right emoji/color) instead of
+// a generic custom pin. Strips any "(variety)" suffix, then looks for a crop
+// whose name overlaps the base word. Returns null when nothing matches
+// confidently — the caller then places it as an "other" pin keeping the
+// typed name, so the label is always correct either way.
+const cropIdForName = (label) => {
+  if (!label || typeof label !== "string") return null;
+  const base = label.replace(/\(.*?\)/g, "").trim().toLowerCase();
+  if (!base) return null;
+  // Exact-ish match first (singularize trailing s on both sides).
+  const sing = (s) => s.replace(/s\b/g, "");
+  const baseS = sing(base);
+  let hit = CROPS.find((c) => sing(c.name.toLowerCase()) === baseS);
+  if (hit) return hit.id;
+  // Then substring overlap, shortest crop name wins to avoid greedy matches.
+  const cands = CROPS.filter((c) => {
+    const n = c.name.toLowerCase();
+    return n.includes(base) || base.includes(n);
+  }).sort((a, b) => a.name.length - b.name.length);
+  return cands.length ? cands[0].id : null;
+};
+
 // GARDEN_GRID: early-access gate for the "garden_grid" feature.
 // A self-contained copy of the same pure date logic used by the 2A gate
 // in HomesteadApp.jsx (GardenMap.jsx cannot cleanly import from there).
@@ -206,6 +230,13 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
 
   const activeArea = map.areas[activeIdx];
 
+  // Seedlings transplanted from a seed-start batch queue up here so they can
+  // be dropped on the map with one tap (no re-entering the plant). Scoped to
+  // the current season so old queues never leak into a new one.
+  const pendingPins = (hobby.pendingMapPins || []).filter(
+    (p) => !p.seasonId || p.seasonId === season.id
+  );
+
   // GARDEN_GRID_NEW_AREA_MODAL: area creation now opens an in-app modal instead of
   // using window.prompt/confirm. createArea just opens it; NewAreaModal
   // (below) collects the layout choice + name + dimensions and commits.
@@ -291,6 +322,7 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
             user={user}
             update={update}
             archivedSeasons={archivedSeasons}
+            pendingPins={pendingPins}
             onRenameArea={() => {
               const name = prompt("Rename area:", activeArea.name);
               if (!name?.trim()) return;
@@ -653,9 +685,52 @@ function AreaTabs({ areas, activeIdx, setActiveIdx, onAddArea }) {
 }
 
 // ============================================================================
+// Pending seedlings banner — shown in both the photo and grid editors when a
+// transplant has queued plants for the map. One tap on the map + one tap on
+// the plant places it; the × removes it from the queue without placing.
+// ============================================================================
+function PendingSeedlingsBanner({ pending, update }) {
+  if (!pending || pending.length === 0) return null;
+  const dismiss = (id) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === "garden");
+    if (h && Array.isArray(h.pendingMapPins)) {
+      h.pendingMapPins = h.pendingMapPins.filter((p) => p.id !== id);
+    }
+    return d;
+  });
+  return (
+    <div style={{
+      padding: "10px 12px", marginBottom: 10, borderRadius: 8,
+      background: "#EAF3DD", border: `1.5px solid ${palette.leaf}`,
+    }}>
+      <div style={{ fontSize: 12.5, color: palette.ink, lineHeight: 1.45, marginBottom: 8 }}>
+        🌱 <strong>Seedlings ready to place.</strong> Tap a spot, then choose one from the top of the plant list — no need to type it again.
+      </div>
+      <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+        {pending.map((p) => (
+          <span key={p.id} style={{
+            display: "inline-flex", alignItems: "center", gap: 6,
+            padding: "4px 8px", borderRadius: 999, background: palette.card,
+            border: `1px solid ${palette.line}`, fontSize: 12, color: palette.ink,
+          }}>
+            {p.plant}
+            <button onClick={() => dismiss(p.id)} title="Remove from queue" style={{
+              background: "none", border: "none", cursor: "pointer",
+              color: palette.inkSoft, padding: 0, lineHeight: 1, display: "flex",
+            }}>
+              <X size={12} />
+            </button>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
 // AREA EDITOR — the photo + pins for one area
 // ============================================================================
-function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenameArea, onDeleteArea }) {
+function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], pendingPins = [], onRenameArea, onDeleteArea }) {
   const [photoUrl, setPhotoUrl] = useState(null);
   const [photoLoading, setPhotoLoading] = useState(false);
   const [uploadError, setUploadError] = useState("");
@@ -715,23 +790,33 @@ function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenam
     setShowCropPicker({ x, y });
   };
 
-  const placePin = (cropId, customName) => {
+  const placePin = (cropId, customName, pendingItem) => {
     if (!showCropPicker) return;
     const newPin = {
       id: newId(),
       x: showCropPicker.x,
       y: showCropPicker.y,
       cropId,
-      plantedDate: todayStr(),
+      plantedDate: (pendingItem && pendingItem.date) || todayStr(),
       note: "",
     };
     // For the "other" / custom-plant option, attach the typed name.
     // Pins without a customName still fall back to the CROPS list lookup.
     if (cropId === "other" && customName) newPin.customName = customName;
+    // Link a placed-from-seed-start pin back to its planting/batch so the
+    // map and the seed-start history stay connected.
+    if (pendingItem) {
+      if (pendingItem.plantingId) newPin.plantingId = pendingItem.plantingId;
+      if (pendingItem.seedStartId) newPin.seedStartId = pendingItem.seedStartId;
+    }
     update((d) => {
       const h = d.hobbies.find((x) => x.id === "garden");
       if (!h?.currentSeason?.gardenMap?.areas?.[areaIdx]) return d;
       h.currentSeason.gardenMap.areas[areaIdx].pins.push(newPin);
+      // Drop it from the placement queue once it's on the map.
+      if (pendingItem && Array.isArray(h.pendingMapPins)) {
+        h.pendingMapPins = h.pendingMapPins.filter((p) => p.id !== pendingItem.id);
+      }
       return d;
     });
     setShowCropPicker(null);
@@ -785,6 +870,7 @@ function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenam
         areaIdx={areaIdx}
         update={update}
         archivedSeasons={archivedSeasons}
+        pendingPins={pendingPins}
         onRenameArea={onRenameArea}
         onDeleteArea={onDeleteArea}
       />
@@ -793,6 +879,7 @@ function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenam
 
   return (
     <div>
+      <PendingSeedlingsBanner pending={pendingPins} update={update} />
       {/* Area header — name + actions */}
       <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
@@ -970,6 +1057,7 @@ function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenam
       {showCropPicker && (
         <CropPicker
           onPick={placePin}
+          pendingPlants={pendingPins}
           priorCropIds={priorCropIdsForArea(area, archivedSeasons)}
           onCancel={() => setShowCropPicker(null)}
         />
@@ -986,7 +1074,7 @@ function AreaEditor({ area, areaIdx, user, update, archivedSeasons = [], onRenam
 // PinInfoPanel. Resize: grow adds empty cells; shrink warns-and-discards
 // any plantings outside the new bounds.
 // ============================================================================
-function GridEditor({ area, areaIdx, update, archivedSeasons = [], onRenameArea, onDeleteArea }) {
+function GridEditor({ area, areaIdx, update, archivedSeasons = [], pendingPins = [], onRenameArea, onDeleteArea }) {
   const [activePin, setActivePin] = useState(null);
   const [showCropPicker, setShowCropPicker] = useState(null); // { row, col }
 
@@ -1002,11 +1090,15 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], onRenameArea,
     }
   });
 
-  const placePin = (cropId, customName) => {
+  const placePin = (cropId, customName, pendingItem) => {
     if (!showCropPicker) return;
     const { row, col } = showCropPicker;
-    const newPin = { id: newId(), row, col, cropId, plantedDate: todayStr(), note: "" };
+    const newPin = { id: newId(), row, col, cropId, plantedDate: (pendingItem && pendingItem.date) || todayStr(), note: "" };
     if (cropId === "other" && customName) newPin.customName = customName;
+    if (pendingItem) {
+      if (pendingItem.plantingId) newPin.plantingId = pendingItem.plantingId;
+      if (pendingItem.seedStartId) newPin.seedStartId = pendingItem.seedStartId;
+    }
     update((d) => {
       const h = d.hobbies.find((x) => x.id === "garden");
       const a = h?.currentSeason?.gardenMap?.areas?.[areaIdx];
@@ -1015,6 +1107,9 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], onRenameArea,
       // Guard: never two pins in one cell.
       if (a.pins.some((p) => p.row === row && p.col === col)) return d;
       a.pins.push(newPin);
+      if (pendingItem && Array.isArray(h.pendingMapPins)) {
+        h.pendingMapPins = h.pendingMapPins.filter((p) => p.id !== pendingItem.id);
+      }
       return d;
     });
     setShowCropPicker(null);
@@ -1053,6 +1148,7 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], onRenameArea,
 
   return (
     <div>
+      <PendingSeedlingsBanner pending={pendingPins} update={update} />
       {/* Area header — name + actions (mirrors the photo AreaEditor) */}
       <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 10, gap: 8 }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
@@ -1123,6 +1219,7 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], onRenameArea,
       {showCropPicker && (
         <CropPicker
           onPick={placePin}
+          pendingPlants={pendingPins}
           priorCropIds={priorCropIdsForArea(area, archivedSeasons)}
           onCancel={() => setShowCropPicker(null)}
         />
@@ -1339,7 +1436,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
 // ============================================================================
 // CROP PICKER (unchanged from v1)
 // ============================================================================
-function CropPicker({ onPick, onCancel, priorCropIds = [] }) {
+function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] }) {
   // Inline state for the "Other" / custom-plant flow: when the user taps
   // the Other tile, we switch this small picker into an input mode so they
   // can type any plant name. Pressing Enter (or Add) pins it as cropId:"other"
@@ -1449,6 +1546,34 @@ function CropPicker({ onPick, onCancel, priorCropIds = [] }) {
       ) : (
         // ---- Default crop-tile grid ----
         <>
+          {pendingPlants.length > 0 && (
+            <div style={{
+              padding: "8px 10px", marginBottom: 10, borderRadius: 8,
+              background: "#EAF3DD", border: `1.5px solid ${palette.leaf}`,
+            }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: palette.ink, marginBottom: 6 }}>
+                🌱 From your seed starts — tap to place here
+              </div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
+                {pendingPlants.map((p) => {
+                  const cid = cropIdForName(p.plant);
+                  return (
+                    <button
+                      key={p.id}
+                      onClick={() => onPick(cid || "other", cid ? null : p.plant, p)}
+                      style={{
+                        padding: "7px 11px", borderRadius: 999,
+                        background: palette.leaf, color: palette.card, border: "none",
+                        cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+                      }}
+                    >
+                      {p.plant}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
           {priorNames.length > 0 && (
             <div style={{
               padding: "8px 10px", marginBottom: 10, borderRadius: 8,

@@ -22,7 +22,7 @@ import {
 } from "./games.js";
 // Achievements tab reuses Year in Review's badge system wholesale — same
 // component, same supporter gating, same computeStats source of truth.
-import { BadgesCard, StandingsLockedCard, computeStats } from "./YearInReview.jsx";
+import { BadgesCard, StandingsLockedCard, computeStats, extractCommunityMetrics } from "./YearInReview.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -291,33 +291,6 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
 // ============================================================================
 // Board pieces
 // ============================================================================
-function PodiumCard({ place, name, value, noun, mode }) {
-  return (
-    <div style={{
-      flex: "1 1 0", minWidth: 0, background: palette.card,
-      border: `1.5px solid ${palette.line}`, borderRadius: 12,
-      padding: "12px 8px 10px", textAlign: "center",
-      transform: place === 0 ? "translateY(-6px)" : "none",
-    }}>
-      <div style={{ display: "flex", justifyContent: "center" }}>
-        <FairRibbon place={place} size={place === 0 ? 48 : 42} />
-      </div>
-      <div style={{
-        fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13, color: palette.ink,
-        marginTop: 4, lineHeight: 1.25, overflowWrap: "break-word",
-      }}>
-        {name}
-      </div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, marginTop: 3 }}>
-        {mode === "per" ? fmtPer(value) : fmtTotal(value)}
-      </div>
-      <div style={{ fontSize: 10, color: palette.inkSoft }}>
-        {mode === "per" ? `${noun} per homestead` : noun}
-      </div>
-    </div>
-  );
-}
-
 function Pill({ active, onClick, children }) {
   return (
     <button
@@ -336,6 +309,201 @@ function Pill({ active, onClick, children }) {
 }
 
 // ============================================================================
+// Redesigned standings — everything visible at once. No category chips, no
+// total/per toggle. One level switch, then every category's board stacked
+// like a report card, the way the achievements tab shows every badge.
+// ============================================================================
+
+// One cohesive segmented switch for the competition level (the only choice
+// left on the page), in place of a row of stand-alone pill bubbles.
+function LevelSeg({ level, onChange }) {
+  const opts = [
+    { key: "country", label: "Countries", icon: "🌍" },
+    { key: "subdivision", label: "States", icon: "🏛" },
+    { key: "county", label: "Counties", icon: "📍" },
+  ];
+  return (
+    <div style={{
+      display: "flex", gap: 4, padding: 4, marginBottom: 16,
+      background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+    }}>
+      {opts.map((o) => {
+        const on = level === o.key;
+        return (
+          <button key={o.key} onClick={() => onChange(o.key)} style={{
+            flex: 1, padding: "8px 4px", borderRadius: 9, border: "none",
+            background: on ? palette.leaf : "transparent",
+            color: on ? palette.card : palette.inkSoft,
+            fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13,
+            cursor: "pointer", whiteSpace: "nowrap",
+          }}>
+            <span style={{ marginRight: 5 }}>{o.icon}</span>{o.label}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// Compact medal disc for the stacked list (lighter than the full FairRibbon,
+// which is reserved for nothing now — kept only for any future podium view).
+function MiniMedal({ place }) {
+  const r = RIBBON[place] || RIBBON[2];
+  return (
+    <div style={{
+      width: 26, height: 26, borderRadius: "50%", flexShrink: 0,
+      background: r.fill, border: `1.5px solid ${r.edge}`,
+      display: "flex", alignItems: "center", justifyContent: "center",
+      fontFamily: FONT_DISPLAY, fontSize: 12, color: palette.ink,
+    }}>{place + 1}</div>
+  );
+}
+
+// Always-present personal card — the user's own logged numbers this year,
+// from the same source the boards aggregate. Guarantees the page shows
+// something real even before any regional board has unlocked.
+function YourYearStrip({ metrics, year }) {
+  return (
+    <Card accent={palette.yolkSoft} style={{ padding: 14 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink, marginBottom: 2 }}>
+        What you've added in {year}
+      </div>
+      <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.45 }}>
+        Your own logged totals — every one counts toward your region's score below.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8 }}>
+        {GAMES_CATEGORIES.map((c) => {
+          const v = Number(metrics?.[c.key]) || 0;
+          return (
+            <div key={c.key} style={{
+              background: palette.card, border: `1.5px solid ${palette.line}`,
+              borderRadius: 10, padding: "9px 6px", textAlign: "center",
+            }}>
+              <div style={{ fontSize: 17 }}>{c.icon}</div>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>
+                {fmtTotal(v)}
+              </div>
+              <div style={{ fontSize: 10, color: palette.inkSoft, lineHeight: 1.2, marginTop: 2 }}>
+                {c.noun}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </Card>
+  );
+}
+
+// One category's standings at the current level: top three, then the user's
+// own region pinned with rank or unlock progress. Total leads; per-homestead
+// rides along quietly as a second number, so no mode toggle is needed.
+function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold }) {
+  const top = rows.slice(0, 3);
+  const myInTop = myRank >= 0 && myRank < 3;
+  const myName = myCode ? nameOf(myCode) : "";
+
+  // Status chip on the header row, summarizing where you stand at a glance.
+  let chip = null;
+  if (myRow && myRow.visible && myRank >= 0) {
+    chip = { text: `${ordinal(myRank + 1)} of ${rows.length}`, good: true };
+  } else if (myRow) {
+    const need = Math.max(1, (kThreshold || 3) - (myRow.homestead_count || 0));
+    chip = { text: `${need} more to unlock`, good: false };
+  } else if (myCode) {
+    chip = { text: "counts in tomorrow", good: false };
+  }
+
+  return (
+    <Card style={{ padding: 14 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: top.length ? 10 : 0 }}>
+        <div style={{ fontSize: 18 }}>{cat.icon}</div>
+        <div style={{ flex: 1, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, color: palette.ink, minWidth: 0 }}>
+          {cat.label}
+        </div>
+        {chip && (
+          <div style={{
+            fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
+            maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+            background: chip.good ? palette.leaf : palette.bgAlt,
+            color: chip.good ? palette.card : palette.inkSoft,
+            border: chip.good ? "none" : `1px solid ${palette.line}`,
+          }}>
+            {myName ? `${myName} · ${chip.text}` : chip.text}
+          </div>
+        )}
+      </div>
+
+      {top.length === 0 ? (
+        <div style={{ fontSize: 12.5, color: palette.inkSoft, lineHeight: 1.5 }}>
+          No region's on this board yet — log {cat.label.toLowerCase()} and your region starts the table.
+        </div>
+      ) : (
+        <div>
+          {top.map((r, i) => {
+            const mine = r.region_code === myCode;
+            return (
+              <div key={r.region_code} style={{
+                display: "flex", alignItems: "center", gap: 10, padding: "7px 8px",
+                borderRadius: 9, marginBottom: i < top.length - 1 ? 4 : 0,
+                background: mine ? palette.yolkSoft : "transparent",
+                border: mine ? `1.5px solid ${palette.yolk}` : "1.5px solid transparent",
+              }}>
+                <MiniMedal place={i} />
+                <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: mine ? 800 : 600, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                  {nameOf(r.region_code)}
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, color: palette.ink, lineHeight: 1 }}>
+                    {fmtTotal(r.total)}
+                  </div>
+                  <div style={{ fontSize: 10, color: palette.inkSoft }}>
+                    {fmtPer(r.per_homestead)} {cat.noun}/ea
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+
+          {/* Your region, if it's on the board but below the top three */}
+          {myRow && myRow.visible && !myInTop && myRank >= 0 && (
+            <div style={{
+              display: "flex", alignItems: "center", gap: 10, padding: "7px 8px",
+              borderRadius: 9, marginTop: 4,
+              background: palette.yolkSoft, border: `1.5px solid ${palette.yolk}`,
+            }}>
+              <div style={{ width: 26, textAlign: "center", fontFamily: FONT_DISPLAY, fontSize: 13, color: palette.inkSoft, flexShrink: 0 }}>
+                {ordinal(myRank + 1)}
+              </div>
+              <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: 800, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                {myName}
+              </div>
+              <div style={{ textAlign: "right", flexShrink: 0 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, color: palette.ink, lineHeight: 1 }}>
+                  {fmtTotal(myRow.total)}
+                </div>
+                <div style={{ fontSize: 10, color: palette.inkSoft }}>
+                  {fmtPer(myRow.per_homestead)} {cat.noun}/ea
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Almost-there recruitment line */}
+          {myRow && !myRow.visible && (() => {
+            const need = Math.max(1, (kThreshold || 3) - (myRow.homestead_count || 0));
+            return (
+              <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${palette.line}` }}>
+                🌱 {myName} needs {need} more homestead{need === 1 ? "" : "s"} logging {cat.label.toLowerCase()} to appear. Know a neighbor who homesteads? This is the excuse.
+              </div>
+            );
+          })()}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// ============================================================================
 // Page
 // ============================================================================
 export default function GamesHubPage({ data, user, isSupporter = false, onOpenSupport }) {
@@ -346,8 +514,6 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
   const [subsData, setSubsData] = useState(null);
   const [counties, setCounties] = useState(null);
   const [level, setLevel] = useState("subdivision");
-  const [mode, setMode] = useState("total");
-  const [category, setCategory] = useState("eggs");
   const [showRegionModal, setShowRegionModal] = useState(false);
   const [tab, setTab] = useState("standings"); // 'standings' | 'achievements'
   const [autoJoined, setAutoJoined] = useState(() => {
@@ -426,25 +592,31 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
     return countyNames[code] || `County ${code}`;
   };
 
-  const cat = GAMES_CATEGORIES.find((c) => c.key === category) || GAMES_CATEGORIES[0];
+  // Your own logged numbers this year — same source the boards aggregate,
+  // computed locally so the page always has something real to show.
+  const myMetrics = useMemo(() => {
+    try { return extractCommunityMetrics(computeStats(data, year)) || {}; }
+    catch { return {}; }
+  }, [data, year]);
 
-  // Visible rows for the current board, sorted by the active mode.
-  const rows = useMemo(() => {
-    const key = mode === "per" ? "per_homestead" : "total";
-    return boards
-      .filter((b) => b.region_level === level && b.category === category && b.visible)
-      .sort((a, b) => Number(b[key]) - Number(a[key]));
-  }, [boards, level, category, mode]);
-
-  // The user's own row at this level (visible or not).
+  // The user's region code at the current level (used across all categories).
   const myCode =
     level === "country" ? region?.country_code :
     level === "subdivision" ? region?.subdivision_code :
     region?.county_code;
-  const myRow = myCode
-    ? boards.find((b) => b.region_level === level && b.category === category && b.region_code === myCode)
-    : null;
-  const myRank = myCode ? rows.findIndex((r) => r.region_code === myCode) : -1;
+
+  // Slice + sort the pre-aggregated boards for one category at the current
+  // level, and locate the user's own region within it.
+  const boardFor = (catKey) => {
+    const rows = boards
+      .filter((b) => b.region_level === level && b.category === catKey && b.visible)
+      .sort((a, b) => Number(b.total) - Number(a.total));
+    const myRow = myCode
+      ? boards.find((b) => b.region_level === level && b.category === catKey && b.region_code === myCode)
+      : null;
+    const myRank = myCode ? rows.findIndex((r) => r.region_code === myCode) : -1;
+    return { rows, myRow, myRank };
+  };
 
   const levelNoun =
     level === "country" ? "countries" :
@@ -558,122 +730,35 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
             </Card>
           )}
 
-          {/* Level pills */}
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 8 }}>
-            <Pill active={level === "country"} onClick={() => setLevel("country")}>🌍 Countries</Pill>
-            <Pill active={level === "subdivision"} onClick={() => setLevel("subdivision")}>🏛 States & provinces</Pill>
-            <Pill active={level === "county"} onClick={() => setLevel("county")}>📍 Counties</Pill>
-          </div>
+          {/* One level switch — the only thing left to choose */}
+          <LevelSeg level={level} onChange={setLevel} />
 
-          {/* Category chips */}
-          <div style={{ display: "flex", gap: 8, overflowX: "auto", paddingBottom: 4, marginBottom: 8 }}>
-            {GAMES_CATEGORIES.map((c) => (
-              <Pill key={c.key} active={category === c.key} onClick={() => setCategory(c.key)}>
-                {c.icon} {c.label}
-              </Pill>
-            ))}
-          </div>
+          {/* Your own numbers — always here, even before a board unlocks */}
+          <YourYearStrip metrics={myMetrics} year={year} />
 
-          {/* Mode toggle */}
-          <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
-            <Pill active={mode === "total"} onClick={() => setMode("total")}>Total</Pill>
-            <Pill active={mode === "per"} onClick={() => setMode("per")}>Per homestead</Pill>
-          </div>
+          {/* Every category, stacked — nothing to click to reveal them */}
+          {GAMES_CATEGORIES.map((c) => {
+            const b = boardFor(c.key);
+            return (
+              <CategoryBoard
+                key={c.key}
+                cat={c}
+                rows={b.rows}
+                myRow={b.myRow}
+                myRank={b.myRank}
+                myCode={myCode}
+                nameOf={(code) => regionName(level, code)}
+                kThreshold={REGION_K[level]}
+              />
+            );
+          })}
 
-          {/* Podium + list */}
-          {rows.length === 0 ? (
-            <Card>
-              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 5 }}>
-                No standings here yet
-              </div>
-              <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.55 }}>
-                Totals are gathered once a day, and a board appears once enough
-                homesteads in a region are logging {cat.label.toLowerCase()}.
-                You might be early — that just means your region needs you.
-              </div>
-            </Card>
-          ) : (
-            <>
-              <div style={{ display: "flex", gap: 8, alignItems: "stretch", marginBottom: 12, paddingTop: 8 }}>
-                {[1, 0, 2].filter((i) => rows[i]).map((i) => (
-                  <PodiumCard
-                    key={rows[i].region_code}
-                    place={i}
-                    name={regionName(level, rows[i].region_code)}
-                    value={mode === "per" ? rows[i].per_homestead : rows[i].total}
-                    noun={cat.noun}
-                    mode={mode}
-                  />
-                ))}
-              </div>
-              {rows.length > 3 && (
-                <Card style={{ padding: "6px 14px" }}>
-                  {rows.slice(3, 10).map((r, idx) => (
-                    <div
-                      key={r.region_code}
-                      style={{
-                        display: "flex", alignItems: "center", gap: 10,
-                        padding: "9px 0",
-                        borderBottom: idx < Math.min(rows.length - 3, 7) - 1 ? `1px solid ${palette.line}` : "none",
-                      }}
-                    >
-                      <div style={{ width: 30, fontFamily: FONT_DISPLAY, fontSize: 15, color: palette.inkSoft }}>
-                        {ordinal(idx + 4)}
-                      </div>
-                      <div style={{ flex: 1, fontSize: 14, fontWeight: 600, color: palette.ink, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {regionName(level, r.region_code)}
-                      </div>
-                      <div style={{ fontSize: 14, color: palette.ink }}>
-                        {mode === "per" ? fmtPer(r.per_homestead) : fmtTotal(r.total)}
-                      </div>
-                    </div>
-                  ))}
-                </Card>
-              )}
-            </>
-          )}
-
-          {/* Your-region pinned card */}
-          {!myCode ? (
-            level === "county" && (
-              <Card accent={palette.bgAlt}>
-                <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.55 }}>
-                  Add your county in region settings to join the county boards —
-                  it's optional, and never anything more precise than that.
-                </div>
-              </Card>
-            )
-          ) : myRow && myRow.visible ? (
-            <Card accent={palette.yolkSoft}>
-              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                <div style={{ fontSize: 22 }}>🏅</div>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontWeight: 700, fontSize: 14, color: palette.ink }}>
-                    {regionName(level, myCode)} — {myRank >= 0 ? `${ordinal(myRank + 1)} of ${rows.length}` : "on the board"}
-                  </div>
-                  <div style={{ fontSize: 12, color: palette.inkSoft }}>
-                    {mode === "per" ? `${fmtPer(myRow.per_homestead)} ${cat.noun} per homestead` : `${fmtTotal(myRow.total)} ${cat.noun}`} · {myRow.homestead_count.toLocaleString()} homesteads logging {cat.icon}
-                  </div>
-                </div>
-              </div>
-            </Card>
-          ) : myRow ? (
-            <Card accent={palette.bgAlt}>
-              <div style={{ fontWeight: 700, fontSize: 14, color: palette.ink, marginBottom: 4 }}>
-                🌱 {regionName(level, myCode)} is almost on the board
-              </div>
-              <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.55 }}>
-                {myRow.homestead_count} {myRow.homestead_count === 1 ? "homestead is" : "homesteads are"} logging{" "}
-                {cat.label.toLowerCase()} here — {Math.max(1, (REGION_K[level] || 3) - myRow.homestead_count)} more
-                to unlock the board. Know a neighbor who homesteads? This is the excuse.
-              </div>
-            </Card>
-          ) : (
+          {/* County-level nudge if no county is set yet */}
+          {level === "county" && !myCode && (
             <Card accent={palette.bgAlt}>
               <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.55 }}>
-                {regionName(level, myCode) || "Your region"} isn't on this board yet —
-                your logged {cat.label.toLowerCase()} will count it in after the
-                next daily tally.
+                Add your county in region settings to join the county boards —
+                it's optional, and never anything more precise than that.
               </div>
             </Card>
           )}
