@@ -39,7 +39,11 @@ export const GAMES_CATEGORIES = [
 
 // k-anonymity thresholds — display copy only; the real enforcement happens
 // in recompute_region_stats(). Keep in sync with the SQL.
-export const REGION_K = { country: 3, subdivision: 3, county: 5 };
+// A region appears on a board once it has MORE THAN 2 homesteads (>= 3) logging
+// that category, uniformly across all levels. Keeps the k-anonymity guarantee
+// consistent: a region's combined total is only shown once 3+ homesteads pool
+// into it, so no single homestead's numbers can be read off the board.
+export const REGION_K = { country: 3, subdivision: 3, county: 3 };
 
 // ----------------------------------------------------------------------------
 // Anonymous handle — generated once, stored on the region row, stable forever.

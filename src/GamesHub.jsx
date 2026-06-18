@@ -394,20 +394,26 @@ function YourYearStrip({ metrics, year }) {
   );
 }
 
-// One category's standings at the current level: top three, then the user's
-// own region pinned with rank or unlock progress. Total leads; per-homestead
-// rides along quietly as a second number, so no mode toggle is needed.
-function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold }) {
+// One category's standings at the current level: top three regions with their
+// rank and total for the stat (e.g. "🥇 United States · 1st · 100,000 eggs"),
+// then the user's own region pinned with rank or unlock progress. A region
+// qualifies once it has more than 2 homesteads; the board shows the global
+// standings whether or not the viewer has logged anything.
+function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold, levelLabel }) {
   const top = rows.slice(0, 3);
-  const myInTop = myRank >= 0 && myRank < 3;
+  const K = kThreshold || 3;
+  const myCount = Number(myRow?.homestead_count) || 0;
+  const myVisible = !!myRow && myCount > 2;           // same >2 rule as the board
+  const myInTop = myVisible && myRank >= 0 && myRank < 3;
   const myName = myCode ? nameOf(myCode) : "";
+  const PLACE = ["1st", "2nd", "3rd"];
 
   // Status chip on the header row, summarizing where you stand at a glance.
   let chip = null;
-  if (myRow && myRow.visible && myRank >= 0) {
+  if (myVisible && myRank >= 0) {
     chip = { text: `${ordinal(myRank + 1)} of ${rows.length}`, good: true };
   } else if (myRow) {
-    const need = Math.max(1, (kThreshold || 3) - (myRow.homestead_count || 0));
+    const need = Math.max(1, K - myCount);
     chip = { text: `${need} more to unlock`, good: false };
   } else if (myCode) {
     chip = { text: "counts in tomorrow", good: false };
@@ -415,7 +421,7 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold })
 
   return (
     <Card style={{ padding: 14 }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: top.length ? 10 : 0 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
         <div style={{ fontSize: 18 }}>{cat.icon}</div>
         <div style={{ flex: 1, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, color: palette.ink, minWidth: 0 }}>
           {cat.label}
@@ -435,7 +441,8 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold })
 
       {top.length === 0 ? (
         <div style={{ fontSize: 12.5, color: palette.inkSoft, lineHeight: 1.5 }}>
-          No region's on this board yet — log {cat.label.toLowerCase()} and your region starts the table.
+          No {levelLabel} has 3+ homesteads logging {cat.label.toLowerCase()} yet —
+          the table fills in as more homesteaders join.
         </div>
       ) : (
         <div>
@@ -449,23 +456,28 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold })
                 border: mine ? `1.5px solid ${palette.yolk}` : "1.5px solid transparent",
               }}>
                 <MiniMedal place={i} />
-                <div style={{ flex: 1, minWidth: 0, fontSize: 13.5, fontWeight: mine ? 800 : 600, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {nameOf(r.region_code)}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 13.5, fontWeight: mine ? 800 : 600, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+                    {nameOf(r.region_code)}
+                  </div>
+                  <div style={{ fontSize: 10.5, color: palette.inkSoft, marginTop: 1 }}>
+                    {PLACE[i]} place
+                  </div>
                 </div>
                 <div style={{ textAlign: "right", flexShrink: 0 }}>
-                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, color: palette.ink, lineHeight: 1 }}>
+                  <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink, lineHeight: 1 }}>
                     {fmtTotal(r.total)}
                   </div>
-                  <div style={{ fontSize: 10, color: palette.inkSoft }}>
-                    {fmtPer(r.per_homestead)} {cat.noun}/ea
+                  <div style={{ fontSize: 10.5, color: palette.inkSoft, marginTop: 1 }}>
+                    {cat.noun} this year
                   </div>
                 </div>
               </div>
             );
           })}
 
-          {/* Your region, if it's on the board but below the top three */}
-          {myRow && myRow.visible && !myInTop && myRank >= 0 && (
+          {/* Your region, if it qualifies but sits below the top three */}
+          {myVisible && !myInTop && myRank >= 0 && (
             <div style={{
               display: "flex", alignItems: "center", gap: 10, padding: "7px 8px",
               borderRadius: 9, marginTop: 4,
@@ -478,27 +490,28 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold })
                 {myName}
               </div>
               <div style={{ textAlign: "right", flexShrink: 0 }}>
-                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, color: palette.ink, lineHeight: 1 }}>
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.ink, lineHeight: 1 }}>
                   {fmtTotal(myRow.total)}
                 </div>
-                <div style={{ fontSize: 10, color: palette.inkSoft }}>
-                  {fmtPer(myRow.per_homestead)} {cat.noun}/ea
+                <div style={{ fontSize: 10.5, color: palette.inkSoft, marginTop: 1 }}>
+                  {cat.noun} this year
                 </div>
               </div>
             </div>
           )}
-
-          {/* Almost-there recruitment line */}
-          {myRow && !myRow.visible && (() => {
-            const need = Math.max(1, (kThreshold || 3) - (myRow.homestead_count || 0));
-            return (
-              <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginTop: 8, paddingTop: 8, borderTop: `1px solid ${palette.line}` }}>
-                🌱 {myName} needs {need} more homestead{need === 1 ? "" : "s"} logging {cat.label.toLowerCase()} to appear. Know a neighbor who homesteads? This is the excuse.
-              </div>
-            );
-          })()}
         </div>
       )}
+
+      {/* Your region's progress, shown whether or not the board has unlocked —
+          so a homesteader who's logged always sees where their region stands. */}
+      {myRow && !myVisible && (() => {
+        const need = Math.max(1, K - myCount);
+        return (
+          <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginTop: top.length ? 8 : 6, paddingTop: top.length ? 8 : 0, borderTop: top.length ? `1px solid ${palette.line}` : "none" }}>
+            🌱 {myName} needs {need} more homestead{need === 1 ? "" : "s"} logging {cat.label.toLowerCase()} to appear on the board. Know a neighbor who homesteads? This is the excuse.
+          </div>
+        );
+      })()}
     </Card>
   );
 }
@@ -619,11 +632,31 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
     level === "subdivision" ? region?.subdivision_code :
     region?.county_code;
 
+  // County boards are scoped to the VIEWER'S OWN STATE: only counties whose
+  // FIPS belongs to the user's subdivision. Built from the counties dataset
+  // (keyed by state abbr) that's already loaded when the county tab is open.
+  const myStateAbbr = region?.subdivision_code
+    ? region.subdivision_code.split("-")[1]
+    : null;
+  const myStateCountyFips = useMemo(() => {
+    if (level !== "county" || !counties || !myStateAbbr) return null;
+    const list = counties[myStateAbbr] || [];
+    return new Set(list.map(([fips]) => fips));
+  }, [level, counties, myStateAbbr]);
+
   // Slice + sort the pre-aggregated boards for one category at the current
-  // level, and locate the user's own region within it.
+  // level, and locate the user's own region within it. A region shows once it
+  // has more than 2 homesteads (>= 3) — enforced here on homestead_count so the
+  // same rule applies at every level. The user's own logged numbers don't gate
+  // this board at all; it's the global standings of qualifying regions.
   const boardFor = (catKey) => {
     const rows = boards
-      .filter((b) => b.region_level === level && b.category === catKey && b.visible)
+      .filter((b) =>
+        b.region_level === level &&
+        b.category === catKey &&
+        Number(b.homestead_count) > 2 &&
+        (level !== "county" || !myStateCountyFips || myStateCountyFips.has(b.region_code))
+      )
       .sort((a, b) => Number(b.total) - Number(a.total));
     const myRow = myCode
       ? boards.find((b) => b.region_level === level && b.category === catKey && b.region_code === myCode)
@@ -763,6 +796,7 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
                 myCode={myCode}
                 nameOf={(code) => regionName(level, code)}
                 kThreshold={REGION_K[level]}
+                levelLabel={level === "country" ? "country" : level === "subdivision" ? "state or province" : "county"}
               />
             );
           })}
