@@ -203,7 +203,10 @@ export async function saveMyRegion({ country_code, subdivision_code = null, coun
 // 6 hours unless forced (the Games page forces on open so a user who just
 // set a region lands in tomorrow's recompute).
 // ----------------------------------------------------------------------------
-const PUSH_TS_KEY = "games_contrib_pushed_at_v1";
+// v2: the v1 push armed this throttle even on failed writes, so existing
+// installs carry a stale timestamp. Bumping the key ignores those so every
+// client pushes fresh once on the first load after this fix.
+const PUSH_TS_KEY = "games_contrib_pushed_at_v2";
 const PUSH_MIN_INTERVAL_MS = 6 * 60 * 60 * 1000;
 
 export async function pushGamesContribution(data, { force = false } = {}) {
@@ -217,11 +220,11 @@ export async function pushGamesContribution(data, { force = false } = {}) {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session?.user) return;
 
-    // Region gate — with auto-placement. No region row yet? If the homestead
-    // already has a weather location with a recognizable US state / Canadian
-    // province, place it on that team automatically (anonymous). Hidden
-    // homesteads contribute nothing. Other countries wait for the manual
-    // prompt on the Games page.
+    // Region — auto-placed from the homestead's saved location, no manual step
+    // and no opt-in required. Everyone with a recognizable US state / Canadian
+    // province is placed on that team automatically and anonymously. A user can
+    // still override the placement from the Games page; a saved region always
+    // wins over re-derivation.
     let region = await loadMyRegion();
     if (!region) {
       const derived = deriveRegionFromLocation(data);
@@ -233,24 +236,29 @@ export async function pushGamesContribution(data, { force = false } = {}) {
         }
       }
     }
-    if (!region || region.display_mode === "hidden") return;
-
-    // The community_contributions RLS only admits an insert when the user has
-    // an opt-in row (community_stats_optin.opted_in = true). A non-hidden
-    // region IS that consent — the "count my homestead in" choice — so mirror
-    // it here. Without this every contribution silently fails the policy and
-    // the boards stay empty even though regions are set. We only ever set it
-    // true from here; opting back out is handled by the community-stats UI.
-    await supabase
-      .from("community_stats_optin")
-      .upsert({ user_id: session.user.id, opted_in: true }, { onConflict: "user_id" });
+    // No team to attribute to yet: no saved region and no recognizable location
+    // (e.g. a non-US/CA label). They can pick a region manually from the Games
+    // page; until then there's nothing to contribute to.
+    if (!region) return;
+    // `hidden` is the only opt-OUT — there is no opt-in step. A homestead the
+    // user has explicitly hidden contributes nothing.
+    if (region.display_mode === "hidden") return;
 
     const year = new Date().getFullYear();
-    const { computeStats, extractCommunityMetrics } = await import("./YearInReview.jsx");
-    const stats = computeStats(data, year);
-    const metrics = extractCommunityMetrics(stats);
 
-    await supabase
+    // computeStats is a proven export; extractCommunityMetrics is read the same
+    // guarded way GamesHub does, so a missing/renamed export can never hard-throw
+    // and silently kill the push (which is what kept the boards empty before).
+    const mod = await import("./YearInReview.jsx");
+    const computeStats = mod.computeStats;
+    const extractCommunityMetrics = mod.extractCommunityMetrics;
+    if (typeof computeStats !== "function" || typeof extractCommunityMetrics !== "function") {
+      console.warn("[games] stats helpers unavailable — skipping contribution");
+      return;
+    }
+    const metrics = extractCommunityMetrics(computeStats(data, year)) || {};
+
+    const { error } = await supabase
       .from("community_contributions")
       .upsert(
         {
@@ -261,9 +269,19 @@ export async function pushGamesContribution(data, { force = false } = {}) {
         },
         { onConflict: "user_id,year" }
       );
+
+    // Only arm the throttle on a genuinely successful write. The old code set it
+    // unconditionally, so a single failed push soft-locked all retries for six
+    // hours — which is how one silent failure kept a homestead off the boards
+    // indefinitely. On failure we log and leave the throttle unset so the next
+    // open retries.
+    if (error) {
+      console.warn("[games] contribution push failed:", error.message || error);
+      return;
+    }
     try { localStorage.setItem(PUSH_TS_KEY, String(Date.now())); } catch (_) {}
-  } catch {
-    /* best-effort — a missed push just means yesterday's numbers for a day */
+  } catch (e) {
+    console.warn("[games] contribution push threw:", e?.message || e);
   }
 }
 
