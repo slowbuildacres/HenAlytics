@@ -180,52 +180,42 @@ async function _ensureHomesteadImpl(userId) {
     return { id: chosen.homestead_id, role: chosen.role };
   }
 
-  // Defensive guard before creating. An empty membership result with NO error
-  // can also occur transiently — e.g. during an auth token refresh when
-  // auth.uid() is briefly null, RLS matches no rows and returns []. Creating a
-  // homestead in that window is how some users ended up with phantom empty
-  // duplicates. So before creating: (a) confirm there's a live session for THIS
-  // user, and (b) re-query once. Only create if it's still genuinely empty.
+  // No membership rows for this user yet — create the homestead. This goes
+  // through the ensure_homestead() RPC rather than a client-side
+  // check-then-insert, because the old client path could NOT stop the
+  // phantom-duplicate race that stranded ~400 users. Two clients for the same
+  // brand-new user (a web tab and the native app, two devices, or a doubled
+  // auth event) could each read "no memberships" and each insert a homestead
+  // before either insert was visible to the other. The in-flight Map at the top
+  // of this file only dedupes within ONE JS context, and the old re-query
+  // narrowed but never closed the window — both callers re-queried before
+  // either insert landed.
+  //
+  // Keep a light session pre-check so an auth-token blip (auth.uid() briefly
+  // null during a refresh) doesn't fire a pointless RPC round-trip + error log;
+  // throw the same signal the old code did so existing callers behave the same.
   const { data: { session } } = await supabase.auth.getSession();
   if (!session || !session.user || session.user.id !== userId) {
     throw new Error('Not signed in yet — skipping homestead creation');
   }
-  const { data: recheck, error: rErr } = await supabase
-    .from('homestead_members')
-    .select('homestead_id, role, joined_at')
-    .eq('user_id', userId)
-    .order('joined_at', { ascending: true });
-  if (!rErr && recheck && recheck.length > 0) {
-    const ownedNow = recheck.filter((m) => m.role === 'owner');
-    const chosen = ownedNow[0] || recheck[0];
-    return { id: chosen.homestead_id, role: chosen.role };
-  }
 
-  // Generate the new homestead id client-side so we don't need to .select()
-  // it back. A SELECT after INSERT would trigger the SELECT RLS policy on
-  // homesteads (is_homestead_member), which fails because the user isn't
-  // a member yet — the membership row is inserted in the next step below.
-  const newHomesteadId = crypto.randomUUID();
-
-  const { error: cErr } = await supabase
-    .from('homesteads')
-    .insert({ id: newHomesteadId, data: {} });
-
+  // ensure_homestead() serializes get-or-create per user with a TRANSACTION-
+  // level advisory lock keyed on the user id, so concurrent callers queue: the
+  // first creates the homestead + owner membership, the rest see it under the
+  // same lock and return the SAME row. Exactly one homestead is ever created,
+  // across all clients and devices. The function reads auth.uid() itself, so it
+  // can only ever act for the signed-in user.
+  const { data: created, error: cErr } = await supabase.rpc('ensure_homestead');
   if (cErr) {
-    console.error('Homestead create failed', cErr);
+    console.error('ensure_homestead RPC failed', cErr);
     throw cErr;
   }
-
-  const { error: jErr } = await supabase
-    .from('homestead_members')
-    .insert({ homestead_id: newHomesteadId, user_id: userId, role: 'owner' });
-
-  if (jErr) {
-    console.error('Initial owner insert failed', jErr);
-    throw jErr;
+  // RPC returns a single-row set: { homestead_id, role }.
+  const row = Array.isArray(created) ? created[0] : created;
+  if (!row || !row.homestead_id) {
+    throw new Error('ensure_homestead returned no homestead');
   }
-
-  return { id: newHomesteadId, role: 'owner' };
+  return { id: row.homestead_id, role: row.role };
 }
 
 async function readCloudHomestead(homesteadId) {
@@ -410,6 +400,47 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
 
   const currentScore = scoreData(currentCloud);
   const newScore = scoreData(newData);
+
+  // ---- No-baseline guard (old / un-reloaded / native client protection) ----
+  // The recency guard above only runs when the incoming write carries a
+  // cloudBaselineAt. The CURRENT bundle always stamps one on load
+  // (loadHomestead) and refreshes it on every successful save, so a healthy,
+  // up-to-date client always has one. A baseline-less write therefore comes
+  // from a client that CANNOT prove it has seen the current cloud state —
+  // in practice a bundle from before the June 3 baseline mechanism: a native
+  // app whose webview never hard-reloads, or a browser tab left open across
+  // the deploy.
+  //
+  // Letting those through is the clobber hole behind both the "lost flock/
+  // season data after the update" reports and the "deleted flock comes back
+  // a few days later" bug. A stale copy that still holds a deleted flock
+  // scores HIGHER than the post-delete cloud, so the score guard (which only
+  // blocks big DROPS) waves it through and the flock is rewritten. A copy a
+  // few entries behind sits inside the score guard's 10-point slack and
+  // quietly erases recent logs.
+  //
+  // Fix: if the cloud row is real and actively synced (has an updated_at) and
+  // already holds meaningful data (score >= 5), refuse a baseline-less write
+  // and report it as stale so the client re-pulls — which acquires a baseline
+  // — before it is allowed to overwrite anything. This is conservative on
+  // purpose:
+  //   * A genuine first save lands on an empty cloud (currentScore ~0) and is
+  //     unaffected.
+  //   * An ancient row that never had updated_at set (cloudUpdatedAt null)
+  //     falls through to the score guard as before, so those users aren't
+  //     soft-locked — their first write through writeCloudHomestead stamps an
+  //     updated_at and they pick up baselines normally afterward.
+  //   * A current client that fell back to local still carries its last-known
+  //     baseline, so it is not caught here.
+  if (cloudUpdatedAt && !baseline && currentScore >= 5) {
+    console.warn(
+      `[NO-BASELINE] Refusing baseline-less write against a populated, ` +
+      `actively-synced homestead (cloud score=${currentScore}, ` +
+      `cloud updated_at=${cloudUpdatedAt}). Client must re-pull to acquire a ` +
+      `baseline before it can overwrite.`
+    );
+    return { skipped: true, reason: 'stale-baseline' };
+  }
 
   if (currentScore >= 5 && newScore < currentScore - 10) {
     console.warn(

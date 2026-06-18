@@ -3908,6 +3908,16 @@ useEffect(() => {
   // is unreliable in the Capacitor native webview (it can be silently
   // suppressed) — which is why tapping the stale banner did nothing.
   const [showStaleConfirm, setShowStaleConfirm] = useState(false);
+  // ---- Incident reassurance banner (June 2026 phantom-homestead fix) ----
+  // Shown to any signed-in user until INCIDENT_BANNER_UNTIL, then it self-
+  // retires. Dismiss is stored in localStorage (not the synced homestead blob)
+  // so it adds zero cloud writes and can't interact with the write guard.
+  // Safe to delete this block + its render once the window has passed.
+  const INCIDENT_BANNER_UNTIL = new Date("2026-07-02T00:00:00Z");
+  const [incidentBannerDismissed, setIncidentBannerDismissed] = useState(() => {
+    try { return localStorage.getItem("incidentBanner_2026_06") === "1"; }
+    catch { return false; }
+  });
   const [pendingInviteCode, setPendingInviteCode] = useState(null);
   const [timeOfDayAccent, setTimeOfDayAccent] = useState(() => getTimeOfDayAccent());
 
@@ -4698,6 +4708,33 @@ useNativeBackButton(React.useCallback(() => {
           }}
         >
           📡 Offline — your changes will sync when you reconnect
+        </div>
+      )}
+
+      {/* Incident reassurance banner — see INCIDENT_BANNER_UNTIL above.
+          Gated with !signedOutRemotely so it never stacks on the red error
+          banner; sits just below it on zIndex. Remove after the window. */}
+      {!!user && !incidentBannerDismissed && !signedOutRemotely &&
+       Date.now() < INCIDENT_BANNER_UNTIL.getTime() && (
+        <div
+          data-no-keyboard-shift
+          onClick={() => {
+            try { localStorage.setItem("incidentBanner_2026_06", "1"); } catch {}
+            setIncidentBannerDismissed(true);
+          }}
+          style={{
+            position: "fixed", top: 0, left: 0, right: 0, zIndex: 198,
+            background: "#3E7C5A", color: "#FAF5EA",
+            padding: "12px 20px",
+            paddingTop: "calc(12px + env(safe-area-inset-top))",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            gap: 10, cursor: "pointer",
+            fontFamily: "'Be Vietnam Pro', sans-serif",
+            fontWeight: 600, fontSize: 14,
+          }}
+        >
+          ✓ Your data's all here — we fixed a sync glitch that briefly showed
+          some homesteads as empty. Nothing was lost. Tap to dismiss.
         </div>
       )}
 
