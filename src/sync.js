@@ -540,6 +540,77 @@ export async function loadHomestead(user) {
   return { source: 'local', data: readLocalHomesteadFor(user ? user.id : null) };
 }
 
+// ----------------------------------------------------------------------------
+// Egg-basket carry-over for stale-baseline recovery.
+// ----------------------------------------------------------------------------
+// mergeUnsyncedEntries is additive for id'd records but lets cloud win for
+// non-id scalar bundles. flock.eggBasket ({date,count}) is exactly that, so a
+// merge would drop an in-progress (not-yet-"Done") egg count. Committed eggs
+// already live in data.entries[hobbyId] as id'd entries and ARE preserved by
+// the merge — this only protects the staging buffer so a recovery doesn't make
+// a half-counted basket visibly reset. Best-effort; never blocks a recovery.
+function carryOverEggBaskets(merged, local) {
+  try {
+    const mh = Array.isArray(merged && merged.hobbies) ? merged.hobbies : null;
+    const lh = Array.isArray(local && local.hobbies) ? local.hobbies : null;
+    if (!mh || !lh) return;
+    const mById = new Map(mh.map((h) => [h && h.id, h]));
+    for (const lhob of lh) {
+      if (!lhob || !Array.isArray(lhob.flocks)) continue;
+      const mhob = mById.get(lhob.id);
+      if (!mhob || !Array.isArray(mhob.flocks)) continue;
+      const mflById = new Map(mhob.flocks.map((f) => [f && f.id, f]));
+      for (const lfl of lhob.flocks) {
+        const lb = lfl && lfl.eggBasket;
+        if (!lb || !lb.count) continue;
+        const mfl = mflById.get(lfl.id);
+        if (!mfl) continue;
+        const mb = mfl.eggBasket;
+        // Keep the local basket when cloud's is empty, on an older day, or has
+        // fewer eggs for the same day — i.e. whenever the local one represents
+        // newer in-progress counting the merge would have discarded.
+        const keepLocal =
+          !mb || !mb.count ||
+          (mb.date === lb.date && lb.count > mb.count) ||
+          (mb.date && lb.date && mb.date < lb.date);
+        if (keepLocal) mfl.eggBasket = { ...lb };
+      }
+    }
+  } catch (e) {
+    /* best-effort — a basket carry-over must never block the recovery write */
+  }
+}
+
+// One-shot recovery from a stale-baseline skip. The recency / no-baseline
+// guards refuse a write when the cloud has moved past this device's baseline
+// (or this device never acquired one). On mobile that state never clears on its
+// own: "closing" the app backgrounds it, so loadHomestead — the only thing that
+// re-stamps the baseline — doesn't re-run on resume, and every subsequent save
+// is refused, parking edits in localStorage behind a banner forever.
+//
+// Instead of relying on the user to tap refresh, we self-heal: re-read the
+// cloud, additively merge this device's unsynced records into it (so neither
+// side loses data — see mergeUnsyncedEntries), carry over any in-progress egg
+// baskets, re-stamp the baseline to the freshly-read cloud updated_at, and
+// write once. Because the merged result is a superset of the current cloud, the
+// score guard passes; because the baseline now equals the cloud's updated_at,
+// the recency guard passes. Returns { ok, newBaselineAt, mergedData } on
+// success, or { ok:false } if the retry was itself skipped (e.g. another device
+// wrote in the read→write window) so the caller can fall back to the banner.
+async function recoverStaleWrite(homesteadId, localData) {
+  const { data: cloudData, updatedAt } = await readCloudHomesteadMeta(homesteadId);
+  const base = (cloudData && typeof cloudData === 'object') ? cloudData : {};
+  const { merged } = mergeUnsyncedEntries(base, localData);
+  carryOverEggBaskets(merged, localData);
+  merged.cloudBaselineAt = updatedAt || null;
+  const result = await safeWriteCloudHomestead(homesteadId, merged);
+  if (result.skipped) {
+    console.warn(`[RECOVER] stale-baseline retry still skipped (${result.reason}).`);
+    return { ok: false };
+  }
+  return { ok: true, newBaselineAt: result.newBaselineAt, mergedData: merged };
+}
+
 export async function saveHomestead(user, data, cloudReady = true) {
   // Tag the local mirror with the current user (null when signed out) so a
   // later load by a different account can't reuse it (account-bleed bug).
@@ -558,6 +629,41 @@ export async function saveHomestead(user, data, cloudReady = true) {
       }
       const result = await safeWriteCloudHomestead(homesteadId, data);
       if (result.skipped) {
+        // A stale-baseline skip means the cloud moved past this device's
+        // baseline (or this device never had one). Rather than parking the
+        // edit behind a banner that never clears on mobile, try once to
+        // self-heal: re-pull, merge our unsynced records in, re-stamp the
+        // baseline, and retry. Only this reason is recoverable — 'read-failed'
+        // and 'auth' are genuine connectivity/session problems the banner
+        // should still surface, and 'would-clobber' means our copy is actually
+        // missing data, so re-pulling (which the recovery does) is exactly
+        // right but we don't force a write.
+        if (result.reason === 'stale-baseline') {
+          try {
+            const recovered = await recoverStaleWrite(homesteadId, data);
+            if (recovered && recovered.ok) {
+              if (recovered.newBaselineAt) {
+                try {
+                  writeLocalHomestead(
+                    { ...recovered.mergedData, cloudBaselineAt: recovered.newBaselineAt },
+                    user.id
+                  );
+                } catch (e) { /* local mirror is best-effort */ }
+              }
+              return {
+                ok: true,
+                location: 'cloud',
+                recovered: true,
+                newBaselineAt: recovered.newBaselineAt,
+                mergedData: recovered.mergedData,
+              };
+            }
+          } catch (e) {
+            console.warn('[SAVE] stale-baseline auto-recovery failed; leaving edit local.', e);
+          }
+          // Recovery didn't take (e.g. another device wrote mid-recovery, or
+          // the read failed) — fall through to the original banner behavior.
+        }
         // Pass the skip reason through so the caller can tell a benign
         // clobber-guard skip apart from a read-failed skip (the latter is
         // the refresh-token-bug signature and should surface to the user).

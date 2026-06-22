@@ -99,13 +99,33 @@ const METHODS = [
 ];
 
 const BOTTLE_SIZES = [
+  { value: "0.5oz", label: "½ oz" },
   { value: "1oz",  label: "1 oz" },
   { value: "2oz",  label: "2 oz" },
   { value: "4oz",  label: "4 oz" },
   { value: "8oz",  label: "8 oz" },
   { value: "16oz", label: "16 oz" },
   { value: "32oz", label: "32 oz (quart)" },
+  { value: "custom", label: "Custom…" },
 ];
+
+// A single bottling can mix container sizes (e.g. 2 × 4oz bottles + 1 × 16oz
+// jar). Canonical storage is batch.containers[] = [{ id, size, count }]. Legacy
+// batches predate this and carry a single bottleSize + bottlesMade;
+// getContainers() reads them as one implicit line, so existing data needs no
+// up-front migration — it upgrades in place only when the user next edits.
+function getContainers(batch) {
+  if (Array.isArray(batch?.containers) && batch.containers.length) return batch.containers;
+  if (batch?.bottlesMade > 0) return [{ id: "legacy", size: batch.bottleSize || "4oz", count: batch.bottlesMade }];
+  return [];
+}
+function sizeLabel(size) {
+  const preset = BOTTLE_SIZES.find(b => b.value === size);
+  return preset && preset.value !== "custom" ? preset.label : (size || "—");
+}
+function containersSummary(batch) {
+  return getContainers(batch).map(c => `${c.count} × ${sizeLabel(c.size)}`).join(" · ");
+}
 
 const inputStyle = {
   width: "100%", padding: "10px 12px", borderRadius: 8,
@@ -354,30 +374,67 @@ function StrainModal({ batch, hobbyId, update, onClose }) {
 }
 
 // ============================================================================
-// BOTTLE MODAL — record finished bottles + yield
+// BOTTLE MODAL — record finished containers (one or more sizes) + yield. Also
+// serves as the EDIT path for an already-bottled batch so mistakes can be
+// corrected; editing preserves any already-sold count.
 // ============================================================================
 function BottleModal({ batch, hobbyId, update, onClose }) {
+  const isEdit = batch.status === "bottled";
   const [bottledDate, setBottledDate] = useState(batch.bottledDate || todayIso());
-  const [bottlesMade, setBottlesMade] = useState(batch.bottlesMade ? String(batch.bottlesMade) : "");
-  const [bottleSize, setBottleSize] = useState(batch.bottleSize || "4oz");
+  const [rows, setRows] = useState(() => {
+    const existing = getContainers(batch);
+    if (existing.length) {
+      return existing.map(c => {
+        const isPreset = BOTTLE_SIZES.some(b => b.value === c.size && b.value !== "custom");
+        return {
+          id: c.id && c.id !== "legacy" ? c.id : newId(),
+          sizeSel: isPreset ? c.size : "custom",
+          customSize: isPreset ? "" : (c.size || ""),
+          count: c.count ? String(c.count) : "",
+        };
+      });
+    }
+    return [{ id: newId(), sizeSel: "4oz", customSize: "", count: "" }];
+  });
   const [totalYieldOz, setTotalYieldOz] = useState(batch.totalYieldOz ? String(batch.totalYieldOz) : "");
 
+  const resolveSize = (r) => (r.sizeSel === "custom" ? (r.customSize.trim() || "custom") : r.sizeSel);
+  const totalMade = rows.reduce((s, r) => s + (Number(r.count) || 0), 0);
+  const rowValid = (r) => (Number(r.count) || 0) >= 1 && (r.sizeSel !== "custom" || r.customSize.trim());
+  const canSave = totalMade >= 1 && rows.every(rowValid);
+
+  const setRow = (id, patch) => setRows(rs => rs.map(r => r.id === id ? { ...r, ...patch } : r));
+  const addRow = () => setRows(rs => [...rs, { id: newId(), sizeSel: "4oz", customSize: "", count: "" }]);
+  const removeRow = (id) => setRows(rs => rs.length > 1 ? rs.filter(r => r.id !== id) : rs);
+
   const save = () => {
-    const made = Number(bottlesMade) || 0;
-    if (made < 1) return;
+    if (!canSave) return;
+    const containers = rows
+      .filter(r => (Number(r.count) || 0) >= 1)
+      .map(r => ({ id: r.id, size: resolveSize(r), count: Number(r.count) }));
+    const made = containers.reduce((s, c) => s + c.count, 0);
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
       if (b) {
+        const prevMade = Number(b.bottlesMade) || 0;
+        const prevRemaining = b.bottlesRemaining != null ? Number(b.bottlesRemaining) : prevMade;
+        const soldSoFar = Math.max(0, prevMade - prevRemaining);
         b.bottledDate = bottledDate;
+        b.containers = containers;
         b.bottlesMade = made;
-        b.bottlesRemaining = made;
-        b.bottleSize = bottleSize;
+        b.bottlesRemaining = Math.max(0, made - soldSoFar);
+        b.bottleSize = containers.length === 1 ? containers[0].size : "mixed";
         b.totalYieldOz = Number(totalYieldOz) || 0;
         b.status = "bottled";
         b.events = b.events || [];
-        b.events.push({ id: newId(), kind: "bottled", date: bottledDate, note: `${made} × ${bottleSize}` });
+        b.events.push({
+          id: newId(),
+          kind: isEdit ? "bottling edited" : "bottled",
+          date: bottledDate,
+          note: containers.map(c => `${c.count} × ${sizeLabel(c.size)}`).join(" · "),
+        });
       }
       return d;
     });
@@ -385,31 +442,47 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
   };
 
   return (
-    <Modal open onClose={onClose} title={`Bottle — ${batch.name}`}>
+    <Modal open onClose={onClose} title={`${isEdit ? "Edit bottling" : "Bottle"} — ${batch.name}`}>
       <Field label="Bottled date">
         <input type="date" style={inputStyle} value={bottledDate} onChange={e => setBottledDate(e.target.value)} />
       </Field>
-      <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}>
-          <Field label="Bottles made">
-            <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle} value={bottlesMade} onChange={e => setBottlesMade(e.target.value)} placeholder="0" autoFocus />
-          </Field>
+      <Field label="Containers">
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          {rows.map((r, i) => (
+            <div key={r.id} style={{ display: "flex", flexDirection: "column", gap: 6, padding: 8, background: palette.bgAlt, borderRadius: 8 }}>
+              <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
+                <div style={{ width: 84 }}>
+                  <div style={{ fontSize: 10, color: palette.inkSoft, marginBottom: 3 }}>Count</div>
+                  <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle} value={r.count} onChange={e => setRow(r.id, { count: e.target.value })} placeholder="0" autoFocus={i === 0} />
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 10, color: palette.inkSoft, marginBottom: 3 }}>Size</div>
+                  <select style={inputStyle} value={r.sizeSel} onChange={e => setRow(r.id, { sizeSel: e.target.value })}>
+                    {BOTTLE_SIZES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
+                  </select>
+                </div>
+                {rows.length > 1 && (
+                  <button onClick={() => removeRow(r.id)} title="Remove this size" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 6, fontSize: 14 }}>✕</button>
+                )}
+              </div>
+              {r.sizeSel === "custom" && (
+                <input style={inputStyle} value={r.customSize} onChange={e => setRow(r.id, { customSize: e.target.value })} placeholder="e.g. 16oz jar, 0.75 oz dropper" />
+              )}
+            </div>
+          ))}
+          <button onClick={addRow} style={{ alignSelf: "flex-start", background: "none", border: `1px dashed ${palette.line}`, borderRadius: 8, padding: "6px 12px", cursor: "pointer", color: palette.inkSoft, fontSize: 12 }}>+ Add another size</button>
         </div>
-        <div style={{ flex: 1 }}>
-          <Field label="Bottle size">
-            <select style={inputStyle} value={bottleSize} onChange={e => setBottleSize(e.target.value)}>
-              {BOTTLE_SIZES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
-            </select>
-          </Field>
-        </div>
-      </div>
-      <Field label="Total yield in fl oz (optional)">
-        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 16" />
-        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
-          For analytics. Helps track recovery rate per batch.
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, lineHeight: 1.4 }}>
+          Mix sizes freely — e.g. a few 4 oz bottles plus a 16 oz jar. Total: <strong>{totalMade}</strong> container{totalMade === 1 ? "" : "s"}.
         </div>
       </Field>
-      <Btn onClick={save} disabled={!bottlesMade || Number(bottlesMade) < 1}>Mark as bottled</Btn>
+      <Field label="Total yield in fl oz (optional)">
+        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 16.5" />
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
+          For analytics. Helps track recovery rate per batch. Decimals are fine (e.g. 5.5).
+        </div>
+      </Field>
+      <Btn onClick={save} disabled={!canSave}>{isEdit ? "Save bottling" : "Mark as bottled"}</Btn>
     </Modal>
   );
 }
@@ -437,7 +510,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
       if (b) {
         b.bottlesRemaining = Math.max(0, (b.bottlesRemaining || 0) - n);
         b.events = b.events || [];
-        b.events.push({ id: newId(), kind: "sold", date, note: `${n} × ${batch.bottleSize}${buyer.trim() ? ` to ${buyer.trim()}` : ""}` });
+        b.events.push({ id: newId(), kind: "sold", date, note: `${n}${batch.bottleSize && batch.bottleSize !== "mixed" ? ` × ${sizeLabel(batch.bottleSize)}` : " bottle" + (n === 1 ? "" : "s")}${buyer.trim() ? ` to ${buyer.trim()}` : ""}` });
       }
       d.sales = d.sales || [];
       d.sales.push({
@@ -476,7 +549,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Sell — ${batch.name}`}>
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5, padding: "8px 10px", background: palette.bgAlt, borderRadius: 6 }}>
-        {max} {batch.bottleSize} bottle{max === 1 ? "" : "s"} remaining
+        {max} of {batch.bottlesMade} remaining{getContainers(batch).length > 1 ? ` · ${containersSummary(batch)}` : ` · ${sizeLabel(batch.bottleSize)}`}
       </div>
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
@@ -572,9 +645,9 @@ function BatchCard({ batch, hobbyId, sales, update, setLocalModal }) {
       {batch.status === "bottled" && (
         <div style={{ background: palette.bgAlt, borderRadius: 8, padding: "10px 12px", marginBottom: 10, fontSize: 12, color: palette.ink, lineHeight: 1.4 }}>
           <div>
-            <strong>{batch.bottlesMade}</strong> × {batch.bottleSize} bottled {fmtDate(batch.bottledDate)}
+            <strong>{containersSummary(batch)}</strong> · bottled {fmtDate(batch.bottledDate)}
             {batch.bottlesRemaining < batch.bottlesMade && (
-              <span style={{ color: palette.inkSoft }}> · {batch.bottlesRemaining} remaining</span>
+              <span style={{ color: palette.inkSoft }}> · {batch.bottlesRemaining} of {batch.bottlesMade} remaining</span>
             )}
           </div>
           {batch.totalYieldOz > 0 && (
@@ -605,6 +678,11 @@ function BatchCard({ batch, hobbyId, sales, update, setLocalModal }) {
         {batch.status === "bottled" && batch.bottlesRemaining > 0 && (
           <Btn small variant="accent" onClick={() => setLocalModal({ type: "sell", batchId: batch.id })}>
             💵 Sell
+          </Btn>
+        )}
+        {batch.status === "bottled" && (
+          <Btn small variant="ghost" onClick={() => setLocalModal({ type: "bottle", batchId: batch.id })}>
+            ✏️ Edit bottling
           </Btn>
         )}
       </div>

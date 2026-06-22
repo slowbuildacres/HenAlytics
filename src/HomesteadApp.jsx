@@ -4300,12 +4300,25 @@ useNativeBackButton(React.useCallback(() => {
       if (result.ok) {
         setSyncStatus("saved");
         setTimeout(() => setSyncStatus((s) => (s === "saved" ? "idle" : s)), 1500);
-        // Absorb the refreshed cloud baseline into in-memory state so the
-        // next save compares against the cloud state we just created — not
-        // the stale baseline from the last load. setData is functional and
-        // skipNextSaveRef prevents this bookkeeping update from re-triggering
-        // the save effect into a loop.
-        if (result.newBaselineAt) {
+        if (result.recovered && result.mergedData) {
+          // A stale-baseline save just auto-recovered: sync.js re-pulled the
+          // cloud, merged our unsynced records into it, and wrote the union.
+          // Adopt that merged result so in-memory state matches what's now in
+          // the cloud — otherwise our next edit would save from a copy missing
+          // any records the merge pulled in from another device, and could trip
+          // the clobber guard. skipNextSaveRef keeps this adoption from
+          // re-triggering the save effect. (Clear any stale "cloud ahead"
+          // banner too — we just reconciled with the cloud.)
+          skipNextSaveRef.current = true;
+          setData(() => ({ ...result.mergedData, cloudBaselineAt: result.newBaselineAt }));
+          setSignedOutRemotely(false);
+          setSyncBannerReason(null);
+        } else if (result.newBaselineAt) {
+          // Absorb the refreshed cloud baseline into in-memory state so the
+          // next save compares against the cloud state we just created — not
+          // the stale baseline from the last load. setData is functional and
+          // skipNextSaveRef prevents this bookkeeping update from re-triggering
+          // the save effect into a loop.
           skipNextSaveRef.current = true;
           setData((prev) =>
             prev && prev.cloudBaselineAt !== result.newBaselineAt
