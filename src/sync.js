@@ -166,6 +166,15 @@ async function _ensureHomesteadImpl(userId) {
     const owned = scored.filter((s) => s.membership.role === 'owner');
     if (owned.length > 0) {
       owned.sort((a, b) => {
+        // Prefer the homestead this user most recently WROTE to — the one
+        // they're actually using. Sorting by score first favored the older,
+        // fuller row (e.g. last winter's data) over the row holding the
+        // current season's work, stranding active users on a stale duplicate.
+        // updated_at is already fetched in the membership select above and
+        // advances on every cloud save, so newest updated_at = actively used.
+        const au = new Date((a.membership.homesteads && a.membership.homesteads.updated_at) || 0).getTime();
+        const bu = new Date((b.membership.homesteads && b.membership.homesteads.updated_at) || 0).getTime();
+        if (bu !== au) return bu - au;
         if (b.score !== a.score) return b.score - a.score;
         return new Date(a.membership.joined_at) - new Date(b.membership.joined_at);
       });
