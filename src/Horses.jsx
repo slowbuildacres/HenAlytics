@@ -621,6 +621,57 @@ function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEv
 }
 
 // ============ CARE LOG MODAL (farrier / vet / deworming) ============
+// Feed log — herd-level (no per-horse picker; hay/grain goes to the barn,
+// not an individual). Writes a standard `fed` entry to data.entries so the
+// shared journal, feed-cost analytics, and the feed supply tracker (mounted
+// by the page shell in HomesteadApp.jsx) all pick it up with zero extra
+// wiring. Mirrors the entry shape Sheep/Goats/Cows use.
+function HorseFeedModal({ onSave, onClose }) {
+  const [date, setDate] = useState(todayStr());
+  const [lbs, setLbs] = useState("");
+  const [cost, setCost] = useState("");
+  const [notes, setNotes] = useState("");
+  const lbsNum = parseFloat(lbs);
+  const canSave = !isNaN(lbsNum) && lbsNum > 0 && !!date;
+  return (
+    <ModalShell title="🌾 Log feed" onClose={onClose}>
+      <Field label="Date">
+        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+      </Field>
+      <Field label="Feed amount (lbs — hay, grain, or both)">
+        <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 40" autoFocus />
+      </Field>
+      <Field label="Cost (optional)">
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 22.50" />
+      </Field>
+      <Field label="Notes (optional)">
+        <input style={inputStyle} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="2 flakes hay + scoop of grain..." />
+      </Field>
+      <Btn
+        variant="accent"
+        disabled={!canSave}
+        onClick={() => {
+          onSave({
+            entry: {
+              id: newId(),
+              date,
+              action: "fed",
+              lbs: lbsNum,
+              cost: parseFloat(cost) || 0,
+              notes: notes.trim(),
+              created: Date.now(),
+            },
+          });
+          onClose();
+        }}
+        style={{ width: "100%" }}
+      >
+        Save feed log
+      </Btn>
+    </ModalShell>
+  );
+}
+
 function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
   const liveHorses = horses.filter(h => !h.archived);
   // Multi-select: a single visit can apply to one horse or many.
@@ -1109,6 +1160,7 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
   const [horseModal, setHorseModal] = useState({ open: false, horse: null });
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [careModal, setCareModal] = useState({ open: false, kind: null, log: null });
+  const [feedModal, setFeedModal] = useState(false);
   const [rideModal, setRideModal] = useState({ open: false, ride: null });
   // Sale and death modals — both archive the horse and (for sale) push a row
   // into data.sales[] so it shows up in the Sales tab next to other livestock.
@@ -1243,6 +1295,19 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
           addCalendarEvent={addCalendarEvent}
         />
       )}
+      {feedModal && (
+        <HorseFeedModal
+          onClose={() => setFeedModal(false)}
+          onSave={(payload) => {
+            update(d => {
+              d.entries = d.entries || {};
+              d.entries[hobby.id] = d.entries[hobby.id] || [];
+              d.entries[hobby.id].push(payload.entry);
+              return d;
+            });
+          }}
+        />
+      )}
       {careModal.open && (
         <CareLogModal
           kind={careModal.kind}
@@ -1355,6 +1420,7 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
         <Btn small variant="ghost" onClick={() => setCareModal({ open: true, kind: "farrier", log: null })} style={{ width:"100%" }}>🔨 Farrier</Btn>
         <Btn small variant="ghost" onClick={() => setCareModal({ open: true, kind: "vet", log: null })} style={{ width:"100%" }}>🩺 Vet</Btn>
         <Btn small variant="ghost" onClick={() => setCareModal({ open: true, kind: "deworming", log: null })} style={{ width:"100%" }}>💊 Dewormer</Btn>
+        <Btn small variant="ghost" onClick={() => setFeedModal(true)} style={{ width:"100%" }}>🌾 Fed</Btn>
         <Btn small variant="leaf" onClick={() => setBreedingModal({ open: true, breeding: null })} style={{ width:"100%" }}>💕 Log breeding</Btn>
         <Btn small variant="ghost" onClick={() => setSaleModal({ open: true, horse: null })} style={{ width:"100%" }}>🏷️ Sale</Btn>
         <Btn small variant="ghost" onClick={() => setDeathModal({ open: true, horse: null })} style={{ width:"100%" }}>🪦 Died</Btn>

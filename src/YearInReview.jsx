@@ -608,6 +608,7 @@ function EggsCard({ stats }) {
   if (!stats.eggsCollected && !stats.eggsSold && !stats.eggLayerTotalCost) return null;
   const {
     eggsCollected, dozensCollected, eggsSold, eggRevenue,
+    eggUse, eggUseTotal,
     eggLayerFeedCost, eggLayerInfraCost, eggLayerBirdCost,
     eggLayerTotalCost, eggLayerCostPerDozen,
     benchmarkPricePerDozen, groceryStoreEquivalent, moneySavedVsBuying,
@@ -657,6 +658,40 @@ function EggsCard({ stats }) {
           💡 Add costs (feed, infrastructure, birds) to your egg layer entries and we'll show you how much you saved vs. buying pasture-raised eggs at the store.
         </div>
       )}
+
+      {/* 🧺 Where the eggs went — only renders once the user has logged
+          egg use (Use Eggs tile) or sold/donated eggs. Rows are
+          proportional mini-bars against the biggest bucket. */}
+      {eggUseTotal > 0 && (() => {
+        const rows = [
+          { emoji: "🍳", label: "Eaten", n: eggUse.ate, color: palette.leaf },
+          { emoji: "💵", label: "Sold", n: eggsSold, color: palette.yolk },
+          { emoji: "🎁", label: "Donated / given away", n: eggUse.donated, color: palette.feather },
+          { emoji: "🗑️", label: "Tossed", n: eggUse.tossed, color: palette.inkSoft },
+          { emoji: "🐣", label: "Set to hatch", n: eggUse.hatched, color: palette.accent },
+          { emoji: "❓", label: "Other", n: eggUse.other, color: palette.line },
+        ].filter((r) => r.n > 0);
+        const maxN = Math.max(...rows.map((r) => r.n), 1);
+        return (
+          <div style={{ marginTop: 14, padding: 10, background: palette.bgAlt, borderRadius: 8 }}>
+            <div style={{ fontWeight: 600, color: palette.ink, marginBottom: 8, fontSize: 12 }}>🧺 Where they went:</div>
+            {rows.map((r) => (
+              <div key={r.label} style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 5 }}>
+                <div style={{ width: 20, textAlign: "center", fontSize: 13 }}>{r.emoji}</div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: palette.inkSoft, marginBottom: 2 }}>
+                    <span>{r.label}</span>
+                    <strong style={{ color: palette.ink }}>{r.n} egg{r.n === 1 ? "" : "s"}</strong>
+                  </div>
+                  <div style={{ height: 6, background: palette.card, borderRadius: 3, overflow: "hidden" }}>
+                    <div style={{ width: `${(r.n / maxN) * 100}%`, height: "100%", background: r.color, borderRadius: 3 }} />
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
 
       {peakEggMonth && (
         <div style={{ marginTop: 18 }}>
@@ -2327,14 +2362,17 @@ export function computeStats(data, year) {
     let revenue = 0;
     if (pricePerDozen > 0 && qty > 0) {
       revenue = (qty / 12) * pricePerDozen;
-    } else if (Number(e.unitQty) > 0 && Number(e.pricePerUnit) > 0) {
+    } else if (Number(e.unitQty) > 0) {
+      // Price intentionally not required — $0 sales (donated / given
+      // away eggs) still need their egg count derived. Mirrors the
+      // same fix in HomesteadApp.jsx and Sales.jsx.
       const unitToCount = {
         single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
         custom: Number(e.customEggsPerUnit) || 0,
       };
       const eggsPerUnit = unitToCount[e.unit] || 12;
       const totalEggs = Number(e.unitQty) * eggsPerUnit;
-      revenue = Number(e.unitQty) * Number(e.pricePerUnit);
+      revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
       if (totalEggs > 0) {
         pricePerDozen = revenue / (totalEggs / 12);
         if (qty === 0) qty = totalEggs;
@@ -2360,11 +2398,26 @@ export function computeStats(data, year) {
   ];
   let eggsSold = 0;
   let eggRevenue = 0;
+  let eggsGivenFree = 0; // $0 sales — donated / given away, not really "sold"
   soldEggsEntries.forEach((e) => {
     const d = deriveSoldEggsRevenue(e);
-    eggsSold += d.qty;
-    eggRevenue += d.revenue;
+    if (d.revenue > 0) {
+      eggsSold += d.qty;
+      eggRevenue += d.revenue;
+    } else {
+      eggsGivenFree += d.qty;
+    }
   });
+
+  // Egg use dispositions (Use Eggs logs) — where the eggs actually went.
+  // $0 "sales" fold into the donated bucket alongside explicit donations.
+  const eggUse = { ate: 0, donated: 0, tossed: 0, hatched: 0, other: 0 };
+  allEntries.filter((e) => e.action === "used_eggs").forEach((e) => {
+    const t = Object.prototype.hasOwnProperty.call(eggUse, e.useType) ? e.useType : "other";
+    eggUse[t] += Number(e.count) || 0;
+  });
+  eggUse.donated += eggsGivenFree;
+  const eggUseTotal = eggUse.ate + eggUse.donated + eggUse.tossed + eggUse.hatched + eggUse.other + eggsSold;
   const eggLayerFeedCost = allEntries.filter((e) => e.action === "fed" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const eggLayerInfraCost = allEntries.filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   let eggLayerBirdCost = 0;
@@ -2759,6 +2812,7 @@ export function computeStats(data, year) {
 
   return {
     totalEntries, activeDays, eggsCollected, dozensCollected, eggsSold, eggRevenue,
+    eggUse, eggUseTotal,
     eggLayerFeedCost, eggLayerInfraCost, eggLayerBirdCost, eggLayerTotalCost,
     eggLayerCostPerDozen, benchmarkPricePerDozen, groceryStoreEquivalent, moneySavedVsBuying,
     eggRevenueByMonth, peakEggMonth, totalHarvestLbs, harvestsCount, plantingsCount, topPlants,

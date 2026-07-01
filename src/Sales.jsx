@@ -161,15 +161,18 @@ function deriveSoldEggsRevenue(e) {
   if (pricePerDozen > 0 && qty > 0) {
     // Canonical path — current form writes both fields.
     revenue = (qty / 12) * pricePerDozen;
-  } else if (Number(e.unitQty) > 0 && Number(e.pricePerUnit) > 0) {
+  } else if (Number(e.unitQty) > 0) {
     // Form-fields path — raw inputs survived but derivation didn't run.
+    // Price intentionally NOT required: $0 sales (donated / given away
+    // eggs) are real and their egg count must still derive. Mirrors the
+    // same fix in HomesteadApp.jsx and YearInReview.jsx.
     const unitToCount = {
       single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
       custom: Number(e.customEggsPerUnit) || 0,
     };
     const eggsPerUnit = unitToCount[e.unit] || 12;
     const totalEggs = Number(e.unitQty) * eggsPerUnit;
-    revenue = Number(e.unitQty) * Number(e.pricePerUnit);
+    revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
     if (totalEggs > 0) {
       pricePerDozen = revenue / (totalEggs / 12);
       if (qty === 0) qty = totalEggs;

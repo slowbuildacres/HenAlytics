@@ -397,16 +397,18 @@ function migrateData(data) {
       if (pricePerDozen > 0 && qty > 0) {
         // Canonical path — current form writes both fields.
         revenue = (qty / 12) * pricePerDozen;
-      } else if (Number(e.unitQty) > 0 && Number(e.pricePerUnit) > 0) {
+      } else if (Number(e.unitQty) > 0) {
         // Form-fields path — derivation guard didn't run (e.g. older code or
         // empty unitQty at save time), but the raw inputs are still there.
+        // NOTE: price is intentionally NOT required here — $0 sales are real
+        // (donated / given away eggs) and the egg COUNT must still migrate.
         const unitToCount = {
           single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
           custom: Number(e.customEggsPerUnit) || 0,
         };
         const eggsPerUnit = unitToCount[e.unit] || 12;
         const totalEggs = Number(e.unitQty) * eggsPerUnit;
-        revenue = Number(e.unitQty) * Number(e.pricePerUnit);
+        revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
         if (totalEggs > 0) {
           pricePerDozen = revenue / (totalEggs / 12);
           if (qty === 0) qty = totalEggs;
@@ -1735,6 +1737,9 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🌾 Feed supply tracker — never get surprised by an empty feed bin again. On any animal page (chickens, goats, cows, pigs, sheep, rabbits, dogs, cats, horses), tap the new feed banner, tell Henalytics how many lbs you've got, and your normal feed logs teach it how fast you burn through it. You'll see days remaining and an estimated empty date, and when you're about 5 days out it drops a reminder on your calendar — which also rides your weekly chore email. Log purchases with a cost and they flow straight into your Feed expenses. Works with cups or lbs feedings. (Horses got a new \u{1F33E} Fed button so the barn can join in.)",  // FEED_TRACKER_WHATSNEW
+  "🧺 Eggs on hand — a live count of the eggs actually in your fridge. Tap the new Use Eggs tile on the egg layers page, count what you've got right now, and from then on every egg you collect adds to it and every egg you sell (from the tile or the Sales tab) or use comes off. Log what happened to them — ate, donated, tossed, set to hatch — and your stats page shows where your eggs actually go. Year in Review gets a \"where they went\" breakdown too. Totally optional; the tile can be hidden in Manage Hobbies like any other.",  // EGG_INVENTORY_WHATSNEW
+  "🥚 $0 egg sales fixed — logging donated or given-away eggs at a price of $0 used to make the egg count vanish from the sale. Now the count sticks, the entry reads \"no charge (donated / given away)\", and those eggs show up under Donated in your new egg-use stats. No more pricing your donations at a penny to make the math work.",  // ZERO_PRICE_EGGS_WHATSNEW
   "🏅 The Homestead Games — tap the new trophy in the top bar! Country, state, and county standings built from what the whole community logs: eggs collected, garden harvest, chicks hatched, jars canned, honey, and milk. US and Canadian homesteads are placed on their state or province's team automatically from the town you already gave us for weather (never your device's GPS) — always anonymous, your name is never shown, and only regional totals appear (and only once enough homesteads share a region). Don't want in? One tap on the trophy page leaves the Games. Check the Per-homestead boards too: that's where small homesteads beat big states, pound for pound. Add your county (optional) to join county boards — every county unlocks at 5 homesteads, so recruit a neighbor. The trophy page also has a My Achievements tab (your Homestead Standings badges, now one tap away), and Year in Review gets a closing-ceremony card showing where your region finished.",  // HOMESTEAD_GAMES_WHATSNEW
   "\uD83C\uDF81 Monthly community giveaway \u2014 Henalytics is run by one person, no company or investors. When community support covers what it costs to keep the app running, that surplus goes back to you as giveaways. This season\u2019s prize: a Charles Walter single-row push seeder. A popup appears each week with free ways to enter (just having an account gets you in; following and sharing on Facebook earn more). No purchase necessary, and supporting never improves your odds \u2014 it just makes bigger, more frequent giveaways possible. Ends September 1.",  // GIVEAWAY_WHATSNEW
   "💧 Watering reminder actually clears now — logging a watering on a specific plant (from its detail screen) used to leave the \"time to water\" nudge stuck on. Now any watering — quick-log, or logged against an annual or perennial — counts, so the reminder clears when it should.",
@@ -3383,7 +3388,7 @@ useEffect(() => {
     if (!data?.onboardedAt) return;
     const now = new Date();
     const dayOfMonth = now.getDate();
-    if (dayOfMonth < 1 || dayOfMonth > 3) return; // only show 1st-3rd of the month
+    if (dayOfMonth < 1 || dayOfMonth > 5) return; // only show 1st-5th of the month (widened from 1st-3rd so folks who don't open the app daily still catch it)
     const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     if (data?.supportersDismissedMonth === monthKey) return;
     supporterThanksShownRef.current = true;
@@ -5520,16 +5525,28 @@ useNativeBackButton(React.useCallback(() => {
           <IncubatorPage hobby={data.hobbies.find(h=>h.id==="incubator")} data={data} update={update} setModal={setModal} />
         )}
         {page === "goats" && (
-          <GoatsPage hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} />
+            <GoatsPage hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "cows" && (
-          <CowsPage hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} />
+            <CowsPage hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "pigs" && (
-          <PigsPage hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} />
+            <PigsPage hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "rabbits" && (
-          <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
+            <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "farmstand" && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
@@ -5562,19 +5579,31 @@ useNativeBackButton(React.useCallback(() => {
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tea" />
         )}
         {page === "sheep" && (
-          <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
+            <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "dogs" && (
-          <DogsPage hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} />
+            <DogsPage hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "cats" && (
-          <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} />
+            <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "maple_syrup" && (
           <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} setModal={setModal} />
         )}
         {page === "horses" && (
-          <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />
+          <>
+            <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} />
+            <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />
+          </>
         )}
         {page === "sourdough" && (
           <SourdoughPage hobby={data.hobbies.find(h=>h.id==="sourdough")} data={data} update={update} setModal={setModal} />
@@ -6063,7 +6092,10 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} data={data} />
 
       {/* HOBBY-SPECIFIC SUMMARY */}
-      {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
+      {["egg_layers", "meat_chickens"].includes(hobby.type) && (
+        <FeedTrackerCard hobby={hobby} data={data} update={update} setModal={setModal} />
+      )}
+      {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} sales={data.sales || []} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} onPlanAnnualConfirm={handlePlanAnnualConfirm} />}
 
@@ -6745,6 +6777,7 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
       { action: "move_tractor",   icon: Truck,         label: "Move Tractor",   color: palette.feather },
       { action: "eggs",           icon: Egg,           label: "Eggs Laid",      color: palette.yolk },
       { action: "sold_eggs",      icon: DollarSign,    label: "Sold Eggs",      color: palette.accent },
+      { action: "used_eggs",      icon: Egg,           label: "Use Eggs",       color: palette.leaf },
       { action: "bedding",        icon: Archive,       label: "Bedding",        color: palette.featherSoft },
       { action: "broody",         icon: NotebookPen,   label: "Broody",         color: palette.maple || palette.yolkSoft },
       { action: "death",          icon: Skull,         label: "Report Death",   color: palette.accent },
@@ -6761,7 +6794,16 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
             icon={t.icon}
             label={t.label}
             color={t.color}
-            onClick={() => setModal({ type: "log", action: t.action })}
+            onClick={() => {
+              // Use Eggs doubles as the discovery point for inventory
+              // tracking: first tap (tracking off) opens setup, after
+              // that it opens the normal used_eggs log.
+              if (t.action === "used_eggs" && !(hobby.eggInventory && hobby.eggInventory.enabled)) {
+                setModal({ type: "eggInventorySetup", hobbyId: hobby.id });
+              } else {
+                setModal({ type: "log", action: t.action });
+              }
+            }}
           />
         ))}
         {/* Flow controls (Hatch Eggs, Remove, Add Flock) are not hideable —
@@ -8983,7 +9025,253 @@ function HarvestBreakdownSection({ harvests }) {
   );
 }
 
-function EggLayersSummary({ hobby, entries, update, setModal }) {
+// ---- Feed tracker (feed supply estimator) ----
+// Opt-in per animal hobby: hobby.feedTracker = { enabled, onHandLbs, startTs,
+// startDate, cupsPerLb, warnDays, promptDismissed, lastEventKey }.
+//
+// remaining = onHandLbs (purchases accumulate into it) − feed consumed since
+// startTs (entry.created-anchored, same convention as the egg inventory).
+// Burn rate = lbs fed over the last 21 days ÷ days spanned; cups entries
+// convert via cupsPerLb (default 4 cups/lb ≈ ¼ lb per cup). Needs at least
+// 3 amount-bearing feed logs before it starts estimating, so brand-new
+// users see a "still learning" state instead of a garbage date.
+const FEED_BURN_WINDOW_DAYS = 21;
+const feedEntryLbs = (e, cupsPerLb) => {
+  if (!e || e.action !== "fed") return 0;
+  if (e.feedUnit === "cups") {
+    const cups = Number(e.feedAmount) || 0;
+    return cups / (cupsPerLb > 0 ? cupsPerLb : 4);
+  }
+  return Number(e.lbs ?? e.feedAmount) || 0;
+};
+function computeFeedStatus(hobby, entries) {
+  const ft = hobby && hobby.feedTracker;
+  if (!ft || !ft.enabled) return null;
+  const cupsPerLb = Number(ft.cupsPerLb) > 0 ? Number(ft.cupsPerLb) : 4;
+  const warnDays = Number(ft.warnDays) > 0 ? Number(ft.warnDays) : 5;
+  const since = Number(ft.startTs) || 0;
+  const today = todayStr();
+  const toLocalDate = (s) => {
+    const p = String(s || "").split("-").map(Number);
+    return new Date(p[0], (p[1] || 1) - 1, p[2] || 1);
+  };
+  const todayDate = toLocalDate(today);
+  const windowStart = new Date(todayDate.getTime() - (FEED_BURN_WINDOW_DAYS - 1) * 86400000);
+
+  let consumedLbs = 0;   // since the last count — drains the on-hand pile
+  let windowLbs = 0;     // burn-rate window
+  let windowCount = 0;
+  let earliestWindowDate = null;
+  (entries || []).forEach((e) => {
+    if (!e || e.action !== "fed") return;
+    const lbs = feedEntryLbs(e, cupsPerLb);
+    if (lbs <= 0) return;
+    if ((Number(e.created) || 0) >= since) consumedLbs += lbs;
+    const d = e.date ? toLocalDate(e.date) : null;
+    if (d && d >= windowStart && d <= todayDate) {
+      windowLbs += lbs;
+      windowCount += 1;
+      if (!earliestWindowDate || d < earliestWindowDate) earliestWindowDate = d;
+    }
+  });
+
+  const remainingLbs = (Number(ft.onHandLbs) || 0) - consumedLbs;
+  if (windowCount < 3 || windowLbs <= 0) {
+    return { state: "learning", remainingLbs, dailyBurnLbs: 0, daysLeft: null, runOutDate: null, warnDays, cupsPerLb, windowCount };
+  }
+  const spanDays = Math.max(1, Math.min(FEED_BURN_WINDOW_DAYS, Math.round((todayDate - earliestWindowDate) / 86400000) + 1));
+  const dailyBurnLbs = windowLbs / spanDays;
+  const daysLeft = remainingLbs > 0 ? remainingLbs / dailyBurnLbs : 0;
+  const runOut = new Date(todayDate.getTime() + Math.floor(daysLeft) * 86400000);
+  const pad = (n) => String(n).padStart(2, "0");
+  const runOutDate = `${runOut.getFullYear()}-${pad(runOut.getMonth() + 1)}-${pad(runOut.getDate())}`;
+  const state = remainingLbs <= 0 ? "out" : (daysLeft <= warnDays ? "low" : "ok");
+  return { state, remainingLbs, dailyBurnLbs, daysLeft, runOutDate, warnDays, cupsPerLb, windowCount };
+}
+
+// Feed supply card. Mounted on every animal hobby page (inline chicken pages
+// via HomePage, external pages via the page shell) so goats/cows/dogs/etc.
+// get it without touching their own files. When tracking is off it renders
+// a slim one-tap setup pill, dismissible per hobby.
+// Low-feed "notification": when the estimate crosses the warn threshold we
+// drop a calendar event dated today — which rides the existing weekly chore
+// email, so users hear about it even without opening the app. One event per
+// run-out cycle via lastEventKey; buying feed changes the run-out date,
+// which re-arms the trigger.
+function FeedTrackerCard({ hobby, data, update, setModal }) {
+  const entries = (data.entries && data.entries[hobby && hobby.id]) || [];
+  const status = hobby ? computeFeedStatus(hobby, entries) : null;
+
+  const eventKey = status && status.runOutDate ? `${hobby.id}:${status.runOutDate}` : null;
+  const shouldNudge = !!(status && (status.state === "low" || status.state === "out") && eventKey && (hobby.feedTracker || {}).lastEventKey !== eventKey);
+  useEffect(() => {
+    if (!shouldNudge) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h || !h.feedTracker) return d;
+      if (h.feedTracker.lastEventKey === eventKey) return d; // double-fire guard
+      h.feedTracker = { ...h.feedTracker, lastEventKey: eventKey };
+      if (!Array.isArray(d.calendarEvents)) d.calendarEvents = [];
+      d.calendarEvents.push({
+        id: newId(),
+        date: todayStr(),
+        title: `🌾 Feed running low — ${h.name || h.type || "livestock"}`,
+        type: "feed_low",
+        notes: status.state === "out"
+          ? "Feed tracker shows you're out. Log a feed purchase when you restock."
+          : `About ${Math.max(0, Math.round(status.daysLeft))} day${Math.round(status.daysLeft) === 1 ? "" : "s"} of feed left (~${status.remainingLbs.toFixed(0)} lbs). Estimated empty ${status.runOutDate}.`,
+      });
+      return d;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldNudge, eventKey]);
+
+  if (!hobby) return null;
+  const ft = hobby.feedTracker;
+
+  if (!ft || !ft.enabled) {
+    if (ft && ft.promptDismissed) return null;
+    return (
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+        <button
+          onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })}
+          style={{ flex: 1, padding: "8px 12px", background: palette.bgAlt, border: `1.5px dashed ${palette.line}`, borderRadius: 10, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: palette.inkSoft, textAlign: "left" }}
+        >
+          🌾 Track feed supply — get a heads-up before the bin runs empty
+        </button>
+        <button
+          aria-label="Dismiss feed tracking suggestion"
+          onClick={() => update((d) => {
+            const h = d.hobbies.find((x) => x.id === hobby.id);
+            if (h) h.feedTracker = { ...(h.feedTracker || {}), enabled: false, promptDismissed: true };
+            return d;
+          })}
+          style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4, fontSize: 14, lineHeight: 1 }}
+        >
+          ✕
+        </button>
+      </div>
+    );
+  }
+
+  const stateColor = status.state === "ok" ? palette.leaf : (status.state === "learning" ? palette.inkSoft : palette.accent);
+  let headline, sub;
+  if (status.state === "learning") {
+    headline = `${Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand`;
+    sub = `Log ${Math.max(0, 3 - status.windowCount)} more feeding${3 - status.windowCount === 1 ? "" : "s"} with amounts and I'll estimate your run-out date`;
+  } else if (status.state === "out") {
+    headline = "Out of feed";
+    sub = "Log a purchase when you restock";
+  } else {
+    const days = Math.max(0, Math.round(status.daysLeft));
+    headline = `~${days} day${days === 1 ? "" : "s"} of feed left`;
+    sub = `${Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand · ~${status.dailyBurnLbs.toFixed(1)} lbs/day · empty ~${status.runOutDate}`;
+  }
+  return (
+    <div style={{
+      background: palette.card, border: `1.5px solid ${status.state === "low" || status.state === "out" ? palette.accent : palette.line}`,
+      borderRadius: 12, padding: "12px 14px", display: "flex", alignItems: "center", gap: 12, marginBottom: 10,
+    }}>
+      <div style={{ fontSize: 24, lineHeight: 1 }}>🌾</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: stateColor }}>{headline}</div>
+        <div style={{ fontSize: 11, color: palette.inkSoft }}>{sub}</div>
+      </div>
+      <Btn variant="accent" onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })} style={{ padding: "8px 12px", fontSize: 13 }}>
+        + Feed
+      </Btn>
+    </div>
+  );
+}
+
+// ---- Egg inventory (eggs on hand) ----
+// Opt-in per egg-layer hobby: hobby.eggInventory = { enabled, startCount,
+// startTs, startDate }. On-hand = startCount + everything laid MINUS
+// everything sold/used SINCE the moment the user last counted (startTs,
+// compared against entry.created). Using created-time rather than entry
+// date means "I just counted 40 in the fridge" is the ground truth and any
+// entry logged after that moment — even a backdated one — adjusts it.
+const USED_EGGS_TYPES = [
+  { value: "ate",     label: "We ate them",       statLabel: "Eaten" },
+  { value: "donated", label: "Donated / gave away", statLabel: "Donated" },
+  { value: "tossed",  label: "Threw them out",    statLabel: "Tossed" },
+  { value: "hatched", label: "Set to hatch",      statLabel: "Set to hatch" },
+  { value: "other",   label: "Other",             statLabel: "Other" },
+];
+const usedEggsTypeLabel = (v) => {
+  const t = USED_EGGS_TYPES.find((x) => x.value === v);
+  return t ? t.label : "Used";
+};
+function computeEggsOnHand(hobby, entries, sales) {
+  const inv = hobby && hobby.eggInventory;
+  if (!inv || !inv.enabled) return null;
+  const since = Number(inv.startTs) || 0;
+  let n = Number(inv.startCount) || 0;
+  const entryIds = new Set();
+  (entries || []).forEach((e) => {
+    if (!e) return;
+    if (e.action === "sold_eggs") entryIds.add(e.id);
+    if ((Number(e.created) || 0) < since) return;
+    const c = Number(e.count) || 0;
+    if (e.action === "eggs" || e.action === "eggs_laid") n += c;
+    else if (e.action === "sold_eggs" || e.action === "used_eggs") n -= c;
+  });
+  // Egg sales logged directly on the Sales tab also leave the basket.
+  // Skip anything that mirrors a sold_eggs entry (the entries→sales
+  // migration copies those over with the same id, plus a flag) so a
+  // tile-logged sale is never subtracted twice.
+  (sales || []).forEach((s) => {
+    if (!s || s.hobbyType !== "eggs") return;
+    if (s.migratedFromEntries || entryIds.has(s.id)) return;
+    if ((Number(s.created) || 0) < since) return;
+    const qty = Number(s.qty) || 0;
+    const perUnit = { eggs: 1, egg: 1, dozen: 12, dozens: 12 };
+    n -= qty * (perUnit[String(s.unit || "eggs").toLowerCase()] || 1);
+  });
+  return n;
+}
+
+// Card on the egg-layer home page showing live eggs-on-hand once the user
+// turns inventory tracking on. Sits under the flock baskets. Tapping
+// "Use eggs" opens the used_eggs log; the gear opens setup (recount /
+// turn off). Hidden entirely while tracking is off — the Use Eggs quick-log
+// tile is the discovery point (it opens setup when tracking is off).
+function EggInventoryCard({ hobby, entries, sales, setModal }) {
+  const inv = hobby.eggInventory;
+  if (!inv || !inv.enabled) return null;
+  const onHand = computeEggsOnHand(hobby, entries, sales);
+  const negative = onHand < 0;
+  return (
+    <div style={{
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      padding: "12px 14px", display: "flex", alignItems: "center", gap: 12,
+    }}>
+      <div style={{ fontSize: 26, lineHeight: 1 }}>🧺</div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: negative ? palette.accent : palette.ink }}>
+          {onHand} egg{Math.abs(onHand) === 1 ? "" : "s"} on hand
+        </div>
+        <div style={{ fontSize: 12, color: palette.inkSoft }}>
+          {negative
+            ? "Below zero — tap ⚙ to recount your eggs"
+            : `since your count on ${inv.startDate || "—"}`}
+        </div>
+      </div>
+      <Btn variant="accent" onClick={() => setModal({ type: "log", action: "used_eggs" })} style={{ padding: "8px 12px", fontSize: 13 }}>
+        Use eggs
+      </Btn>
+      <button
+        onClick={() => setModal({ type: "eggInventorySetup", hobbyId: hobby.id })}
+        aria-label="Egg inventory settings"
+        style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: palette.inkSoft, display: "flex" }}
+      >
+        <Settings size={18} />
+      </button>
+    </div>
+  );
+}
+
+function EggLayersSummary({ hobby, entries, sales, update, setModal }) {
   const today = todayStr();
   const flocks = hobby.flocks || [];
   const totalBirds = flocks.reduce((s, f) => s + (f.birdCount || 0), 0);
@@ -9016,6 +9304,9 @@ function EggLayersSummary({ hobby, entries, update, setModal }) {
       {flocks.map(flock => (
         <FlockBasket key={flock.id} flock={flock} hobby={hobby} entries={entries} update={update} setModal={setModal} birdEmoji={birdEmoji} />
       ))}
+
+      {/* Eggs on hand — only renders when inventory tracking is enabled */}
+      <EggInventoryCard hobby={hobby} entries={entries} sales={sales} setModal={setModal} />
 
       {/* + Add Flock button */}
       <button
@@ -9441,13 +9732,13 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     fed: "Fed", free_range: "Free range", eggs: "Eggs collected", eggs_laid: "Eggs collected",
     bedding: "Bedding",
     death: "Death reported", note: "Note", butcher: "Butchered",
-    sold_eggs: "Eggs sold", infrastructure: "Infrastructure",
+    sold_eggs: "Eggs sold", used_eggs: "Eggs used", infrastructure: "Infrastructure",
     move_tractor: "Moved chicken tractor",
   };
   const icons = {
     watered: Droplet, fertilized: Leaf, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
     fed: Sun, free_range: Bird, eggs: Egg, eggs_laid: Egg, bedding: Archive, death: Skull,
-    butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, infrastructure: Hammer,
+    butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, used_eggs: Egg, infrastructure: Hammer,
     move_tractor: Truck,
   };
   const Icon = icons[entry.action] || Edit3;
@@ -9496,14 +9787,16 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       let revenue = 0;
       if (totalEggs > 0 && pricePerDozen > 0) {
         revenue = (totalEggs / 12) * pricePerDozen;
-      } else if (Number(entry.unitQty) > 0 && Number(entry.pricePerUnit) > 0) {
+      } else if (Number(entry.unitQty) > 0) {
+        // Price intentionally not required — $0 sales (donated / given away)
+        // must still show their egg count instead of "0 eggs".
         const unitToCount = {
           single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
           custom: Number(entry.customEggsPerUnit) || 0,
         };
         const eggsPerUnit = unitToCount[entry.unit] || 12;
         totalEggs = Number(entry.unitQty) * eggsPerUnit;
-        revenue = Number(entry.unitQty) * Number(entry.pricePerUnit);
+        revenue = Number(entry.unitQty) * (Number(entry.pricePerUnit) || 0);
         if (totalEggs > 0) pricePerDozen = revenue / (totalEggs / 12);
       } else if (Number(entry.pricePerUnit) > 0 && totalEggs > 0) {
         pricePerDozen = Number(entry.pricePerUnit);
@@ -9512,7 +9805,15 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
         revenue = Number(entry.totalRevenue);
         if (totalEggs > 0) pricePerDozen = revenue / (totalEggs / 12);
       }
-      detail = `${totalEggs || 0} eggs · ${fmtMoney(revenue)} @ ${fmtMoney(pricePerDozen)}/dz`;
+      detail = revenue > 0
+        ? `${totalEggs || 0} eggs · ${fmtMoney(revenue)} @ ${fmtMoney(pricePerDozen)}/dz`
+        : `${totalEggs || 0} eggs · no charge (donated / given away)`;
+      break;
+    }
+    case "used_eggs": {
+      const parts = [`${entry.count || 0} eggs`, usedEggsTypeLabel(entry.useType)];
+      if (entry.note) parts.push(entry.note.length > 30 ? entry.note.slice(0, 30) + "…" : entry.note);
+      detail = parts.join(" · ");
       break;
     }
     case "infrastructure": detail = `${entry.item || "item"} · ${fmtMoney(entry.cost)}`; break;
@@ -10500,6 +10801,57 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
         )}
       </div>
 
+      {/* 🧺 Egg use — where the eggs went. Renders once the user has logged
+          any Use Eggs entries or any egg sales, or has inventory tracking
+          on. Eaten/donated/tossed/etc. come from used_eggs entries in the
+          selected date range; Sold comes from sold_eggs counts (including
+          $0 donated sales, which bucket under Given free). On hand is a live
+          number so it deliberately ignores the date-range filter and reads
+          from allEntries. */}
+      {(() => {
+        const used = entries.filter((e) => e.action === "used_eggs");
+        const soldEntries = entries.filter((e) => e.action === "sold_eggs");
+        const soldPaid = soldEntries.filter((e) => Number(e.pricePerDozen) > 0);
+        const soldFree = soldEntries.filter((e) => !(Number(e.pricePerDozen) > 0));
+        const sumCount = (arr) => arr.reduce((s, e) => s + (Number(e.count) || 0), 0);
+        // Sales-tab egg sales (data.sales) count too — skip mirrors of
+        // sold_eggs entries (migration flag + id match against the full
+        // entry list) so tile-logged sales aren't counted twice.
+        const soldEntryIds = new Set((allEntries || entries).filter((e) => e.action === "sold_eggs").map((e) => e.id));
+        const tabSalesAll = (data && Array.isArray(data.sales))
+          ? data.sales.filter((s) => s && s.hobbyType === "eggs" && !s.migratedFromEntries && !soldEntryIds.has(s.id))
+          : [];
+        const tabSales = filterByDateRange(tabSalesAll, dateRange, (s) => s.date);
+        const tabEggCount = (s) => (Number(s.qty) || 0) * ({ eggs: 1, egg: 1, dozen: 12, dozens: 12 }[String(s.unit || "eggs").toLowerCase()] || 1);
+        const tabPaidCount = tabSales.filter((s) => Number(s.totalRevenue) > 0).reduce((n, s) => n + tabEggCount(s), 0);
+        const tabFreeCount = tabSales.filter((s) => !(Number(s.totalRevenue) > 0)).reduce((n, s) => n + tabEggCount(s), 0);
+        const invEnabled = !!(hobby.eggInventory && hobby.eggInventory.enabled);
+        if (used.length === 0 && soldEntries.length === 0 && tabSales.length === 0 && !invEnabled) return null;
+        const byType = {};
+        used.forEach((e) => {
+          const t = e.useType || "other";
+          byType[t] = (byType[t] || 0) + (Number(e.count) || 0);
+        });
+        const soldCount = sumCount(soldPaid) + tabPaidCount;
+        const soldFreeCount = sumCount(soldFree) + tabFreeCount;
+        const donatedTotal = (byType.donated || 0) + soldFreeCount;
+        const onHand = invEnabled ? computeEggsOnHand(hobby, allEntries || entries, (data && data.sales) || []) : null;
+        return (
+          <>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, margin: "4px 0 10px" }}>🧺 Egg use</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
+              {invEnabled && <StatCard label="On hand now" value={onHand} sub={`counted ${hobby.eggInventory.startDate}`} accent={palette.yolk} />}
+              {(byType.ate || 0) > 0 && <StatCard label="Eaten" value={byType.ate} accent={palette.leaf} />}
+              {soldCount > 0 && <StatCard label="Sold" value={soldCount} accent={palette.accent} />}
+              {donatedTotal > 0 && <StatCard label="Donated / given away" value={donatedTotal} sub={soldFreeCount > 0 ? "incl. $0 sales" : undefined} accent={palette.feather} />}
+              {(byType.tossed || 0) > 0 && <StatCard label="Tossed" value={byType.tossed} accent={palette.ink} />}
+              {(byType.hatched || 0) > 0 && <StatCard label="Set to hatch" value={byType.hatched} accent={palette.yolk} />}
+              {(byType.other || 0) > 0 && <StatCard label="Other" value={byType.other} accent={palette.inkSoft} />}
+            </div>
+          </>
+        );
+      })()}
+
       <ChartCard title="📊 Cost breakdown">
         {infraTotal > 0 && (
           <button
@@ -11465,6 +11817,16 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const incHobby = data.hobbies.find(h => h.id === "incubator");
     const hobbyWithFlag = { ...targetHobby, _incubatorHidden: !!(incHobby && incHobby.hidden) };
     return <HatchEggsModal hobby={hobbyWithFlag} update={update} setModal={setModal} onClose={close} />;
+  }
+  if (modal.type === "feedTracker") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <FeedTrackerModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} update={update} onClose={close} />;
+  }
+  if (modal.type === "eggInventorySetup") {
+    const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
+    if (!targetHobby) { close(); return null; }
+    return <EggInventorySetupModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} sales={data.sales || []} update={update} onClose={close} />;
   }
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -13484,6 +13846,7 @@ const BUILTIN_QUICK_LOGS_BY_HOBBY = {
     { action: "move_tractor",   label: "Move Tractor" },
     { action: "eggs",           label: "Eggs Laid" },
     { action: "sold_eggs",      label: "Sold Eggs" },
+    { action: "used_eggs",      label: "Use Eggs" },
     { action: "bedding",        label: "Bedding" },
     { action: "broody",         label: "Broody" },
     { action: "death",          label: "Report Death" },
@@ -16986,6 +17349,235 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
 // the user can actually navigate to the brooder they just created — a brooder
 // they can't see would be pointless.
 // ============================================================================
+// ---- Feed tracker modal ----
+// One modal, three modes: add feed (default when enabled), recount, and
+// settings. When tracking is off it's the setup flow. Purchases with a
+// cost also write a Feed expense so cost/egg, FIFO, and the Sales tab all
+// see the money without double entry.
+function FeedTrackerModal({ hobby, entries, update, onClose }) {
+  const ft = hobby.feedTracker;
+  const enabled = !!(ft && ft.enabled);
+  const [mode, setMode] = useState(enabled ? "add" : "setup");
+  const [lbs, setLbs] = useState("");
+  const [cost, setCost] = useState("");
+  const [cupsPerLb, setCupsPerLb] = useState(String((ft && ft.cupsPerLb) || 4));
+  const [warnDays, setWarnDays] = useState(String((ft && ft.warnDays) || 5));
+  const status = enabled ? computeFeedStatus(hobby, entries) : null;
+  const lbsNum = parseFloat(lbs);
+  const lbsOk = !isNaN(lbsNum) && lbsNum >= 0;
+
+  const patchTracker = (fn) => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      h.feedTracker = fn({ ...(h.feedTracker || {}) }, d);
+      return d;
+    });
+    onClose();
+  };
+
+  const startTracking = () => {
+    if (!lbsOk) return;
+    patchTracker((t) => ({
+      ...t, enabled: true, promptDismissed: false,
+      onHandLbs: lbsNum, startTs: Date.now(), startDate: todayStr(),
+      cupsPerLb: Number(t.cupsPerLb) > 0 ? t.cupsPerLb : 4,
+      warnDays: Number(t.warnDays) > 0 ? t.warnDays : 5,
+      lastEventKey: null,
+    }));
+  };
+
+  const addFeed = () => {
+    if (!lbsOk || lbsNum <= 0) return;
+    const costNum = parseFloat(cost);
+    patchTracker((t, d) => {
+      if (!isNaN(costNum) && costNum > 0) {
+        if (!Array.isArray(d.expenses)) d.expenses = [];
+        d.expenses.push({
+          id: "ex_" + Math.random().toString(36).slice(2, 10),
+          date: todayStr(),
+          amount: costNum,
+          category: "Feed",
+          hobbyId: hobby.id,
+          note: `Feed purchase: ${lbsNum} lbs`,
+          created: Date.now(),
+          _feedTracker: true, // traceability tag
+        });
+      }
+      // Re-arm the low-feed nudge — new feed means a new run-out cycle.
+      return { ...t, onHandLbs: (Number(t.onHandLbs) || 0) + lbsNum, lastEventKey: null };
+    });
+  };
+
+  const recount = () => {
+    if (!lbsOk) return;
+    patchTracker((t) => ({ ...t, onHandLbs: lbsNum, startTs: Date.now(), startDate: todayStr(), lastEventKey: null }));
+  };
+
+  const saveSettings = () => {
+    const c = parseFloat(cupsPerLb);
+    const w = parseInt(warnDays, 10);
+    patchTracker((t) => ({
+      ...t,
+      cupsPerLb: !isNaN(c) && c > 0 ? c : 4,
+      warnDays: !isNaN(w) && w > 0 ? w : 5,
+      lastEventKey: null, // threshold change can re-trigger legitimately
+    }));
+  };
+
+  const turnOff = () => {
+    patchTracker((t) => ({ ...t, enabled: false, promptDismissed: true }));
+  };
+
+  if (!enabled) {
+    return (
+      <Modal open onClose={onClose} title="🌾 Track feed supply">
+        <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, marginBottom: 14 }}>
+          Tell Henalytics how much feed you have, and your regular feed logs do the rest — it learns how fast you go through it, shows days remaining, estimates the empty date, and drops a heads-up on your calendar (and weekly chore email) about {(Number(warnDays) || 5)} days before you run out. A standard bag is 50 lbs.
+        </div>
+        <Field label="Feed on hand right now (lbs)">
+          <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 75" autoFocus />
+        </Field>
+        <Btn variant="accent" onClick={startTracking} disabled={!lbsOk} style={{ width: "100%" }}>Start tracking</Btn>
+      </Modal>
+    );
+  }
+
+  const tabBtn = (m, label) => (
+    <button
+      onClick={() => setMode(m)}
+      style={{ flex: 1, padding: "8px 4px", borderRadius: 8, border: `1.5px solid ${mode === m ? palette.ink : palette.line}`, background: mode === m ? palette.yolkSoft : palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, color: palette.ink }}
+    >
+      {label}
+    </button>
+  );
+
+  return (
+    <Modal open onClose={onClose} title="🌾 Feed supply">
+      {status && (
+        <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
+          <strong style={{ color: palette.ink }}>{Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand</strong>
+          {status.state !== "learning" && <> · ~{status.dailyBurnLbs.toFixed(1)} lbs/day · empty ~{status.runOutDate}</>}
+          {status.state === "learning" && <> · still learning your burn rate</>}
+        </div>
+      )}
+      <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+        {tabBtn("add", "+ Add feed")}
+        {tabBtn("recount", "Recount")}
+        {tabBtn("settings", "Settings")}
+      </div>
+
+      {mode === "add" && (
+        <>
+          <Field label="Feed added (lbs)">
+            <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 50" autoFocus />
+          </Field>
+          <Field label="Cost (optional — logs a Feed expense)">
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 18.99" />
+          </Field>
+          <Btn variant="accent" onClick={addFeed} disabled={!lbsOk || lbsNum <= 0} style={{ width: "100%" }}>Add to supply</Btn>
+        </>
+      )}
+
+      {mode === "recount" && (
+        <>
+          <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+            If the estimate has drifted from what's actually in the bin, set the real number and the tracker re-anchors from now.
+          </div>
+          <Field label="Feed on hand right now (lbs)">
+            <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 60" />
+          </Field>
+          <Btn variant="accent" onClick={recount} disabled={!lbsOk} style={{ width: "100%" }}>Save recount</Btn>
+        </>
+      )}
+
+      {mode === "settings" && (
+        <>
+          <Field label="Cups per lb (for feedings logged in cups)">
+            <input type="number" inputMode="decimal" min={0.5} step="0.5" style={inputStyle} value={cupsPerLb} onChange={(e) => setCupsPerLb(e.target.value)} />
+          </Field>
+          <Field label="Warn me this many days before empty">
+            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={warnDays} onChange={(e) => setWarnDays(e.target.value)} />
+          </Field>
+          <div style={{ display: "flex", gap: 8 }}>
+            <Btn variant="accent" onClick={saveSettings} style={{ flex: 1 }}>Save settings</Btn>
+            <Btn variant="ghost" onClick={turnOff}>Turn off</Btn>
+          </div>
+        </>
+      )}
+    </Modal>
+  );
+}
+
+// ---- Egg inventory setup modal ----
+// Turn eggs-on-hand tracking on/off and recount. The starting count is the
+// ground truth: on-hand = startCount ± everything logged after the moment
+// you saved it (see computeEggsOnHand). Recounting just re-anchors.
+function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
+  const inv = hobby.eggInventory;
+  const enabled = !!(inv && inv.enabled);
+  const [count, setCount] = useState("");
+  const onHand = enabled ? computeEggsOnHand(hobby, entries, sales) : null;
+
+  const saveCount = () => {
+    const n = parseInt(count, 10);
+    if (isNaN(n) || n < 0) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      h.eggInventory = {
+        enabled: true,
+        startCount: n,
+        startTs: Date.now(),
+        startDate: todayStr(),
+      };
+      return d;
+    });
+    onClose();
+  };
+
+  const turnOff = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h && h.eggInventory) h.eggInventory = { ...h.eggInventory, enabled: false };
+      return d;
+    });
+    onClose();
+  };
+
+  return (
+    <Modal open onClose={onClose} title="🧺 Eggs on hand">
+      <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, marginBottom: 14 }}>
+        {enabled ? (
+          <>You currently have <strong>{onHand}</strong> egg{Math.abs(onHand) === 1 ? "" : "s"} on hand (counted {inv.startDate}). Eggs you collect add to it; eggs you sell or log with <strong>Use Eggs</strong> come off. If the number has drifted from reality, recount below.</>
+        ) : (
+          <>Keep a live count of how many eggs you actually have in the fridge or on the counter. Eggs you collect add to it; eggs you sell or log with <strong>Use Eggs</strong> (ate, donated, tossed…) come off. Start by counting what you have right now.</>
+        )}
+      </div>
+      <Field label={enabled ? "Recount — eggs on hand right now" : "How many eggs do you have on hand right now?"}>
+        <input
+          type="number" inputMode="numeric" min={0} style={inputStyle}
+          value={count} onChange={(e) => setCount(e.target.value)}
+          placeholder="e.g. 24" autoFocus
+        />
+      </Field>
+      <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+        <Btn variant="accent" onClick={saveCount} disabled={count === "" || isNaN(parseInt(count, 10)) || parseInt(count, 10) < 0} style={{ flex: 1 }}>
+          {enabled ? "Save recount" : "Start tracking"}
+        </Btn>
+        {enabled && (
+          <Btn variant="ghost" onClick={turnOff}>Turn off</Btn>
+        )}
+      </div>
+      {enabled && (
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.5 }}>
+          Turning this off just hides the on-hand counter — your Use Eggs logs and stats stay put.
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 function HatchEggsModal({ hobby, update, setModal, onClose }) {
   // Pick the source flock — auto when there's only one, picker when several.
   // Bird type comes from the flock so the brooder batch is typed correctly.
@@ -18151,19 +18743,32 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
     // For sold_eggs with new unit-based fields, derive the canonical `count`
     // (total eggs) and `pricePerDozen` so existing analytics keep working.
     // Old entries (without unit/unitQty) still have count and pricePerDozen
-    // set directly — the derivation only runs when the new fields are present.
-    if (action === "sold_eggs" && cleanFields.unit && cleanFields.unitQty) {
+    // set directly — the derivation only runs when unitQty was entered.
+    // Two deliberate loosenings vs the original guard:
+    //   1. `unit` is defaulted to "dozen" — the select DISPLAYS "Dozen" as
+    //      its default but never wrote fields.unit unless the user touched
+    //      it, so untouched-unit entries skipped derivation entirely.
+    //   2. price is NOT required — $0 sales (donated / given away eggs)
+    //      are legitimate and must still get a `count`.
+    if (action === "sold_eggs" && Number(cleanFields.unitQty) > 0) {
+      const unit = cleanFields.unit || "dozen";
+      cleanFields.unit = unit;
       const unitToCount = {
         single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
         custom: cleanFields.customEggsPerUnit || 0,
       };
-      const eggsPerUnit = unitToCount[cleanFields.unit] || 12;
+      const eggsPerUnit = unitToCount[unit] || 12;
       const totalEggs = (cleanFields.unitQty || 0) * eggsPerUnit;
       const totalRevenue = (cleanFields.unitQty || 0) * (cleanFields.pricePerUnit || 0);
       cleanFields.count = totalEggs;
       // Back-compute price per dozen for older analytics (totalRevenue / dozens)
       cleanFields.pricePerDozen = totalEggs > 0 ? (totalRevenue / (totalEggs / 12)) : 0;
     }
+
+    // used_eggs: the disposition select DISPLAYS "We ate them" by default but
+    // only writes fields.useType when touched — same trap as sold_eggs' unit
+    // select above. Persist the default so stats bucket correctly.
+    if (action === "used_eggs" && !cleanFields.useType) cleanFields.useType = "ate";
 
     // We need an entry id up front so we can attach photos to it.
     // For edits, we keep the existing id so we don't create a duplicate.
@@ -18536,7 +19141,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
     issue: "issue", fed: "feed", free_range: "free-range",
     eggs: "eggs collected", bedding: "bedding change", death: "death",
     note: "a note", butcher: "butcher",
-    sold_eggs: "eggs sold", infrastructure: "infrastructure",
+    sold_eggs: "eggs sold", used_eggs: "eggs used", infrastructure: "infrastructure",
     eggs_laid: "eggs laid", broody: "broody hen",
   };
   // For custom logs, resolve the label from the hobby's customLogs list.
@@ -19091,17 +19696,66 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             const price = Number(fields.pricePerUnit) || 0;
             const totalEggs = units * eggsPerUnit;
             const totalRevenue = units * price;
-            if (units > 0 && price > 0) {
+            if (units > 0) {
               return (
                 <div style={{
                   padding: 10, background: palette.yolkSoft, borderRadius: 6,
                   fontSize: 13, color: palette.ink, marginBottom: 14, textAlign: "center",
                 }}>
                   <strong>{totalEggs} eggs</strong> · Revenue: <strong>{fmtMoney(totalRevenue)}</strong>
+                  {price === 0 && (
+                    <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
+                      $0 sale — logged as donated / given away. Egg count still counts toward your stats.
+                    </div>
+                  )}
                 </div>
               );
             }
             return null;
+          })()}
+        </>
+      )}
+
+      {action === "used_eggs" && (
+        <>
+          {/* Egg-use disposition log. Sold eggs stay on the Sold Eggs tile
+              (they carry price + customer and flow into data.sales); this
+              covers everything else that takes eggs out of the fridge. */}
+          <Field label="What happened to them?">
+            <select style={inputStyle} value={fields.useType || "ate"} onChange={(e) => set("useType", e.target.value)}>
+              {USED_EGGS_TYPES.map((t) => (
+                <option key={t.value} value={t.value}>{t.label}</option>
+              ))}
+            </select>
+          </Field>
+          <Field label="How many eggs?">
+            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 6" />
+          </Field>
+          <Field label="Notes (optional)">
+            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="breakfast, gave to neighbor, cracked..." />
+          </Field>
+          {(() => {
+            // Live "left after this" preview — only when inventory tracking
+            // is on, so folks who just want disposition stats aren't shown
+            // an on-hand number they never set up.
+            const inv = hobby && hobby.eggInventory;
+            if (!inv || !inv.enabled) return null;
+            const onHand = computeEggsOnHand(hobby, data.entries[hobby.id] || [], data.sales || []);
+            const using = Number(fields.count) || 0;
+            // On edit, the existing entry is already subtracted from onHand —
+            // add its original count back so the preview doesn't double-count.
+            const editBack = isEdit && existingEntry && existingEntry.action === "used_eggs" ? (Number(existingEntry.count) || 0) : 0;
+            const left = onHand + editBack - using;
+            if (using <= 0) return (
+              <div style={{ padding: 8, background: palette.bgAlt, borderRadius: 6, fontSize: 12, color: palette.inkSoft, marginBottom: 14, textAlign: "center" }}>
+                🧺 {onHand} egg{Math.abs(onHand) === 1 ? "" : "s"} on hand
+              </div>
+            );
+            return (
+              <div style={{ padding: 8, background: palette.yolkSoft, borderRadius: 6, fontSize: 12, color: left < 0 ? palette.accent : palette.ink, marginBottom: 14, textAlign: "center" }}>
+                🧺 {left} egg{Math.abs(left) === 1 ? "" : "s"} left after this{left < 0 ? " — more than you have on hand" : ""}
+              </div>
+            );
           })()}
         </>
       )}
