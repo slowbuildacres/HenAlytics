@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Mail, Lock, X, UserCircle, AlertCircle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { apiUrl } from './apiBase.js';
@@ -25,6 +25,40 @@ const inputStyle = {
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
 };
 
+// Supabase throttles auth emails two ways: a project-wide hourly cap, and a
+// per-address cooldown (default 60s). Both come back as HTTP 429 with a raw
+// message like "email rate limit exceeded" or "For security purposes, you can
+// only request this after 47 seconds" — neither of which means anything to a
+// locked-out user. Translate them, and pull the wait time out when it's there
+// so we can count it down instead of letting people hammer the button.
+function readAuthError(err, context) {
+  const status = err?.status ?? err?.statusCode;
+  const code = err?.code || "";
+  const msg = err?.message || "";
+
+  const isRateLimit =
+    status === 429 ||
+    code === "over_email_send_rate_limit" ||
+    code === "over_request_rate_limit" ||
+    /rate limit|limit exceeded|only request this (after|once)/i.test(msg);
+
+  if (!isRateLimit) {
+    return { message: msg || "Something went wrong. Please try again.", cooldown: 0 };
+  }
+
+  const found = msg.match(/(\d+)\s*seconds?/i);
+  const seconds = found ? Math.min(parseInt(found[1], 10), 300) : 60;
+  const wait = seconds === 1 ? "1 second" : `${seconds} seconds`;
+
+  return {
+    message:
+      context === "reset"
+        ? `Too many reset requests right now — please wait ${wait} and try again. If a reset email already arrived, use that link instead.`
+        : `Too many requests right now — please wait ${wait} and try again.`,
+    cooldown: seconds,
+  };
+}
+
 export default function AuthModal({ onClose, initialMode = "signin" }) {
   const [mode, setMode] = useState(initialMode); // "signin" | "signup" | "reset" | "setNewPassword"
   const [email, setEmail] = useState("");
@@ -34,6 +68,19 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
   const [info, setInfo] = useState("");
   const [resetSent, setResetSent] = useState(false);
   const [passwordUpdated, setPasswordUpdated] = useState(false);
+  const [cooldown, setCooldown] = useState(0);
+
+  // Tick the cooldown down once a second. Deliberately NOT cleared by
+  // switchMode — the server-side limit doesn't care which tab you're on.
+  useEffect(() => {
+    if (cooldown <= 0) return;
+    const t = setTimeout(() => setCooldown((s) => Math.max(0, s - 1)), 1000);
+    return () => clearTimeout(t);
+  }, [cooldown]);
+
+  // Modes that actually cause Supabase to send an email.
+  const sendsEmail = mode === "reset" || mode === "signup";
+  const throttled = sendsEmail && cooldown > 0;
 
   const switchMode = (m) => { setMode(m); setError(""); setInfo(""); setResetSent(false); setPasswordUpdated(false); };
 
@@ -68,6 +115,10 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
     // Reset mode only needs email
     if (mode === "reset") {
       if (!email.trim()) { setError("Please enter your email address."); return; }
+      if (cooldown > 0) {
+        setError(`Please wait ${cooldown} more second${cooldown === 1 ? "" : "s"} before requesting another reset email.`);
+        return;
+      }
       setLoading(true);
       try {
         // Password reset always routes through the web (henalytics.com).
@@ -84,8 +135,11 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
         });
         if (error) throw error;
         setResetSent(true);
+        setCooldown(60); // matches Supabase's default per-address interval
       } catch (err) {
-        setError(err.message || "Something went wrong. Please try again.");
+        const parsed = readAuthError(err, "reset");
+        setError(parsed.message);
+        if (parsed.cooldown) setCooldown(parsed.cooldown);
       } finally {
         setLoading(false);
       }
@@ -119,6 +173,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           onClose();
         } else {
           setInfo("Account created! Check your email to confirm before signing in.");
+          setCooldown(60);
         }
       } else {
         const { error } = await supabase.auth.signInWithPassword({ email: email.trim(), password });
@@ -126,7 +181,9 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
         onClose();
       }
     } catch (err) {
-      setError(err.message || "Something went wrong. Please try again.");
+      const parsed = readAuthError(err, mode);
+      setError(parsed.message);
+      if (parsed.cooldown && mode === "signup") setCooldown(parsed.cooldown);
     } finally {
       setLoading(false);
     }
@@ -314,17 +371,18 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
 
               <button
                 type="submit"
-                disabled={loading}
+                disabled={loading || throttled}
                 style={{
                   width: "100%", padding: "12px 18px", borderRadius: 8,
                   background: palette.ink, color: palette.bg,
-                  border: `1.5px solid ${palette.ink}`, cursor: loading ? "wait" : "pointer",
+                  border: `1.5px solid ${palette.ink}`,
+                  cursor: loading ? "wait" : throttled ? "not-allowed" : "pointer",
                   fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
                   boxShadow: "2px 2px 0 " + palette.line,
-                  opacity: loading ? 0.7 : 1,
+                  opacity: (loading || throttled) ? 0.7 : 1,
                 }}
               >
-                {loading ? "Working..." : mode === "reset" ? "Send reset email" : mode === "signup" ? "Create account" : mode === "setNewPassword" ? "Update password" : "Sign in"}
+                {loading ? "Working..." : throttled ? `Try again in ${cooldown}s` : mode === "reset" ? "Send reset email" : mode === "signup" ? "Create account" : mode === "setNewPassword" ? "Update password" : "Sign in"}
               </button>
 
               {mode === "reset" && (
