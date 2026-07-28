@@ -18,3 +18,4 @@ apply_*.py
 patch_*.py
 *.backup_rabbits_unify
 *.backup_*
+android/.kotlin/
