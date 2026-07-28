@@ -64,12 +64,50 @@ export function clearLocalHomestead() {
   } catch (e) {}
 }
 
+// The active-homestead pointer is stored tagged with the user it was set for:
+//   JSON { id, userId }.  Legacy installs stored a bare id string.
+// Tagging is what stops account-bleed on a shared device: HIDDEN_HOMESTEADS_KEY
+// was already per-user for this exact reason, but this pointer wasn't — so when
+// a second account signed in on the same browser, it inherited the first
+// account's active homestead and (if it was also a member) got shown the wrong
+// homestead on every load. readActiveHomesteadIdFor() gates that.
 function readActiveHomesteadId() {
-  try { return localStorage.getItem(HOMESTEAD_ID_KEY) || null; } catch (e) { return null; }
+  // Untagged read: "what id is active for this session?" Safe to call AFTER a
+  // load has run (loadHomestead re-tags the pointer for the signed-in user),
+  // which is when the invite/member/save helpers below use it.
+  try {
+    const raw = localStorage.getItem(HOMESTEAD_ID_KEY);
+    if (!raw) return null;
+    if (raw[0] === '{') {
+      try { const o = JSON.parse(raw); return (o && o.id) || null; } catch (_) { return null; }
+    }
+    return raw; // legacy bare id
+  } catch (e) { return null; }
 }
 
-function writeActiveHomesteadId(id) {
-  try { localStorage.setItem(HOMESTEAD_ID_KEY, id); } catch (e) {}
+// Per-user read: return the pointer ONLY if it was written for this user.
+// A pointer tagged with a different account is ignored (the bleed guard); a
+// legacy untagged pointer is also ignored, so a stale pre-upgrade pointer from
+// another account on this device can't strand the new user on it. When this
+// returns null the caller cold-starts (ensureHomestead picks the user's owned
+// homestead) and re-tags the pointer for this user going forward.
+function readActiveHomesteadIdFor(userId) {
+  try {
+    const raw = localStorage.getItem(HOMESTEAD_ID_KEY);
+    if (!raw) return null;
+    if (raw[0] === '{') {
+      const o = JSON.parse(raw);
+      if (o && o.id && o.userId && o.userId === userId) return o.id;
+      return null;
+    }
+    return null; // legacy untagged — don't honor across the upgrade boundary
+  } catch (e) { return null; }
+}
+
+function writeActiveHomesteadId(id, userId) {
+  try {
+    localStorage.setItem(HOMESTEAD_ID_KEY, JSON.stringify({ id, userId: userId || null }));
+  } catch (e) {}
 }
 
 // ---- Hidden homesteads (per-user view preference) --------------------------
@@ -118,7 +156,7 @@ async function ensureHomestead(userId) {
 }
 
 async function _ensureHomesteadImpl(userId) {
-  const cachedId = readActiveHomesteadId();
+  const cachedId = readActiveHomesteadIdFor(userId);
 
   const { data: memberships, error: mErr } = await supabase
     .from('homestead_members')
@@ -476,7 +514,7 @@ export async function loadHomestead(user) {
       // (Safari) on first load.
       await supabase.auth.getSession();
       const { id, role } = await ensureHomestead(user.id);
-      writeActiveHomesteadId(id);
+      writeActiveHomesteadId(id, user.id);
       const { data: cloud, updatedAt } = await readCloudHomesteadMeta(id);
       const hasContent = cloud && Object.keys(cloud).length > 0;
       if (hasContent) {
@@ -633,7 +671,7 @@ export async function saveHomestead(user, data, cloudReady = true) {
       let homesteadId = readActiveHomesteadId();
       if (!homesteadId) {
         const { id } = await ensureHomestead(user.id);
-        writeActiveHomesteadId(id);
+        writeActiveHomesteadId(id, user.id);
         homesteadId = id;
       }
       const result = await safeWriteCloudHomestead(homesteadId, data);
@@ -817,7 +855,7 @@ export async function acceptInvite(user, inviteCode) {
   }
 
   const homesteadId = data;
-  writeActiveHomesteadId(homesteadId);
+  writeActiveHomesteadId(homesteadId, user.id);
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
 
   return homesteadId;
@@ -938,7 +976,7 @@ export async function setActiveHomestead(user, homesteadId) {
     throw new Error('You are not a member of that homestead.');
   }
 
-  writeActiveHomesteadId(homesteadId);
+  writeActiveHomesteadId(homesteadId, user.id);
   // Drop the local mirror — it belongs to the old homestead. The caller
   // should follow this with a loadHomestead() to repopulate from cloud.
   try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}

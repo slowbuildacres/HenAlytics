@@ -65,6 +65,7 @@ const daysSince = (iso) => {
 };
 const addDaysIso = (iso, days) => {
   const d = parseIso(iso);
+  if (!d) return ""; // no / unparseable start date — caller renders a blank
   d.setDate(d.getDate() + days);
   const m = String(d.getMonth() + 1).padStart(2, "0");
   const day = String(d.getDate()).padStart(2, "0");

@@ -10396,7 +10396,35 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
   const harvests = collectGardenHarvests(data, perennialOpts);
   const totalHarvestRaw = totalHarvestLbs(harvests);
   const totalHarvest = spouseProd(totalHarvestRaw, spouseMode);
-  const totalCostRaw = entries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const entryCostRaw = entries.reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  // Fold in expenses logged via the "💵 Add Expense" tile. Those live in
+  // data.expenses[] (hobbyId === garden), NOT on the garden log entries, so
+  // the Stats tab used to ignore them entirely — money logged that way showed
+  // on the Sales tab but never moved the garden's Total Cost, so it looked
+  // like it vanished. Recurring templates are expanded and capped at today.
+  // Logged expenses aren't season-tagged, so when a specific season is
+  // selected we scope them to that season's date window (start..end, end
+  // defaulting to today for the active season); "All-time" includes them all.
+  const _gToday = todayStr();
+  const _gSeasonWindow = (() => {
+    if (seasonFilter === "all" || !hobby) return null;
+    const cur = hobby.currentSeason && hobby.currentSeason.id === seasonFilter ? hobby.currentSeason : null;
+    const arch = !cur ? (hobby.archivedSeasons || []).find((s) => s.id === seasonFilter) : null;
+    const s = cur || arch;
+    if (!s || !s.startDate) return null;
+    return { start: s.startDate, end: s.endDate || _gToday };
+  })();
+  const _gLoggedRaw = (data && Array.isArray(data.expenses))
+    ? data.expenses.filter((x) => x && x.hobbyId === hobby.id)
+    : [];
+  const loggedCostRaw = expandRecurringExpenses(_gLoggedRaw)
+    .filter((x) => {
+      if (!x.date || x.date > _gToday) return false;
+      if (_gSeasonWindow && (x.date < _gSeasonWindow.start || x.date > _gSeasonWindow.end)) return false;
+      return true;
+    })
+    .reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  const totalCostRaw = entryCostRaw + loggedCostRaw;
   const totalCost = spouseCost(totalCostRaw, spouseMode);
   const waterings = entries.filter((e) => e.action === "watered").length;
   const fertilizations = entries.filter((e) => e.action === "fertilized").length;
