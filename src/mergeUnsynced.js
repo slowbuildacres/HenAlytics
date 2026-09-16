@@ -9,13 +9,17 @@
 //   - Takes cloud as the base (cloud wins for everything)
 //   - Adds local-only entries (entries with an `id` that's in local but not
 //     in cloud) to the corresponding arrays in cloud
-//   - Never modifies an entry that exists in both
+//   - Adds whole local-only KEYS the cloud doesn't have yet (e.g. the first
+//     entries for a freshly-added hobby, which live under a key like
+//     entries.meat_chickens that the cloud copy has never seen)
+//   - Never modifies an entry that exists in both (except newer-wins by
+//     updatedAt)
 //   - Never removes anything from cloud
 //   - For non-id'd arrays and scalars: cloud wins, no merging attempted
 //
 // The merge is intentionally CONSERVATIVE. We only add things we can be
-// confident are clear additions (id'd entries with no matching id in cloud).
-// Anything ambiguous, cloud wins.
+// confident are clear additions (id'd entries with no matching id in cloud,
+// and whole keys cloud lacks). Anything ambiguous, cloud wins.
 //
 // Returns: { merged, mergedCount }
 //   merged       - the merged data object (or cloudData unchanged if nothing
@@ -45,6 +49,32 @@ function isIdArrayOfObjects(arr) {
     if (!item.id || typeof item.id !== 'string') return false;
   }
   return true;
+}
+
+// Count id'd objects contained anywhere within `node` (arrays of id'd
+// objects, plus nested id-arrays inside them). Used to attribute a real
+// "recovered entries" count when a whole KEY that the cloud lacked is copied
+// over wholesale from local — without this, recovering the first entry of a
+// brand-new hobby reports mergedCount 0 and the caller discards the merge.
+function countIdEntries(node) {
+  if (Array.isArray(node)) {
+    let n = 0;
+    for (const item of node) {
+      if (isPlainObject(item) && item.id) n++;
+      if (isPlainObject(item) || Array.isArray(item)) n += countIdEntries(item);
+    }
+    return n;
+  }
+  if (isPlainObject(node)) {
+    let n = 0;
+    for (const key of Object.keys(node)) {
+      if (SKIP_RECURSE_KEYS.has(key)) continue;
+      const v = node[key];
+      if (Array.isArray(v) || isPlainObject(v)) n += countIdEntries(v);
+    }
+    return n;
+  }
+  return 0;
 }
 
 // Merge two id-arrays. Cloud is the base. Two things happen:
@@ -102,10 +132,21 @@ function mergeIdArrays(cloudArr, localArr) {
 //   - Plain object         → recurse into each key
 //   - Otherwise            → cloud wins
 //
-// Returns { merged, addedCount }.
+// Returns { merged, addedCount, changed }.
+//   addedCount - number of id'd entries recovered from local at/below here.
+//   changed    - whether `merged` differs from `cloud` in any way (entries
+//                added/replaced OR whole keys added). This is propagated up
+//                so a parent NEVER discards a subtree that legitimately
+//                changed. Previously only addedCount bubbled up, so a
+//                recovered whole-key (which incremented a local `changedAny`
+//                but not the count) was silently thrown away by the parent's
+//                "nothing changed → return cloud" shortcut. That was the
+//                "first entry of a new hobby vanishes after restart" bug.
 function mergeRecursive(cloud, local) {
   // If either side isn't a usable object/array, cloud wins.
-  if (!isPlainObject(cloud) && !Array.isArray(cloud)) return { merged: cloud, addedCount: 0 };
+  if (!isPlainObject(cloud) && !Array.isArray(cloud)) {
+    return { merged: cloud, addedCount: 0, changed: false };
+  }
 
   // Array case
   if (Array.isArray(cloud)) {
@@ -136,16 +177,17 @@ function mergeRecursive(cloud, local) {
           nestedAdded += addedCount;
           return mergedItem;
         });
-        return { merged: finalResult, addedCount: mergedHere + nestedAdded };
+        const total = mergedHere + nestedAdded;
+        return { merged: finalResult, addedCount: total, changed: total > 0 };
       }
-      return { merged: result, addedCount: mergedHere };
+      return { merged: result, addedCount: mergedHere, changed: mergedHere > 0 };
     }
     // Non-id arrays — cloud wins, no merging attempted.
-    return { merged: cloud, addedCount: 0 };
+    return { merged: cloud, addedCount: 0, changed: false };
   }
 
   // Object case — recurse into each key.
-  if (!isPlainObject(local)) return { merged: cloud, addedCount: 0 };
+  if (!isPlainObject(local)) return { merged: cloud, addedCount: 0, changed: false };
 
   let totalAdded = 0;
   let changedAny = false;
@@ -158,31 +200,32 @@ function mergeRecursive(cloud, local) {
     const cloudVal = cloud[key];
     const localVal = local[key];
     if (Array.isArray(cloudVal) || isPlainObject(cloudVal)) {
-      const { merged: mergedVal, addedCount } = mergeRecursive(cloudVal, localVal);
+      const { merged: mergedVal, addedCount, changed } = mergeRecursive(cloudVal, localVal);
       result[key] = mergedVal;
       totalAdded += addedCount;
-      if (addedCount > 0) changedAny = true;
+      if (changed) changedAny = true;
     } else {
       // Scalar — cloud wins.
       result[key] = cloudVal;
     }
   }
   // Keys that exist in local but not in cloud. These are user-added things
-  // the cloud doesn't know about yet. Add them. (Skip the SKIP_RECURSE_KEYS
-  // bookkeeping fields.)
+  // the cloud doesn't know about yet — most importantly the entries array of
+  // a freshly-added hobby (e.g. entries.meat_chickens) whose first records
+  // only live locally. Add them, AND count any id'd entries they carry so the
+  // recovery is both preserved (changed=true) and reported (mergedCount>0).
   for (const key of Object.keys(local)) {
     if (key in result) continue;
     if (SKIP_RECURSE_KEYS.has(key)) continue;
     result[key] = local[key];
     changedAny = true;
-    // We don't increment totalAdded here because this is a key, not an
-    // entry — but it does mean we changed something.
+    totalAdded += countIdEntries(local[key]);
   }
-  if (!changedAny && totalAdded === 0) {
+  if (!changedAny) {
     // Return cloud unchanged so callers can do a reference equality check.
-    return { merged: cloud, addedCount: 0 };
+    return { merged: cloud, addedCount: 0, changed: false };
   }
-  return { merged: result, addedCount: totalAdded };
+  return { merged: result, addedCount: totalAdded, changed: true };
 }
 
 export function mergeUnsyncedEntries(cloudData, localData) {
@@ -196,4 +239,5 @@ export const __testing = {
   mergeRecursive,
   isIdArrayOfObjects,
   mergeIdArrays,
+  countIdEntries,
 };
