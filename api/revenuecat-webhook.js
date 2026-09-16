@@ -234,35 +234,87 @@ export default async function handler(req, res) {
   const meta = tierMetaFromProductId(productId);
   const purchasedAt = purchasedAtMs ? new Date(purchasedAtMs).toISOString() : new Date().toISOString();
   const expirationAt = expirationAtMs ? new Date(expirationAtMs).toISOString() : null;
-  const canceledAt = (status === 'canceled') ? purchasedAt : null;
+  // Use when the event actually happened for cancel/expire. purchased_at_ms is
+  // the last *purchase* (renewal) time, not the cancellation time.
+  const eventAt = event.event_timestamp_ms
+    ? new Date(event.event_timestamp_ms).toISOString()
+    : new Date().toISOString();
+  const canceledAt = (status === 'canceled') ? eventAt : null;
 
-  // ---- Upsert supporters row ----
-  // Keyed by stripe_subscription_id (we store RC's original_transaction_id
-  // there for iOS rows). Apple's original_transaction_id is stable across
-  // renewals — same value on every renewal of the same subscription — so
-  // this naturally de-duplicates renewal events into a single supporters row.
   const supabase = getSupabaseAdmin();
-  const { error } = await supabase
+
+  // ---- Does this subscription already have a row? ----
+  // Keyed by stripe_subscription_id (we store RC's original_transaction_id
+  // there for native rows). Apple/Google's original_transaction_id is stable
+  // across renewals, so RENEWAL events land on the same row.
+  const { data: existing, error: existingErr } = await supabase
     .from('supporters')
-    .upsert({
-      user_id: userId,
-      source: 'revenuecat',
-      revenuecat_user_id: userId,
-      stripe_customer_id: null,                  // not applicable on iOS
-      stripe_subscription_id: originalTransactionId, // reused field
-      stripe_price_id: productId,                // reused field — Apple product ID
-      status: status,
-      payment_type: meta.type,
-      amount_dollars: meta.amount,
-      original_started_at: purchasedAt,
-      started_at: purchasedAt,
-      canceled_at: canceledAt,
-      // Optional analytic fields if your schema includes them:
-      // current_period_end: expirationAt,
-      // last_payment_cents: priceCents,
-    }, {
-      onConflict: 'stripe_subscription_id',
-    });
+    .select('id, original_started_at, started_at')
+    .eq('stripe_subscription_id', originalTransactionId)
+    .maybeSingle();
+
+  if (existingErr) {
+    console.error('[rc-webhook] existing-row lookup failed:', existingErr);
+    return res.status(500).json({ error: 'Could not read supporter row' });
+  }
+
+  let error;
+
+  if (existing) {
+    // ---- Existing subscription (RENEWAL, CANCELLATION, BILLING_ISSUE, etc.) ----
+    // Only update state. NEVER touch original_started_at / started_at here —
+    // previously every renewal overwrote them, which made long-time app
+    // supporters' "since" month slide forward every month.
+    ({ error } = await supabase
+      .from('supporters')
+      .update({
+        user_id: userId,
+        revenuecat_user_id: userId,
+        stripe_price_id: productId,
+        status,
+        payment_type: meta.type,
+        amount_dollars: meta.amount,
+        canceled_at: canceledAt,
+      })
+      .eq('stripe_subscription_id', originalTransactionId));
+  } else {
+    // ---- New subscription or tip: work out tenure (90-day grace) ----
+    // Same rule as stripe-webhook.js: if this person has an earlier monthly
+    // supporter row that's still active or was canceled within 90 days, keep
+    // its original_started_at. This covers someone moving from web (Stripe)
+    // to the app, or resubscribing in the app.
+    let originalStartedAt = purchasedAt;
+    if (meta.type === 'monthly') {
+      try {
+        originalStartedAt = await findPreservedTenure(supabase, userId, purchasedAt);
+      } catch (e) {
+        // Tenure is cosmetic — never fail the purchase over it.
+        console.warn('[rc-webhook] tenure lookup failed, using purchase date:', e.message);
+      }
+    }
+
+    ({ error } = await supabase
+      .from('supporters')
+      .upsert({
+        user_id: userId,
+        source: 'revenuecat',
+        revenuecat_user_id: userId,
+        stripe_customer_id: null,                      // not applicable on native
+        stripe_subscription_id: originalTransactionId, // reused field
+        stripe_price_id: productId,                    // reused field — store product ID
+        status,
+        payment_type: meta.type,
+        amount_dollars: meta.amount,
+        original_started_at: originalStartedAt,
+        started_at: purchasedAt,
+        canceled_at: canceledAt,
+        // Optional analytic fields if your schema includes them:
+        // current_period_end: expirationAt,
+        // last_payment_cents: priceCents,
+      }, {
+        onConflict: 'stripe_subscription_id',
+      }));
+  }
 
   if (error) {
     console.error('[rc-webhook] supabase upsert failed:', error);
@@ -271,6 +323,65 @@ export default async function handler(req, res) {
 
   console.log('[rc-webhook] processed:', eventType, productId, 'for user', userId.slice(0, 8) + '...');
   return res.status(200).json({ ok: true });
+}
+
+// ============================================================================
+// TENURE LOOKUP (90-day grace, mirrors stripe-webhook.js)
+// ----------------------------------------------------------------------------
+// Finds the earliest original_started_at among this person's prior MONTHLY
+// supporter rows that still qualify: status active/trialing/past_due, or
+// canceled within 90 days. Matches by user_id, and also by the account's
+// email — web (Stripe) rows sometimes have an email but no user_id, and
+// native rows have a user_id but no email.
+// ============================================================================
+const TENURE_GRACE_MS = 90 * 24 * 60 * 60 * 1000;
+
+async function findPreservedTenure(supabase, userId, fallbackIso) {
+  const rows = [];
+
+  const { data: byUser, error: userErr } = await supabase
+    .from('supporters')
+    .select('original_started_at, canceled_at, status, payment_type')
+    .eq('user_id', userId)
+    .eq('payment_type', 'monthly');
+  if (userErr) throw userErr;
+  if (byUser) rows.push(...byUser);
+
+  // Look up the account email so we can catch email-only Stripe rows.
+  try {
+    const { data: authData } = await supabase.auth.admin.getUserById(userId);
+    const email = authData?.user?.email?.toLowerCase();
+    if (email) {
+      const { data: byEmail, error: emailErr } = await supabase
+        .from('supporters')
+        .select('original_started_at, canceled_at, status, payment_type')
+        .ilike('email', email)
+        .eq('payment_type', 'monthly');
+      if (!emailErr && byEmail) rows.push(...byEmail);
+    }
+  } catch (e) {
+    console.warn('[rc-webhook] could not read account email for tenure:', e.message);
+  }
+
+  const now = Date.now();
+  let earliest = null;
+  for (const r of rows) {
+    if (!r.original_started_at) continue;
+    const canceledMs = r.canceled_at ? new Date(r.canceled_at).getTime() : null;
+    const qualifies =
+      ['active', 'trialing', 'past_due'].includes(r.status) ||
+      (canceledMs != null && now - canceledMs <= TENURE_GRACE_MS);
+    if (!qualifies) continue;
+    const startedMs = new Date(r.original_started_at).getTime();
+    if (earliest == null || startedMs < earliest) earliest = startedMs;
+  }
+
+  if (earliest != null && earliest < new Date(fallbackIso).getTime()) {
+    const preserved = new Date(earliest).toISOString();
+    console.log(`[rc-webhook] preserving tenure for user ${userId.slice(0, 8)}... since ${preserved}`);
+    return preserved;
+  }
+  return fallbackIso;
 }
 
 // Vercel needs the raw body for some webhook signature schemes, but RC uses
