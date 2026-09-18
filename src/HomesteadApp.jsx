@@ -220,6 +220,7 @@ const defaultData = () => ({
   appStoreLaunchDismissed: false, // true once the user dismisses the "we're on the App Store" launch popup (one-time, iOS/desktop web)
   playStoreLaunchDismissed: false, // true once the user dismisses the "we're on Google Play" launch popup (one-time, Android web)
   lastGiveawayPopupMonday: null, // "YYYY-MM-DD" Monday-key of the last week the giveaway popup was shown (weekly cadence)
+  giveawayFollowedKey: null, // GIVEAWAY.key the user has tapped Follow / opened Facebook for — keeps both steps ticked on later popups
   accountNudgeDismissed: false, // true once a signed-out user dismisses the "create an account to back up" nudge
   weeklyChoreEmailOptIn: false, // master switch for weekly Sunday-evening chore digest
   weeklyDigestOptIn: false, // master switch for the weekly homestead summary email
@@ -1641,7 +1642,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 53;
+const CURRENT_VERSION = 54;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1656,24 +1657,41 @@ const CURRENT_VERSION = 53;
 // To run a new round: change the fields below, bump `key`, and seed a new
 // row in the `giveaways` table (see the SQL delivered alongside this patch).
 const GIVEAWAY = {
-  key: "2026_seeder",                    // must match the giveaways.key row in Supabase
-  prize: "Charles Walter single-row push seeder",
-  // TODO: host the seeder image (e.g. a public Supabase Storage URL) and paste it here.
-  imageUrl: "https://api.henalytics.com/storage/v1/object/public/Giveaways/IMG_0614.WEBP",
-  endsAt: "2026-09-01",                  // local date; popup stops + entries close after this
-  // TODO: replace with your actual Facebook PAGE url (the Follow target).
+  key: "2026_fall",                      // must match the giveaways.key row in Supabase
+  headline: "Fall Community Giveaway",
+  // Two prizes this round — drawn separately, one winner each.
+  prizes: [
+    {
+      name: "Omlet 1.5 Gallon Insulated Chicken Waterer",
+      // TODO: upload the waterer photo to the public Giveaways bucket and paste the URL.
+      imageUrl: "https://api.henalytics.com/storage/v1/object/public/Giveaways/2026_fall_waterer.webp",
+    },
+    {
+      name: "HenGear Small Nest Box with Roll-Out Tray",
+      // TODO: upload the nest box photo to the public Giveaways bucket and paste the URL.
+      imageUrl: "https://api.henalytics.com/storage/v1/object/public/Giveaways/2026_fall_nestbox.webp",
+    },
+  ],
+  startsAt: "2026-10-01",                // popup stays hidden before this date
+  endsAt: "2026-12-31",                  // last day; popup stops + entries close after this
   fbPageUrl: "https://www.facebook.com/profile.php?id=61589232196621",
-  fbPostUrl: "https://www.facebook.com/share/p/1CvuhxuTbk/?mibextid=wwXIfr",
+  // The giveaway post people are sent to from the popup's Facebook button.
+  // Leave "" and that button falls back to the page URL.
+  fbPostUrl: "https://www.facebook.com/photo/?fbid=122124189003307739&set=pcb.122124190293307739",
 };
-const GIVEAWAY_ENDS_MS = new Date(GIVEAWAY.endsAt + "T00:00:00").getTime();
+// Entries close at the END of the endsAt day, so Dec 31 is still playable.
+const GIVEAWAY_ENDS_MS = new Date(GIVEAWAY.endsAt + "T23:59:59").getTime();
+const GIVEAWAY_STARTS_MS = new Date(GIVEAWAY.startsAt + "T00:00:00").getTime();
 
-// Monday (local) of the current week as a "YYYY-MM-DD" key. Used so the
-// giveaway popup shows on the first app open of each week (Mon-anchored):
-// if a user skips Monday, it still catches them Tue/Wed/etc. that same week.
-function mondayOfWeek(d) {
+// Friday (local) that starts the current giveaway week, as "YYYY-MM-DD".
+// The popup shows on the first app open on or after each Friday: someone who
+// doesn't open the app Friday still gets it Sat/Sun/etc., and then not again
+// until the next Friday.
+function giveawayWeekKey(d) {
   const x = d instanceof Date ? new Date(d) : new Date();
-  const day = x.getDay();                 // 0 Sun ... 6 Sat
-  x.setDate(x.getDate() + (day === 0 ? -6 : 1 - day));
+  const day = x.getDay();                 // 0 Sun ... 5 Fri ... 6 Sat
+  const back = (day - 5 + 7) % 7;         // days since the most recent Friday
+  x.setDate(x.getDate() - back);
   x.setHours(0, 0, 0, 0);
   const y = x.getFullYear();
   const m = String(x.getMonth() + 1).padStart(2, "0");
@@ -1737,11 +1755,11 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "\uD83C\uDF42 Fall Community Giveaway \u2014 running October 1 through December 31, and this one's big: TWO winners, one prize each. Up for grabs are an Omlet 1.5 Gallon Insulated Chicken Waterer and a HenGear small nest box with roll-out tray. To enter, just have a Henalytics account and follow us on Facebook \u2014 that's it, one entry per account. A reminder popup appears each Friday while it runs. No purchase necessary and donating never improves your odds \u2014 donating in the app is what makes these giveaways happen, and lets them keep growing.",  // GIVEAWAY_FALL_WHATSNEW
   "🌾 Feed supply tracker — never get surprised by an empty feed bin again. On any animal page (chickens, goats, cows, pigs, sheep, rabbits, dogs, cats, horses), tap the new feed banner, tell Henalytics how many lbs you've got, and your normal feed logs teach it how fast you burn through it. You'll see days remaining and an estimated empty date, and when you're about 5 days out it drops a reminder on your calendar — which also rides your weekly chore email. Log purchases with a cost and they flow straight into your Feed expenses. Works with cups or lbs feedings. (Horses got a new \u{1F33E} Fed button so the barn can join in.)",  // FEED_TRACKER_WHATSNEW
   "🧺 Eggs on hand — a live count of the eggs actually in your fridge. Tap the new Use Eggs tile on the egg layers page, count what you've got right now, and from then on every egg you collect adds to it and every egg you sell (from the tile or the Sales tab) or use comes off. Log what happened to them — ate, donated, tossed, set to hatch — and your stats page shows where your eggs actually go. Year in Review gets a \"where they went\" breakdown too. Totally optional; the tile can be hidden in Manage Hobbies like any other.",  // EGG_INVENTORY_WHATSNEW
   "🥚 $0 egg sales fixed — logging donated or given-away eggs at a price of $0 used to make the egg count vanish from the sale. Now the count sticks, the entry reads \"no charge (donated / given away)\", and those eggs show up under Donated in your new egg-use stats. No more pricing your donations at a penny to make the math work.",  // ZERO_PRICE_EGGS_WHATSNEW
   "🏅 The Homestead Games — tap the new trophy in the top bar! Country, state, and county standings built from what the whole community logs: eggs collected, garden harvest, chicks hatched, jars canned, honey, and milk. US and Canadian homesteads are placed on their state or province's team automatically from the town you already gave us for weather (never your device's GPS) — always anonymous, your name is never shown, and only regional totals appear (and only once enough homesteads share a region). Don't want in? One tap on the trophy page leaves the Games. Check the Per-homestead boards too: that's where small homesteads beat big states, pound for pound. Add your county (optional) to join county boards — every county unlocks at 5 homesteads, so recruit a neighbor. The trophy page also has a My Achievements tab (your Homestead Standings badges, now one tap away), and Year in Review gets a closing-ceremony card showing where your region finished.",  // HOMESTEAD_GAMES_WHATSNEW
-  "\uD83C\uDF81 Monthly community giveaway \u2014 Henalytics is run by one person, no company or investors. When community support covers what it costs to keep the app running, that surplus goes back to you as giveaways. This season\u2019s prize: a Charles Walter single-row push seeder. A popup appears each week with free ways to enter (just having an account gets you in; following and sharing on Facebook earn more). No purchase necessary, and supporting never improves your odds \u2014 it just makes bigger, more frequent giveaways possible. Ends September 1.",  // GIVEAWAY_WHATSNEW
   "💧 Watering reminder actually clears now — logging a watering on a specific plant (from its detail screen) used to leave the \"time to water\" nudge stuck on. Now any watering — quick-log, or logged against an annual or perennial — counts, so the reminder clears when it should.",
   "🌧️ Rain this week, right on your garden — the watering reminder now shows how much rain you've gotten in the last 7 days, so you can skip watering when the sky already handled it. (Needs a saved homestead location.)",
   "🌱 Start a Seed, one tap from the garden — added a \"Start a Seed\" quick-log tile so you can jump straight into a seed-starting batch without scrolling down to the Seed Starts section first.",
@@ -3296,10 +3314,11 @@ useEffect(() => {
   }, [data?.onboardedAt, data?.appStoreLaunchDismissed, data?.playStoreLaunchDismissed, passwordRecoveryPending, showWhatsNew, showTutorial, showTutorialPrompt]);
 
   // ---- Weekly community giveaway popup ----  // GIVEAWAY_EFFECT
-  // Shows on the first app open of each week (Monday-anchored via mondayOfWeek).
-  // Tracked in data.lastGiveawayPopupMonday so it appears once per week. Waits
-  // behind What's New and the tutorial so popups never stack, and stops once
-  // the giveaway end date passes. Dismissal writes the week-key in onClose.
+  // Shows on the first app open on/after each Friday (giveawayWeekKey).
+  // Tracked in data.lastGiveawayPopupMonday (kept as the field name from the
+  // first round to avoid a data migration — it now holds a Friday key). Waits
+  // behind What's New and the tutorial so popups never stack, and only runs
+  // between GIVEAWAY.startsAt and GIVEAWAY.endsAt.
   const giveawayShownRef = React.useRef(false);
   useEffect(() => {
     if (giveawayShownRef.current) return;
@@ -3307,8 +3326,9 @@ useEffect(() => {
     if (passwordRecoveryPending) return;
     if (showWhatsNew) return;                    // let What's New finish first
     if (showTutorial || showTutorialPrompt) return;
-    if (Date.now() >= GIVEAWAY_ENDS_MS) return;  // giveaway is over
-    if (data?.lastGiveawayPopupMonday === mondayOfWeek()) return; // already shown this week
+    if (Date.now() < GIVEAWAY_STARTS_MS) return; // hasn't started yet
+    if (Date.now() > GIVEAWAY_ENDS_MS) return;   // giveaway is over
+    if (data?.lastGiveawayPopupMonday === giveawayWeekKey()) return; // already shown this week
     giveawayShownRef.current = true;
     const timer = setTimeout(() => setShowGiveaway(true), 1400);
     return () => clearTimeout(timer);
@@ -4917,18 +4937,20 @@ useNativeBackButton(React.useCallback(() => {
       {showGiveaway && !showWhatsNew && (
         <GiveawayModal
           user={user}
+          followedKey={data?.giveawayFollowedKey}
+          onFollowed={() => { update(d => { d.giveawayFollowedKey = GIVEAWAY.key; return d; }); }}
           onNeedAccount={() => {
             setShowGiveaway(false);
-            update(d => { d.lastGiveawayPopupMonday = mondayOfWeek(); return d; });
+            update(d => { d.lastGiveawayPopupMonday = giveawayWeekKey(); return d; });
             setModal({ type: "signup" });
           }}
           onClose={() => {
             setShowGiveaway(false);
-            update(d => { d.lastGiveawayPopupMonday = mondayOfWeek(); return d; });
+            update(d => { d.lastGiveawayPopupMonday = giveawayWeekKey(); return d; });
           }}
           onSupport={() => {
             setShowGiveaway(false);
-            update(d => { d.lastGiveawayPopupMonday = mondayOfWeek(); return d; });
+            update(d => { d.lastGiveawayPopupMonday = giveawayWeekKey(); return d; });
             setModal({ type: "support" });
           }}
         />
@@ -22199,7 +22221,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
 // assigned server-side by the claim_giveaway_entry RPC; this UI only triggers
 // claims and shows the running total. If the backend isn't set up yet, claims
 // fail silently and the popup still displays.
-function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
+function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, onFollowed }) {
   const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
   const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
   const [total, setTotal] = React.useState(null);
@@ -22222,14 +22244,33 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
   // Auto-claim the base "account" entry when the popup opens (idempotent).
   React.useEffect(() => { if (user) claim("account"); }, [user, claim]);
 
-  const doFollow = async () => { openExternalUrl(GIVEAWAY.fbPageUrl); await claim("fb_follow"); };
-  const doShare  = async () => { openExternalUrl(GIVEAWAY.fbPostUrl); await claim("share"); };
+  // A tap on Follow — or on the Facebook button at the bottom — counts as the
+  // follow step and is remembered in data.giveawayFollowedKey, so the next
+  // Friday's popup opens with both steps already ticked.
+  const markFollowed = React.useCallback(() => {
+    if (followedKey !== GIVEAWAY.key) onFollowed?.();
+  }, [followedKey, onFollowed]);
 
-  const endLabel = new Date(GIVEAWAY.endsAt + "T00:00:00").toLocaleDateString(
+  const doFollow = async () => { openExternalUrl(GIVEAWAY.fbPageUrl); markFollowed(); await claim("fb_follow"); };
+  const doVisitPost = async () => {
+    openExternalUrl(GIVEAWAY.fbPostUrl || GIVEAWAY.fbPageUrl);
+    markFollowed();
+    await claim("fb_follow");
+  };
+
+  const fmtDate = (iso) => new Date(iso + "T00:00:00").toLocaleDateString(
     undefined, { month: "long", day: "numeric", year: "numeric" }
   );
+  const endLabel = fmtDate(GIVEAWAY.endsAt);
+  const startLabel = fmtDate(GIVEAWAY.startsAt);
 
-  const Row = ({ label, value, done, onClick, cta }) => (
+  // Entry is all-or-nothing this round: an account plus a Facebook follow.
+  // `total` still comes back from the RPC but isn't shown — there are no
+  // entry counts, so nobody can "earn more entries."
+  const isEntered = !!user && (!!claimed.fb_follow || followedKey === GIVEAWAY.key);
+  const followDone = !!claimed.fb_follow || followedKey === GIVEAWAY.key;
+
+  const Row = ({ label, done, onClick, cta }) => (
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
       gap: 10, padding: "10px 12px", borderRadius: 10,
@@ -22237,13 +22278,15 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{
-          fontSize: 13, fontWeight: 700, color: palette.leaf,
-          background: "#EAF1DD", borderRadius: 8, padding: "2px 8px", whiteSpace: "nowrap",
-        }}>+{value}</span>
+          fontSize: 13, fontWeight: 700,
+          color: done ? palette.leaf : palette.inkSoft,
+          background: done ? "#EAF1DD" : "#EFE8DC", borderRadius: 8,
+          padding: "2px 8px", whiteSpace: "nowrap",
+        }}>{done ? "✓" : "1 of 2"}</span>
         <span style={{ fontSize: 13.5, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
       </div>
       {done ? (
-        <span style={{ fontSize: 13, fontWeight: 700, color: palette.leaf, whiteSpace: "nowrap" }}>Entered ✓</span>
+        <span style={{ fontSize: 13, fontWeight: 700, color: palette.leaf, whiteSpace: "nowrap" }}>Done ✓</span>
       ) : (
         <button onClick={onClick} style={{
           border: "none", background: palette.leaf, color: "#fff", fontFamily: FONT_BODY,
@@ -22273,25 +22316,36 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
           lineHeight: "30px", cursor: "pointer",
         }}>×</button>
 
-        {/* Prize image */}
-        <div style={{ background: "#EAF1DD", padding: "18px 16px 12px", textAlign: "center" }}>
-          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6, color: palette.leaf, textTransform: "uppercase", marginBottom: 8 }}>
-            🌱 Community Giveaway
+        {/* Prize images — both prizes go to one winner */}
+        <div style={{ background: "#EAF1DD", padding: "18px 16px 14px", textAlign: "center" }}>
+          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6, color: palette.leaf, textTransform: "uppercase", marginBottom: 4 }}>
+            🍂 {GIVEAWAY.headline}
           </div>
-          <img src={GIVEAWAY.imageUrl} alt={GIVEAWAY.prize}
-            style={{ width: "100%", maxWidth: 240, height: "auto", margin: "0 auto", display: "block" }}
-            onError={(e) => { e.currentTarget.style.display = "none"; }} />
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 21, lineHeight: 1.2, marginTop: 10 }}>
-            {GIVEAWAY.prize}
+          <div style={{ fontSize: 12.5, fontWeight: 600, color: palette.inkSoft, marginBottom: 10 }}>
+            Two winners — one prize each
+          </div>
+          <div style={{ display: "flex", gap: 10, justifyContent: "center", alignItems: "flex-end" }}>
+            {GIVEAWAY.prizes.map((p) => (
+              <div key={p.name} style={{ flex: "1 1 0", minWidth: 0 }}>
+                <img src={p.imageUrl} alt={p.name}
+                  style={{ width: "100%", maxWidth: 150, height: 120, objectFit: "contain", margin: "0 auto", display: "block" }}
+                  onError={(e) => { e.currentTarget.style.display = "none"; }} />
+                <div style={{ fontFamily: FONT_DISPLAY, fontSize: 15, lineHeight: 1.25, marginTop: 8 }}>
+                  {p.name}
+                </div>
+              </div>
+            ))}
           </div>
         </div>
 
         <div style={{ padding: "16px 18px 20px" }}>
-          <p style={{ fontSize: 13.5, lineHeight: 1.55, color: palette.inkSoft, margin: "0 0 14px" }}>
+          <p style={{ fontSize: 13.5, lineHeight: 1.55, color: palette.inkSoft, margin: "0 0 10px" }}>
             Henalytics is run by one person — no company, no investors. When community
-            support covers what it costs to keep the app running (my time included),
-            that surplus goes back to you as giveaways. The more support, the bigger
-            and more often these can happen. 💚
+            support covers what it costs to keep the app running, that surplus goes back
+            to you as giveaways. The more support, the bigger and more often these can happen.
+          </p>
+          <p style={{ fontSize: 13.5, lineHeight: 1.55, color: palette.ink, margin: "0 0 14px", fontWeight: 600 }}>
+            To enter: have a Henalytics account and follow us on Facebook. That's it.
           </p>
 
           {!user && (
@@ -22304,29 +22358,62 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
             </div>
           )}
 
-          <Row label="Have an account" value={10} done={!!claimed.account || !!user}
+          <Row label="Have a Henalytics account" done={!!user}
                onClick={onNeedAccount} cta="Sign in" />
-          <Row label="Follow us on Facebook" value={10} done={!!claimed.fb_follow}
+          <Row label="Follow us on Facebook" done={followDone}
                onClick={doFollow} cta="Follow" />
-          <Row label="Share the giveaway post" value={20} done={!!claimed.share}
-               onClick={doShare} cta="Share" />
 
-          {total != null && (
-            <div style={{ textAlign: "center", fontSize: 13.5, fontWeight: 700, color: palette.leaf, margin: "10px 0 2px" }}>
-              You have {total} {total === 1 ? "entry" : "entries"} 🌱
-            </div>
-          )}
-
-          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: palette.ink, margin: "12px 0 6px" }}>
-            ⏳ Ends {endLabel}
+          <div style={{
+            textAlign: "center", fontSize: 13.5, fontWeight: 700,
+            color: isEntered ? palette.leaf : palette.inkSoft, margin: "10px 0 2px",
+          }}>
+            {isEntered ? "You're entered 🌱" : "Finish both steps above to be entered"}
           </div>
 
-          {/* GIVEAWAY_SUPPORT_LINK — funds the giveaways; never touches entries/odds */}
-          <button onClick={onSupport} style={{
-            width: "100%", background: "transparent", border: "none",
-            color: palette.accent, fontFamily: FONT_BODY, fontSize: 12.5,
-            fontWeight: 600, cursor: "pointer", padding: "4px 0 2px",
-          }}>💚 Support to keep giveaways happening</button>
+          <div style={{ textAlign: "center", fontSize: 13, fontWeight: 600, color: palette.ink, margin: "12px 0 2px" }}>
+            ⏳ {startLabel} – {endLabel}
+          </div>
+          <div style={{ textAlign: "center", fontSize: 12, color: palette.inkSoft, marginBottom: 8 }}>
+            Winners drawn after entries close.
+          </div>
+
+          {/* Always tappable, even once the follow step is done */}
+          <button onClick={doVisitPost} style={{
+            width: "100%", background: "#fff", border: `1.5px solid ${palette.line}`,
+            color: palette.ink, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+            borderRadius: 10, padding: "9px 12px", cursor: "pointer", marginBottom: 8,
+          }}>📘 See the giveaway post on Facebook</button>
+
+          <p style={{ fontSize: 12, lineHeight: 1.5, color: palette.inkSoft, textAlign: "center", margin: "0 0 6px" }}>
+            {isEntered
+              ? "No purchase necessary."
+              : "No purchase necessary. Donating in the app never improves your odds — it's what makes these giveaways happen, and lets them keep growing."}
+          </p>
+
+          {/* GIVEAWAY_SUPPORT_LINK — funds the giveaways; never touches entries/odds.
+              Once someone is entered, this becomes the main call to action. */}
+          {isEntered ? (
+            <div style={{
+              background: "#EAF1DD", border: `1.5px solid ${palette.leaf}`,
+              borderRadius: 12, padding: "12px 12px 10px", marginTop: 4,
+            }}>
+              <p style={{ fontSize: 12.5, lineHeight: 1.5, color: palette.ink, margin: "0 0 9px", textAlign: "center" }}>
+                You're all set. Want to see more giveaways like this one? Donating in the
+                app is what pays for the prizes — it never changes your odds.
+              </p>
+              <button onClick={onSupport} style={{
+                width: "100%", background: palette.leaf, border: "none", color: "#fff",
+                fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, borderRadius: 10,
+                padding: "10px 12px", cursor: "pointer",
+              }}>💚 Donate to keep awesome giveaways happening</button>
+            </div>
+          ) : (
+            <button onClick={onSupport} style={{
+              width: "100%", background: "transparent", border: "none",
+              color: palette.accent, fontFamily: FONT_BODY, fontSize: 12.5,
+              fontWeight: 600, cursor: "pointer", padding: "4px 0 2px",
+            }}>💚 Support to keep giveaways happening</button>
+          )}
 
           <button onClick={() => setShowRules((s) => !s)} style={{
             width: "100%", background: "transparent", border: "none",
@@ -22337,11 +22424,14 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport }) {
           {showRules && (
             <div style={{ fontSize: 11.5, lineHeight: 1.5, color: palette.inkSoft, marginTop: 8 }}>
               No purchase necessary to enter or win. Supporting the app does not improve
-              your odds of winning. Open to legal U.S. residents 18 or older. One set of
-              free entries per account (account, Facebook follow, post share). Winner
-              drawn at random from all entries after the giveaway closes on {endLabel} and
-              notified in-app. Sponsored solely by Henalytics; Apple and Google are not
-              sponsors of and are not involved in this giveaway. Void where prohibited.
+              your odds of winning. Open to legal U.S. residents 18 or older. Entry period
+              runs {startLabel} through {endLabel}. To enter: hold a free Henalytics account
+              and follow Henalytics on Facebook. One entry per account; additional actions
+              do not increase your odds. Two winners will be drawn at random from all
+              entries after the giveaway closes and notified in-app — one receives the
+              {" "}{GIVEAWAY.prizes[0].name}, the other the {GIVEAWAY.prizes[1].name}.
+              Sponsored solely by Henalytics; Apple, Google, Facebook, Omlet and HenGear are
+              not sponsors of and are not involved in this giveaway. Void where prohibited.
             </div>
           )}
         </div>
