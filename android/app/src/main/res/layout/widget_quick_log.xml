@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="horizontal"
+    android:padding="8dp"
+    android:background="@drawable/widget_bg">
+
+    <LinearLayout
+        android:id="@+id/btn_eggs"
+        style="@style/HenWidgetButton"
+        android:layout_marginEnd="6dp">
+        <TextView style="@style/HenWidgetEmoji" android:text="🥚" />
+        <TextView style="@style/HenWidgetLabel" android:text="Eggs" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/btn_harvest"
+        style="@style/HenWidgetButton"
+        android:layout_marginEnd="6dp">
+        <TextView style="@style/HenWidgetEmoji" android:text="🧺" />
+        <TextView style="@style/HenWidgetLabel" android:text="Harvest" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/btn_water"
+        style="@style/HenWidgetButton"
+        android:layout_marginEnd="6dp">
+        <TextView style="@style/HenWidgetEmoji" android:text="💧" />
+        <TextView style="@style/HenWidgetLabel" android:text="Water" />
+    </LinearLayout>
+
+    <LinearLayout
+        android:id="@+id/btn_note"
+        style="@style/HenWidgetButton">
+        <TextView style="@style/HenWidgetEmoji" android:text="📝" />
+        <TextView style="@style/HenWidgetLabel" android:text="Note" />
+    </LinearLayout>
+</LinearLayout>

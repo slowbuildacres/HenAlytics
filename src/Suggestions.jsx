@@ -796,10 +796,13 @@ function detectWaterGap(data) {
   return { active: false };
 }
 
+// water_gap is retired from the banner: the garden home's "Today in the garden"
+// card shows last-watered alongside the past week's rain, which is the better
+// version of the same nudge. detectWaterGap stays for reference / reuse.
 const OBSERVATION_DETECTORS = {
   egg_gap: detectEggGap,
-  water_gap: detectWaterGap,
 };
+void detectWaterGap;
 
 // ---- Detection orchestration ------------------------------------------------
 // Returns { observation, snoozeClears } — observation to surface now (or null),

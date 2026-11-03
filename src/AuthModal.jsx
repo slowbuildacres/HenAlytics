@@ -2,6 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { Mail, Lock, X, UserCircle, AlertCircle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { apiUrl } from './apiBase.js';
+import { loadEnabledProviders, startOAuth, isNativeApp } from './oauth.js';
+
+// Apple's sign-in button guidelines call for the Apple logo. The system font
+// on Apple devices renders it from this private-use character; elsewhere it
+// would show as a box, so it's only used on Apple platforms.
+const IS_APPLE_DEVICE = typeof navigator !== 'undefined' &&
+  /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || '');
 
 const palette = {
   bg: "#F4EDE0",
@@ -69,6 +76,30 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
   const [resetSent, setResetSent] = useState(false);
   const [passwordUpdated, setPasswordUpdated] = useState(false);
   const [cooldown, setCooldown] = useState(0);
+  const [providers, setProviders] = useState({ google: false, apple: false });
+  const [oauthBusy, setOauthBusy] = useState("");
+
+  useEffect(() => {
+    let alive = true;
+    loadEnabledProviders().then((p) => { if (alive) setProviders(p); });
+    return () => { alive = false; };
+  }, []);
+
+  const signInWith = async (provider) => {
+    setError(""); setInfo("");
+    setOauthBusy(provider);
+    try {
+      await startOAuth(provider);
+      // Web navigates away. Native: the browser sheet is open; the session
+      // arrives through the henalytics://auth-callback deep link, and the app
+      // closes this modal when it does.
+      if (isNativeApp()) setOauthBusy("");
+    } catch (err) {
+      setOauthBusy("");
+      setError(err?.message || "Couldn't start sign-in. Please try again.");
+    }
+  };
+  const showOAuth = (providers.google || providers.apple) && (mode === "signin" || mode === "signup");
 
   // Tick the cooldown down once a second. Deliberately NOT cleared by
   // switchMode — the server-side limit doesn't care which tab you're on.
@@ -287,6 +318,54 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
               </button>
             </div>
           ) : (
+            <>
+            {showOAuth && (
+              <div style={{ marginBottom: 16 }}>
+                {providers.apple && (
+                  <button
+                    type="button"
+                    onClick={() => signInWith("apple")}
+                    disabled={!!oauthBusy || loading}
+                    style={{
+                      width: "100%", padding: "12px 18px", borderRadius: 8, marginBottom: 8,
+                      background: "#000", color: "#fff", border: "1.5px solid #000",
+                      cursor: oauthBusy ? "wait" : "pointer",
+                      fontFamily: "-apple-system, system-ui, sans-serif", fontWeight: 600, fontSize: 15,
+                      display: "flex", alignItems: "center", justifyContent: "center", gap: 8,
+                      opacity: oauthBusy && oauthBusy !== "apple" ? 0.6 : 1,
+                    }}
+                  >
+                    {IS_APPLE_DEVICE && <span aria-hidden="true" style={{ fontSize: 18, lineHeight: 1, marginTop: -2 }}>{"\uF8FF"}</span>}
+                    {oauthBusy === "apple" ? "Opening Apple…" : "Continue with Apple"}
+                  </button>
+                )}
+                {providers.google && (
+                  <button
+                    type="button"
+                    onClick={() => signInWith("google")}
+                    disabled={!!oauthBusy || loading}
+                    style={{
+                      width: "100%", padding: "12px 18px", borderRadius: 8,
+                      background: "#fff", color: "#1f1f1f", border: "1.5px solid #747775",
+                      cursor: oauthBusy ? "wait" : "pointer",
+                      fontFamily: "system-ui, sans-serif", fontWeight: 600, fontSize: 15,
+                      opacity: oauthBusy && oauthBusy !== "google" ? 0.6 : 1,
+                    }}
+                  >
+                    {oauthBusy === "google" ? "Opening Google…" : "Continue with Google"}
+                  </button>
+                )}
+                <div style={{
+                  display: "flex", alignItems: "center", gap: 10, margin: "16px 0 2px",
+                  fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.8,
+                  fontFamily: FONT_BODY,
+                }}>
+                  <div style={{ flex: 1, height: 1, background: palette.line }} />
+                  or use email
+                  <div style={{ flex: 1, height: 1, background: palette.line }} />
+                </div>
+              </div>
+            )}
             <form onSubmit={handleSubmit}>
               {mode !== "setNewPassword" && (
                 <label style={{ display: "block", marginBottom: 14 }}>
@@ -303,7 +382,16 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
-                    autoComplete="email"
+                    name="email"
+                    id="henalytics-email"
+                    inputMode="email"
+                    autoCapitalize="none"
+                    autoCorrect="off"
+                    spellCheck={false}
+                    // "username" (not "email") is what iOS Keychain, Google
+                    // Password Manager and browsers pair with the password
+                    // field to offer saving + autofilling the login.
+                    autoComplete="username"
                     disabled={loading}
                     autoFocus
                   />
@@ -325,6 +413,8 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
+                    name="password"
+                    id="henalytics-password"
                     autoComplete={(mode === "signup" || mode === "setNewPassword") ? "new-password" : "current-password"}
                     disabled={loading}
                     autoFocus={mode === "setNewPassword"}
@@ -400,6 +490,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                 </button>
               )}
             </form>
+            </>
           )}
 
           {mode !== "reset" && mode !== "setNewPassword" && (

@@ -1,0 +1,393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="theme-color" content="#F4EDE0" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1C1410" media="(prefers-color-scheme: dark)">
+<meta name="color-scheme" content="light dark">
+
+<title>What's Your Garden Worth? Free Harvest Value Calculator | Henalytics</title>
+<meta name="description" content="Add up what your vegetable garden grew this year at typical US grocery prices. Free harvest value calculator: tomatoes, zucchini, herbs, berries and more, with a break-even check against what you spent.">
+<link rel="canonical" href="https://henalytics.com/garden-value">
+
+<meta property="og:type" content="website">
+<meta property="og:url" content="https://henalytics.com/garden-value">
+<meta property="og:title" content="What's your garden worth?">
+<meta property="og:description" content="Add up this year's harvest at grocery-store prices and see whether your garden paid for itself. Free, no sign-up.">
+<meta property="og:image" content="https://henalytics.com/icon-512.png">
+<meta property="og:site_name" content="Henalytics">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="What's your garden worth?">
+<meta name="twitter:description" content="Add up this year's harvest at grocery-store prices. Free, no sign-up.">
+
+<link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Serif+Display&family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap">
+
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@type": "FAQPage",
+  "mainEntity": [
+    {
+      "@type": "Question",
+      "name": "Where do the prices come from?",
+      "acceptedAnswer": { "@type": "Answer", "text": "They are typical US grocery-store prices for conventional (not organic) produce, rounded down on purpose. Organic or farmers market prices are usually higher, so your real savings are probably a bit more than the total shown. Every price is editable if your store charges something different." }
+    },
+    {
+      "@type": "Question",
+      "name": "How are pints, quarts and cups valued?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Volume is converted to weight at about 3/4 lb per pint, which is close for berries, beans and cherry tomatoes. A quart counts as about 1.5 lb and a cup as about 3/8 lb, then the per-pound price applies." }
+    },
+    {
+      "@type": "Question",
+      "name": "What if my crop isn't in the list?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Type any name you like. Crops the calculator doesn't recognize get a deliberately low price of {{fallback|lb}} per lb, {{fallback|each}} each or {{fallback|bunch}} per bunch. Change the price on that row to whatever you'd pay at the store." }
+    },
+    {
+      "@type": "Question",
+      "name": "Is what I type saved anywhere?",
+      "acceptedAnswer": { "@type": "Answer", "text": "Only in your own browser, so a refresh doesn't wipe your list. Nothing is sent to a server and there's no account to create. Clearing your browser data removes it." }
+    }
+  ]
+}
+</script>
+
+<style>
+  :root {
+    --bg: #F4EDE0;
+    --bg-alt: #EBE0CC;
+    --card: #FAF5EA;
+    --ink: #2C1810;
+    --ink-soft: #5C4530;
+    --accent: #C84B31;
+    --leaf: #46632D;
+    --tag: #E9D5AE;
+    --tag-ink: #2C1810;
+    --line: #2C181030;
+    --line-strong: #2C181066;
+    --shadow: #2C181030;
+    --field: #FFFDF8;
+    --dot: #2C181022;
+    --font-display: 'DM Serif Display', Georgia, serif;
+    --font-body: 'Be Vietnam Pro', -apple-system, BlinkMacSystemFont, sans-serif;
+    color-scheme: light dark;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #1C1410;
+      --bg-alt: #261B14;
+      --card: #251A13;
+      --ink: #F3EADB;
+      --ink-soft: #C9B79E;
+      --accent: #E8775B;
+      --leaf: #9EC277;
+      --tag: #3B2B1D;
+      --tag-ink: #F3EADB;
+      --line: #F4EDE024;
+      --line-strong: #F4EDE055;
+      --shadow: #00000066;
+      --field: #1A120D;
+      --dot: #F4EDE012;
+    }
+  }
+
+  *, *::before, *::after { box-sizing: border-box; }
+  html { -webkit-text-size-adjust: 100%; }
+  html, body { margin: 0; overflow-x: hidden; max-width: 100vw; }
+  body {
+    background-color: var(--bg);
+    background-image: radial-gradient(var(--dot) 0.6px, transparent 0.6px);
+    background-size: 20px 20px;
+    color: var(--ink);
+    font-family: var(--font-body);
+    font-size: 16px;
+    line-height: 1.6;
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  a { color: var(--accent); }
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+  .wrap { max-width: 600px; margin: 0 auto; padding: 0 16px; }
+
+  /* Site bar: same as the blog pages */
+  .site-bar { background: var(--card); border-bottom: 1.5px solid var(--line); padding-top: env(safe-area-inset-top, 0px); }
+  .site-bar .wrap { display: flex; align-items: center; justify-content: space-between; min-height: 56px; gap: 12px; }
+  .brand { font-family: var(--font-display); font-size: 22px; color: var(--ink); text-decoration: none; }
+  .site-bar nav a { color: var(--ink-soft); text-decoration: none; font-size: 15px; margin-left: 16px; padding: 12px 0; }
+
+  /* Hero */
+  .hero { padding: 32px 0 20px; }
+  h1 { font-family: var(--font-display); font-weight: 400; font-size: 40px; line-height: 1.08; margin: 0 0 12px; letter-spacing: -0.01em; }
+  .lede { color: var(--ink-soft); margin: 0; font-size: 17px; max-width: 34em; }
+
+  /* Crop rows */
+  .crops { list-style: none; margin: 0; padding: 0; display: grid; gap: 12px; }
+  .crop {
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-radius: 14px;
+    padding: 12px;
+    display: grid;
+    gap: 10px;
+  }
+  .crop-top, .crop-mid { display: flex; gap: 8px; align-items: center; }
+  input, select, button { font: inherit; color: inherit; }
+  .field {
+    height: 48px;
+    border: 1.5px solid var(--line-strong);
+    border-radius: 10px;
+    background: var(--field);
+    padding: 0 12px;
+    font-size: 16px;
+    min-width: 0;
+  }
+  .field::placeholder { color: var(--ink-soft); opacity: 0.75; }
+  .field:focus { outline: 2px solid var(--accent); outline-offset: -1px; border-color: transparent; }
+  .crop-name { flex: 1 1 auto; font-weight: 600; }
+  .qty { flex: 0 0 96px; width: 96px; }
+  select.field {
+    flex: 0 0 104px; width: 104px;
+    appearance: none; -webkit-appearance: none;
+    padding-right: 28px;
+    background-image: linear-gradient(45deg, transparent 50%, var(--ink-soft) 50%), linear-gradient(135deg, var(--ink-soft) 50%, transparent 50%);
+    background-position: calc(100% - 16px) 21px, calc(100% - 11px) 21px;
+    background-size: 5px 5px, 5px 5px;
+    background-repeat: no-repeat;
+  }
+  .crop-value {
+    flex: 1 1 auto;
+    text-align: right;
+    font-family: var(--font-display);
+    font-size: 24px;
+    line-height: 1;
+    white-space: nowrap;
+    font-variant-numeric: tabular-nums;
+  }
+  .crop-value.empty { color: var(--ink-soft); opacity: 0.6; }
+  .remove {
+    flex: 0 0 44px; width: 44px; height: 44px;
+    border: 0; background: transparent; border-radius: 10px;
+    color: var(--ink-soft); font-size: 26px; line-height: 1; cursor: pointer;
+  }
+  .remove:hover { background: var(--bg-alt); color: var(--ink); }
+  .crop-price { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 8px; font-size: 14px; color: var(--ink-soft); }
+  .price-label { display: inline-flex; align-items: center; gap: 6px; }
+  .price-box { position: relative; display: inline-flex; align-items: center; }
+  .price-box::before { content: "$"; position: absolute; left: 10px; color: var(--ink-soft); pointer-events: none; }
+  .price { height: 40px; width: 84px; padding-left: 22px; font-size: 16px; }
+  .price.custom { border-color: var(--accent); }
+  .note { white-space: nowrap; }
+  .reset {
+    border: 0; background: none; padding: 8px 4px; margin: -8px 0;
+    color: var(--accent); text-decoration: underline; text-underline-offset: 2px; font-size: 14px; cursor: pointer;
+  }
+  .add {
+    width: 100%; min-height: 52px; margin-top: 12px;
+    border: 1.5px dashed var(--line-strong); border-radius: 14px;
+    background: transparent; color: var(--ink); font-weight: 600; font-size: 16px; cursor: pointer;
+  }
+  .add:hover { background: var(--card); }
+
+  .spent { margin-top: 20px; display: grid; gap: 6px; }
+  .spent label { font-weight: 600; }
+  .spent .hint { font-size: 14px; color: var(--ink-soft); margin: 0; }
+  .spent .price-box { width: 100%; max-width: 220px; }
+  .spent .price-box::before { left: 13px; }
+  .spent .field { width: 100%; padding-left: 26px; }
+
+  /* The farmstand price tag */
+  .tag {
+    position: relative;
+    margin: 28px 0 0;
+    background: var(--tag);
+    color: var(--tag-ink);
+    border: 1.5px solid var(--ink);
+    border-radius: 18px 18px 18px 18px;
+    padding: 22px 20px 20px 52px;
+    box-shadow: 4px 4px 0 var(--shadow);
+  }
+  .tag::before {
+    /* punched hole */
+    content: "";
+    position: absolute;
+    left: 18px; top: 30px;
+    width: 16px; height: 16px;
+    border-radius: 50%;
+    background: var(--bg);
+    border: 1.5px solid var(--ink);
+  }
+  .tag::after {
+    /* twine */
+    content: "";
+    position: absolute;
+    left: -30px; top: 30px;
+    width: 58px; height: 2px;
+    background: var(--ink-soft);
+    transform: rotate(-24deg);
+    transform-origin: right center;
+    opacity: 0.7;
+  }
+  .tag-caption { margin: 0; font-size: 15px; color: var(--tag-ink); opacity: 0.85; }
+  .total {
+    display: block;
+    font-family: var(--font-display);
+    font-size: 64px;
+    line-height: 1;
+    margin: 6px 0 4px;
+    letter-spacing: -0.02em;
+    font-variant-numeric: tabular-nums;
+    overflow-wrap: anywhere;
+  }
+  .total .cents { font-size: 0.45em; vertical-align: 0.95em; margin-left: 2px; letter-spacing: 0; }
+  .balance { margin: 8px 0 0; font-size: 16px; font-weight: 600; }
+  .balance.ahead { color: var(--leaf); }
+  .balance.behind { color: var(--accent); }
+  .balance:empty { display: none; }
+  .share {
+    margin-top: 16px;
+    min-height: 48px; padding: 0 20px;
+    border: 1.5px solid var(--ink); border-radius: 10px;
+    background: var(--ink); color: var(--bg);
+    font-weight: 600; font-size: 16px; cursor: pointer;
+    box-shadow: 2px 2px 0 var(--shadow);
+  }
+  .share:disabled { opacity: 0.45; cursor: default; }
+  .share-status { margin: 10px 0 0; font-size: 14px; }
+  .share-status:empty { display: none; }
+
+  /* Call to action */
+  .cta {
+    margin: 40px 0 0;
+    padding: 22px 20px;
+    background: var(--card);
+    border: 1.5px solid var(--line);
+    border-left: 4px solid var(--leaf);
+    border-radius: 14px;
+  }
+  .cta h2 { margin: 0 0 6px; font-size: 26px; }
+  .cta p { margin: 0 0 16px; color: var(--ink-soft); }
+  .stores { display: grid; gap: 10px; }
+  .store {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    min-height: 52px; padding: 0 16px;
+    border-radius: 10px; text-decoration: none; font-weight: 600;
+    border: 1.5px solid var(--ink);
+    color: var(--ink); background: transparent;
+  }
+  .store.primary { background: var(--ink); color: var(--bg); box-shadow: 2px 2px 0 var(--shadow); }
+  @media (min-width: 520px) {
+    .stores { grid-template-columns: 1fr 1fr; }
+    .stores .web { grid-column: 1 / -1; }
+  }
+
+  /* Article */
+  .article { padding: 8px 0 40px; }
+  h2 { font-family: var(--font-display); font-weight: 400; font-size: 28px; line-height: 1.2; margin: 44px 0 10px; }
+  h3 { font-size: 17px; margin: 24px 0 6px; }
+  .article p { margin: 0 0 14px; max-width: 36em; }
+  .examples { padding-left: 20px; margin: 0 0 14px; }
+  .examples li { margin: 0 0 4px; }
+
+  footer { border-top: 1.5px solid var(--line); padding: 24px 16px; text-align: center; color: var(--ink-soft); font-size: 13px; }
+
+  @media (min-width: 600px) {
+    h1 { font-size: 52px; }
+    .hero { padding-top: 48px; }
+    .total { font-size: 76px; }
+  }
+  @media (max-width: 360px) {
+    .qty { flex-basis: 80px; width: 80px; }
+    select.field { flex-basis: 92px; width: 92px; }
+    .crop-value { font-size: 20px; }
+    .total { font-size: 54px; }
+  }
+</style>
+</head>
+<body>
+
+<header class="site-bar">
+  <div class="wrap">
+    <a class="brand" href="/">🐔 Henalytics</a>
+    <nav>
+      <a href="/blog/">Blog</a>
+      <a href="/">App</a>
+    </nav>
+  </div>
+</header>
+
+<main class="wrap">
+  <section class="hero">
+    <h1>What's your garden worth?</h1>
+    <p class="lede">Add what you picked this year and see what the same food would cost at the grocery store.</p>
+  </section>
+
+  <section id="calc" aria-label="Harvest value calculator">
+    <ul class="crops" id="crops"></ul>
+    <button type="button" class="add" id="add">+ Add a crop</button>
+
+    <div class="spent">
+      <label for="spent">What did you spend? <span style="font-weight:400;color:var(--ink-soft)">(optional)</span></label>
+      <p class="hint" id="spent-hint">Seeds, plants, soil, compost, fencing. Whatever you want to count.</p>
+      <span class="price-box">
+        <input class="field" id="spent" type="text" inputmode="decimal" autocomplete="off" placeholder="0" aria-describedby="spent-hint">
+      </span>
+    </div>
+
+    <div class="tag" aria-live="polite">
+      <p class="tag-caption">At the grocery store, this would cost</p>
+      <strong class="total" id="total">$0</strong>
+      <p class="balance" id="balance"></p>
+      <button type="button" class="share" id="share">Share my total</button>
+      <p class="share-status" id="share-status" role="status"></p>
+    </div>
+    <noscript><p>This calculator needs JavaScript turned on.</p></noscript>
+  </section>
+
+  <section class="cta" aria-labelledby="cta-title">
+    <h2 id="cta-title">Track this automatically all season.</h2>
+    <p>Henalytics logs your harvests and does this math for you, free.</p>
+    <div class="stores">
+      <a class="store primary" href="https://apps.apple.com/app/id6768749008">Get it on the App Store</a>
+      <a class="store primary" href="https://play.google.com/store/apps/details?id=com.henalytics.app">Get it on Google Play</a>
+      <a class="store web" href="https://henalytics.com/">Use it on the web</a>
+    </div>
+  </section>
+
+  <article class="article">
+    <h2>How the prices are estimated</h2>
+    <p>Each crop is valued at a typical US grocery-store price for conventional produce. We round those prices down on purpose, so the total is a floor, not a brag. If you'd otherwise buy organic or shop the farmers market, your garden is worth more than this says.</p>
+    <p>Most crops are priced by the pound. A few are priced the way stores sell them: zucchini, peppers and melons each, herbs and greens by the bunch. Pints, quarts and cups are converted to weight at about 3/4 lb per pint, which is close for berries, beans and cherry tomatoes. A few examples:</p>
+    <ul class="examples">
+      <li>Tomatoes: {{price:tomatoes|lbs}} per lb</li>
+      <li>Zucchini: {{price:zucchini|each}} each</li>
+      <li>Basil: {{price:basil|bunch}} per bunch</li>
+      <li>Blueberries: {{price:blueberries|lbs}} per lb, so about {{price:blueberries|pints}} a pint</li>
+    </ul>
+    <p>If you enter what you spent, the calculator tells you how far ahead you are, or how much more you'd need to grow to break even.</p>
+
+    <h2>Questions</h2>
+    <h3>Where do the prices come from?</h3>
+    <p>They are typical US grocery-store prices for conventional (not organic) produce, rounded down on purpose. Organic or farmers market prices are usually higher, so your real savings are probably a bit more than the total shown. Every price is editable if your store charges something different.</p>
+    <h3>How are pints, quarts and cups valued?</h3>
+    <p>Volume is converted to weight at about 3/4 lb per pint, which is close for berries, beans and cherry tomatoes. A quart counts as about 1.5 lb and a cup as about 3/8 lb, then the per-pound price applies.</p>
+    <h3>What if my crop isn't in the list?</h3>
+    <p>Type any name you like. Crops the calculator doesn't recognize get a deliberately low price of {{fallback|lb}} per lb, {{fallback|each}} each or {{fallback|bunch}} per bunch. Change the price on that row to whatever you'd pay at the store.</p>
+    <h3>Is what I type saved anywhere?</h3>
+    <p>Only in your own browser, so a refresh doesn't wipe your list. Nothing is sent to a server and there's no account to create. Clearing your browser data removes it.</p>
+  </article>
+</main>
+
+<footer>
+  Henalytics, built by one homesteader. <a href="/">henalytics.com</a> · <a href="/blog/">Blog</a> · <a href="https://www.facebook.com/Henalytics">Facebook</a> · <a href="/privacy">Privacy</a>
+</footer>
+
+<datalist id="crop-list"></datalist>
+<script type="module" src="/src/gardenValuePage.js"></script>
+</body>
+</html>

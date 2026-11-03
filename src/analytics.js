@@ -292,7 +292,25 @@ export function collectGardenHarvests(data, opts) {
   const out = [];
 
   // ---- Annuals (data.entries.garden, action: "harvested") ----
-  const gardenEntries = (data && data.entries && data.entries.garden) || [];
+  // BUGFIX: closing a season MOVES its entries out of data.entries.garden and
+  // into hobby.archivedSeasons[i].finalEntries. Previously only the live log
+  // was walked, so every annual harvest vanished from "All-time" (and from the
+  // archived-season views) the moment a season was closed. Walk both, deduped
+  // by entry id in case an entry ever exists in both places.
+  const liveGarden = (data && data.entries && data.entries.garden) || [];
+  const gardenEntries = [...liveGarden];
+  const seenEntryIds = new Set(liveGarden.map((e) => e && e.id).filter(Boolean));
+  for (const h of ((data && Array.isArray(data.hobbies)) ? data.hobbies : [])) {
+    if (!h || h.type !== "garden") continue;
+    for (const s of (Array.isArray(h.archivedSeasons) ? h.archivedSeasons : [])) {
+      for (const e of (Array.isArray(s && s.finalEntries) ? s.finalEntries : [])) {
+        if (!e) continue;
+        if (e.id && seenEntryIds.has(e.id)) continue;
+        if (e.id) seenEntryIds.add(e.id);
+        gardenEntries.push(e);
+      }
+    }
+  }
   for (const e of gardenEntries) {
     if (!e || e.action !== "harvested") continue;
     if (seasonId && e.seasonId !== seasonId) continue;

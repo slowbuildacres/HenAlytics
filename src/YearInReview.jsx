@@ -5,7 +5,10 @@
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight } from "./units.js";
+import { huntingTotals } from "./Hunting.jsx";
+import { soapBatchStats } from "./SoapMaking.jsx";
+import { getYearWeather } from "./weather.js";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
 // BUGFIX: total-harvest stat was missing perennial/orchard harvests.
 // collectGardenHarvests walks both data.entries.garden and the perennials[]
@@ -156,6 +159,38 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
   });
 
   const stats = useMemo(() => computeStats(data, year), [data, year]);
+
+  // ACCURACY: computeStats only sees weather on days something was logged,
+  // so an unlogged 95° day never counted as "hottest". Pull every day of the
+  // year for the homestead location and merge it with logged readings (a
+  // station or hand-entered reading on a log can still beat the model).
+  const wxLoc = data.homesteadLocation;
+  const [yearWx, setYearWx] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    setYearWx(null);
+    if (wxLoc && wxLoc.lat != null && wxLoc.lon != null) {
+      getYearWeather(wxLoc.lat, wxLoc.lon, year).then((r) => { if (alive) setYearWx(r); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [wxLoc && wxLoc.lat, wxLoc && wxLoc.lon, year]);
+  const weatherStats = useMemo(() => {
+    const logged = stats.weatherStats;
+    if (!yearWx) return logged;
+    const pickHot = [logged && logged.hottestDay, yearWx.hottestDay].filter(Boolean)
+      .sort((a, b) => b.highF - a.highF)[0] || null;
+    const pickCold = [logged && logged.coldestDay, yearWx.coldestDay].filter(Boolean)
+      .sort((a, b) => a.lowF - b.lowF)[0] || null;
+    return {
+      hottestDay: pickHot,
+      coldestDay: pickCold,
+      totalRainIn: yearWx.totalRainIn || 0,
+      rainIsYearTotal: true,
+      firstFallFrost: yearWx.firstFallFrost,
+      lastSpringFrost: yearWx.lastSpringFrost,
+      throughDate: yearWx.throughDate,
+    };
+  }, [stats.weatherStats, yearWx]);
   const hasAnyData = stats.totalEntries > 0;
 
   // Check which hobbies are enabled
@@ -181,6 +216,8 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
   const dehydratingEnabled = hobbies.some(h => h.type === "dehydrating" && !h.hidden);
   const fermentationEnabled = hobbies.some(h => h.type === "fermentation" && !h.hidden);
   const freezeDryingEnabled = hobbies.some(h => h.type === "freeze_drying" && !h.hidden);
+  const huntingEnabled = hobbies.some(h => h.type === "hunting" && !h.hidden);
+  const soapEnabled = hobbies.some(h => h.type === "soap" && !h.hidden);
 
   return (
     <div>
@@ -248,9 +285,11 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
           {dogsEnabled && <DogsCard stats={stats} />}
           {catsEnabled && <CatsCard stats={stats} />}
           {mapleSyrupEnabled && <MapleSyrupCard stats={stats} />}
+          {huntingEnabled && <HuntingCard data={data} year={year} />}
+          {soapEnabled && <SoapCard data={data} year={year} />}
           {stats.freezerBirds > 0 && <FreezerCard stats={stats} />}
           <ActivityCard stats={stats} />
-          {stats.weatherStats && <WeatherCard stats={stats} />}
+          {weatherStats && <WeatherCard stats={{ ...stats, weatherStats }} />}
           {stats.photos.length > 0 && <PhotosCard stats={stats} />}
           <FunFactsCard stats={stats} />
           <FooterCard year={year} />
@@ -1246,6 +1285,51 @@ function FreezeDryingCard({ stats }) {
   );
 }
 
+// Hunting + Soap keep their records on the hobby object (not data.entries),
+// so these cards read straight from data for the selected year.
+function HuntingCard({ data, year }) {
+  const hobby = (data.hobbies || []).find(h => h.type === "hunting");
+  const y = String(year);
+  const t = huntingTotals(hobby, (d) => (d || "").startsWith(y));
+  if (!t.harvests.length && !t.totalCost) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🦌 Hunting</div>
+      {t.harvests.length > 0 && <CountUp number={t.harvests.length} suffix={`harvest${t.harvests.length===1?"":"s"}`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {t.meatLbs > 0 && <Stat big={fmtWeight(t.meatLbs)} label="meat in the freezer" accent={palette.leaf}/>}
+        {t.costPerLb > 0 && <Stat big={fmtMoney(t.costPerLb)} label="cost per lb" accent={palette.feather}/>}
+        {t.storeValue > 0 && <Stat big={fmtMoney(t.storeValue)} label="store value" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
+function SoapCard({ data, year }) {
+  const hobby = (data.hobbies || []).find(h => h.type === "soap");
+  const y = String(year);
+  const sales = data.sales || [];
+  const batches = (hobby?.batches || []).filter(b => (b.madeDate || "").startsWith(y));
+  let bars = 0, used = 0;
+  batches.forEach(b => { const st = soapBatchStats(b, sales); bars += st.bars; used += st.used + st.gifted; });
+  const yearSales = sales.filter(s => s.hobbyType === "soap" && (s.date || "").startsWith(y));
+  const sold = yearSales.reduce((s, x) => s + (Number(x.qty) || 0), 0);
+  const revenue = yearSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  if (!batches.length && !sold) return null;
+  return (
+    <Card accent={palette.card}>
+      <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🧼 Soap Making</div>
+      {bars > 0 && <CountUp number={bars} suffix={`bar${bars===1?"":"s"} made`} big />}
+      <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
+        {batches.length > 0 && <Stat big={batches.length} label={`batch${batches.length===1?"":"es"}`} accent={palette.feather}/>}
+        {sold > 0 && <Stat big={sold} label="bars sold" accent={palette.leaf}/>}
+        {used > 0 && <Stat big={used} label="used or gifted" accent={palette.yolk}/>}
+        {revenue > 0 && <Stat big={fmtMoney(revenue)} label="revenue" accent={palette.accent}/>}
+      </div>
+    </Card>
+  );
+}
+
 function ActivityCard({ stats }) {
   const { totalEntries, busiestMonth, longestStreak, activeDays } = stats;
   return (
@@ -1281,7 +1365,9 @@ function WeatherCard({ stats }) {
             from the weather API) — fmtTemp handles the conversion. */}
         {weatherStats.hottestDay && <Stat big={fmtTemp(weatherStats.hottestDay.highF)} label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`} accent={palette.accent} />}
         {weatherStats.coldestDay && <Stat big={fmtTemp(weatherStats.coldestDay.lowF)} label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`} accent="#7AA8B8" />}
-        {weatherStats.totalRainIn > 0 && <Stat big={`${weatherStats.totalRainIn.toFixed(1)}"`} label="rain logged" accent={palette.leaf} />}
+        {weatherStats.totalRainIn > 0 && <Stat big={`${weatherStats.totalRainIn.toFixed(1)}"`} label={weatherStats.rainIsYearTotal ? "rain this year" : "rain logged"} accent={palette.leaf} />}
+        {weatherStats.lastSpringFrost && <Stat big={shortDate(weatherStats.lastSpringFrost)} label="last spring frost" accent="#7AA8B8" />}
+        {weatherStats.firstFallFrost && <Stat big={shortDate(weatherStats.firstFallFrost)} label="first fall frost" accent="#7AA8B8" />}
       </div>
     </Card>
   );

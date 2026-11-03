@@ -1,0 +1,66 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- "Today" widget: header, up to 5 info rows (eggs, frost, tasks), and three
+     quick-log buttons. Rows are plain TextViews filled by TodayWidget.java;
+     unused rows are hidden (View.GONE). -->
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@android:id/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="@drawable/widget_bg">
+
+    <LinearLayout
+        android:id="@+id/today_header"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:clickable="true"
+        android:focusable="true">
+        <TextView
+            android:id="@+id/today_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Today"
+            android:textSize="16sp"
+            android:textStyle="bold"
+            android:fontFamily="serif"
+            android:textColor="#2C1810"
+            android:maxLines="1"
+            android:ellipsize="end" />
+        <TextView
+            android:id="@+id/today_date"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:textSize="12sp"
+            android:textColor="#5C4530" />
+    </LinearLayout>
+
+    <TextView android:id="@+id/row_frost" style="@style/HenWidgetRow" android:textColor="#C84B31" android:textStyle="bold" android:visibility="gone" />
+    <TextView android:id="@+id/row_eggs" style="@style/HenWidgetRow" android:visibility="gone" />
+    <TextView android:id="@+id/row_task1" style="@style/HenWidgetRow" android:visibility="gone" />
+    <TextView android:id="@+id/row_task2" style="@style/HenWidgetRow" android:visibility="gone" />
+    <TextView android:id="@+id/row_task3" style="@style/HenWidgetRow" android:visibility="gone" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="horizontal"
+        android:layout_marginTop="6dp">
+        <LinearLayout android:id="@+id/tbtn_eggs" style="@style/HenWidgetSmallButton" android:layout_marginEnd="6dp">
+            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:text="🥚 Eggs" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/tbtn_harvest" style="@style/HenWidgetSmallButton" android:layout_marginEnd="6dp">
+            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:text="🧺 Harvest" />
+        </LinearLayout>
+        <LinearLayout android:id="@+id/tbtn_note" style="@style/HenWidgetSmallButton">
+            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:text="📝 Note" />
+        </LinearLayout>
+    </LinearLayout>
+</LinearLayout>

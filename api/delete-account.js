@@ -15,8 +15,10 @@ import { getCorsOrigin } from './_cors.js';
 //          remaining member (so a farmhand doesn't lose access)
 //   4. Delete the user's membership rows for any homesteads they don't own
 //   5. Delete all photos in storage under {userId}/* prefix
-//   6. Delete the user from Supabase Auth (this also handles auth.users)
-//   7. Send a notification email to slowbuildacres@gmail.com
+//   6. If the account uses Sign in with Apple, revoke its Apple token
+//      (guideline 5.1.1(v); see _lib/appleRevoke.js). Non-fatal.
+//   7. Delete the user from Supabase Auth (this also handles auth.users)
+//   8. Send a notification email to slowbuildacres@gmail.com
 //
 // Errors at any step are surfaced clearly; partial deletions return 207
 // with details so the operator can clean up manually if needed.
@@ -26,8 +28,11 @@ import { getCorsOrigin } from './_cors.js';
 //   SUPABASE_SERVICE_ROLE_KEY
 //   RESEND_API_KEY (for owner notification — optional, won't block deletion)
 //   EMAIL_FROM, OWNER_EMAIL (optional, with sensible defaults)
+//   APPLE_PRIVATE_KEY (optional; otherwise read from Supabase Vault secret
+//     'apple_private_key') for revoking Sign in with Apple — see _lib/appleRevoke.js
 
 import { createClient } from '@supabase/supabase-js';
+import { revokeAppleToken } from './_lib/appleRevoke.js';
 
 const RESEND_API = 'https://api.resend.com/emails';
 const FROM_ADDRESS = process.env.EMAIL_FROM || 'Henalytics <onboarding@resend.dev>';
@@ -105,6 +110,7 @@ export default async function handler(req, res) {
     homesteadsTransferred: 0,
     membershipsRemoved: 0,
     photosDeleted: 0,
+    appleRevoked: null, // null = not an Apple account
   };
 
   try {
@@ -204,7 +210,61 @@ export default async function handler(req, res) {
       errors.push({ step: 'delete_photos', error: String(e.message || e) });
     }
 
-    // Step 4: Delete the auth.users row. This is the irreversible step —
+    // Step 3b: share-card images (henalytics.com/s/... previews). The
+    // share_cards rows go with the auth user (FK cascade).
+    try {
+      const { data: cards } = await supabase.storage.from('share-cards').list(user.id, { limit: 1000 });
+      if (Array.isArray(cards) && cards.length > 0) {
+        await supabase.storage.from('share-cards').remove(cards.map((f) => `${user.id}/${f.name}`));
+      }
+    } catch (e) {
+      errors.push({ step: 'delete_share_cards', error: String(e.message || e) });
+    }
+
+    // Step 3c: photos added to "what's fresh" customer emails.
+    try {
+      const { data: shots } = await supabase.storage.from('email-photos').list(user.id, { limit: 1000 });
+      if (Array.isArray(shots) && shots.length > 0) {
+        await supabase.storage.from('email-photos').remove(shots.map((f) => `${user.id}/${f.name}`));
+      }
+    } catch (e) {
+      errors.push({ step: 'delete_email_photos', error: String(e.message || e) });
+    }
+
+    // Step 4: Sign in with Apple — revoke the user's Apple token before the
+    // account goes (the stored token row is removed with the user by FK
+    // cascade). Failure is recorded but doesn't stop the deletion.
+    const hasApple = (user.identities || []).some((i) => i && i.provider === 'apple')
+      || (user.app_metadata?.providers || []).includes('apple');
+    if (hasApple) {
+      summary.appleRevoked = false;
+      try {
+        const { data: tok, error: tokErr } = await supabase
+          .from('apple_auth_tokens')
+          .select('refresh_token')
+          .eq('user_id', user.id)
+          .maybeSingle();
+        if (tokErr) {
+          errors.push({ step: 'apple_revoke', error: tokErr.message });
+        } else if (!tok || !tok.refresh_token) {
+          errors.push({ step: 'apple_revoke', error: 'No stored Apple token for this account' });
+        } else {
+          // Key from the env var, else from Supabase Vault.
+          let privateKey;
+          if (!process.env.APPLE_PRIVATE_KEY) {
+            const { data: k } = await supabase.rpc('get_apple_private_key');
+            if (typeof k === 'string' && k) privateKey = k;
+          }
+          const r = await revokeAppleToken(tok.refresh_token, { privateKey });
+          if (r.ok) summary.appleRevoked = true;
+          else errors.push({ step: 'apple_revoke', error: r.error });
+        }
+      } catch (e) {
+        errors.push({ step: 'apple_revoke', error: String(e.message || e) });
+      }
+    }
+
+    // Step 5: Delete the auth.users row. This is the irreversible step —
     // once this completes, the user can never sign in with this email again
     // (until they re-sign-up, which would create a fresh empty account).
     const { error: authErr } = await supabase.auth.admin.deleteUser(user.id);
@@ -219,7 +279,7 @@ export default async function handler(req, res) {
       });
     }
 
-    // Step 5: Best-effort owner notification email. Failure here doesn't
+    // Step 6: Best-effort owner notification email. Failure here doesn't
     // affect the deletion — by this point everything is already gone.
     if (process.env.RESEND_API_KEY) {
       try {
@@ -244,6 +304,7 @@ export default async function handler(req, res) {
                 <li>Homesteads transferred to other owners: ${summary.homesteadsTransferred}</li>
                 <li>Membership rows removed: ${summary.membershipsRemoved}</li>
                 <li>Photos removed: ${summary.photosDeleted}</li>
+                ${summary.appleRevoked === null ? '' : `<li>Sign in with Apple revoked: ${summary.appleRevoked ? 'yes' : 'NO — see errors'}</li>`}
               </ul>
               ${errors.length > 0 ? `<p><strong>⚠️ Non-fatal errors during deletion:</strong></p><pre>${escape(JSON.stringify(errors, null, 2))}</pre>` : ''}
               <p style="color:#888;font-size:12px">User-initiated deletion via in-app Settings.</p>

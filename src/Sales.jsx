@@ -999,7 +999,7 @@ function CustomerModal({ customer, onSave, onClose }) {
           <Field label="Notes (optional)">
             <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
           </Field>
-          <Btn onClick={() => { if (!name.trim()) return; onSave({ id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
+          <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
         </div>
       </div>
     </div>
@@ -1453,7 +1453,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   );
 }
 
-export default function SalesPage({ data, update }) {
+export default function SalesPage({ data, update, onEmailCustomers }) {
   const [showAddSale, setShowAddSale] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -1463,6 +1463,7 @@ export default function SalesPage({ data, update }) {
   const [showCustomers, setShowCustomers] = useState(false);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
+  const [showYearReport, setShowYearReport] = useState(false);
 
   // Profit/expense window — defaults to last 12 months so brand-new homesteads
   // and long-time users both see something meaningful immediately. Users can
@@ -1484,61 +1485,10 @@ export default function SalesPage({ data, update }) {
   const sales = data.sales || [];
   const customers = data.customers || [];
 
-  // Also pull legacy sold_eggs from entries. Uses deriveSoldEggsRevenue so
-  // entries that lack a clean pricePerDozen field still surface with the
-  // right revenue — see helper comment for the field-shape history.
-  const legacyEggSales = useMemo(() => {
-    const eggEntries = (data.entries?.["egg_layers"] || []).filter(e => e.action === "sold_eggs");
-    return eggEntries.map(e => {
-      const { revenue, pricePerDozen, qty } = deriveSoldEggsRevenue(e);
-      return {
-        id: e.id,
-        date: e.date,
-        hobbyType: "eggs",
-        eggType: "Chicken",
-        eggPurpose: "Eating",
-        qty,
-        unit: "eggs",
-        pricePerUnit: pricePerDozen,
-        totalRevenue: revenue,
-        note: e.note || "",
-        buyerId: null,
-        isLegacy: true,
-      };
-    });
-  }, [data.entries]);
-
-  const allSales = useMemo(() => {
-    // Merge `data.sales` (modern, editable) with legacy `sold_eggs` entries
-    // (from old per-flock egg-sale logger). When IDs collide, `data.sales`
-    // WINS — the migration in HomesteadApp.jsx copies legacy entries into
-    // `data.sales`, and the editable version should always take precedence.
-    // Previously the priority was reversed, which silently locked users out
-    // of editing/deleting sales that had already been migrated.
-    const saleIds = new Set(sales.map(s => s.id));
-    const legacyOnly = legacyEggSales.filter(s => !saleIds.has(s.id));
-    // Read-time migration for OLD brooder-disposition sales that were written
-    // with the wrong field names (quantity/item/customer/notes instead of
-    // qty/pricePerUnit/customerName/note). Maps them to the modern shape so
-    // they render correctly in the list AND can be edited from the modal.
-    // The actual fix at write-time is in Incubator.jsx — this just keeps
-    // pre-fix data from looking broken to existing users.
-    const normalized = [...sales, ...legacyOnly].map(s => {
-      if (s.hobbyType !== "incubator") return s;
-      const out = { ...s };
-      if (out.qty == null && out.quantity != null) out.qty = out.quantity;
-      if (out.note == null && out.notes != null) out.note = out.notes;
-      if (out.customerName == null && out.customer != null) out.customerName = out.customer;
-      // Old saves stuffed "Chicken chicks (Spring batch)" into `item`. Pull
-      // bird type out of that string if we don't already have it.
-      if (!out.birdType && typeof out.item === "string") {
-        const m = out.item.match(/^(\S+)\s+chicks/i);
-        if (m) out.birdType = m[1];
-      }
-      return out;
-    });
-    return normalized.sort((a,b) => (b.date||"").localeCompare(a.date||""));
-  }, [sales, legacyEggSales]);
+  // data.sales + legacy sold_eggs entries, normalized (see collectAllSales).
+  const allSales = useMemo(() => collectAllSales(data), [data.sales, data.entries]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Legacy sold_eggs rows only (for the FIFO profit view below).
+  const legacyEggSales = useMemo(() => allSales.filter(s => s.isLegacy), [allSales]);
 
   const filtered = filterType === "all" ? allSales : allSales.filter(s => s.hobbyType === filterType);
 
@@ -1686,6 +1636,7 @@ export default function SalesPage({ data, update }) {
       {editingExpense && <AddExpenseModal data={data} update={update} onClose={() => { setEditingExpense(null); setEditingOccurrenceDate(null); }} existingExpense={editingExpense} occurrenceDate={editingOccurrenceDate} />}
       {showAddCustomer && <CustomerModal onSave={saveCustomer} onClose={() => setShowAddCustomer(false)} />}
       {editingCustomer && <CustomerModal customer={editingCustomer} onSave={saveCustomer} onClose={() => setEditingCustomer(null)} />}
+      {showYearReport && <YearEndReportModal data={data} onClose={() => setShowYearReport(false)} />}
 
       {/* Header */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10 }}>
@@ -1695,6 +1646,34 @@ export default function SalesPage({ data, update }) {
           <Btn onClick={() => setShowAddExpense(true)}>+ Log expense</Btn>
         </div>
       </div>
+
+      <button type="button" onClick={() => setShowYearReport(true)} style={{
+        width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
+        background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
+        fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+      }}>
+        <span style={{ fontSize:22 }}>📄</span>
+        <span style={{ flex:1 }}>
+          <span style={{ display:"block",fontWeight:700,fontSize:14 }}>Year-end report</span>
+          <span style={{ display:"block",fontSize:12,color:palette.inkSoft }}>Sales, expenses and profit by month and category. Download a PDF or spreadsheet for your records or taxes.</span>
+        </span>
+        <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
+      </button>
+
+      {onEmailCustomers && (
+        <button type="button" onClick={onEmailCustomers} style={{
+          width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
+          background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+        }}>
+          <span style={{ fontSize:22 }}>📧</span>
+          <span style={{ flex:1 }}>
+            <span style={{ display:"block",fontWeight:700,fontSize:14 }}>Email your customers</span>
+            <span style={{ display:"block",fontSize:12,color:palette.inkSoft }}>Tell them what's in stock. Tap items, pick a list (eggs, milk…), send.</span>
+          </span>
+          <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
+        </button>
+      )}
 
       {/* Revenue summary cards */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
@@ -2294,6 +2273,362 @@ export default function SalesPage({ data, update }) {
 // ============================================================================
 
 // Get all sales for a given hobbyType (includes legacy sold_eggs for eggs)
+// Every sale on the homestead: `data.sales` (modern, editable) merged with
+// legacy `sold_eggs` entries (from the old per-flock egg-sale logger), newest
+// first. When IDs collide, `data.sales` WINS — the migration in
+// HomesteadApp.jsx copies legacy entries into `data.sales`, and the editable
+// version must take precedence (the reverse once locked people out of editing
+// migrated sales). Legacy rows use deriveSoldEggsRevenue so entries without a
+// clean pricePerDozen still carry the right revenue.
+//
+// Also a read-time fix for OLD brooder-disposition sales written with the
+// wrong field names (quantity/item/customer/notes instead of qty/
+// pricePerUnit/customerName/note), so they render and edit correctly. The
+// write-time fix is in Incubator.jsx.
+export function collectAllSales(data) {
+  const sales = (data && data.sales) || [];
+  const legacyEggSales = ((data && data.entries && data.entries["egg_layers"]) || [])
+    .filter(e => e.action === "sold_eggs")
+    .map(e => {
+      const { revenue, pricePerDozen, qty } = deriveSoldEggsRevenue(e);
+      return {
+        id: e.id, date: e.date, hobbyType: "eggs",
+        eggType: "Chicken", eggPurpose: "Eating",
+        qty, unit: "eggs",
+        pricePerUnit: pricePerDozen,
+        totalRevenue: revenue,
+        note: e.note || "", buyerId: null, isLegacy: true,
+      };
+    });
+  const saleIds = new Set(sales.map(s => s.id));
+  const legacyOnly = legacyEggSales.filter(s => !saleIds.has(s.id));
+  const normalized = [...sales, ...legacyOnly].map(s => {
+    if (s.hobbyType !== "incubator") return s;
+    const out = { ...s };
+    if (out.qty == null && out.quantity != null) out.qty = out.quantity;
+    if (out.note == null && out.notes != null) out.note = out.notes;
+    if (out.customerName == null && out.customer != null) out.customerName = out.customer;
+    if (!out.birdType && typeof out.item === "string") {
+      const m = out.item.match(/^(\S+)\s+chicks/i);
+      if (m) out.birdType = m[1];
+    }
+    return out;
+  });
+  return normalized.sort((a,b) => (b.date||"").localeCompare(a.date||""));
+}
+
+// ============================================================================
+// YEAR-END REPORT — sales, expenses and net for one calendar year
+// ----------------------------------------------------------------------------
+// Same sources as the Sales tab totals: every sale (collectAllSales), every
+// Add-Expense row (recurring ones expanded, only dates that have happened),
+// and the costs logged on hobby pages (feed, bedding, animal purchases… via
+// extractHobbyExpenses, skipping "logged_expense" which are data.expenses
+// rows already counted). Pure, so the screen, the PDF and the CSV agree.
+// ============================================================================
+const ENTRY_EXPENSE_LABEL = {
+  fed: "Feed", bedding: "Bedding", fertilized: "Fertilizer",
+  supplies: "Supplies", restock: "Restock",
+  flock_purchase: "Birds", chick_purchase: "Chicks",
+  hive_purchase: "Hive", animal_purchase: "Animals",
+};
+
+export function reportYears(data) {
+  const ys = new Set([new Date().getFullYear()]);
+  collectAllSales(data).forEach(s => { if (s.date) ys.add(Number(s.date.slice(0, 4))); });
+  (data.expenses || []).forEach(e => { if (e && e.date) ys.add(Number(e.date.slice(0, 4))); });
+  return [...ys].filter(y => y > 1990 && y < 2100).sort((a, b) => b - a);
+}
+
+export function buildYearReport(data, year, now = new Date()) {
+  const y = String(year);
+  const todayIso = isoDate(now);
+  const inYear = (d) => typeof d === "string" && d.slice(0, 4) === y && d <= todayIso;
+  const hobbyName = (id) => {
+    const h = (data.hobbies || []).find(x => x.id === id);
+    return h ? (h.name || h.type) : (id ? String(id) : "General");
+  };
+
+  const sales = collectAllSales(data).filter(s => inYear(s.date)).map(s => ({
+    date: s.date,
+    hobby: (HOBBY_META[s.hobbyType] || HOBBY_META.other).label,
+    item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META[s.hobbyType] || HOBBY_META.other).label,
+    customer: s.customerName || "",
+    qty: s.qty != null ? `${s.qty}${s.unit ? ` ${s.unit}` : ""}` : "",
+    amount: Math.round(computeRevenue(s) * 100) / 100,
+    tip: Number(s.tip) || 0,
+    note: s.note || "",
+  }));
+
+  const expenses = [];
+  for (const e of expandRecurringExpenses(data.expenses || [])) {
+    if (!e || !inYear(e.date)) continue;
+    const amount = Number(e.amount) || 0;
+    if (amount <= 0) continue;
+    expenses.push({ date: e.date, hobby: hobbyName(e.hobbyId), category: e.category || "Other", amount, note: e.description || e.note || "" });
+  }
+  for (const h of (data.hobbies || [])) {
+    for (const r of extractHobbyExpenses(data, h.id)) {
+      if (r.source === "logged_expense" || !inYear(r.date)) continue;
+      expenses.push({ date: r.date, hobby: h.name || h.type, category: ENTRY_EXPENSE_LABEL[r.source] || "Supplies", amount: Number(r.cost) || 0, note: r.note || "" });
+    }
+  }
+  sales.sort((a, b) => a.date.localeCompare(b.date));
+  expenses.sort((a, b) => a.date.localeCompare(b.date));
+
+  const sum = (arr, k = "amount") => Math.round(arr.reduce((t, x) => t + (Number(x[k]) || 0), 0) * 100) / 100;
+  const group = (arr, key) => {
+    const m = new Map();
+    arr.forEach(x => m.set(x[key], (m.get(x[key]) || 0) + (Number(x.amount) || 0)));
+    return [...m.entries()].map(([name, amount]) => ({ name, amount: Math.round(amount * 100) / 100 })).sort((a, b) => b.amount - a.amount);
+  };
+  const months = Array.from({ length: 12 }, (_, i) => {
+    const mm = `${y}-${String(i + 1).padStart(2, "0")}`;
+    const rev = sum(sales.filter(s => s.date.startsWith(mm)));
+    const exp = sum(expenses.filter(e => e.date.startsWith(mm)));
+    return { month: new Date(Number(y), i, 1).toLocaleDateString("en-US", { month: "short" }), revenue: rev, expenses: exp, net: Math.round((rev - exp) * 100) / 100 };
+  });
+
+  const revenue = sum(sales);
+  const spent = sum(expenses);
+  return {
+    year: Number(y),
+    partial: Number(y) === now.getFullYear(),
+    homesteadName: data.homesteadName || "My Homestead",
+    revenue, tips: sum(sales, "tip"), expenses: spent, net: Math.round((revenue - spent) * 100) / 100,
+    salesCount: sales.length, expenseCount: expenses.length,
+    revenueByHobby: group(sales, "hobby"),
+    expensesByCategory: group(expenses, "category"),
+    expensesByHobby: group(expenses, "hobby"),
+    months, sales, expensesList: expenses,
+  };
+}
+
+export function yearReportCsv(r) {
+  const esc = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  const rows = [["Type", "Date", "Hobby", "Item / Category", "Customer", "Quantity", "Amount", "Tip", "Note"]];
+  r.sales.forEach(s => rows.push(["Sale", s.date, s.hobby, s.item, s.customer, s.qty, s.amount.toFixed(2), s.tip ? s.tip.toFixed(2) : "", s.note]));
+  r.expensesList.forEach(e => rows.push(["Expense", e.date, e.hobby, e.category, "", "", (-e.amount).toFixed(2), "", e.note]));
+  rows.push([]);
+  rows.push(["Total sales", "", "", "", "", "", r.revenue.toFixed(2)]);
+  rows.push(["Total tips", "", "", "", "", "", r.tips.toFixed(2)]);
+  rows.push(["Total expenses", "", "", "", "", "", (-r.expenses).toFixed(2)]);
+  rows.push(["Net", "", "", "", "", "", r.net.toFixed(2)]);
+  return rows.map(row => row.map(esc).join(",")).join("\n");
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url; a.download = filename; document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 1500);
+}
+// Phones: hand the file to the share sheet (Save to Files, Mail, Drive…).
+// Elsewhere (or if sharing files isn't supported): download it.
+async function shareOrDownload(blob, filename, title) {
+  try {
+    const file = new File([blob], filename, { type: blob.type });
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], title });
+      return;
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+  }
+  downloadBlob(blob, filename);
+}
+
+const money2 = (n) => {
+  const v = Number(n) || 0;
+  return `${v < 0 ? "-" : ""}${fmtMoney(Math.abs(v))}`;
+};
+
+// A plain, printable PDF: summary, monthly table, breakdowns, then every line
+// item. jsPDF is loaded only when someone taps the button.
+async function buildYearReportPdf(r) {
+  const { jsPDF } = await import("jspdf");
+  const doc = new jsPDF({ unit: "pt", format: "letter" });
+  const W = doc.internal.pageSize.getWidth(), H = doc.internal.pageSize.getHeight();
+  const M = 48;
+  let y = M;
+  const ensure = (h) => { if (y + h > H - M) { doc.addPage(); y = M; } };
+  const text = (t, x, opts = {}) => doc.text(String(t), x, y, opts);
+  const line = () => { doc.setDrawColor(200); doc.line(M, y, W - M, y); };
+
+  doc.setFont("helvetica", "bold"); doc.setFontSize(20);
+  text(`${r.homesteadName}: ${r.year} year-end report`, M); y += 18;
+  doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(110);
+  text(`${r.partial ? `Year to date, through ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : `January 1 to December 31, ${r.year}`} · Generated by Henalytics`, M); y += 26;
+  doc.setTextColor(0);
+
+  const boxes = [["Sales", r.revenue], ["Expenses", r.expenses], ["Net", r.net]];
+  if (r.tips) boxes.splice(1, 0, ["Tips", r.tips]);
+  const bw = (W - 2 * M - (boxes.length - 1) * 10) / boxes.length;
+  boxes.forEach(([label, v], i) => {
+    const x = M + i * (bw + 10);
+    doc.setDrawColor(180); doc.roundedRect(x, y, bw, 52, 6, 6);
+    doc.setFontSize(9); doc.setTextColor(110); doc.text(label.toUpperCase(), x + 10, y + 16);
+    doc.setFontSize(16); doc.setTextColor(0); doc.setFont("helvetica", "bold"); doc.text(money2(v), x + 10, y + 38);
+    doc.setFont("helvetica", "normal");
+  });
+  y += 76;
+
+  const table = (title, head, rows, widths, alignRight = []) => {
+    ensure(40);
+    doc.setFont("helvetica", "bold"); doc.setFontSize(12); text(title, M); y += 14;
+    doc.setFontSize(9); doc.setTextColor(110);
+    let x = M;
+    head.forEach((h, i) => { doc.text(h, alignRight.includes(i) ? x + widths[i] - 4 : x, y, { align: alignRight.includes(i) ? "right" : "left" }); x += widths[i]; });
+    y += 6; line(); y += 12;
+    doc.setFont("helvetica", "normal"); doc.setTextColor(0); doc.setFontSize(9);
+    rows.forEach((row) => {
+      ensure(14);
+      let cx = M;
+      row.forEach((cell, i) => {
+        const c = doc.splitTextToSize(String(cell == null ? "" : cell), widths[i] - 6)[0] || "";
+        doc.text(c, alignRight.includes(i) ? cx + widths[i] - 4 : cx, y, { align: alignRight.includes(i) ? "right" : "left" });
+        cx += widths[i];
+      });
+      y += 13;
+    });
+    y += 12;
+  };
+  const cw = W - 2 * M;
+  table("By month", ["Month", "Sales", "Expenses", "Net"],
+    r.months.map((m) => [m.month, money2(m.revenue), money2(m.expenses), money2(m.net)]),
+    [cw * 0.25, cw * 0.25, cw * 0.25, cw * 0.25], [1, 2, 3]);
+  if (r.revenueByHobby.length) table("Sales by hobby", ["Hobby", "Amount"], r.revenueByHobby.map((g) => [g.name, money2(g.amount)]), [cw * 0.7, cw * 0.3], [1]);
+  if (r.expensesByCategory.length) table("Expenses by category", ["Category", "Amount"], r.expensesByCategory.map((g) => [g.name, money2(g.amount)]), [cw * 0.7, cw * 0.3], [1]);
+  if (r.expensesByHobby.length) table("Expenses by hobby", ["Hobby", "Amount"], r.expensesByHobby.map((g) => [g.name, money2(g.amount)]), [cw * 0.7, cw * 0.3], [1]);
+  if (r.sales.length) table(`All sales (${r.sales.length})`, ["Date", "Hobby", "Item", "Customer", "Amount"],
+    r.sales.map((s) => [s.date, s.hobby, s.item, s.customer, money2(s.amount + (s.tip || 0))]),
+    [cw * 0.15, cw * 0.18, cw * 0.32, cw * 0.18, cw * 0.17], [4]);
+  if (r.expensesList.length) table(`All expenses (${r.expensesList.length})`, ["Date", "Hobby", "Category", "Note", "Amount"],
+    r.expensesList.map((e) => [e.date, e.hobby, e.category, e.note, money2(e.amount)]),
+    [cw * 0.15, cw * 0.18, cw * 0.2, cw * 0.3, cw * 0.17], [4]);
+
+  ensure(30);
+  doc.setFontSize(8); doc.setTextColor(120);
+  doc.text("For your records and your tax preparer. Henalytics totals what you logged; it isn't tax advice.", M, y);
+  const pages = doc.internal.getNumberOfPages();
+  for (let i = 1; i <= pages; i++) {
+    doc.setPage(i); doc.setFontSize(8); doc.setTextColor(150);
+    doc.text(`henalytics.com · page ${i} of ${pages}`, W - M, H - 24, { align: "right" });
+  }
+  return doc.output("blob");
+}
+
+export function YearEndReportModal({ data, onClose }) {
+  const years = useMemo(() => reportYears(data), [data]);
+  const [year, setYear] = useState(() => {
+    // Early in the year, default to last year (that's the one people file).
+    const now = new Date();
+    return now.getMonth() <= 3 && years.includes(now.getFullYear() - 1) ? now.getFullYear() - 1 : years[0];
+  });
+  const [busy, setBusy] = useState("");
+  const r = useMemo(() => buildYearReport(data, year), [data, year]);
+  const safe = (r.homesteadName || "homestead").replace(/[^a-zA-Z0-9-_]+/g, "_");
+  const maxMonth = Math.max(1, ...r.months.map((m) => Math.max(m.revenue, m.expenses)));
+
+  const doPdf = async () => {
+    setBusy("pdf");
+    try { await shareOrDownload(await buildYearReportPdf(r), `${safe}-${r.year}-report.pdf`, `${r.year} year-end report`); }
+    catch (e) { console.warn("PDF failed", e); }
+    setBusy("");
+  };
+  const doCsv = async () => {
+    setBusy("csv");
+    try { await shareOrDownload(new Blob([yearReportCsv(r)], { type: "text/csv" }), `${safe}-${r.year}-report.csv`, `${r.year} year-end report`); }
+    catch (e) { console.warn("CSV failed", e); }
+    setBusy("");
+  };
+
+  const stat = (label, v, color) => (
+    <div style={{ flex: "1 1 30%", minWidth: 90, background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10, padding: "10px 10px" }}>
+      <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1 }}>{label}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: color || palette.ink, lineHeight: 1.1, marginTop: 4 }}>{money2(v)}</div>
+    </div>
+  );
+  const groupList = (title, rows) => rows.length > 0 && (
+    <div style={{ marginBottom: 14 }}>
+      <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>{title}</div>
+      {rows.slice(0, 8).map((g) => (
+        <div key={g.name} style={{ display: "flex", justifyContent: "space-between", fontSize: 13, padding: "5px 0", borderBottom: `1px solid ${palette.line}` }}>
+          <span style={{ color: palette.ink }}>{g.name}</span><span style={{ fontWeight: 600 }}>{money2(g.amount)}</span>
+        </div>
+      ))}
+      {rows.length > 8 && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>+{rows.length - 8} more in the PDF</div>}
+    </div>
+  );
+
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "max(16px, env(safe-area-inset-top)) 12px 24px" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 520, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, flex: 1 }}>{r.year} year-end report</div>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: palette.ink }}><X size={20} /></button>
+        </div>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
+          {years.map((y) => (
+            <button key={y} type="button" onClick={() => setYear(y)} style={{
+              padding: "6px 12px", borderRadius: 999, fontSize: 13, cursor: "pointer", fontFamily: FONT_BODY,
+              border: `1.5px solid ${y === year ? palette.ink : palette.line}`,
+              background: y === year ? palette.ink : "transparent", color: y === year ? palette.bg : palette.ink,
+            }}>{y}</button>
+          ))}
+        </div>
+        {r.partial && <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10 }}>Year to date. Totals keep updating through December 31.</div>}
+
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          {stat("Sales", r.revenue, palette.leaf)}
+          {stat("Expenses", r.expenses)}
+          {stat("Net", r.net, r.net >= 0 ? palette.leaf : palette.accent)}
+        </div>
+        {r.tips > 0 && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: -6, marginBottom: 12 }}>Plus {money2(r.tips)} in tips.</div>}
+
+        {r.salesCount + r.expenseCount === 0 ? (
+          <div style={{ fontSize: 13, color: palette.inkSoft, padding: 14, background: palette.bgAlt, borderRadius: 10, marginBottom: 14 }}>
+            Nothing logged for {r.year} yet. Sales and expenses you log (including feed and supply costs on hobby pages) show up here.
+          </div>
+        ) : (
+          <>
+            <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 6 }}>By month</div>
+            <div style={{ display: "flex", alignItems: "flex-end", gap: 4, height: 90, marginBottom: 4 }}>
+              {r.months.map((m) => (
+                <div key={m.month} title={`${m.month}: ${money2(m.revenue)} sales, ${money2(m.expenses)} expenses`} style={{ flex: 1, display: "flex", gap: 1, alignItems: "flex-end", height: "100%" }}>
+                  <div style={{ flex: 1, height: `${(m.revenue / maxMonth) * 100}%`, minHeight: m.revenue ? 2 : 0, background: palette.leaf, borderRadius: "3px 3px 0 0" }} />
+                  <div style={{ flex: 1, height: `${(m.expenses / maxMonth) * 100}%`, minHeight: m.expenses ? 2 : 0, background: palette.featherSoft, borderRadius: "3px 3px 0 0" }} />
+                </div>
+              ))}
+            </div>
+            <div style={{ display: "flex", gap: 4, marginBottom: 6 }}>
+              {r.months.map((m) => <div key={m.month} style={{ flex: 1, fontSize: 9, color: palette.inkSoft, textAlign: "center" }}>{m.month[0]}</div>)}
+            </div>
+            <div style={{ display: "flex", gap: 12, fontSize: 11, color: palette.inkSoft, marginBottom: 14 }}>
+              <span><span style={{ display: "inline-block", width: 9, height: 9, background: palette.leaf, borderRadius: 2, marginRight: 4 }} />Sales</span>
+              <span><span style={{ display: "inline-block", width: 9, height: 9, background: palette.featherSoft, borderRadius: 2, marginRight: 4 }} />Expenses</span>
+            </div>
+            {groupList("Sales by hobby", r.revenueByHobby)}
+            {groupList("Expenses by category", r.expensesByCategory)}
+          </>
+        )}
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <button type="button" onClick={doPdf} disabled={!!busy} style={{ padding: 13, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.ink, color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, cursor: busy ? "wait" : "pointer", opacity: busy === "pdf" ? 0.7 : 1 }}>
+            {busy === "pdf" ? "Making your PDF…" : "📄 Download PDF report"}
+          </button>
+          <button type="button" onClick={doCsv} disabled={!!busy} style={{ padding: 12, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, cursor: busy ? "wait" : "pointer" }}>
+            📊 Download spreadsheet (CSV)
+          </button>
+        </div>
+        <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.5 }}>
+          Totals include every sale, every expense you added, and costs logged on hobby pages (feed, bedding, animals bought). It's a record of what you logged, not tax advice.
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function getSalesForHobby(data, hobbyType) {
   const sales = (data.sales || []).filter(s => s.hobbyType === hobbyType);
   if (hobbyType === "eggs") {

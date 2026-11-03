@@ -1,7 +1,10 @@
 {
   "rewrites": [
     { "source": "/privacy", "destination": "/privacy.html" },
-    { "source": "/terms", "destination": "/terms.html" }
+    { "source": "/terms", "destination": "/terms.html" },
+    { "source": "/garden-value", "destination": "/garden-value.html" },
+    { "source": "/cal/:token/henalytics.ics", "destination": "/api/calendar-feed?t=:token" },
+    { "source": "/s/:id", "destination": "/api/share-page?id=:id" }
   ],
   "crons": [
     { "path": "/api/send-chore-emails", "schedule": "0 23 * * 0" },
@@ -10,6 +13,12 @@
     { "path": "/api/recompute-region-stats", "schedule": "0 9 * * *" }
   ],
   "headers": [
+    {
+      "source": "/.well-known/apple-app-site-association",
+      "headers": [
+        { "key": "Content-Type", "value": "application/json" }
+      ]
+    },
     {
       "source": "/",
       "headers": [
