@@ -61,6 +61,8 @@ export default defineConfig({
         navigateFallback: '/index.html',
         navigateFallbackDenylist: [
           /^\/api\//,
+          /^\/cal\//,          // live calendar feed (.ics)
+          /^\/\.well-known\//,  // Apple / Android app association files
           /\/rest\/v1\//,
           /\/auth\/v1\//,
         ],

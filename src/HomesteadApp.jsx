@@ -86,6 +86,7 @@ import {
   reconcileReminders, cancelAllReminders, initReminderTapHandling,
 } from "./notifications.js";
 import { apiUrl } from './apiBase.js';
+import { isAuthCallbackUrl, handleAuthCallbackUrl } from './oauth.js';
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
   timelineOf as animalTimelineOf, uploadAnimalPhoto, resolveAnimalPhotoUrl,
@@ -4147,6 +4148,19 @@ useEffect(() => {
   const cloudLoadedRef = useRef(!isSupabaseConfigured); // true once cloud data is confirmed loaded // used when we set state from cloud load — don't re-save it
 
   // ---- Auth state listener ----
+  // Web Google/Apple sign-in that failed or was cancelled comes back as
+  // ?error=...&error_description=... (or in the hash). Say so, then tidy the URL.
+  useEffect(() => {
+    try {
+      const q = new URLSearchParams(window.location.search);
+      const h = new URLSearchParams((window.location.hash || "").replace(/^#/, ""));
+      const desc = q.get("error_description") || h.get("error_description");
+      if (!desc) return;
+      toast(`Sign-in didn't finish: ${desc.replace(/\+/g, " ")}`, { kind: "error", ms: 7000 });
+      window.history.replaceState(null, "", window.location.pathname);
+    } catch (_) {}
+  }, []);
+
   useEffect(() => {
     if (!isSupabaseConfigured) return;
 
@@ -4214,6 +4228,18 @@ useEffect(() => {
   const pendingWidgetUrlRef = useRef(null);
   const [widgetUrlTick, setWidgetUrlTick] = useState(0);
   useNativeDeepLinks(React.useCallback((url) => {
+    // Google / Apple sign-in coming back from the browser sheet.
+    if (isAuthCallbackUrl(url)) {
+      handleAuthCallbackUrl(url).then((r) => {
+        if (r.ok) {
+          setModal((m) => (m && (m.type === "signin" || m.type === "signup") ? null : m));
+          toast("You're signed in 🎉");
+        } else {
+          toast(r.message, { kind: "error", ms: 6000 });
+        }
+      });
+      return;
+    }
     try {
       const u = new URL(url);
       // Supabase stuffs the recovery token in the URL hash (?type=recovery&...
