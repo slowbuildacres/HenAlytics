@@ -22,9 +22,15 @@ const b64url = (buf) => Buffer.from(buf).toString('base64')
   .replace(/=+$/, '').replace(/\+/g, '-').replace(/\//g, '_');
 
 export function appleConfig(env = process.env) {
-  const raw = env.APPLE_PRIVATE_KEY || '';
+  let raw = String(env.APPLE_PRIVATE_KEY || '').trim();
+  if (raw.includes('\\n')) raw = raw.replace(/\\n/g, '\n');
+  // Accept just the base64 body (copied without the BEGIN/END lines).
+  if (raw && !raw.startsWith('-----BEGIN')) {
+    const body = raw.replace(/\s+/g, '');
+    raw = `-----BEGIN PRIVATE KEY-----\n${body.match(/.{1,64}/g).join('\n')}\n-----END PRIVATE KEY-----`;
+  }
   return {
-    privateKey: raw.includes('\\n') ? raw.replace(/\\n/g, '\n') : raw,
+    privateKey: raw,
     keyId: env.APPLE_KEY_ID || '794HU6VJF5',
     teamId: env.APPLE_TEAM_ID || '32S8LFT6HD',
     clientId: env.APPLE_CLIENT_ID || 'com.henalytics.app.signin',
