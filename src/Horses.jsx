@@ -1129,7 +1129,7 @@ function HerdTallySection({ hobby, update }) {
         )}
       </div>
       {open && (
-        <Modal open onClose={() => setOpen(false)} title="Herd tally">
+        <ModalShell title="Herd tally" onClose={() => setOpen(false)}>
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
             Record a head count by sex for horses you don't want to track individually. Separate from your named animals — it doesn't affect breeding, history, or sales.
           </div>
@@ -1150,7 +1150,7 @@ function HerdTallySection({ hobby, update }) {
             <Btn variant="ghost" onClick={() => setOpen(false)}>Cancel</Btn>
             <Btn variant="accent" onClick={save}>Save tally</Btn>
           </div>
-        </Modal>
+        </ModalShell>
       )}
     </>
   );
@@ -1566,6 +1566,116 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
           </div>
         </div>
       )}
+
+      {/* Care log — farrier, vet, dewormer. These records live on
+          hobby.farrier / hobby.vet / hobby.deworming (not data.entries), and
+          previously had no list anywhere on this page, so a saved visit
+          looked like it vanished. Tap any row to edit or delete it. */}
+      <HorseCareLog
+        hobby={hobby}
+        horses={horses}
+        onOpen={(kind, log) => setCareModal({ open: true, kind, log })}
+      />
+    </div>
+  );
+}
+
+// Names for a care record's horse(s). Handles both shapes: horseIds[] (new,
+// multi-horse visits) and horseId (legacy single horse).
+function careHorseIds(rec) {
+  if (Array.isArray(rec?.horseIds) && rec.horseIds.length) return rec.horseIds;
+  return rec?.horseId ? [rec.horseId] : [];
+}
+function careHorseNames(rec, horses) {
+  const names = careHorseIds(rec)
+    .map(id => (horses.find(h => h.id === id) || {}).name)
+    .filter(Boolean);
+  if (names.length === 0) return "Horse";
+  if (names.length > 3) return `${names.slice(0, 3).join(", ")} +${names.length - 3}`;
+  return names.join(", ");
+}
+
+const CARE_KINDS = [
+  { kind: "farrier",   label: "Farrier",  emoji: "🔨", detail: (r) => r.type || "Visit" },
+  { kind: "vet",       label: "Vet",      emoji: "🩺", detail: (r) => [r.type, r.vetName].filter(Boolean).join(" · ") || "Visit" },
+  { kind: "deworming", label: "Dewormer", emoji: "💊", detail: (r) => r.product || "Dose" },
+];
+
+function HorseCareLog({ hobby, horses, onOpen }) {
+  const [tab, setTab] = useState("farrier");
+  const counts = Object.fromEntries(CARE_KINDS.map(k => [k.kind, (hobby?.[k.kind] || []).length]));
+  const total = counts.farrier + counts.vet + counts.deworming;
+  if (total === 0) return null;
+  const meta = CARE_KINDS.find(k => k.kind === tab);
+  const list = (hobby?.[tab] || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  // Days since each live horse's last farrier visit — the number owners
+  // actually plan around (most trim every 6–8 weeks).
+  const farrierDue = horses.filter(h => !h.archived).map(h => {
+    const last = (hobby?.farrier || [])
+      .filter(r => careHorseIds(r).includes(h.id))
+      .map(r => r.date).filter(Boolean).sort().pop();
+    const days = last ? Math.floor((Date.now() - parseLocalDate(last).getTime()) / 86400000) : null;
+    return { horse: h, last, days };
+  });
+
+  return (
+    <div style={{ marginBottom:24 }}>
+      <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>🩺 Care log</h3>
+      <div style={{ display:"flex",gap:6,marginBottom:10,flexWrap:"wrap" }}>
+        {CARE_KINDS.map(k => (
+          <button
+            key={k.kind}
+            onClick={() => setTab(k.kind)}
+            style={{
+              padding:"6px 12px",borderRadius:999,fontFamily:FONT_BODY,fontSize:12,fontWeight:600,cursor:"pointer",
+              border:`1.5px solid ${tab === k.kind ? palette.ink : palette.line}`,
+              background: tab === k.kind ? palette.ink : palette.card,
+              color: tab === k.kind ? palette.bg : palette.ink,
+            }}
+          >{k.emoji} {k.label} ({counts[k.kind]})</button>
+        ))}
+      </div>
+
+      {tab === "farrier" && farrierDue.length > 0 && (
+        <div style={{ display:"flex",gap:6,flexWrap:"wrap",marginBottom:10 }}>
+          {farrierDue.map(({ horse, days }) => (
+            <span key={horse.id} style={{
+              fontSize:11,padding:"4px 8px",borderRadius:6,background:palette.bgAlt,
+              color: days !== null && days > 56 ? palette.accent : palette.inkSoft,
+              fontWeight: days !== null && days > 56 ? 600 : 400,
+            }}>
+              {horse.name}: {days === null ? "no farrier visit yet" : `${days}d since farrier`}
+            </span>
+          ))}
+        </div>
+      )}
+
+      {list.length === 0 ? (
+        <div style={{ fontSize:12,color:palette.inkSoft,fontStyle:"italic",padding:"6px 2px" }}>
+          No {meta.label.toLowerCase()} records yet.
+        </div>
+      ) : (
+        <div style={{ display:"flex",flexDirection:"column",gap:6 }}>
+          {list.slice(0, 15).map(r => (
+            <div
+              key={r.id}
+              onClick={() => onOpen(tab, r)}
+              style={{ padding:"10px 12px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:8,cursor:"pointer" }}
+            >
+              <div style={{ fontWeight:600,fontSize:13,color:palette.ink }}>
+                {meta.emoji} {meta.detail(r)} · {careHorseNames(r, horses)}
+              </div>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginTop:2 }}>
+                {fmtDate(r.date)}{Number(r.cost) > 0 ? ` · ${fmtMoney(r.cost)}` : ""}{r.notes ? ` · ${r.notes.slice(0,50)}${r.notes.length>50?"…":""}` : ""}
+              </div>
+            </div>
+          ))}
+          {list.length > 15 && (
+            <div style={{ fontSize:11,color:palette.inkSoft,textAlign:"center" }}>Showing 15 most recent of {list.length}.</div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1626,13 +1736,16 @@ export function HorsesAnalytics({ hobby, sales = [], /* ADV_ANALYTICS */ dateRan
         {totalCost > 0 && <StatCard label="Total cost" value={fmtMoney(totalCost)} sub={totalPurchaseCost > 0 ? `incl. ${fmtMoney(totalPurchaseCost)} purchases` : null} accent={palette.accent} />}
       </div>
 
-      {totalCareCost > 0 && (
+      {/* Care visits show whenever any are logged — previously this whole
+          section (and each card) was hidden unless a cost was entered, so
+          $0 farrier/vet/dewormer visits never appeared in Stats. */}
+      {(farrier.length + vet.length + deworming.length) > 0 && (
         <>
-          <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>💰 Care costs</h3>
+          <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:18,margin:"0 0 10px",color:palette.ink }}>🩺 Care visits{totalCareCost > 0 ? " & costs" : ""}</h3>
           <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:18 }}>
-            {totalFarrierCost > 0 && <StatCard label="Farrier" value={fmtMoney(totalFarrierCost)} sub={`${farrier.length} visit${farrier.length===1?"":"s"}`} accent={palette.feather} />}
-            {totalVetCost > 0 && <StatCard label="Vet" value={fmtMoney(totalVetCost)} sub={`${vet.length} visit${vet.length===1?"":"s"}`} accent={palette.accent} />}
-            {totalDewormCost > 0 && <StatCard label="Dewormer" value={fmtMoney(totalDewormCost)} sub={`${deworming.length} dose${deworming.length===1?"":"s"}`} accent={palette.leafSoft} />}
+            {farrier.length > 0 && <StatCard label="Farrier" value={`${farrier.length} visit${farrier.length===1?"":"s"}`} sub={totalFarrierCost > 0 ? fmtMoney(totalFarrierCost) : null} accent={palette.feather} />}
+            {vet.length > 0 && <StatCard label="Vet" value={`${vet.length} visit${vet.length===1?"":"s"}`} sub={totalVetCost > 0 ? fmtMoney(totalVetCost) : null} accent={palette.accent} />}
+            {deworming.length > 0 && <StatCard label="Dewormer" value={`${deworming.length} dose${deworming.length===1?"":"s"}`} sub={totalDewormCost > 0 ? fmtMoney(totalDewormCost) : null} accent={palette.leafSoft} />}
           </div>
         </>
       )}
@@ -1661,6 +1774,16 @@ export function HorsesAnalytics({ hobby, sales = [], /* ADV_ANALYTICS */ dateRan
                 {horseRides.length} ride{horseRides.length===1?"":"s"} · {(horseMinutes/60).toFixed(1)} hrs
                 {lastRide ? ` · last: ${fmtDate(lastRide.date)}` : " · no rides yet"}
               </div>
+              {(() => {
+                const lastFarrier = farrier
+                  .filter(r => (Array.isArray(r.horseIds) && r.horseIds.length ? r.horseIds : [r.horseId]).includes(h.id))
+                  .map(r => r.date).filter(Boolean).sort().pop();
+                return (
+                  <div style={{ fontSize:12,color:palette.inkSoft,marginTop:2 }}>
+                    🔨 {lastFarrier ? `Last farrier: ${fmtDate(lastFarrier)}` : "No farrier visit logged"}
+                  </div>
+                );
+              })()}
             </div>
           );
         })}

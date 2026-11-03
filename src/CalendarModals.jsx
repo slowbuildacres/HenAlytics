@@ -58,6 +58,28 @@ const newId = () => {
   );
 };
 
+// ============================================================================
+// USER FROST DATES — the zone table gives regional averages; Settings →
+// Location lets the user set their real dates (data.frostDates, "MM-DD").
+// Use this everywhere instead of calling getFrostDates directly so the
+// calendar, crop planner and season labels all agree.
+// Returns the same { lastFrost: Date, firstFrost: Date, ... } shape plus
+// `custom: true` when either date was overridden.
+// ============================================================================
+export function getUserFrostDates(data, zone, year, system) {
+  const base = getFrostDates(zone, year, system);
+  const fd = data && data.frostDates;
+  if (!fd || (!fd.lastSpring && !fd.firstFall)) return base;
+  const toDate = (mmdd) => {
+    const [m, d] = String(mmdd).split("-").map(Number);
+    return m && d ? new Date(year, m - 1, d) : null;
+  };
+  const out = { ...base, custom: true };
+  if (fd.lastSpring && toDate(fd.lastSpring)) out.lastFrost = toDate(fd.lastSpring);
+  if (fd.firstFall && toDate(fd.firstFall)) out.firstFrost = toDate(fd.firstFall);
+  return out;
+}
+
 // Recurrence options for calendar events. "none" => a one-off event (stored
 // with no `recurrence` field at all, so existing events stay one-offs).
 const RECUR_OPTIONS = [
@@ -150,7 +172,7 @@ function defaultPlantingSeason(data) {
       system, data.homesteadLocation?.lat, data.homesteadLocation?.lon
     );
     const now = new Date();
-    const fd = getFrostDates(zone, now.getFullYear(), system);
+    const fd = getUserFrostDates(data, zone, now.getFullYear(), system);
     const ff = fd.firstFrost.getTime();
     const dayMs = 24 * 60 * 60 * 1000;
     if (now.getTime() >= ff - 150 * dayMs && now.getTime() <= ff) return "fall";
@@ -213,7 +235,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
     data.homesteadLocation?.lat,
     data.homesteadLocation?.lon
   );
-  const frostDates = getFrostDates(userZone, year, userSystem);
+  const frostDates = getUserFrostDates(data, userZone, year, userSystem);
   const zoneLabel = getZoneInfo(userSystem, userZone).label;
   const crop = CROPS.find((c) => c.id === cropId);
   const methods = cropId ? methodsForCrop(cropId, season) : [];
@@ -1002,6 +1024,9 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
           <option value="egg_layers">Egg layers</option>
           <option value="incubator">Incubator</option>
           <option value="rabbits">Rabbits</option>
+          <option value="horses">Horses</option>
+          <option value="hunting">Hunting</option>
+          <option value="soap">Soap making</option>
         </select>
       </Field>
       <Field label="Notes (optional)">
@@ -1215,12 +1240,12 @@ export function ViewDayEventsModal({ data, update, date, setModal, onClose }) {
     data.homesteadLocation?.lon
   );
   const year = parseInt(date.slice(0, 4));
-  const frostDates = getFrostDates(userZone, year, userSystem);
+  const frostDates = getUserFrostDates(data, userZone, year, userSystem);
   const lastFrostStr = isoDateOf(frostDates.lastFrost);
   const firstFrostStr = isoDateOf(frostDates.firstFrost);
   const frostEvents = [];
-  if (date === lastFrostStr) frostEvents.push({ id: "frost-l", title: "❄️ Average last frost", notes: "After this date, the risk of frost is generally low.", type: "frost" });
-  if (date === firstFrostStr) frostEvents.push({ id: "frost-f", title: "🍂 Average first frost", notes: "Frost-tender plants should be harvested or covered by now.", type: "frost" });
+  if (date === lastFrostStr) frostEvents.push({ id: "frost-l", title: frostDates.custom ? "❄️ Your last frost" : "❄️ Average last frost", notes: "After this date, the risk of frost is generally low.", type: "frost" });
+  if (date === firstFrostStr) frostEvents.push({ id: "frost-f", title: frostDates.custom ? "🍂 Your first frost" : "🍂 Average first frost", notes: "Frost-tender plants should be harvested or covered by now.", type: "frost" });
   const all = [...userEvents, ...frostEvents];
 
   return (

@@ -14,7 +14,7 @@
 import React, { useState, useMemo } from "react";
 import {
   Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight,
-  X, Edit3, Sprout, Drumstick, Star,
+  X, Edit3, Sprout, Drumstick, Star, Share2,
 } from "lucide-react";
 import {
   ZONE_INFO, estimateZone, getFrostDates, frostDateEvents,
@@ -23,6 +23,7 @@ import {
 import {
   HARDINESS_SYSTEMS, estimateZoneForSystem, getZoneInfo,
 } from "./hardiness.js";
+import { getUserFrostDates } from "./CalendarModals.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -51,12 +52,23 @@ export default function CalendarPage({ data, update, setModal }) {
     data.homesteadLocation?.lon
   );
   const year = new Date().getFullYear();
-  const frostDates = useMemo(() => getFrostDates(userZone, year, userSystem), [userZone, year, userSystem]);
+  const frostKey = JSON.stringify(data.frostDates || null);
+  const frostDates = useMemo(
+    () => getUserFrostDates(data, userZone, year, userSystem),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [userZone, year, userSystem, frostKey]
+  );
 
   // Combine user events with almanac frost events
   const userEvents = data.calendarEvents || [];
   const allEvents = useMemo(() => {
-    const frostEvts = frostDateEvents(frostDates);
+    // When the user set their own frost dates, relabel the markers so they
+    // don't read as regional averages.
+    const frostEvts = frostDateEvents(frostDates).map((e) =>
+      frostDates.custom && typeof e.title === "string"
+        ? { ...e, title: e.title.replace(/Average /i, "Your ") }
+        : e
+    );
     // Expand recurring user events into per-date occurrences before merging.
     const expanded = expandRecurring(userEvents);
     return [...expanded, ...frostEvts].sort((a, b) => a.date.localeCompare(b.date));
@@ -85,6 +97,7 @@ export default function CalendarPage({ data, update, setModal }) {
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
         <QuickActionBtn icon={Sprout} label="Plan a crop" onClick={() => setModal({ type: "planCrop" })} />
         <QuickActionBtn icon={Star} label="Plan an event" onClick={() => setModal({ type: "addCalendarEvent" })} />
+        <QuickActionBtn icon={Share2} label="Sync to my calendar" onClick={() => setModal({ type: "calendarSync" })} />
       </div>
 
       {/* Main view */}
@@ -154,6 +167,16 @@ function ZoneCard({ frostDates, userZone, userSystem, setModal, hasLocation }) {
       </div>
       <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.5 }}>
         Last frost: <strong style={{ color: palette.ink }}>{fmtMonth(frostDates.lastFrost)}</strong> · First frost: <strong style={{ color: palette.ink }}>{fmtMonth(frostDates.firstFrost)}</strong>
+        <div style={{ fontSize: 11, marginTop: 4 }}>
+          {frostDates.custom ? "Using your frost dates · " : "Regional average for your zone · "}
+          <span
+            role="button"
+            onClick={(e) => { e.stopPropagation(); setModal({ type: "location" }); }}
+            style={{ color: palette.leaf, fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}
+          >
+            {frostDates.custom ? "change" : "set my real dates"}
+          </span>
+        </div>
         {!hasLocation && (
           <div style={{ fontSize: 11, fontStyle: "italic", marginTop: 4 }}>
             Set your location in settings for a more accurate zone.
@@ -271,6 +294,8 @@ function EventRow({ event, isPast, isToday, isUserEvent, setModal, update }) {
     event.type === "garden" ? palette.leaf :
     event.type === "chicken" ? palette.feather :
     event.type === "egg_layers" ? palette.yolk :
+    event.type === "soap" || event.type === "soap_cured" ? palette.featherSoft :
+    event.type === "hunting" ? palette.accent :
     palette.ink
   );
 

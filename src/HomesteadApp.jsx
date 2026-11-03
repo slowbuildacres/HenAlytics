@@ -95,7 +95,7 @@ import {
 } from "./animalPhotos.js";
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
-  getWeeklyPrecip,
+  getWeeklyPrecip, testStation, getYearWeather,
 } from "./weather.js";
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
@@ -103,6 +103,7 @@ import YearInReviewPage from "./YearInReview.jsx";
 import GamesHubPage from "./GamesHub.jsx";              // HOMESTEAD_GAMES
 import { pushGamesContribution } from "./games.js";     // HOMESTEAD_GAMES
 import CalendarPage from "./Calendar.jsx";
+import { exportCalendarICS } from "./calendarExport.js";
 import {
   PlanCropModal, PlanBirdsModal, AddCalendarEventModal,
   EditCalendarEventModal, EditZoneModal, ViewDayEventsModal,
@@ -146,6 +147,8 @@ import TeaPage, { TeaAnalytics } from "./Tea.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
 import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
+import HuntingPage, { HuntingAnalytics, huntingTotals } from "./Hunting.jsx";
+import SoapMakingPage, { SoapMakingAnalytics, soapBatchStats } from "./SoapMaking.jsx";
 import {
   initIap, identifyIapUser, purchaseProduct, restorePurchases,
   hasActiveSubscription, openManageSubscriptions, TIER_TO_IAP_PRODUCT,
@@ -199,6 +202,8 @@ const defaultData = () => ({
     { id: "dogs", name: "Dogs 🐕", type: "dogs", icon: "sprout", animals: [], breedings: [], litters: [], attacks: [], hidden: true },
     { id: "cats", name: "Cats 🐈", type: "cats", icon: "sprout", animals: [], breedings: [], litters: [], attacks: [], hidden: true },
     { id: "maple_syrup", name: "Maple Syrup 🍁", type: "maple_syrup", icon: "sprout", seasons: [], hidden: true },
+    { id: "hunting", name: "Hunting 🦌", type: "hunting", icon: "sprout", harvests: [], tags: [], gear: [], hidden: true },
+    { id: "soap", name: "Soap Making 🧼", type: "soap", icon: "sprout", batches: [], hidden: true },
   ],
   entries: {}, // { hobbyId: [entries] }
   plantings: [], // garden plantings to track
@@ -961,6 +966,25 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
       if (!h.name || h.name === "maple_syrup" || h.name === "Maple Syrup") {
         h.name = "Maple Syrup 🍁";
       }
+    }
+  });
+  // ---- Hunting + Soap Making hobbies ----
+  // Backfill for existing accounts (hidden by default — never un-hide a
+  // hobby the user didn't ask for).
+  if (!data.hobbies.some(h => h.id === "hunting")) {
+    data.hobbies.push({ id: "hunting", name: "Hunting 🦌", type: "hunting", icon: "sprout", harvests: [], tags: [], gear: [], hidden: true });
+  }
+  if (!data.hobbies.some(h => h.id === "soap")) {
+    data.hobbies.push({ id: "soap", name: "Soap Making 🧼", type: "soap", icon: "sprout", batches: [], hidden: true });
+  }
+  data.hobbies.forEach((h) => {
+    if (h.type === "hunting") {
+      ["harvests", "tags", "gear"].forEach(k => { if (!Array.isArray(h[k])) h[k] = []; });
+      if (typeof h.hidden === "undefined") h.hidden = true;
+    }
+    if (h.type === "soap") {
+      if (!Array.isArray(h.batches)) h.batches = [];
+      if (typeof h.hidden === "undefined") h.hidden = true;
     }
   });
   // ---- Sheep hobby ----
@@ -2180,6 +2204,36 @@ const useNativeDeepLinks = (onUrl) => {
 };
 
 // ============================================================================
+// WIDGET DEEP LINKS
+// ----------------------------------------------------------------------------
+//   henalytics://log?hobby=egg_layers&action=eggs
+//   henalytics://open
+// Only whitelisted actions are honored so a stray link can't open arbitrary
+// modals. Returns { kind: "log", hobbyId, action } | { kind: "open" } | null.
+// ============================================================================
+const WIDGET_ACTIONS = ["eggs", "fed", "watered", "note", "bedding", "sold_eggs", "used_eggs"];
+// Hobbies whose quick-log tiles live on the Home page rather than their own page.
+const WIDGET_HOME_TYPES = ["garden", "egg_layers", "meat_chickens"];
+const parseWidgetUrl = (url) => {
+  if (!url || !/^henalytics:\/\//i.test(url)) return null;
+  try {
+    const u = new URL(url);
+    // For custom schemes "henalytics://log?x" parses with host "log"; some
+    // engines put it in pathname instead ("//log"). Accept both.
+    const route = (u.host || u.pathname.replace(/^\/+/, "")).toLowerCase();
+    if (route === "open") return { kind: "open" };
+    if (route !== "log") return null;
+    const hobbyId = u.searchParams.get("hobby");
+    const action = u.searchParams.get("action") || "note";
+    if (!hobbyId || !/^[a-z0-9_-]{1,40}$/i.test(hobbyId)) return null;
+    if (!WIDGET_ACTIONS.includes(action)) return null;
+    return { kind: "log", hobbyId, action };
+  } catch (_) {
+    return null;
+  }
+};
+
+// ============================================================================
 // TOAST — tiny event-bus message system to replace window.alert
 // ----------------------------------------------------------------------------
 // window.alert() is unreliable in Capacitor/WKWebView and looks terrible
@@ -2392,6 +2446,25 @@ const estimateFrostDates = (lat) => {
   return { springFrostDayOfYear: springDay, fallFrostDayOfYear: fallDay };
 };
 
+// User-set frost dates (Settings → Location) beat the latitude estimate.
+// data.frostDates = { lastSpring: "MM-DD", firstFall: "MM-DD" }
+const getFrostDates = (data) => {
+  const est = estimateFrostDates(data?.homesteadLocation?.lat);
+  const fd = data?.frostDates;
+  if (!fd || (!fd.lastSpring && !fd.firstFall)) return est;
+  const toDoy = (mmdd) => {
+    const [m, d] = String(mmdd).split("-").map(Number);
+    if (!m || !d) return null;
+    return Math.floor((Date.UTC(2001, m - 1, d) - Date.UTC(2001, 0, 0)) / 86400000);
+  };
+  const ls = fd.lastSpring ? toDoy(fd.lastSpring) : null;
+  const ff = fd.firstFall ? toDoy(fd.firstFall) : null;
+  return {
+    springFrostDayOfYear: ls ?? (est ? est.springFrostDayOfYear : 105),
+    fallFrostDayOfYear: ff ?? (est ? est.fallFrostDayOfYear : 285),
+  };
+};
+
 // Compute the day-of-year (1-366) for a given Date in local time.
 const dayOfYear = (d) => {
   const start = new Date(d.getFullYear(), 0, 0);
@@ -2404,7 +2477,7 @@ const getSeason = (dateStr, data) => {
   const m = d.getMonth();
   const y = d.getFullYear();
   const lat = data?.homesteadLocation?.lat;
-  const frost = estimateFrostDates(lat);
+  const frost = getFrostDates(data);
   const south = getCurrentHemisphere() === "south";
 
   // If we have a location, use the frost window. Northern: winter = before
@@ -2503,7 +2576,7 @@ const getSeasonInfo = (dateStr, data) => {
   const m = d.getMonth();
   const doy = dayOfYear(d);
   const lat = data?.homesteadLocation?.lat;
-  const frost = estimateFrostDates(lat);
+  const frost = getFrostDates(data);
   const south = getCurrentHemisphere() === "south";
 
   // Southern hemisphere — calendar splits, winter is mid-year, summer straddles Dec→Feb
@@ -2572,6 +2645,8 @@ function formatWeatherI18n(weather) {
   else if (low) parts.push(low);
   if (summary) parts.push(summary);
   if (precip) parts.push(precip);
+  if (weather.source === "station") parts.push("📡");
+  else if (weather.source === "manual") parts.push("✍️");
   return parts.join(" · ");
 }
 
@@ -3817,7 +3892,7 @@ useEffect(() => {
       setActiveHobby(newActive);
       // Also normalize the page: if we're on a hobby-specific page (e.g. "pigs"),
       // bounce to "home" so we don't stay on a page tied to the hidden hobby.
-      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning", "freeze_drying", "dehydrating", "fermentation", "dogs", "cats", "maple_syrup"];
+      const hobbyPages = ["rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning", "freeze_drying", "dehydrating", "fermentation", "dogs", "cats", "maple_syrup", "hunting", "soap"];
       if (hobbyPages.includes(page)) {
         const newHobbyType = (firstVisible || {}).type;
         if (hobbyPages.includes(newHobbyType)) {
@@ -4134,6 +4209,10 @@ useEffect(() => {
   // emails). On web this is a no-op — the recovery flow comes through the URL
   // hash on first load instead. On native, Supabase's reset email targets a
   // henalytics://reset?type=recovery&token=... URL which the OS hands to us.
+  // Home-screen widget deep links (see WIDGET DEEP LINKS) — declared before
+  // the listener that writes to them.
+  const pendingWidgetUrlRef = useRef(null);
+  const [widgetUrlTick, setWidgetUrlTick] = useState(0);
   useNativeDeepLinks(React.useCallback((url) => {
     try {
       const u = new URL(url);
@@ -4142,9 +4221,52 @@ useEffect(() => {
       if (/type=recovery/.test(u.hash) || /type=recovery/.test(u.search)) {
         setPasswordRecoveryPending(true);
         setModal({ type: "setNewPassword" });
+        return;
       }
+      if (parseWidgetUrl(url)) pendingWidgetUrlRef.current = url;
+      setWidgetUrlTick((t) => t + 1);
     } catch (_) { /* malformed URL — ignore */ }
   }, []));
+
+  // ---- Home-screen widget taps ----
+  // The iOS/Android widgets open henalytics://log?hobby=<id>&action=<action>
+  // (or henalytics://open). We stash the URL, then apply it once data has
+  // loaded — on a cold start the tap arrives before data does.
+  useEffect(() => {
+    if (!isNativeApp()) return;
+    (async () => {
+      try {
+        const { App } = await loadCapacitor("@capacitor/app");
+        const launch = await App.getLaunchUrl();
+        if (launch && launch.url && parseWidgetUrl(launch.url)) {
+          pendingWidgetUrlRef.current = launch.url;
+          setWidgetUrlTick((t) => t + 1);
+        }
+      } catch (_) {}
+    })();
+  }, []);
+  useEffect(() => {
+    const url = pendingWidgetUrlRef.current;
+    if (!url || !data?.hobbies) return;
+    pendingWidgetUrlRef.current = null;
+    const w = parseWidgetUrl(url);
+    if (!w) return;
+    // Stop the "snap to first visible hobby" effect from overriding us.
+    initialActiveHobbySetRef.current = true;
+    if (w.kind === "open") { setModal(null); setPage("home"); return; }
+    // hobby=any → the hobby you were last on (or your first visible one).
+    const h = w.hobbyId === "any"
+      ? (data.hobbies.find((x) => x.id === activeHobby && !x.hidden) || data.hobbies.find((x) => !x.hidden))
+      : data.hobbies.find((x) => x.id === w.hobbyId || x.type === w.hobbyId);
+    if (!h || h.hidden) {
+      toast("That hobby is turned off. Turn it on in Settings → Manage hobbies, or edit the widget.");
+      setPage("home");
+      return;
+    }
+    setActiveHobby(h.id);
+    setPage(WIDGET_HOME_TYPES.includes(h.type) ? "home" : h.type);
+    setModal({ type: "log", action: w.action, hobbyIdOverride: h.id });
+  }, [widgetUrlTick, data?.hobbies]);
 
   // ---- Native keyboard inset tracking ----
   useNativeKeyboardInset();
@@ -4873,7 +4995,8 @@ useNativeBackButton(React.useCallback(() => {
         </div>
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
-      <SeasonalDecorations />
+      {/* Off unless the user turns it on in Settings. */}
+      {data.seasonalDecorations === true && <SeasonalDecorations />}
 
       {/* Toast host — listens for window "henalytics-toast" events */}
       <ToastHost />
@@ -5320,6 +5443,8 @@ useNativeBackButton(React.useCallback(() => {
                         dogs: "dogs",
                         cats: "cats",
                         maple_syrup: "maple_syrup",
+                        hunting: "hunting",
+                        soap: "soap",
                       };
                       // Garden, egg_layers, meat_chickens all share the
                       // generic "home" page (which keys off activeHobby).
@@ -5496,6 +5621,16 @@ useNativeBackButton(React.useCallback(() => {
             <CatsAnalytics hobby={data.hobbies.find(h=>h.id==="cats")} />
           </AnalyticsShareWrapper>
         )}
+        {page === "analytics" && activeHobby === "hunting" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="hunting")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+            <HuntingAnalytics hobby={data.hobbies.find(h=>h.id==="hunting")} />
+          </AnalyticsShareWrapper>
+        )}
+        {page === "analytics" && activeHobby === "soap" && (
+          <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="soap")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+            <SoapMakingAnalytics hobby={data.hobbies.find(h=>h.id==="soap")} sales={data.sales || []} />
+          </AnalyticsShareWrapper>
+        )}
         {page === "analytics" && activeHobby === "maple_syrup" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
@@ -5527,7 +5662,7 @@ useNativeBackButton(React.useCallback(() => {
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && (
+        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "photos" && (
@@ -5618,6 +5753,12 @@ useNativeBackButton(React.useCallback(() => {
             <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
+        {page === "hunting" && (
+          <HuntingPage hobby={data.hobbies.find(h=>h.id==="hunting")} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "soap" && (
+          <SoapMakingPage hobby={data.hobbies.find(h=>h.id==="soap")} data={data} update={update} setModal={setModal} />
+        )}
         {page === "maple_syrup" && (
           <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} setModal={setModal} />
         )}
@@ -5662,7 +5803,7 @@ useNativeBackButton(React.useCallback(() => {
         background: palette.ink, padding: "8px 4px", paddingBottom: "max(8px, env(safe-area-inset-bottom))",
         display: "flex", justifyContent: "center", gap: 2, zIndex: 50,
       }}>
-        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "tincture" || page === "oil_infusion" || page === "salve" || page === "tea" || page === "dogs" || page === "cats" || page === "maple_syrup"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "tincture") setPage("tincture"); else if (activeHobby === "oil_infusion") setPage("oil_infusion"); else if (activeHobby === "salve") setPage("salve"); else if (activeHobby === "tea") setPage("tea"); else if (activeHobby === "dogs") setPage("dogs"); else if (activeHobby === "cats") setPage("cats"); else if (activeHobby === "maple_syrup") setPage("maple_syrup"); else setPage("home"); }} icon={Home} label="Home" />
+        <NavTab active={page === "home" || page === "rabbits" || page === "bees" || page === "incubator" || page === "goats" || page === "cows" || page === "pigs" || page === "sheep" || page === "horses" || page === "sourdough" || page === "farmstand" || page === "baking" || page === "canning" || page === "freeze_drying" || page === "dehydrating" || page === "fermentation" || page === "tincture" || page === "oil_infusion" || page === "salve" || page === "tea" || page === "dogs" || page === "cats" || page === "maple_syrup" || page === "hunting" || page === "soap"} onClick={() => { if (activeHobby === "rabbits") setPage("rabbits"); else if (activeHobby === "bees") setPage("bees"); else if (activeHobby === "incubator") setPage("incubator"); else if (activeHobby === "goats") setPage("goats"); else if (activeHobby === "cows") setPage("cows"); else if (activeHobby === "pigs") setPage("pigs"); else if (activeHobby === "sheep") setPage("sheep"); else if (activeHobby === "horses") setPage("horses"); else if (activeHobby === "sourdough") setPage("sourdough"); else if (activeHobby === "farmstand") setPage("farmstand"); else if (activeHobby === "baking") setPage("baking"); else if (activeHobby === "canning") setPage("canning"); else if (activeHobby === "freeze_drying") setPage("freeze_drying"); else if (activeHobby === "dehydrating") setPage("dehydrating"); else if (activeHobby === "fermentation") setPage("fermentation"); else if (activeHobby === "tincture") setPage("tincture"); else if (activeHobby === "oil_infusion") setPage("oil_infusion"); else if (activeHobby === "salve") setPage("salve"); else if (activeHobby === "tea") setPage("tea"); else if (activeHobby === "dogs") setPage("dogs"); else if (activeHobby === "cats") setPage("cats"); else if (activeHobby === "maple_syrup") setPage("maple_syrup"); else if (activeHobby === "hunting") setPage("hunting"); else if (activeHobby === "soap") setPage("soap"); else setPage("home"); }} icon={Home} label="Home" />
         <NavTab active={page === "analytics"} onClick={() => setPage("analytics")} icon={BarChart3} label="Stats" />
         <NavTab active={page === "calendar"} onClick={() => setPage("calendar")} icon={Calendar} label="Calendar" />
         <NavTipButton filled={tippedThisMonth} onClick={() => setModal({ type: "support" })} />
@@ -12002,6 +12143,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
+  if (modal.type === "calendarSync") return <CalendarSyncModal data={data} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
   if (modal.type === "tutorial") return <TutorialModal onClose={close} />;
   if (modal.type === "whatsNew") return <WhatsNewModal onClose={close} />;
@@ -12645,6 +12787,29 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           }}
         />
       )}
+
+      <SectionBtn
+        icon={Calendar}
+        label="Add to Google / Outlook / Apple Calendar"
+        sub="Put your homestead reminders on the calendar you already use"
+        accent={palette.feather}
+        onClick={() => setModal({ type: "calendarSync" })}
+      />
+
+      <SectionBtn
+        icon={Leaf}
+        label={data.seasonalDecorations === true ? "Seasonal decorations: ON" : "Seasonal decorations: off"}
+        sub={data.seasonalDecorations === true
+          ? "Falling leaves, snowflakes and petals drift across the screen"
+          : "Turn on falling leaves, snowflakes and other seasonal effects"}
+        accent={data.seasonalDecorations === true ? palette.leaf : palette.inkSoft}
+        onClick={() => {
+          update((d) => {
+            d.seasonalDecorations = d.seasonalDecorations !== true;
+            return d;
+          });
+        }}
+      />
 
       {isNativeApp() && (
         <SectionBtn
@@ -14888,8 +15053,286 @@ function LocationModal({ data, update, onClose }) {
         </div>
       )}
 
+      <WeatherSourceSettings data={data} update={update} />
+
+      <FrostDateSettings data={data} update={update} />
+
       <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 16, lineHeight: 1.5 }}>
-        Your location is stored only in your homestead data — never shared or sold. Weather is fetched from the free Open-Meteo service.
+        Your location and station keys are stored only in your homestead data — never shared or sold. Model weather comes from the free Open-Meteo service.
+      </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// WEATHER SOURCE — auto (local models) / my station / off (hand entry only)
+// ----------------------------------------------------------------------------
+// Phone weather apps (Apple Weather, Google, etc.) don't let other apps read
+// their data, so "link my weather app" isn't possible. What IS possible: most
+// home stations upload to Weather Underground or Ambient Weather, and both
+// give owners a free API key. Stored on data.weatherSettings.
+// ============================================================================
+function WeatherSourceSettings({ data, update }) {
+  const ws = data.weatherSettings || {};
+  const [source, setSource] = useState(ws.source || "auto");
+  const [st, setSt] = useState(() => ({ provider: "wu", ...(ws.station || {}) }));
+  const [testing, setTesting] = useState(false);
+  const [testMsg, setTestMsg] = useState(null);
+
+  const save = (nextSource, nextStation) => {
+    update((d) => {
+      d.weatherSettings = { ...(d.weatherSettings || {}), source: nextSource };
+      if (nextStation) d.weatherSettings.station = nextStation;
+      return d;
+    });
+  };
+  const pick = (k) => { setSource(k); setTestMsg(null); save(k, k === "station" ? st : null); };
+  const setField = (k, v) => setSt((p) => ({ ...p, [k]: v.trim ? v.trim() : v }));
+  const runTest = async () => {
+    setTesting(true); setTestMsg(null);
+    save("station", st);
+    const r = await testStation(st);
+    setTesting(false);
+    if (r.ok) {
+      const w = r.sample;
+      setTestMsg({ ok: true, text: `Connected ✓ Today so far: ${w.highF != null ? fmtTemp(w.highF) : "—"} high, ${w.lowF != null ? fmtTemp(w.lowF) : "—"} low${w.precipIn != null ? `, ${w.precipIn}" rain` : ""}.` });
+    } else {
+      setTestMsg({ ok: false, text: r.message + " If this keeps failing in a web browser, try the phone app — some station services block website requests." });
+    }
+  };
+
+  const opt = (k, title, sub) => (
+    <button
+      key={k}
+      type="button"
+      onClick={() => pick(k)}
+      style={{
+        display: "block", width: "100%", textAlign: "left", cursor: "pointer",
+        padding: "10px 12px", marginBottom: 6, borderRadius: 8, fontFamily: "inherit",
+        border: `1.5px solid ${source === k ? palette.ink : palette.line}`,
+        background: source === k ? palette.yolkSoft : palette.card, color: palette.ink,
+      }}
+    >
+      <div style={{ fontWeight: 600, fontSize: 13 }}>{source === k ? "● " : "○ "}{title}</div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>
+    </button>
+  );
+
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{
+        fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+        textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+      }}>
+        Weather source
+      </div>
+      {opt("auto", "Automatic (local forecast models)", "High-resolution models for your exact spot. No setup.")}
+      {opt("station", "My weather station", "Pull readings from your own station via Weather Underground or Ambient Weather.")}
+      {opt("off", "Don't add weather automatically", "Only what you type into the log form.")}
+
+      {source === "station" && (
+        <div style={{ padding: 12, border: `1.5px solid ${palette.line}`, borderRadius: 8, background: palette.card, marginTop: 4 }}>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {[["wu", "Weather Underground"], ["ambient", "Ambient Weather"]].map(([k, label]) => (
+              <button key={k} type="button" onClick={() => setField("provider", k)} style={{
+                flex: 1, padding: "8px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+                border: `1.5px solid ${st.provider === k ? palette.ink : palette.line}`,
+                background: st.provider === k ? palette.ink : palette.bg,
+                color: st.provider === k ? palette.bg : palette.ink,
+              }}>{label}</button>
+            ))}
+          </div>
+          {st.provider === "wu" ? (
+            <>
+              <Field label="Station ID">
+                <input style={inputStyle} value={st.stationId || ""} onChange={(e) => setField("stationId", e.target.value)} placeholder="KMOKANSA123" autoCapitalize="characters" />
+              </Field>
+              <Field label="API key">
+                <input style={inputStyle} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} placeholder="From wunderground.com → My Profile → API Keys" />
+              </Field>
+              <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+                Works with any station that uploads to Weather Underground (Ecowitt, Davis, AcuRite, Tempest, and others). Station owners get a free API key on their Weather Underground profile.
+              </div>
+            </>
+          ) : (
+            <>
+              <Field label="Station MAC address">
+                <input style={inputStyle} value={st.macAddress || ""} onChange={(e) => setField("macAddress", e.target.value)} placeholder="00:0E:C6:20:0F:7B" />
+              </Field>
+              <Field label="API key">
+                <input style={inputStyle} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} />
+              </Field>
+              <Field label="Application key">
+                <input style={inputStyle} value={st.applicationKey || ""} onChange={(e) => setField("applicationKey", e.target.value)} />
+              </Field>
+              <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
+                Create both keys at ambientweather.net → Account → API Keys. The MAC address is on the Devices page.
+              </div>
+            </>
+          )}
+          <Btn variant="primary" small onClick={runTest} disabled={testing} style={{ width: "100%" }}>
+            {testing ? "Checking…" : "Save & test connection"}
+          </Btn>
+          {testMsg && (
+            <div style={{
+              marginTop: 8, fontSize: 12, lineHeight: 1.5, padding: 8, borderRadius: 6,
+              background: testMsg.ok ? palette.leafSoft : "#FBE5DE",
+              color: testMsg.ok ? palette.ink : palette.accent,
+            }}>{testMsg.text}</div>
+          )}
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 8, lineHeight: 1.5 }}>
+            If the station is offline for a day, Henalytics falls back to the automatic models.
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// FROST DATES — override the latitude estimate with your real dates
+// ----------------------------------------------------------------------------
+// The built-in estimate is latitude-only and can be weeks off (valleys, hills,
+// lake effect). Season labels use data.frostDates when set. We also show the
+// frost nights the weather data actually saw this year as a one-tap fill.
+// ============================================================================
+function FrostDateSettings({ data, update }) {
+  const fd = data.frostDates || {};
+  const thisYear = new Date().getFullYear();
+  const [lastSpring, setLastSpring] = useState(fd.lastSpring ? `${thisYear}-${fd.lastSpring}` : "");
+  const [firstFall, setFirstFall] = useState(fd.firstFall ? `${thisYear}-${fd.firstFall}` : "");
+  const [observed, setObserved] = useState(null);
+  const loc = data.homesteadLocation;
+
+  useEffect(() => {
+    let alive = true;
+    if (loc && loc.lat != null) {
+      getYearWeather(loc.lat, loc.lon, thisYear).then((r) => { if (alive) setObserved(r); }).catch(() => {});
+    }
+    return () => { alive = false; };
+  }, [loc && loc.lat, loc && loc.lon]);
+
+  const save = (ls, ff) => {
+    update((d) => {
+      const mmdd = (v) => (v && v.length >= 10 ? v.slice(5, 10) : null);
+      const next = { lastSpring: mmdd(ls), firstFall: mmdd(ff) };
+      d.frostDates = (next.lastSpring || next.firstFall) ? next : null;
+      return d;
+    });
+  };
+  const nice = (iso) => iso ? parseLocalDate(iso).toLocaleDateString(undefined, { month: "short", day: "numeric" }) : "—";
+
+  return (
+    <div style={{ marginTop: 22 }}>
+      <div style={{
+        fontSize: 11, color: palette.inkSoft, marginBottom: 6,
+        textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+      }}>
+        My frost dates
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <label style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
+          Last spring frost
+          <input type="date" style={{ ...inputStyle, marginTop: 4 }} value={lastSpring}
+            onChange={(e) => { setLastSpring(e.target.value); save(e.target.value, firstFall); }} />
+        </label>
+        <label style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
+          First fall frost
+          <input type="date" style={{ ...inputStyle, marginTop: 4 }} value={firstFall}
+            onChange={(e) => { setFirstFall(e.target.value); save(lastSpring, e.target.value); }} />
+        </label>
+      </div>
+      {observed && (observed.lastSpringFrost || observed.firstFallFrost) && (
+        <div style={{ fontSize: 12, color: palette.ink, marginTop: 8, lineHeight: 1.5 }}>
+          Weather data for your spot this year: last spring frost {nice(observed.lastSpringFrost)}, first fall frost {nice(observed.firstFallFrost)}.{" "}
+          <button type="button" onClick={() => {
+            const ls = observed.lastSpringFrost || lastSpring;
+            const ff = observed.firstFallFrost || firstFall;
+            setLastSpring(ls); setFirstFall(ff); save(ls, ff);
+          }} style={{ background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: "inherit", fontSize: 12 }}>
+            Use these
+          </button>
+        </div>
+      )}
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, lineHeight: 1.5 }}>
+        Only the month and day are kept — they're reused every year. Leave blank to use the estimate for your latitude.
+      </div>
+    </div>
+  );
+}
+
+// ============================================================================
+// CALENDAR SYNC — .ics export with per-app instructions
+// ============================================================================
+function CalendarSyncModal({ data, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const [msg, setMsg] = useState("");
+  const [which, setWhich] = useState("google");
+  const upcoming = (data.calendarEvents || []).filter((e) => e && e.date >= todayStr()).length;
+
+  const go = async () => {
+    setBusy(true); setMsg("");
+    try {
+      const r = await exportCalendarICS(data);
+      if (r.cancelled) setMsg("");
+      else setMsg(`Saved ${r.count} event${r.count === 1 ? "" : "s"}. Now follow the steps below.`);
+    } catch (e) {
+      setMsg("Couldn't create the file. Try again.");
+    }
+    setBusy(false);
+  };
+
+  const steps = {
+    google: [
+      "Tap the button above and save the file.",
+      "On a computer, open calendar.google.com → ⚙️ Settings → Import & export.",
+      "Choose the file, pick which calendar it goes in, then Import.",
+      "Tip: make a separate \"Homestead\" calendar first so you can color it or hide it.",
+    ],
+    outlook: [
+      "Tap the button above and save the file.",
+      "Outlook on the web: Calendar → Add calendar → Upload from file.",
+      "Outlook desktop: File → Open & Export → Import/Export → iCalendar (.ics).",
+      "On a phone, opening the file from email or Files also works.",
+    ],
+    apple: [
+      "iPhone/iPad: tap the button, then choose Calendar in the share sheet (or save to Files and tap it). Tap \"Add All\".",
+      "Mac: double-click the downloaded file — Calendar opens and asks which calendar to add it to.",
+      "Importing again later updates the same events instead of doubling them.",
+    ],
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Sync with your calendar">
+      <div style={{
+        padding: 12, background: palette.yolkSoft, borderRadius: 8,
+        fontSize: 13, color: palette.ink, marginBottom: 14, lineHeight: 1.5,
+        border: `1.5px solid ${palette.line}`,
+      }}>
+        Exports your Henalytics calendar ({upcoming} upcoming, plus the past year) as a calendar file that Google, Outlook and Apple Calendar all accept. Each event gets an 8am reminder.
+      </div>
+
+      <Btn variant="primary" onClick={go} disabled={busy} style={{ width: "100%", marginBottom: 8 }}>
+        {busy ? "Preparing…" : "📅 Export calendar file"}
+      </Btn>
+      {msg && <div style={{ fontSize: 12, color: palette.leaf, marginBottom: 10 }}>{msg}</div>}
+
+      <div style={{ display: "flex", gap: 6, margin: "12px 0 10px" }}>
+        {[["google", "Google"], ["outlook", "Outlook"], ["apple", "Apple"]].map(([k, label]) => (
+          <button key={k} type="button" onClick={() => setWhich(k)} style={{
+            flex: 1, padding: "8px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+            border: `1.5px solid ${which === k ? palette.ink : palette.line}`,
+            background: which === k ? palette.ink : palette.bg,
+            color: which === k ? palette.bg : palette.ink,
+          }}>{label}</button>
+        ))}
+      </div>
+      <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: palette.ink, lineHeight: 1.6 }}>
+        {steps[which].map((t, i) => <li key={i} style={{ marginBottom: 4 }}>{t}</li>)}
+      </ol>
+
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 14, lineHeight: 1.5 }}>
+        This is a snapshot: events you add in Henalytics later need another export. Re-exporting is safe in Apple Calendar and Outlook, which update events they already have. Google Calendar's import adds new events but won't pick up edits to ones it already imported.
       </div>
     </Modal>
   );
@@ -15166,7 +15609,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal, /* STEP2A_EARLY_ACCESS */ earlyAccessConfig = null, isSupporter = false }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
 
   // Category groups. Each group is a list of hobby types it contains.
   // Hobby types NOT in any group render flat at the top of the modal.
@@ -15215,6 +15658,8 @@ function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, se
     else if (h.type === "dogs") { setActiveHobby("dogs"); setPage("dogs"); }
     else if (h.type === "cats") { setActiveHobby("cats"); setPage("cats"); }
     else if (h.type === "maple_syrup") { setActiveHobby("maple_syrup"); setPage("maple_syrup"); }
+    else if (h.type === "hunting") { setActiveHobby("hunting"); setPage("hunting"); }
+    else if (h.type === "soap") { setActiveHobby("soap"); setPage("soap"); }
     else { setActiveHobby(h.id); setPage("home"); }
     onClose();
   };
@@ -18736,6 +19181,21 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
   });
   // Validation error shown inline above the submit button.
   const [validationError, setValidationError] = useState("");
+  // Optional hand-entered weather. Stored in the user's display units while
+  // typing; converted to °F / inches on save (the canonical storage units).
+  const wxIsC = (data.units && data.units.temperature) === "C";
+  const wxAutoOff = (data.weatherSettings && data.weatherSettings.source) === "off";
+  const [wxOpen, setWxOpen] = useState(() =>
+    !!(existingEntry && existingEntry.weather && existingEntry.weather.source === "manual"));
+  const [wxManual, setWxManual] = useState(() => {
+    const w = existingEntry && existingEntry.weather;
+    if (!w || w.source !== "manual") return { high: "", low: "", rain: "" };
+    const toDisp = (f) => f == null ? "" : String(wxIsC ? Math.round((f - 32) * 5 / 9) : f);
+    return {
+      high: toDisp(w.highF), low: toDisp(w.lowF),
+      rain: w.precipIn == null ? "" : String(wxIsC ? Math.round(w.precipIn * 25.4) : w.precipIn),
+    };
+  });
   // existingPaths: paths from already-uploaded photos that we want to KEEP on this entry.
   // (Distinct from new files the user is uploading this session.)
   const [existingPaths, setExistingPaths] = useState(() => {
@@ -18861,19 +19321,32 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       removed.forEach((p) => deletePhoto(p).catch(() => {}));
     }
 
-    // Fetch weather only for new entries — preserve existing weather on edits.
+    // Hand-entered weather wins. Otherwise fetch only for new entries —
+    // preserve existing weather on edits.
+    const num = (v) => (v === "" || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+    const mHigh = num(wxManual.high), mLow = num(wxManual.low), mRain = num(wxManual.rain);
+    const hasManual = wxOpen && (mHigh != null || mLow != null || mRain != null);
     let weather = isEdit ? (existingEntry.weather || null) : null;
-    if (!isEdit) {
-      const loc = data.homesteadLocation;
-      if (loc && loc.lat != null && loc.lon != null) {
-        try {
-          weather = await Promise.race([
-            getDailyWeather(date, loc.lat, loc.lon),
-            new Promise((resolve) => setTimeout(() => resolve(null), 4000)),
-          ]);
-        } catch (e) {
-          weather = null;
-        }
+    if (hasManual) {
+      const toF = (v) => (v == null ? null : Math.round(wxIsC ? v * 9 / 5 + 32 : v));
+      weather = {
+        highF: toF(mHigh), lowF: toF(mLow),
+        precipIn: mRain == null ? null : Math.round((wxIsC ? mRain / 25.4 : mRain) * 100) / 100,
+        source: "manual",
+        fetchedAt: new Date().toISOString(),
+      };
+    } else if (isEdit && existingEntry.weather && existingEntry.weather.source === "manual" && wxOpen) {
+      // User cleared every manual box → drop the manual reading.
+      weather = null;
+    } else if (!isEdit) {
+      const loc = data.homesteadLocation || {};
+      try {
+        weather = await Promise.race([
+          getDailyWeather(date, loc.lat, loc.lon, data.weatherSettings),
+          new Promise((resolve) => setTimeout(() => resolve(null), 5000)),
+        ]);
+      } catch (e) {
+        weather = null;
       }
     }
 
@@ -19219,6 +19692,52 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
+
+      {/* Optional weather — auto by default, hand entry when you want it. */}
+      <div style={{ marginTop: -4, marginBottom: 12 }}>
+        <button
+          type="button"
+          onClick={() => setWxOpen((o) => !o)}
+          style={{
+            background: "none", border: "none", padding: 0, cursor: "pointer",
+            fontSize: 12, color: palette.inkSoft, fontFamily: "inherit", textDecoration: "underline",
+          }}
+        >
+          {wxOpen
+            ? "🌡️ Hide my weather reading"
+            : wxAutoOff
+              ? "🌡️ Add weather (optional)"
+              : (data.homesteadLocation || (data.weatherSettings && data.weatherSettings.source === "station"))
+                ? "🌡️ Weather is added automatically · enter my own instead"
+                : "🌡️ Add weather (optional)"}
+        </button>
+        {wxOpen && (
+          <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+            {[
+              ["high", `High °${wxIsC ? "C" : "F"}`],
+              ["low", `Low °${wxIsC ? "C" : "F"}`],
+              ["rain", `Rain ${wxIsC ? "mm" : "in"}`],
+            ].map(([k, label]) => (
+              <label key={k} style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
+                {label}
+                <input
+                  type="number"
+                  inputMode="decimal"
+                  step={k === "rain" ? "0.01" : "1"}
+                  style={{ ...inputStyle, marginTop: 4 }}
+                  value={wxManual[k]}
+                  onChange={(e) => { const v = e.target.value; setWxManual((m) => ({ ...m, [k]: v })); }}
+                />
+              </label>
+            ))}
+          </div>
+        )}
+        {wxOpen && (
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
+            Fill in whatever you know — blanks are fine. Your numbers replace the automatic ones for this entry.
+          </div>
+        )}
+      </div>
 
       {/* Flock picker — egg-layer actions get scoped to a specific flock so
           per-flock cost/death/feed analytics work. Auto-attached to the first
@@ -20055,7 +20574,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
   const [zipLookupStatus, setZipLookupStatus] = useState("idle"); // idle | loading | ok | error
   const [zipResult, setZipResult] = useState(null); // { lat, lon, label }
   const [zipError, setZipError] = useState("");
-  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false, freeze_drying: false, dehydrating: false, fermentation: false, dogs: false, cats: false, maple_syrup: false });
+  const [hobbies, setHobbies] = useState({ garden: true, egg_layers: true, meat_chickens: true, rabbits: false, bees: false, incubator: false, goats: false, cows: false, pigs: false, sheep: false, horses: false, sourdough: false, farmstand: false, baking: false, canning: false, freeze_drying: false, dehydrating: false, fermentation: false, dogs: false, cats: false, maple_syrup: false, hunting: false, soap: false });
 
   // Look up zip code → coordinates via Zippopotam.us (free, no API key)
   const lookupZip = async () => {
@@ -20515,6 +21034,28 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
               icon="🍁"
               label="Maple Syrup"
               sub="Taps, sap, syrup yield, season-by-season"
+            />
+
+            <div style={{
+              marginTop: 14, marginBottom: 6, fontSize: 11, color: palette.inkSoft,
+              textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600,
+              paddingLeft: 4,
+            }}>
+              🦌 More
+            </div>
+            <HobbyCheckbox
+              checked={hobbies.hunting || false}
+              onToggle={() => setHobbies((h) => ({ ...h, hunting: !h.hunting }))}
+              icon="🦌"
+              label="Hunting"
+              sub="Tags, harvests, meat yield, cost per pound, gear"
+            />
+            <HobbyCheckbox
+              checked={hobbies.soap || false}
+              onToggle={() => setHobbies((h) => ({ ...h, soap: !h.soap }))}
+              icon="🧼"
+              label="Soap Making"
+              sub="Ingredients, cure dates, bars sold and used"
             />
 
             <div style={{
@@ -21392,6 +21933,35 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           { label: "Syrup made", value: syrup > 0 ? fmtVolume(syrup, { decimals: 2 }) : "—" },
           { label: filter === "all" ? "Most taps" : "Taps set", value: tapsValue || "—" },
           { label: filter === "all" ? "Seasons" : "Cost", value: filter === "all" ? (hobby.seasons || []).length : (cost > 0 ? fmtMoney(cost) : "—") },
+        ],
+      };
+    }
+    if (hobby.type === "hunting") {
+      const t = huntingTotals(hobby, inRange);
+      return {
+        emoji: "🦌", label: "Hunting",
+        stats: [
+          { label: "Harvests", value: t.harvests.length || "—" },
+          { label: "Meat", value: t.meatLbs > 0 ? fmtWeight(t.meatLbs) : "—" },
+          { label: "Cost / lb", value: t.costPerLb > 0 ? fmtMoney(t.costPerLb) : "—" },
+          { label: "Store value", value: t.storeValue > 0 ? fmtMoney(t.storeValue) : "—" },
+        ],
+      };
+    }
+    if (hobby.type === "soap") {
+      const batches = (hobby.batches || []).filter(b => inRange(b.madeDate));
+      const salesAll = data.sales || [];
+      let bars = 0, sold = 0, used = 0;
+      batches.forEach(b => { const st = soapBatchStats(b, salesAll); bars += st.bars; sold += st.sold; used += st.used + st.gifted; });
+      const revenue = salesAll.filter(s => s.hobbyType === "soap" && inRange(s.date))
+        .reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+      return {
+        emoji: "🧼", label: "Soap Making",
+        stats: [
+          { label: "Batches", value: batches.length || "—" },
+          { label: "Bars made", value: bars || "—" },
+          { label: "Bars sold", value: sold || "—" },
+          { label: "Revenue", value: revenue > 0 ? fmtMoney(revenue) : "—" },
         ],
       };
     }
