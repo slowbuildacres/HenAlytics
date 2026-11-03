@@ -33,6 +33,19 @@
             android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/file_paths" />
         </provider>
+        <!-- Home-screen "Quick Log" widget. Buttons open henalytics://log?... links
+             that HomesteadApp.jsx turns into the matching log form. -->
+        <receiver
+            android:name=".QuickLogWidget"
+            android:exported="false"
+            android:label="Henalytics Quick Log">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_quick_log_info" />
+        </receiver>
         <!-- ML Kit barcode scanner: download the barcode model on install -->
         <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui"/>
     </application>
