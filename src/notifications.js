@@ -23,7 +23,7 @@
 // then `npx cap sync`. iOS/Android then need a rebuild + store resubmission.
 // ============================================================================
 
-const MAX_SCHEDULED = 60;      // headroom under the iOS hard cap of 64
+const MAX_SCHEDULED = 52;      // calendar reminders; + 8 daily nudges stays under iOS's 64 cap
 const REMINDER_HOUR = 8;       // 8:00 AM local — change here to retune
 const ID_BASE = 100000;        // namespace our ids away from any other source
 
@@ -124,7 +124,9 @@ export async function cancelAllReminders() {
   try {
     const pending = await LN.getPending();
     const ours = (pending?.notifications || []).filter(
-      (n) => typeof n.id === "number" && n.id >= ID_BASE && n.id < ID_BASE + MAX_SCHEDULED + 5
+      // Fixed 100-id window (not MAX_SCHEDULED) so lowering the cap still
+      // cancels ids scheduled by older builds.
+      (n) => typeof n.id === "number" && n.id >= ID_BASE && n.id < ID_BASE + 100
     );
     if (ours.length) await LN.cancel({ notifications: ours.map((n) => ({ id: n.id })) });
   } catch (e) {
@@ -210,5 +212,77 @@ export async function initReminderTapHandling(onOpen) {
     return () => { try { handle.remove(); } catch (_) {} };
   } catch (_) {
     return () => {};
+  }
+}
+
+// ============================================================================
+// DAILY NUDGE — "did you log today?"
+// ----------------------------------------------------------------------------
+// One reminder a day at the user's chosen time, for the next NUDGE_DAYS days.
+// If they've already logged something today, today's nudge is skipped (no
+// nagging). The window is rebuilt whenever the app opens or entries change,
+// so it keeps rolling forward; if someone stops opening the app entirely the
+// nudges stop after a week instead of pestering forever.
+//
+// Settings live on data.dailyNudge = { enabled: true, time: "18:00" }.
+// Tapping a nudge opens the app straight to a log form via extra.url
+// (the same henalytics:// links the home-screen widget uses).
+// ============================================================================
+const NUDGE_ID_BASE = 200000;
+const NUDGE_DAYS = 7;
+
+// messages: [{ title, body, url }]. Pure + testable.
+export function buildNudgeSchedule({ time = "18:00", loggedToday = false, now = new Date(), messages = [] } = {}) {
+  const [hh, mm] = String(time || "18:00").split(":").map(Number);
+  const hour = Number.isFinite(hh) ? Math.min(23, Math.max(0, hh)) : 18;
+  const minute = Number.isFinite(mm) ? Math.min(59, Math.max(0, mm)) : 0;
+  const pool = messages.length ? messages : [{ title: "📝 Quick homestead log", body: "Anything happen today? One tap and you're done.", url: "henalytics://log?hobby=any&action=note" }];
+  const out = [];
+  for (let i = 0; out.length < NUDGE_DAYS && i <= NUDGE_DAYS; i++) {
+    const at = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i, hour, minute, 0, 0);
+    if (at.getTime() <= now.getTime()) continue;   // today's time already passed
+    if (i === 0 && loggedToday) continue;           // already logged today — skip
+    const msg = pool[(at.getDate() + at.getMonth()) % pool.length];
+    out.push({
+      id: NUDGE_ID_BASE + out.length,
+      title: msg.title,
+      body: msg.body,
+      schedule: { at, allowWhileIdle: true },
+      extra: { kind: "nudge", url: msg.url || null },
+    });
+  }
+  return out;
+}
+
+export async function cancelNudges() {
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return;
+  try {
+    const pending = await LN.getPending();
+    const ours = (pending?.notifications || []).filter(
+      (n) => typeof n.id === "number" && n.id >= NUDGE_ID_BASE && n.id < NUDGE_ID_BASE + 50
+    );
+    if (ours.length) await LN.cancel({ notifications: ours.map((n) => ({ id: n.id })) });
+  } catch (e) {
+    console.warn("[nudge] cancel failed", e?.message || e);
+  }
+}
+
+// settings = data.dailyNudge; returns { scheduled } like reconcileReminders.
+export async function reconcileNudges(settings, opts = {}) {
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return { scheduled: 0, skipped: "unsupported" };
+  if (!settings || !settings.enabled) { await cancelNudges(); return { scheduled: 0, skipped: "off" }; }
+  const perm = await getReminderPermission();
+  if (perm !== "granted") return { scheduled: 0, skipped: perm };
+  await cancelNudges();
+  const notifications = buildNudgeSchedule({ time: settings.time, ...opts });
+  if (!notifications.length) return { scheduled: 0 };
+  try {
+    await LN.schedule({ notifications });
+    return { scheduled: notifications.length };
+  } catch (e) {
+    console.warn("[nudge] schedule failed", e?.message || e);
+    return { scheduled: 0, error: e?.message || String(e) };
   }
 }

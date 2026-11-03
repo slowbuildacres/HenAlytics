@@ -84,7 +84,9 @@ import {
 import {
   areRemindersSupported, getReminderPermission, requestReminderPermission,
   reconcileReminders, cancelAllReminders, initReminderTapHandling,
+  reconcileNudges,
 } from "./notifications.js";
+import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl } from './oauth.js';
 import {
@@ -2212,6 +2214,22 @@ const useNativeDeepLinks = (onUrl) => {
 // Only whitelisted actions are honored so a stray link can't open arbitrary
 // modals. Returns { kind: "log", hobbyId, action } | { kind: "open" } | null.
 // ============================================================================
+// Daily nudge copy, picked from the hobbies someone actually has on. Each one
+// links straight into the most likely log form.
+const buildNudgeMessages = (types) => {
+  const has = (t) => types.includes(t);
+  const msgs = [];
+  if (has("egg_layers")) msgs.push(
+    { title: "🥚 Egg check", body: "How many eggs today? Tap to log it in two seconds.", url: "henalytics://log?hobby=egg_layers&action=eggs" },
+    { title: "🐔 Coop check-in", body: "Fed, watered, eggs? Tap to jot down today.", url: "henalytics://log?hobby=egg_layers&action=eggs" },
+  );
+  if (has("garden")) msgs.push(
+    { title: "🌱 Garden check-in", body: "Watered, picked, planted? Tap to note it.", url: "henalytics://log?hobby=garden&action=watered" },
+  );
+  msgs.push({ title: "📝 Quick homestead log", body: "Anything happen today? One tap and you're done.", url: "henalytics://log?hobby=any&action=note" });
+  return msgs;
+};
+
 const WIDGET_ACTIONS = ["eggs", "fed", "watered", "note", "bedding", "sold_eggs", "used_eggs"];
 // Hobbies whose quick-log tiles live on the Home page rather than their own page.
 const WIDGET_HOME_TYPES = ["garden", "egg_layers", "meat_chickens"];
@@ -2934,6 +2952,7 @@ class ErrorBoundary extends React.Component {
   }
   componentDidCatch(error, info) {
     console.error("[Henalytics] Render error in", this.props.label || "component", error, info);
+    reportError(error, { kind: "render", page: this.props.label || null, componentStack: info && info.componentStack });
   }
   componentDidUpdate(prevProps) {
     // Reset boundary when user navigates to a different page/hobby
@@ -3847,12 +3866,80 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [data?.localRemindersOptIn, calendarEventsKey]);
 
+  // ---- Crash reports + daily activity (telemetry.js) ----------------------
+  // Context ref so error reports say which screen broke without re-binding
+  // the global listeners every render.
+  const telemetryCtxRef = useRef({});
+  telemetryCtxRef.current = { page: `${page}/${activeHobby}` };
+  useEffect(() => {
+    initErrorReporting(() => telemetryCtxRef.current);
+  }, []);
+  // "Used the app today" — once per user per day, on sign-in and on resume.
+  useEffect(() => {
+    if (!user?.id) return;
+    recordActiveDay(user.id);
+    const onVis = () => { if (document.visibilityState === "visible") recordActiveDay(user.id); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [user?.id]);
+
+  // ---- Daily nudge ("did you log today?") ---------------------------------
+  // Rebuilds the next 7 days of nudges whenever settings or today's logging
+  // status change. Skips today's nudge once something has been logged today.
+  const todayKey = todayStr();
+  const loggedToday = React.useMemo(() => {
+    const ents = data?.entries || {};
+    return Object.values(ents).some((arr) => Array.isArray(arr) && arr.some((e) => e && e.date === todayKey));
+  }, [data?.entries, todayKey]);
+  const nudgeHobbyKey = (data?.hobbies || []).filter((h) => !h.hidden).map((h) => h.type).join(",");
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(await areRemindersSupported())) return;
+      if (cancelled) return;
+      const types = nudgeHobbyKey ? nudgeHobbyKey.split(",") : [];
+      reconcileNudges(data?.dailyNudge, { loggedToday, messages: buildNudgeMessages(types) });
+    })();
+    return () => { cancelled = true; };
+  }, [data?.dailyNudge?.enabled, data?.dailyNudge?.time, loggedToday, todayKey, nudgeHobbyKey]);
+
+  // Offer the daily nudge once, right after someone's 2nd log on the phone
+  // app (they've shown they want to track; that's when a reminder helps).
+  const nudgeOfferBaselineRef = useRef(null);
+  useEffect(() => {
+    if (!data?.entries) return;
+    const total = Object.values(data.entries).reduce((n, a) => n + (Array.isArray(a) ? a.length : 0), 0);
+    if (nudgeOfferBaselineRef.current == null) { nudgeOfferBaselineRef.current = total; return; }
+    const increased = total > nudgeOfferBaselineRef.current;
+    nudgeOfferBaselineRef.current = total;
+    if (!increased || total < 2) return;
+    if (data.dailyNudge || data.nudgeOfferSeen) return;
+    let alive = true;
+    (async () => {
+      if (!(await areRemindersSupported())) return;
+      setTimeout(() => {
+        if (!alive) return;
+        setModal((m) => (m ? m : { type: "nudgeOffer" }));
+      }, 1500);
+    })();
+    return () => { alive = false; };
+  }, [data?.entries, data?.dailyNudge, data?.nudgeOfferSeen]);
+
   // Route a tapped reminder to the calendar page. Registered once.
   useEffect(() => {
     let unsub = () => {};
     (async () => {
-      unsub = await initReminderTapHandling(() => {
-        try { setPage("calendar"); } catch (_) {}
+      unsub = await initReminderTapHandling((extra) => {
+        try {
+          // Daily nudges carry a henalytics:// log link — reuse the widget
+          // deep-link path so it opens straight to the right log form.
+          if (extra && extra.kind === "nudge" && extra.url && parseWidgetUrl(extra.url)) {
+            pendingWidgetUrlRef.current = extra.url;
+            setWidgetUrlTick((t) => t + 1);
+            return;
+          }
+          setPage("calendar");
+        } catch (_) {}
       });
     })();
     return () => { try { unsub(); } catch (_) {} };
@@ -12169,6 +12256,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
+  if (modal.type === "nudgeOffer") return <NudgeOfferModal data={data} update={update} onClose={close} />;
   if (modal.type === "calendarSync") return <CalendarSyncModal data={data} update={update} user={user} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
   if (modal.type === "tutorial") return <TutorialModal onClose={close} />;
@@ -12860,6 +12948,8 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
           }}
         />
       )}
+
+      {isNativeApp() && <DailyNudgeSetting data={data} update={update} />}
 
       {/* SPOUSE MODE */}
       <div style={{ marginTop: 16, marginBottom: 4 }}>
@@ -15462,6 +15552,99 @@ function CalendarSyncModal({ data, update, user, onClose }) {
           </div>
         )}
       </div>
+    </Modal>
+  );
+}
+
+// ============================================================================
+// DAILY NUDGE — settings row + one-time offer
+// ============================================================================
+const NUDGE_TIMES = [
+  { t: "07:00", label: "7 AM" }, { t: "12:00", label: "Noon" },
+  { t: "18:00", label: "6 PM" }, { t: "20:00", label: "8 PM" },
+];
+const fmtNudgeTime = (t) => {
+  const [h, m] = String(t || "18:00").split(":").map(Number);
+  const d = new Date(2000, 0, 1, h || 0, m || 0);
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+};
+
+async function enableDailyNudge(update, time) {
+  const granted = await requestReminderPermission();
+  if (!granted) {
+    toast("Notifications are off for Henalytics. Turn them on in your phone's Settings, then try again.", { kind: "error", ms: 6000 });
+    return false;
+  }
+  update((d) => { d.dailyNudge = { enabled: true, time: time || "18:00" }; d.nudgeOfferSeen = true; return d; });
+  toast(`Daily reminder set for ${fmtNudgeTime(time)} 🔔`);
+  return true;
+}
+
+function DailyNudgeSetting({ data, update }) {
+  const n = data.dailyNudge || {};
+  const on = n.enabled === true;
+  return (
+    <div>
+      <SectionBtn
+        icon={Calendar}
+        label={on ? `Daily log reminder: ${fmtNudgeTime(n.time)}` : "Daily log reminder: off"}
+        sub={on
+          ? "One gentle nudge a day — skipped automatically on days you've already logged"
+          : "Get one nudge a day to log (skipped on days you've already logged)"}
+        accent={on ? palette.leaf : palette.inkSoft}
+        onClick={() => {
+          if (on) update((d) => { d.dailyNudge = { ...(d.dailyNudge || {}), enabled: false }; return d; });
+          else enableDailyNudge(update, n.time || "18:00");
+        }}
+      />
+      {on && (
+        <div style={{ display: "flex", gap: 6, margin: "-4px 0 12px", flexWrap: "wrap" }}>
+          {NUDGE_TIMES.map((o) => (
+            <button key={o.t} type="button"
+              onClick={() => update((d) => { d.dailyNudge = { ...(d.dailyNudge || {}), enabled: true, time: o.t }; return d; })}
+              style={{
+                padding: "6px 10px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+                border: `1.5px solid ${n.time === o.t ? palette.ink : palette.line}`,
+                background: n.time === o.t ? palette.ink : palette.bg,
+                color: n.time === o.t ? palette.bg : palette.ink,
+              }}>{o.label}</button>
+          ))}
+          <input type="time" value={n.time || "18:00"}
+            onChange={(e) => { const v = e.target.value; if (v) update((d) => { d.dailyNudge = { ...(d.dailyNudge || {}), enabled: true, time: v }; return d; }); }}
+            style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 12 }} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function NudgeOfferModal({ data, update, onClose }) {
+  const [busy, setBusy] = useState(false);
+  const dismiss = () => { update((d) => { d.nudgeOfferSeen = true; return d; }); onClose(); };
+  const pick = async (t) => {
+    setBusy(true);
+    const ok = await enableDailyNudge(update, t);
+    setBusy(false);
+    if (ok) onClose(); else dismiss();
+  };
+  return (
+    <Modal open onClose={dismiss} title="Want a daily nudge?">
+      <div style={{ fontSize: 14, color: palette.ink, lineHeight: 1.5, marginBottom: 14 }}>
+        Nice logging! 🎉 Most people forget on busy days. Pick a time and Henalytics will send <strong>one</strong> reminder a day. It's skipped automatically on days you've already logged.
+      </div>
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 12 }}>
+        {NUDGE_TIMES.map((o) => (
+          <Btn key={o.t} variant={o.t === "18:00" ? "primary" : "ghost"} disabled={busy} onClick={() => pick(o.t)}>
+            {o.label}
+          </Btn>
+        ))}
+      </div>
+      <button type="button" onClick={dismiss} style={{
+        width: "100%", background: "none", border: "none", padding: 8, cursor: "pointer",
+        color: palette.inkSoft, fontFamily: "inherit", fontSize: 13, textDecoration: "underline",
+      }}>
+        Not now (you can turn it on later in Settings)
+      </button>
     </Modal>
   );
 }
