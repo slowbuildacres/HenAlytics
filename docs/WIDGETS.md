@@ -26,29 +26,40 @@ Then bump `versionCode` / `versionName` and build a signed bundle (Build → Gen
 
 To try it: install the build, long-press the home screen → Widgets → Henalytics → **Quick Log** (4×1).
 
-## iPhone: one-time Xcode setup (about 5 minutes, on a Mac)
+## iPhone: already wired in
 
-Apple only lets you add a widget target inside Xcode, so the Swift code is in
-`ios/App/WidgetSource/HenalyticsWidget.swift`. Hook it up once:
+The Xcode project (`ios/App/App.xcodeproj`) has a **HenalyticsWidget** widget
+extension target (iOS 17+, bundle ID `com.henalytics.app.HenalyticsWidget`),
+embedded in the App target:
 
-1. `npm run build && npx cap sync ios && npx cap open ios`
-2. **File → New → Target… → Widget Extension → Next.**
-   - Product Name: `HenalyticsWidget`
-   - Untick **Include Live Activity**, **Include Control**, and **Include Configuration App Intent**
-   - Finish, then click **Activate** if asked.
-3. In the left sidebar, open the new **HenalyticsWidget** folder. Select every `.swift` file Xcode made in it → right-click → **Delete → Move to Trash**. Keep `Info.plist` and `Assets.xcassets`.
-4. Drag `ios/App/WidgetSource/HenalyticsWidget.swift` from Finder into that **HenalyticsWidget** folder in Xcode. In the dialog:
-   - Tick **Copy items if needed**
-   - Under targets, tick **HenalyticsWidget** only
-5. Click the blue **App** project at the top of the sidebar → **HenalyticsWidget** target:
-   - **General → Minimum Deployments:** iOS **17.0**
-   - **Signing & Capabilities → Team:** the same team as the App target
-6. Pick the **App** scheme and run on your phone. Long-press the home screen → **+** → Henalytics:
-   - **Quick Log** (medium): eggs / fed / water / note
-   - **One-Tap Log** (small, or Lock Screen): one button. Long-press → **Edit Widget** to choose what it logs.
-7. Commit the Xcode changes (`ios/App/App.xcodeproj` and the new `ios/App/HenalyticsWidget/` folder) so you only do this once.
+- `ios/App/HenalyticsWidget/HenalyticsWidget.swift`: the widgets
+- `ios/App/HenalyticsWidget/Info.plist`: marks it as a WidgetKit extension
+
+The App target also has `ios/App/App/App.entitlements` with
+`webcredentials:henalytics.com`, so iPhone users get their passwords saved for
+henalytics.com offered at sign-in (pairs with `public/.well-known/apple-app-site-association`).
+
+To ship it:
+
+```bash
+npm run build
+npx cap sync ios
+npx cap open ios
+```
+
+Then in Xcode pick the **App** scheme → **Product → Archive**. With automatic
+signing, Xcode registers the widget's App ID and refreshes the profiles on the
+first build (it may ask you to sign in to your Apple account once).
+
+To try it: long-press the home screen → **+** → Henalytics:
+- **Quick Log** (medium): eggs / fed / water / note
+- **One-Tap Log** (small, or Lock Screen): one button. Long-press → **Edit Widget** to choose what it logs.
 
 The main app still supports iOS 15. The widget shows up on iOS 17 and later.
+
+**Version numbers:** the widget's version must match the app's. Both targets
+carry `MARKETING_VERSION` / `CURRENT_PROJECT_VERSION`, so bump them together
+(a find-and-replace across `project.pbxproj` does it).
 
 ## Changing the buttons
 

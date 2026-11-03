@@ -88,7 +88,7 @@ import {
 } from "./notifications.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
-import { isAuthCallbackUrl, handleAuthCallbackUrl } from './oauth.js';
+import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
 import {
   photosOf as animalPhotosOf, profilePhotoOf as animalProfilePhotoOf,
   timelineOf as animalTimelineOf, uploadAnimalPhoto, resolveAnimalPhotoUrl,
@@ -4259,6 +4259,12 @@ useEffect(() => {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === "SIGNED_OUT") { setSignedOutRemotely(true); setSyncBannerReason("auth"); }
       if (event === "SIGNED_IN") setSignedOutRemotely(false);
+      // Web Google/Apple sign-in: the session parsed from the redirect URL
+      // carries the provider's refresh token exactly once. Keep Apple's so
+      // account deletion can revoke it (see oauth.js).
+      if (event === "SIGNED_IN" && session?.provider_refresh_token) {
+        captureProviderToken(session.provider_refresh_token);
+      }
       if (event === "PASSWORD_RECOVERY") {
         setPasswordRecoveryPending(true);
         setModal({ type: "setNewPassword" });

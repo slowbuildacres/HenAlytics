@@ -67,13 +67,19 @@ On the **iPhone app**, Apple requires the Apple button whenever the Google butto
 
 The sign-in form now uses the field labels that password managers look for. On the website, iCloud Keychain, Google Password Manager and browser password managers will offer to save and fill the login.
 
-In the **iPhone app**, one Xcode step links the app to the passwords people saved for henalytics.com:
-
-1. In Xcode, open the **App** target → **Signing & Capabilities**.
-2. Click **+ Capability → Associated Domains** and add `webcredentials:henalytics.com`.
-3. The matching file is already in the website at `/.well-known/apple-app-site-association`, so this works once merged.
+In the **iPhone app**, this is already set up: `ios/App/App/App.entitlements` has the Associated Domains entry `webcredentials:henalytics.com`, and the matching file is in the website at `/.well-known/apple-app-site-association`.
 
 In the **Android app**, Google Password Manager saving works as is. To link it with saved henalytics.com passwords too, go to **Play Console → Test and release → App integrity → App signing** and copy the **SHA-256 certificate fingerprint**. Send it over and an `assetlinks.json` gets added.
+
+## 6. Account deletion with Sign in with Apple
+
+Apple requires apps that offer Sign in with Apple to revoke the user's Apple tokens when they delete their account (App Store guideline 5.1.1(v)). This is built in:
+
+- Right after an Apple sign-in, the app saves Apple's refresh token to `public.apple_auth_tokens`, through the `save_apple_refresh_token` function. The app can't read that table back. The SQL is in `supabase/migrations/20261103c_apple_token_revoke.sql`.
+- `api/delete-account.js` sends that token to Apple's revoke endpoint before deleting the account. The deletion email to the owner reports whether it worked.
+- **Vercel env var needed:** `APPLE_PRIVATE_KEY` = the full contents of the `AuthKey_794HU6VJF5.p8` file, including the `-----BEGIN/END PRIVATE KEY-----` lines.
+  - `APPLE_KEY_ID`, `APPLE_TEAM_ID` and `APPLE_CLIENT_ID` default to `794HU6VJF5`, `32S8LFT6HD` and `com.henalytics.app.signin`.
+- To check it's working: after an Apple sign-in, `select user_id, updated_at from public.apple_auth_tokens;` shows a row.
 
 ## Good to know
 

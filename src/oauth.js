@@ -11,6 +11,13 @@
 //   that URL to the app (appUrlOpen), and handleAuthCallbackUrl() turns it into
 //   a session.
 //
+// Apple account deletion: Apple requires apps with Sign in with Apple to revoke
+// the user's Apple tokens when they delete their account (App Store guideline
+// 5.1.1(v)). Supabase hands us Apple's refresh token only once, right after
+// sign-in (provider_refresh_token), so we stash it server-side then
+// (save_apple_refresh_token RPC → public.apple_auth_tokens, unreadable from the
+// app) and api/delete-account.js revokes it with Apple.
+//
 // Which buttons show is controlled remotely by the app_config row
 // id = "auth_providers", value = { "google": true, "apple": true }, so the
 // buttons can be switched on after the providers are configured in Supabase,
@@ -58,8 +65,13 @@ export function loadEnabledProviders() {
 
 // Start sign-in. On web this navigates away; on native it opens the browser
 // sheet and resolves once it's open (the session arrives via the deep link).
+const PROVIDER_HINT_KEY = 'henalytics_oauth_provider';
+
 export async function startOAuth(provider) {
   if (!isSupabaseConfigured) throw new Error("Sign-in isn't configured yet.");
+  // Remember which provider this sign-in is for, so the provider token that
+  // comes back can be attributed (a user may have both Google and Apple linked).
+  try { localStorage.setItem(PROVIDER_HINT_KEY, provider); } catch (_) {}
   const native = isNativeApp();
   const queryParams = provider === 'google' ? { prompt: 'select_account' } : undefined;
   const { data, error } = await supabase.auth.signInWithOAuth({
@@ -96,7 +108,7 @@ export function parseAuthCallbackUrl(url) {
   const hash = hashIdx !== -1 ? url.slice(hashIdx + 1) : '';
   for (const part of [query, hash]) {
     const p = new URLSearchParams(part);
-    for (const k of ['access_token', 'refresh_token', 'code', 'error', 'error_description']) {
+    for (const k of ['access_token', 'refresh_token', 'provider_refresh_token', 'code', 'error', 'error_description']) {
       if (p.get(k)) out[k] = p.get(k);
     }
   }
@@ -121,12 +133,14 @@ export async function handleAuthCallbackUrl(url) {
       });
       await close();
       if (error) return { ok: false, message: error.message };
+      await captureProviderToken(p.provider_refresh_token);
       return { ok: true };
     }
     if (p.code) {
-      const { error } = await supabase.auth.exchangeCodeForSession(p.code);
+      const { data, error } = await supabase.auth.exchangeCodeForSession(p.code);
       await close();
       if (error) return { ok: false, message: error.message };
+      await captureProviderToken(data?.session?.provider_refresh_token);
       return { ok: true };
     }
     await close();
@@ -135,4 +149,16 @@ export async function handleAuthCallbackUrl(url) {
     await close();
     return { ok: false, message: e?.message || 'Sign-in failed. Please try again.' };
   }
+}
+
+// Called with the provider refresh token from a fresh OAuth sign-in (native
+// callback above, or the web SIGNED_IN event in HomesteadApp). Only Apple's is
+// kept. Never throws; a failure just means deletion can't revoke with Apple.
+export async function captureProviderToken(providerRefreshToken) {
+  let hint = null;
+  try { hint = localStorage.getItem(PROVIDER_HINT_KEY); localStorage.removeItem(PROVIDER_HINT_KEY); } catch (_) {}
+  if (!providerRefreshToken || hint !== 'apple' || !isSupabaseConfigured) return;
+  try {
+    await supabase.rpc('save_apple_refresh_token', { p_token: String(providerRefreshToken) });
+  } catch (_) { /* table not created yet, offline, etc. */ }
 }
