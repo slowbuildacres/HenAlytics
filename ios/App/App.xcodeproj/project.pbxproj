@@ -17,6 +17,7 @@
 		50B271D11FEDC1A000F3C39B /* public in Resources */ = {isa = PBXBuildFile; fileRef = 50B271D01FEDC1A000F3C39B /* public */; };
 		AB7E1C000000000000000006 /* HenalyticsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7E1C000000000000000001 /* HenalyticsWidget.swift */; };
 		AB7E1C000000000000000007 /* HenalyticsWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AB7E1C000000000000000003 /* HenalyticsWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
+		AB7E1C010000000000000002 /* WidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7E1C010000000000000001 /* WidgetBridge.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -58,6 +59,8 @@
 		AB7E1C000000000000000002 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		AB7E1C000000000000000003 /* HenalyticsWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HenalyticsWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB7E1C000000000000000004 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
+		AB7E1C010000000000000001 /* WidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetBridge.swift; sourceTree = "<group>"; };
+		AB7E1C010000000000000003 /* HenalyticsWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HenalyticsWidget.entitlements; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -104,6 +107,7 @@
 				AB7E1C000000000000000004 /* App.entitlements */,
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
+				AB7E1C010000000000000001 /* WidgetBridge.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -119,6 +123,7 @@
 			children = (
 				AB7E1C000000000000000001 /* HenalyticsWidget.swift */,
 				AB7E1C000000000000000002 /* Info.plist */,
+				AB7E1C010000000000000003 /* HenalyticsWidget.entitlements */,
 			);
 			path = HenalyticsWidget;
 			sourceTree = "<group>";
@@ -234,6 +239,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
+				AB7E1C010000000000000002 /* WidgetBridge.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -439,6 +445,7 @@
 		AB7E1C000000000000000010 /* Debug */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HenalyticsWidget/HenalyticsWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 61;
@@ -467,6 +474,7 @@
 		AB7E1C000000000000000011 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				CODE_SIGN_ENTITLEMENTS = HenalyticsWidget/HenalyticsWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 61;

@@ -11,7 +11,7 @@ import android.widget.RemoteViews;
 /**
  * Henalytics "Quick Log" home-screen widget.
  *
- * Four buttons. Each opens the app straight into a log form through a
+ * Four buttons (Eggs, Harvest, Water, Note). Each opens the app straight into a log form through a
  * henalytics:// link that HomesteadApp.jsx handles (see WIDGET DEEP LINKS).
  * Nothing is stored or synced by the widget itself.
  */
@@ -22,7 +22,7 @@ public class QuickLogWidget extends AppWidgetProvider {
         for (int id : appWidgetIds) {
             RemoteViews views = new RemoteViews(context.getPackageName(), R.layout.widget_quick_log);
             bind(context, views, R.id.btn_eggs,  "henalytics://log?hobby=egg_layers&action=eggs", 101);
-            bind(context, views, R.id.btn_fed,   "henalytics://log?hobby=egg_layers&action=fed", 102);
+            bind(context, views, R.id.btn_harvest, "henalytics://log?hobby=garden&action=harvested", 102);
             bind(context, views, R.id.btn_water, "henalytics://log?hobby=garden&action=watered", 103);
             // hobby=any → whichever hobby you were last on
             bind(context, views, R.id.btn_note,  "henalytics://log?hobby=any&action=note", 104);
@@ -30,7 +30,7 @@ public class QuickLogWidget extends AppWidgetProvider {
         }
     }
 
-    private static void bind(Context ctx, RemoteViews views, int viewId, String uri, int requestCode) {
+    static void bind(Context ctx, RemoteViews views, int viewId, String uri, int requestCode) {
         Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(uri));
         intent.setPackage(ctx.getPackageName());
         intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);

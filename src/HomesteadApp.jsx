@@ -87,6 +87,7 @@ import {
   reconcileNudges, reconcileFrostAlerts,
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
+import { buildWidgetSnapshot, pushWidgetSnapshot } from "./widgetBridge.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -3948,6 +3949,29 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [frostCropsKey, frostLat, frostLon, frostOff, frostResumeTick, todayKey]);
 
+  // ---- Today widget snapshot (widgetBridge.js) ------------------------------
+  // Eggs today, tonight's frost (only with tender crops in), and the next
+  // calendar items, handed to the home-screen widget on every relevant change
+  // and on resume. Debounced; the bridge skips unchanged snapshots.
+  const widgetEggKey = (data?.entries?.egg_layers || []).filter((e) => e && e.date === todayKey).length;
+  useEffect(() => {
+    if (!isNativeApp() || !data?.hobbies) return;
+    let cancelled = false;
+    const t = setTimeout(async () => {
+      let frost = null;
+      try {
+        const crops = JSON.parse(frostCropsKey);
+        if (!frostOff && crops.tender.length && frostLat != null && frostLon != null) {
+          const fc = await getForecast(frostLat, frostLon);
+          const low = fc && fc.tomorrow ? fc.tomorrow.lowF : null;
+          if (low != null && low <= 34) frost = { lowText: fmtTemp(low), crops: crops.tender.slice(0, 3) };
+        }
+      } catch (_) {}
+      if (!cancelled) pushWidgetSnapshot(buildWidgetSnapshot(data, { frost }));
+    }, 800);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [calendarEventsKey, widgetEggKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Offer the daily nudge once, right after someone's 2nd log on the phone
   // app (they've shown they want to track; that's when a reminder helps).
   const nudgeOfferBaselineRef = useRef(null);
@@ -6530,6 +6554,58 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
           </div>
         </button>
       )}
+
+      <TellAFriendCard data={data} update={update} setModal={setModal} />
+    </div>
+  );
+}
+
+// ---- Tell a friend ---------------------------------------------------------
+// Word of mouth is how homestead apps grow. Shown on Home to people who
+// clearly use the app (14+ days in, 20+ logs), at most once every 60 days,
+// and gone for good after they share or say "don't ask again".
+const APP_SHARE_URL = "https://henalytics.com/?ref=friend";
+const APP_SHARE_TEXT = "I track my homestead (eggs, garden, animals, sales) with Henalytics. It's free and really handy:";
+
+async function shareTheApp() {
+  try {
+    if (navigator.share) { await navigator.share({ text: APP_SHARE_TEXT, url: APP_SHARE_URL }); return "shared"; }
+  } catch (e) {
+    if (e && e.name === "AbortError") return "cancelled";
+  }
+  try { await navigator.clipboard.writeText(`${APP_SHARE_TEXT} ${APP_SHARE_URL}`); toast("Link copied. Paste it in a text or post! 📋"); return "copied"; }
+  catch (_) { return "failed"; }
+}
+
+function TellAFriendCard({ data, update, setModal }) {
+  const tf = data.tellAFriend || {};
+  const totalLogs = React.useMemo(
+    () => Object.values(data.entries || {}).reduce((n, arr) => n + (Array.isArray(arr) ? arr.length : 0), 0),
+    [data.entries]
+  );
+  const daysIn = data.onboardedAt ? (Date.now() - data.onboardedAt) / 86400000 : 0;
+  const snoozed = tf.lastShownAt && Date.now() - tf.lastShownAt < 60 * 86400000;
+  if (tf.done || snoozed || daysIn < 14 || totalLogs < 20) return null;
+  const close = (patch) => update((d) => { d.tellAFriend = { ...(d.tellAFriend || {}), lastShownAt: Date.now(), ...patch }; return d; });
+  return (
+    <div style={{ marginTop: 22, background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 14, padding: 14, boxShadow: "2px 3px 0 " + palette.line }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
+        <div style={{ fontSize: 26, lineHeight: 1 }}>🤝</div>
+        <div style={{ flex: 1 }}>
+          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 19, color: palette.ink, marginBottom: 4 }}>Know another homesteader?</div>
+          <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.45 }}>
+            Henalytics is free and made by one homesteader. Sharing it with a friend (or your homestead Facebook group) is the best way to help it grow.
+          </div>
+        </div>
+      </div>
+      <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
+        <Btn variant="primary" onClick={async () => { const r = await shareTheApp(); if (r === "shared" || r === "copied") close({ done: true }); }}>📤 Share Henalytics</Btn>
+        <Btn variant="ghost" onClick={() => { close({}); setModal({ type: "farmhand" }); }}>👨‍👩‍👧 Invite my household</Btn>
+      </div>
+      <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
+        <button type="button" onClick={() => close({})} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: palette.inkSoft, textDecoration: "underline", fontFamily: FONT_BODY }}>Not now</button>
+        <button type="button" onClick={() => close({ done: true })} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: palette.inkSoft, textDecoration: "underline", fontFamily: FONT_BODY }}>Don't ask again</button>
+      </div>
     </div>
   );
 }
@@ -9366,7 +9442,7 @@ function GardenTodayCard({ hobby, data, update, entries, setModal, setPage, onOp
   const atRisk = cropsAtRisk(hobby);
   const tenderNames = [...atRisk.tender, ...(tonightLow != null && tonightLow <= 30 ? atRisk.semi : [])];
   const coverText = tenderNames.length
-    ? `Cover ${tenderNames.slice(0, 3).join(", ")}${tenderNames.length > 3 ? ` + ${tenderNames.length - 3} more` : ""} or pick what's ready.`
+    ? `Cover ${tenderNames.slice(0, 3).join(", ")}${tenderNames.length > 3 ? ` + ${tenderNames.length - 3} more` : ""}, or pick what's ready.`
     : null;
   // Offer phone frost alerts right when they matter (tender crops + a cold night).
   const alertOffer = notifPerm && notifPerm !== "granted" && notifPerm !== "unsupported" && atRisk.tender.length && update
@@ -9541,6 +9617,9 @@ const VALUE_SLOT_LABEL = { lb: "lb", each: "each", bunch: "bunch" };
 // card = { kind, emoji, kicker, big, line, chips: [], foot, title, subtitle,
 //          stats: [{ label, value }] }. title/subtitle/stats feed the public
 // link page (henalytics.com/s/<id>); the rest is what's drawn on the image.
+// "$165" rather than "$165.00" on share cards.
+const moneyWhole = (n) => fmtMoney(Math.round(Number(n) || 0)).replace(/[.,]00(?=\D*$)/, "");
+
 function gardenShareCard(data, hobby) {
   const season = hobby.currentSeason;
   const seasonEntries = season ? (data.entries.garden || []).filter((e) => e.seasonId === season.id) : [];
@@ -9549,23 +9628,23 @@ function gardenShareCard(data, hobby) {
   const cost = season ? gardenSeasonCost(data, hobby, season, seasonEntries) : 0;
   const net = value.total - cost;
   const name = String(data.homesteadName || "").trim();
-  const top = value.rows.slice(0, 3).map((r) => `${r.plant} ${fmtMoney(Math.round(r.value))}`);
+  const top = value.rows.slice(0, 3).map((r) => `${r.plant} ${moneyWhole((r.value))}`);
   const summary = harvestSummary(harvests);
   const year = season && season.startDate ? season.startDate.slice(0, 4) : String(new Date().getFullYear());
   return {
     kind: "garden_value",
     emoji: "🌱",
     kicker: name || (season ? season.name : `${year} garden`),
-    big: fmtMoney(Math.round(value.total)),
+    big: moneyWhole((value.total)),
     line: `of food grown in ${name ? "our" : "my"} garden this year`,
-    chips: [summary ? `${summary} harvested` : null, cost > 0 ? (net >= 0 ? `+${fmtMoney(Math.round(net))} more than we spent` : null) : null].filter(Boolean),
+    chips: [summary ? `${summary} harvested` : null, cost > 0 ? (net >= 0 ? `+${moneyWhole((net))} more than we spent` : null) : null].filter(Boolean),
     foot: top.length ? top.join("  ·  ") : null,
-    title: `${name || "My garden"} grew ${fmtMoney(Math.round(value.total))} of food${season ? ` in ${year}` : ""} 🌱`,
-    subtitle: `${summary ? `${summary} harvested` : "Harvests"} valued at grocery prices${cost > 0 && net >= 0 ? `, ${fmtMoney(Math.round(net))} more than it cost to grow` : ""}. Tracked with Henalytics.`,
+    title: `${name || "My garden"} grew ${moneyWhole((value.total))} of food${season ? ` in ${year}` : ""} 🌱`,
+    subtitle: `${summary ? `${summary} harvested` : "Harvests"} valued at grocery prices${cost > 0 && net >= 0 ? `, ${moneyWhole((net))} more than it cost to grow` : ""}. Tracked with Henalytics.`,
     stats: [
-      { label: "Food grown", value: fmtMoney(Math.round(value.total)) },
-      cost > 0 ? { label: net >= 0 ? "Ahead of costs" : "Spent", value: net >= 0 ? `+${fmtMoney(Math.round(net))}` : fmtMoney(Math.round(cost)) } : null,
-      ...value.rows.slice(0, 3).map((r) => ({ label: r.plant, value: fmtMoney(Math.round(r.value)) })),
+      { label: "Food grown", value: moneyWhole((value.total)) },
+      cost > 0 ? { label: net >= 0 ? "Ahead of costs" : "Spent", value: net >= 0 ? `+${moneyWhole((net))}` : moneyWhole((cost)) } : null,
+      ...value.rows.slice(0, 3).map((r) => ({ label: r.plant, value: moneyWhole((r.value)) })),
     ].filter(Boolean),
   };
 }
@@ -9574,30 +9653,36 @@ function gardenShareCard(data, hobby) {
 // (1200×630 link preview for Facebook).
 function BragCardArt({ card, layout = "square", innerRef }) {
   const wide = layout === "wide";
-  const W = wide ? 600 : 360, H = wide ? 315 : 360;
+  const chips = card.chips || [];
   return (
     <div ref={innerRef} style={{
-      width: W, height: H, boxSizing: "border-box", borderRadius: wide ? 0 : 18, overflow: "hidden",
+      // Square: fills the popup up to 360px wide, always 1:1 (rendered to
+      // 1080×1080). Wide: fixed 600×315, drawn off-screen (1200×630).
+      width: wide ? 600 : "min(360px, 100%)", height: wide ? 315 : undefined,
+      aspectRatio: wide ? undefined : "1 / 1", boxSizing: "border-box",
+      borderRadius: wide ? 0 : 18, overflow: "hidden",
       background: "linear-gradient(160deg, #2C1810 0%, #3D2416 60%, #4A3220 100%)",
       color: "#F4EDE0", fontFamily: FONT_BODY, position: "relative",
-      padding: wide ? "34px 40px" : "30px 26px", display: "flex", flexDirection: "column",
-      justifyContent: "center", textAlign: wide ? "left" : "center",
+      padding: wide ? "30px 40px 20px" : "22px 18px 14px",
+      display: "flex", flexDirection: "column", textAlign: wide ? "left" : "center",
     }}>
-      <div style={{ position: "absolute", right: wide ? 34 : -18, top: wide ? 28 : -14, fontSize: wide ? 120 : 110, opacity: 0.12, lineHeight: 1 }}>{card.emoji}</div>
-      <div style={{ fontSize: wide ? 13 : 11, letterSpacing: 2, textTransform: "uppercase", color: "rgba(244,237,224,0.6)", marginBottom: wide ? 10 : 8 }}>{card.kicker}</div>
-      {!wide && <div style={{ fontSize: 38, lineHeight: 1, marginBottom: 6 }}>{card.emoji}</div>}
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 76 : 62, lineHeight: 1, color: "#A8C078" }}>{card.big}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 26 : 20, lineHeight: 1.2, marginTop: 6, color: "#F4EDE0" }}>{card.line}</div>
-      {card.chips && card.chips.length > 0 && (
-        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : 14 }}>
-          {card.chips.map((c, i) => (
-            <span key={i} style={{ fontSize: wide ? 14 : 12, fontWeight: 600, padding: "5px 10px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
-          ))}
-        </div>
-      )}
-      {card.foot && <div style={{ fontSize: wide ? 14 : 12, color: "rgba(244,237,224,0.75)", marginTop: wide ? 14 : 12, lineHeight: 1.4 }}>{card.foot}</div>}
-      <div style={{ position: "absolute", left: wide ? 40 : 0, right: wide ? 40 : 0, bottom: wide ? 22 : 16, fontSize: wide ? 13 : 10, letterSpacing: 1.5, color: "rgba(244,237,224,0.5)", textAlign: wide ? "left" : "center" }}>
-        🐔 HENALYTICS.COM · FREE HOMESTEAD TRACKER
+      <div style={{ position: "absolute", right: wide ? 34 : -18, top: wide ? 24 : -14, fontSize: wide ? 120 : 100, opacity: 0.12, lineHeight: 1 }}>{card.emoji}</div>
+      <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0 }}>
+        <div style={{ fontSize: wide ? 13 : 10, letterSpacing: 2, textTransform: "uppercase", color: "rgba(244,237,224,0.6)", marginBottom: 6 }}>{card.kicker}</div>
+        {!wide && <div style={{ fontSize: 30, lineHeight: 1, marginBottom: 4 }}>{card.emoji}</div>}
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 76 : 56, lineHeight: 1, color: "#A8C078" }}>{card.big}</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 26 : 17, lineHeight: 1.2, marginTop: 6, color: "#F4EDE0" }}>{card.line}</div>
+        {chips.length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : 12 }}>
+            {chips.map((c, i) => (
+              <span key={i} style={{ fontSize: wide ? 14 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
+            ))}
+          </div>
+        )}
+        {card.foot && <div style={{ fontSize: wide ? 14 : 11, color: "rgba(244,237,224,0.75)", marginTop: wide ? 14 : 10, lineHeight: 1.4 }}>{card.foot}</div>}
+      </div>
+      <div style={{ fontSize: wide ? 13 : 9, letterSpacing: 1.5, color: "rgba(244,237,224,0.5)", marginTop: 8 }}>
+        🐔 HENALYTICS.COM{wide ? " · FREE HOMESTEAD TRACKER" : ""}
       </div>
     </div>
   );
@@ -9638,9 +9723,7 @@ function BragShareModal({ card, user, onClose, onSignIn }) {
   return (
     <Modal open onClose={onClose} title="Share it">
       <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-        <div style={{ boxShadow: "4px 5px 0 " + palette.line, borderRadius: 18 }}>
-          <BragCardArt card={card} layout="square" innerRef={squareRef} />
-        </div>
+        <BragCardArt card={card} layout="square" innerRef={squareRef} />
       </div>
       {/* Off-screen wide version, rendered for the Facebook link preview. */}
       <div aria-hidden="true" style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}>
@@ -13485,6 +13568,12 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         />
       )}
 
+      <SectionBtn
+        icon={Heart}
+        label="Tell a friend about Henalytics"
+        sub="Share the app with another homesteader or your Facebook group"
+        onClick={() => { shareTheApp(); }}
+      />
       {isNativeApp() && <DailyNudgeSetting data={data} update={update} />}
       {isNativeApp() && (data.hobbies || []).some((h) => h.type === "garden" && !h.hidden) && <FrostAlertSetting data={data} update={update} />}
 

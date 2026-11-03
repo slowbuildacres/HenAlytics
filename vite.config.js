@@ -122,6 +122,7 @@ export default defineConfig({
           /^\/api\//,
           /^\/cal\//,          // live calendar feed (.ics)
           /^\/garden-value/,   // public garden value calculator (own page)
+          /^\/s\//,            // public share-card pages (henalytics.com/s/<id>)
           /^\/\.well-known\//,  // Apple / Android app association files
           /\/rest\/v1\//,
           /\/auth\/v1\//,

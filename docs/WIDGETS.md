@@ -4,8 +4,22 @@ Each widget button opens the app straight into a log form. The app side is in
 `src/HomesteadApp.jsx` (search for `WIDGET DEEP LINKS`).
 
 Links look like `henalytics://log?hobby=<hobby id>&action=<action>`.
-Allowed actions: `eggs`, `fed`, `watered`, `note`, `bedding`, `sold_eggs`, `used_eggs`.
-`hobby=any` opens whichever hobby was in use last. `henalytics://open` just opens the app.
+Allowed actions: `eggs`, `fed`, `watered`, `harvested`, `note`, `bedding`, `sold_eggs`, `used_eggs`.
+`hobby=any` opens whichever hobby was in use last. `henalytics://open` just opens the app (`?page=garden` opens a hobby).
+
+## The widgets
+
+- **Today** (iPhone medium/large, Android 4×3): tonight's frost warning (only when frost-tender crops are planted), eggs logged today, and the next calendar items, with Eggs, Harvest and Note buttons.
+- **Quick Log** (iPhone medium, Android 4×1): Eggs, Harvest, Water, Note.
+- **One-Tap Log** (iPhone small and Lock Screen): one configurable button.
+
+The Today widget reads a snapshot the app writes whenever eggs, the calendar or the frost outlook change (`src/widgetBridge.js`):
+- **iPhone:** `ios/App/App/WidgetBridge.swift` stores it in the App Group `group.com.henalytics.app` (both targets have it in their `.entitlements`) and reloads the widget. `Main.storyboard` uses `MainViewController`, which registers the plugin.
+- **Android:** `WidgetBridgePlugin.java` stores it in SharedPreferences and refreshes `TodayWidget`. It's registered in `MainActivity`.
+
+An older snapshot never shows yesterday's eggs or frost as today's.
+
+**App Group, one-time check:** with automatic signing, Xcode registers `group.com.henalytics.app` for both App IDs on the first build. If Xcode reports a provisioning error about App Groups, open Signing & Capabilities for each target and click "Try Again", or add the group under Certificates, Identifiers & Profiles → Identifiers → App Groups.
 
 ## Android: already wired in
 
@@ -52,7 +66,8 @@ signing, Xcode registers the widget's App ID and refreshes the profiles on the
 first build (it may ask you to sign in to your Apple account once).
 
 To try it: long-press the home screen → **+** → Henalytics:
-- **Quick Log** (medium): eggs / fed / water / note
+- **Today** (medium or large): frost, eggs today, upcoming tasks
+- **Quick Log** (medium): eggs / harvest / water / note
 - **One-Tap Log** (small, or Lock Screen): one button. Long-press → **Edit Widget** to choose what it logs.
 
 The main app still supports iOS 15. The widget shows up on iOS 17 and later.
