@@ -84,8 +84,9 @@ import {
 import {
   areRemindersSupported, getReminderPermission, requestReminderPermission,
   reconcileReminders, cancelAllReminders, initReminderTapHandling,
-  reconcileNudges,
+  reconcileNudges, reconcileFrostAlerts,
 } from "./notifications.js";
+import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -98,9 +99,12 @@ import {
 } from "./animalPhotos.js";
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
-  getWeeklyPrecip, testStation, getYearWeather, getForecast,
+  getWeeklyPrecip, testStation, getYearWeather, getForecast, getForecastDays,
 } from "./weather.js";
 import { computeHarvestValue, plantKey } from "./gardenValue.js";
+import SeedInventory, { needsBuying as seedNeedsBuying } from "./SeedInventory.jsx";
+import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
+import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
@@ -2211,7 +2215,8 @@ const useNativeDeepLinks = (onUrl) => {
 // WIDGET DEEP LINKS
 // ----------------------------------------------------------------------------
 //   henalytics://log?hobby=egg_layers&action=eggs
-//   henalytics://open
+//   henalytics://log?hobby=garden&action=harvested
+//   henalytics://open            henalytics://open?page=garden
 // Only whitelisted actions are honored so a stray link can't open arbitrary
 // modals. Returns { kind: "log", hobbyId, action } | { kind: "open" } | null.
 // ============================================================================
@@ -2231,7 +2236,7 @@ const buildNudgeMessages = (types) => {
   return msgs;
 };
 
-const WIDGET_ACTIONS = ["eggs", "fed", "watered", "note", "bedding", "sold_eggs", "used_eggs"];
+const WIDGET_ACTIONS = ["eggs", "fed", "watered", "harvested", "note", "bedding", "sold_eggs", "used_eggs"];
 // Hobbies whose quick-log tiles live on the Home page rather than their own page.
 const WIDGET_HOME_TYPES = ["garden", "egg_layers", "meat_chickens"];
 const parseWidgetUrl = (url) => {
@@ -2241,7 +2246,11 @@ const parseWidgetUrl = (url) => {
     // For custom schemes "henalytics://log?x" parses with host "log"; some
     // engines put it in pathname instead ("//log"). Accept both.
     const route = (u.host || u.pathname.replace(/^\/+/, "")).toLowerCase();
-    if (route === "open") return { kind: "open" };
+    if (route === "open") {
+      // Optional ?page=<hobby type or id> (frost alerts open the garden).
+      const pg = u.searchParams.get("page");
+      return { kind: "open", hobbyId: pg && /^[a-z0-9_-]{1,40}$/i.test(pg) ? pg : null };
+    }
     if (route !== "log") return null;
     const hobbyId = u.searchParams.get("hobby");
     const action = u.searchParams.get("action") || "note";
@@ -3904,6 +3913,41 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [data?.dailyNudge?.enabled, data?.dailyNudge?.time, loggedToday, todayKey, nudgeHobbyKey]);
 
+  // ---- Frost alerts (frostAlerts.js) ---------------------------------------
+  // Afternoon-before phone alerts for forecast frost nights, only when the
+  // garden has frost-tender crops in the ground. Re-read on open/resume and
+  // whenever the planted crops change. data.frostAlerts.enabled === false
+  // turns it off; otherwise it's on once notifications are allowed.
+  const frostGarden = (data?.hobbies || []).find((h) => h && h.type === "garden" && !h.hidden);
+  const frostCropsKey = React.useMemo(() => {
+    const c = cropsAtRisk(frostGarden);
+    return JSON.stringify(c);
+  }, [frostGarden]);
+  const frostLat = data?.homesteadLocation?.lat;
+  const frostLon = data?.homesteadLocation?.lon;
+  const frostOff = data?.frostAlerts?.enabled === false;
+  const [frostResumeTick, setFrostResumeTick] = useState(0);
+  useEffect(() => {
+    const onVis = () => { if (document.visibilityState === "visible") setFrostResumeTick((t) => t + 1); };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, []);
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(await areRemindersSupported())) return;
+      const crops = JSON.parse(frostCropsKey);
+      if (frostOff || frostLat == null || frostLon == null || (!crops.tender.length && !crops.semi.length)) {
+        if (!cancelled) reconcileFrostAlerts([]);
+        return;
+      }
+      const days = await getForecastDays(frostLat, frostLon, 7);
+      if (cancelled || !days) return;
+      reconcileFrostAlerts(buildFrostSchedule({ forecastDays: days, crops, fmtTemp }));
+    })();
+    return () => { cancelled = true; };
+  }, [frostCropsKey, frostLat, frostLon, frostOff, frostResumeTick, todayKey]);
+
   // Offer the daily nudge once, right after someone's 2nd log on the phone
   // app (they've shown they want to track; that's when a reminder helps).
   const nudgeOfferBaselineRef = useRef(null);
@@ -3934,7 +3978,7 @@ useEffect(() => {
         try {
           // Daily nudges carry a henalytics:// log link — reuse the widget
           // deep-link path so it opens straight to the right log form.
-          if (extra && extra.kind === "nudge" && extra.url && parseWidgetUrl(extra.url)) {
+          if (extra && (extra.kind === "nudge" || extra.kind === "frost") && extra.url && parseWidgetUrl(extra.url)) {
             pendingWidgetUrlRef.current = extra.url;
             setWidgetUrlTick((t) => t + 1);
             return;
@@ -4373,7 +4417,13 @@ useEffect(() => {
     if (!w) return;
     // Stop the "snap to first visible hobby" effect from overriding us.
     initialActiveHobbySetRef.current = true;
-    if (w.kind === "open") { setModal(null); setPage("home"); return; }
+    if (w.kind === "open") {
+      setModal(null);
+      const oh = w.hobbyId && data.hobbies.find((x) => (x.id === w.hobbyId || x.type === w.hobbyId) && !x.hidden);
+      if (oh) setActiveHobby(oh.id);
+      setPage(oh && !WIDGET_HOME_TYPES.includes(oh.type) ? oh.type : "home");
+      return;
+    }
     // hobby=any → the hobby you were last on (or your first visible one).
     const h = w.hobbyId === "any"
       ? (data.hobbies.find((x) => x.id === activeHobby && !x.hidden) || data.hobbies.find((x) => !x.hidden))
@@ -8931,6 +8981,12 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
       return d;
     });
   }, [needsAutoSeason, hobby.id]);
+  const seedCropOptions = React.useMemo(() => {
+    const set = new Set(ALMANAC_CROPS.map((c) => String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim()).filter(Boolean));
+    (hobby.annuals || []).forEach((a) => a && a.name && set.add(a.name));
+    return [...set];
+  }, [hobby.annuals]);
+
   if (needsAutoSeason) return null;
 
   if (!hobby.currentSeason) {
@@ -8939,9 +8995,10 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
     // Most-recent first, capped — the full set is always available in Stats.
     const recent = archivedList.slice().reverse().slice(0, 6);
     return (
+      <div>
       <div style={{
         background: palette.card, border: `2px dashed ${palette.ink}`, borderRadius: 12,
-        padding: 24, textAlign: "center",
+        padding: 24, textAlign: "center", marginBottom: 14,
       }}>
         <Sprout size={32} color={palette.ink} strokeWidth={1.5} style={{ marginBottom: 10 }} />
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, marginBottom: 6 }}>No active season</div>
@@ -8995,6 +9052,9 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
             </div>
           </div>
         )}
+      </div>
+      {/* Between seasons is seed-ordering time: keep the seed box handy. */}
+      <SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={seedCropOptions} />
       </div>
     );
   }
@@ -9156,10 +9216,10 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
 
   const tabBtn = (key, label) => (
     <button key={key} type="button" onClick={() => chooseTab(key)} style={{
-      flex: 1, padding: "9px 6px", border: "none", borderRadius: 8, cursor: "pointer",
+      flex: 1, minWidth: 0, padding: "9px 2px", border: "none", borderRadius: 8, cursor: "pointer", whiteSpace: "nowrap",
       background: gardenTab === key ? palette.card : "transparent",
       boxShadow: gardenTab === key ? "1px 1px 0 " + palette.line : "none",
-      color: palette.ink, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+      color: palette.ink, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
     }}>{label}</button>
   );
 
@@ -9167,7 +9227,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
     <div>
       {/* Layout (Nov 2026): today → 4 log buttons (+ More) → season worth →
           Growing | Perennials | Map tabs. Rare actions live under More. */}
-      <GardenTodayCard hobby={hobby} data={data} entries={data.entries.garden || []} setModal={setModal} setPage={setPage} />
+      <GardenTodayCard hobby={hobby} data={data} entries={data.entries.garden || []} update={update} setModal={setModal} setPage={setPage} onOpenSeeds={() => chooseTab("seeds")} />
 
       <QuickLogTiles hobby={hobby} setModal={setModal} onPlanAnnualConfirm={onPlanAnnualConfirm} />
 
@@ -9196,6 +9256,13 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
             <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
               {harvestSummary(harvests)} harvested · {fmtMoney(seasonCost)} spent · tap for details
             </div>
+            <button type="button"
+              onClick={(e) => { e.stopPropagation(); setModal({ type: "gardenShare", hobbyId: hobby.id }); }}
+              style={{
+                marginTop: 10, padding: "7px 12px", borderRadius: 999, cursor: "pointer",
+                border: "1.5px solid rgba(244,237,224,0.35)", background: "rgba(244,237,224,0.08)",
+                color: palette.bg, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+              }}>📤 Share what my garden grew</button>
           </>
         ) : (
           <>
@@ -9214,6 +9281,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
       <div style={{ display: "flex", gap: 4, padding: 4, background: palette.bgAlt, borderRadius: 10, marginBottom: 12 }}>
         {tabBtn("growing", "🌱 Growing")}
         {tabBtn("perennials", "🌳 Perennials")}
+        {tabBtn("seeds", "🌾 Seeds")}
         {tabBtn("map", "🗺️ Map")}
       </div>
 
@@ -9228,6 +9296,10 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
       ) : sectionOrder
         .filter((key) => key === "perennials" || key === "orchard")
         .map((key) => sectionEls[key]))}
+
+      {gardenTab === "seeds" && (
+        <SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={seedCropOptions} />
+      )}
 
       {gardenTab === "map" && gardenMapCard}
     </div>
@@ -9260,11 +9332,22 @@ function gardenSeasonCost(data, hobby, season, seasonEntries) {
 }
 
 // ---- Today in the garden ---------------------------------------------------
-function GardenTodayCard({ hobby, data, entries, setModal, setPage }) {
+function GardenTodayCard({ hobby, data, update, entries, setModal, setPage, onOpenSeeds }) {
   const todayIso = todayStr();
   const loc = data.homesteadLocation;
   const [weekRain, setWeekRain] = React.useState(null);
   const [forecast, setForecast] = React.useState(null);
+  // Phone only: can we send frost alerts? (null = unknown / web)
+  const [notifPerm, setNotifPerm] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      if (!(await areRemindersSupported())) return;
+      const p = await getReminderPermission();
+      if (!cancelled) setNotifPerm(p);
+    })();
+    return () => { cancelled = true; };
+  }, []);
   React.useEffect(() => {
     let cancelled = false;
     if (!loc || loc.lat == null || loc.lon == null) return;
@@ -9280,10 +9363,27 @@ function GardenTodayCard({ hobby, data, entries, setModal, setPage }) {
   // Frost / heat
   const tonightLow = forecast && forecast.tomorrow ? forecast.tomorrow.lowF : null;
   const todayHigh = forecast && forecast.today ? forecast.today.highF : null;
+  const atRisk = cropsAtRisk(hobby);
+  const tenderNames = [...atRisk.tender, ...(tonightLow != null && tonightLow <= 30 ? atRisk.semi : [])];
+  const coverText = tenderNames.length
+    ? `Cover ${tenderNames.slice(0, 3).join(", ")}${tenderNames.length > 3 ? ` + ${tenderNames.length - 3} more` : ""} or pick what's ready.`
+    : null;
+  // Offer phone frost alerts right when they matter (tender crops + a cold night).
+  const alertOffer = notifPerm && notifPerm !== "granted" && notifPerm !== "unsupported" && atRisk.tender.length && update
+    ? {
+        actionLabel: "Alert me",
+        onAction: async () => {
+          const ok = await requestReminderPermission();
+          update((d) => { d.frostAlerts = { ...(d.frostAlerts || {}), enabled: true }; return d; });
+          setNotifPerm(ok ? "granted" : "denied");
+          toast(ok ? "Frost alerts on. You'll get a heads-up the afternoon before a frost night. ❄️" : "Notifications are off for Henalytics. Turn them on in your phone's Settings.", { ms: 5000 });
+        },
+      }
+    : {};
   if (tonightLow != null && tonightLow <= 32) {
-    rows.push({ icon: "❄️", tone: "warn", text: `Frost tonight — low ${fmtTemp(tonightLow)}`, sub: "Cover or pick anything frost-tender." });
+    rows.push({ icon: "❄️", tone: "warn", text: `Frost tonight — low ${fmtTemp(tonightLow)}`, sub: coverText || "Cover or pick anything frost-tender.", ...alertOffer });
   } else if (tonightLow != null && tonightLow <= 36) {
-    rows.push({ icon: "🌡️", tone: "warn", text: `Close to frost tonight — low ${fmtTemp(tonightLow)}`, sub: "Low spots can still frost. Cover tender plants to be safe." });
+    rows.push({ icon: "🌡️", tone: "warn", text: `Close to frost tonight — low ${fmtTemp(tonightLow)}`, sub: coverText || "Low spots can still frost. Cover tender plants to be safe.", ...alertOffer });
   }
   if (todayHigh != null && todayHigh >= 92) {
     rows.push({ icon: "🔥", tone: "warn", text: `Hot today — high ${fmtTemp(todayHigh)}`, sub: "Water early or late, and check seedlings and containers." });
@@ -9335,6 +9435,18 @@ function GardenTodayCard({ hobby, data, entries, setModal, setPage }) {
       actionLabel: "Log harvest",
       onAction: () => setModal({ type: "log", action: "harvested" }),
     });
+  }
+
+  // Seed-ordering season (Nov–Mar): nudge toward the seed box.
+  const month = parseLocalDate(todayIso).getMonth();
+  if (onOpenSeeds && (month >= 10 || month <= 2)) {
+    const seeds = Array.isArray(hobby.seeds) ? hobby.seeds : [];
+    const restock = seeds.filter((p) => seedNeedsBuying(p));
+    if (restock.length) {
+      rows.push({ icon: "🌾", text: `${restock.length} seed${restock.length === 1 ? "" : "s"} to restock before spring`, sub: "Low, out, or getting old. Tap for your shopping list.", onTap: onOpenSeeds });
+    } else if (!seeds.length) {
+      rows.push({ icon: "🌾", tone: "quiet", text: "Seed-ordering season", sub: "Take stock of your seed box so you only buy what you need.", onTap: onOpenSeeds });
+    }
   }
 
   const dateLabel = parseLocalDate(todayIso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
@@ -9425,7 +9537,136 @@ function GardenMoreModal({ hobby, setModal, onClose }) {
 
 // ---- What the garden is worth ------------------------------------------------
 const VALUE_SLOT_LABEL = { lb: "lb", each: "each", bunch: "bunch" };
-function GardenValueModal({ hobby, data, update, onClose }) {
+// ---- Share cards (garden value, hobby stats) --------------------------------
+// card = { kind, emoji, kicker, big, line, chips: [], foot, title, subtitle,
+//          stats: [{ label, value }] }. title/subtitle/stats feed the public
+// link page (henalytics.com/s/<id>); the rest is what's drawn on the image.
+function gardenShareCard(data, hobby) {
+  const season = hobby.currentSeason;
+  const seasonEntries = season ? (data.entries.garden || []).filter((e) => e.seasonId === season.id) : [];
+  const harvests = season ? collectGardenHarvests(data, { seasonId: season.id, season }) : [];
+  const value = computeHarvestValue(harvests, hobby.harvestPrices || {});
+  const cost = season ? gardenSeasonCost(data, hobby, season, seasonEntries) : 0;
+  const net = value.total - cost;
+  const name = String(data.homesteadName || "").trim();
+  const top = value.rows.slice(0, 3).map((r) => `${r.plant} ${fmtMoney(Math.round(r.value))}`);
+  const summary = harvestSummary(harvests);
+  const year = season && season.startDate ? season.startDate.slice(0, 4) : String(new Date().getFullYear());
+  return {
+    kind: "garden_value",
+    emoji: "🌱",
+    kicker: name || (season ? season.name : `${year} garden`),
+    big: fmtMoney(Math.round(value.total)),
+    line: `of food grown in ${name ? "our" : "my"} garden this year`,
+    chips: [summary ? `${summary} harvested` : null, cost > 0 ? (net >= 0 ? `+${fmtMoney(Math.round(net))} more than we spent` : null) : null].filter(Boolean),
+    foot: top.length ? top.join("  ·  ") : null,
+    title: `${name || "My garden"} grew ${fmtMoney(Math.round(value.total))} of food${season ? ` in ${year}` : ""} 🌱`,
+    subtitle: `${summary ? `${summary} harvested` : "Harvests"} valued at grocery prices${cost > 0 && net >= 0 ? `, ${fmtMoney(Math.round(net))} more than it cost to grow` : ""}. Tracked with Henalytics.`,
+    stats: [
+      { label: "Food grown", value: fmtMoney(Math.round(value.total)) },
+      cost > 0 ? { label: net >= 0 ? "Ahead of costs" : "Spent", value: net >= 0 ? `+${fmtMoney(Math.round(net))}` : fmtMoney(Math.round(cost)) } : null,
+      ...value.rows.slice(0, 3).map((r) => ({ label: r.plant, value: fmtMoney(Math.round(r.value)) })),
+    ].filter(Boolean),
+  };
+}
+
+// The drawn card. layout "square" (1080×1080 share image) or "wide"
+// (1200×630 link preview for Facebook).
+function BragCardArt({ card, layout = "square", innerRef }) {
+  const wide = layout === "wide";
+  const W = wide ? 600 : 360, H = wide ? 315 : 360;
+  return (
+    <div ref={innerRef} style={{
+      width: W, height: H, boxSizing: "border-box", borderRadius: wide ? 0 : 18, overflow: "hidden",
+      background: "linear-gradient(160deg, #2C1810 0%, #3D2416 60%, #4A3220 100%)",
+      color: "#F4EDE0", fontFamily: FONT_BODY, position: "relative",
+      padding: wide ? "34px 40px" : "30px 26px", display: "flex", flexDirection: "column",
+      justifyContent: "center", textAlign: wide ? "left" : "center",
+    }}>
+      <div style={{ position: "absolute", right: wide ? 34 : -18, top: wide ? 28 : -14, fontSize: wide ? 120 : 110, opacity: 0.12, lineHeight: 1 }}>{card.emoji}</div>
+      <div style={{ fontSize: wide ? 13 : 11, letterSpacing: 2, textTransform: "uppercase", color: "rgba(244,237,224,0.6)", marginBottom: wide ? 10 : 8 }}>{card.kicker}</div>
+      {!wide && <div style={{ fontSize: 38, lineHeight: 1, marginBottom: 6 }}>{card.emoji}</div>}
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 76 : 62, lineHeight: 1, color: "#A8C078" }}>{card.big}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 26 : 20, lineHeight: 1.2, marginTop: 6, color: "#F4EDE0" }}>{card.line}</div>
+      {card.chips && card.chips.length > 0 && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : 14 }}>
+          {card.chips.map((c, i) => (
+            <span key={i} style={{ fontSize: wide ? 14 : 12, fontWeight: 600, padding: "5px 10px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
+          ))}
+        </div>
+      )}
+      {card.foot && <div style={{ fontSize: wide ? 14 : 12, color: "rgba(244,237,224,0.75)", marginTop: wide ? 14 : 12, lineHeight: 1.4 }}>{card.foot}</div>}
+      <div style={{ position: "absolute", left: wide ? 40 : 0, right: wide ? 40 : 0, bottom: wide ? 22 : 16, fontSize: wide ? 13 : 10, letterSpacing: 1.5, color: "rgba(244,237,224,0.5)", textAlign: wide ? "left" : "center" }}>
+        🐔 HENALYTICS.COM · FREE HOMESTEAD TRACKER
+      </div>
+    </div>
+  );
+}
+
+function BragShareModal({ card, user, onClose, onSignIn }) {
+  const squareRef = useRef(null);
+  const wideRef = useRef(null);
+  const [busy, setBusy] = useState("");
+  const [link, setLink] = useState(null);
+  const shareText = card.title;
+
+  const shareImage = async () => {
+    setBusy("image");
+    try {
+      const blob = await renderNodeToBlob(squareRef.current, { width: 1080 });
+      const r = await shareImageBlob(blob, { filename: `henalytics-${card.kind || "card"}.png`, title: card.title, text: `${shareText} henalytics.com` });
+      if (r === "downloaded") toast("Image saved. Post it anywhere! 📸");
+    } catch (e) {
+      toast("Couldn't make the image. Try again.", { kind: "error" });
+    }
+    setBusy("");
+  };
+  const shareLink = async () => {
+    if (!user) { onSignIn && onSignIn(); return; }
+    setBusy("link");
+    try {
+      const url = link || await createShareLink(card, wideRef.current);
+      setLink(url);
+      const r = await shareUrl(url, shareText);
+      if (r === "copied") toast("Link copied. Paste it into your Facebook post! 📋");
+    } catch (e) {
+      toast(e && e.message ? e.message : "Couldn't make the link.", { kind: "error", ms: 6000 });
+    }
+    setBusy("");
+  };
+
+  return (
+    <Modal open onClose={onClose} title="Share it">
+      <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+        <div style={{ boxShadow: "4px 5px 0 " + palette.line, borderRadius: 18 }}>
+          <BragCardArt card={card} layout="square" innerRef={squareRef} />
+        </div>
+      </div>
+      {/* Off-screen wide version, rendered for the Facebook link preview. */}
+      <div aria-hidden="true" style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}>
+        <BragCardArt card={card} layout="wide" innerRef={wideRef} />
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        <button type="button" onClick={shareLink} disabled={!!busy} style={{
+          width: "100%", padding: "13px", borderRadius: 10, cursor: busy ? "wait" : "pointer",
+          border: `2px solid ${palette.ink}`, background: palette.ink, color: palette.bg,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, opacity: busy === "link" ? 0.7 : 1,
+        }}>{busy === "link" ? "Making your link…" : user ? "🔗 Share a link (best for Facebook)" : "🔗 Sign in to share a link"}</button>
+        <button type="button" onClick={shareImage} disabled={!!busy} style={{
+          width: "100%", padding: "12px", borderRadius: 10, cursor: busy ? "wait" : "pointer",
+          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, opacity: busy === "image" ? 0.7 : 1,
+        }}>{busy === "image" ? "Preparing image…" : canShareImageFiles() ? "📸 Share the picture" : "📸 Save the picture"}</button>
+      </div>
+      <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.5, marginTop: 10 }}>
+        A link shows this card as a big preview in Facebook posts and groups, and tapping it lets friends try Henalytics. Anyone with the link sees only what's on this card.
+        {link && <> Your link: <span style={{ wordBreak: "break-all", color: palette.ink }}>{link}</span></>}
+      </div>
+    </Modal>
+  );
+}
+
+function GardenValueModal({ hobby, data, update, onClose, onShare }) {
   const season = hobby.currentSeason;
   const seasonEntries = season ? (data.entries.garden || []).filter((e) => e.seasonId === season.id) : [];
   const harvests = season ? collectGardenHarvests(data, { seasonId: season.id, season }) : [];
@@ -9496,6 +9737,13 @@ function GardenValueModal({ hobby, data, update, onClose }) {
             ))}
           </div>
         </>
+      )}
+      {value.total > 0 && onShare && (
+        <button type="button" onClick={onShare} style={{
+          width: "100%", marginTop: 12, padding: "12px", borderRadius: 10, cursor: "pointer",
+          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, boxShadow: "2px 2px 0 " + palette.line,
+        }}>📤 Share what my garden grew</button>
       )}
       <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.45 }}>
         Spent = costs on garden logs + expenses added from the garden this season. Volume harvests (pints, quarts) count as about ¾ lb per pint.
@@ -12536,7 +12784,13 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "gardenValue") {
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
-    return <GardenValueModal hobby={gh} data={data} update={update} onClose={close} />;
+    return <GardenValueModal hobby={gh} data={data} update={update} onClose={close}
+      onShare={() => setModal({ type: "gardenShare", hobbyId: gh.id })} />;
+  }
+  if (modal.type === "gardenShare") {
+    const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
+    return <BragShareModal card={gardenShareCard(data, gh)} user={user} onClose={close}
+      onSignIn={() => setModal({ type: "signup" })} />;
   }
   if (modal.type === "nudgeOffer") return <NudgeOfferModal data={data} update={update} onClose={close} />;
   if (modal.type === "calendarSync") return <CalendarSyncModal data={data} update={update} user={user} onClose={close} />;
@@ -13232,6 +13486,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       )}
 
       {isNativeApp() && <DailyNudgeSetting data={data} update={update} />}
+      {isNativeApp() && (data.hobbies || []).some((h) => h.type === "garden" && !h.hidden) && <FrostAlertSetting data={data} update={update} />}
 
       {/* SPOUSE MODE */}
       <div style={{ marginTop: 16, marginBottom: 4 }}>
@@ -15897,6 +16152,36 @@ function DailyNudgeSetting({ data, update }) {
         </div>
       )}
     </div>
+  );
+}
+
+// Frost alerts: on by default (they only fire when frost-tender crops are in
+// the ground and a frost night is forecast), so this is mostly an off switch.
+function FrostAlertSetting({ data, update }) {
+  const on = data?.frostAlerts?.enabled !== false;
+  const garden = (data.hobbies || []).find((h) => h.type === "garden" && !h.hidden);
+  const crops = cropsAtRisk(garden);
+  const n = crops.tender.length + crops.semi.length;
+  const noLoc = !data.homesteadLocation;
+  return (
+    <SectionBtn
+      icon={Calendar}
+      label={on ? "Frost alerts: ON" : "Frost alerts: off"}
+      sub={!on
+        ? "Get a heads-up the afternoon before a frost night when tender crops are planted"
+        : noLoc
+          ? "Add your location (above) so Henalytics can check the forecast"
+          : n
+            ? `Watching ${n} frost-tender crop${n === 1 ? "" : "s"}. Alerts come at 3 PM the day before a frost night.`
+            : "Nothing frost-tender is planted right now, so no alerts. Hardy crops like kale and garlic don't need them."}
+      accent={on ? palette.leaf : palette.inkSoft}
+      onClick={async () => {
+        if (on) { update((d) => { d.frostAlerts = { ...(d.frostAlerts || {}), enabled: false }; return d; }); return; }
+        const ok = await requestReminderPermission();
+        update((d) => { d.frostAlerts = { ...(d.frostAlerts || {}), enabled: true }; return d; });
+        if (!ok) toast("Notifications are off for Henalytics. Turn them on in your phone's Settings to get frost alerts.", { ms: 6000 });
+      }}
+    />
   );
 }
 
@@ -22688,6 +22973,36 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
     }
   }, []);
 
+  // Link version (shows as a big preview on Facebook) — same numbers, drawn
+  // wide off-screen and uploaded by createShareLink().
+  const linkCardRef = useRef(null);
+  const [linkBusy, setLinkBusy] = useState(false);
+  const linkStats = stats.filter((x) => x && x.value !== "—" && x.value !== "" && x.value != null)
+    .map((x) => ({ label: String(x.label), value: String(x.value) }));
+  const linkCard = {
+    kind: `stats_${hobby.type}`.slice(0, 30),
+    emoji,
+    kicker: homesteadName,
+    big: linkStats[0] ? linkStats[0].value : label,
+    line: linkStats[0] ? `${linkStats[0].label.toLowerCase()} · ${label}` : label,
+    chips: [filterLabel],
+    foot: linkStats.slice(1, 4).map((x) => `${x.label}: ${x.value}`).join("  ·  ") || null,
+    title: `${homesteadName}: ${label}${linkStats[0] ? `, ${linkStats[0].value} ${linkStats[0].label.toLowerCase()}` : ""} ${emoji}`,
+    subtitle: `${filterLabel}. Tracked with Henalytics, the free homestead notebook.`,
+    stats: linkStats.slice(0, 6),
+  };
+  const handleShareLink = async () => {
+    setLinkBusy(true);
+    try {
+      const url = await createShareLink(linkCard, linkCardRef.current);
+      const r = await shareUrl(url, linkCard.title);
+      if (r === "copied") toast("Link copied. Paste it into your Facebook post! 📋");
+    } catch (e) {
+      toast(e && e.message ? e.message : "Couldn't make the link.", { kind: "error", ms: 6000 });
+    }
+    setLinkBusy(false);
+  };
+
   const btnLabel = () => {
     if (shareStatus === "sharing") return "Preparing image...";
     if (shareStatus === "done") return "✓ Image saved!";
@@ -22756,6 +23071,18 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           >
             {btnLabel()}
           </button>
+          {linkStats.length > 0 && (
+            <button
+              onClick={handleShareLink}
+              disabled={linkBusy}
+              style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.ink,fontFamily:FONT_BODY,fontWeight:700,fontSize:14,cursor:linkBusy?"wait":"pointer",opacity:linkBusy?0.7:1 }}
+            >
+              {linkBusy ? "Making your link…" : "🔗 Share a link (best for Facebook groups)"}
+            </button>
+          )}
+          <div aria-hidden="true" style={{ position:"fixed",left:-10000,top:0,pointerEvents:"none" }}>
+            <BragCardArt card={linkCard} layout="wide" innerRef={linkCardRef} />
+          </div>
           <button
             onClick={onClose}
             style={{ width:"100%",padding:"10px",borderRadius:10,border:`1.5px solid ${palette.line}`,background:"transparent",color:palette.inkSoft,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer" }}

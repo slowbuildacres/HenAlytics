@@ -23,7 +23,7 @@
 // then `npx cap sync`. iOS/Android then need a rebuild + store resubmission.
 // ============================================================================
 
-const MAX_SCHEDULED = 52;      // calendar reminders; + 8 daily nudges stays under iOS's 64 cap
+const MAX_SCHEDULED = 52;      // calendar reminders; + 7 daily nudges + 3 frost alerts stays under iOS's 64 cap
 const REMINDER_HOUR = 8;       // 8:00 AM local — change here to retune
 const ID_BASE = 100000;        // namespace our ids away from any other source
 
@@ -283,6 +283,37 @@ export async function reconcileNudges(settings, opts = {}) {
     return { scheduled: notifications.length };
   } catch (e) {
     console.warn("[nudge] schedule failed", e?.message || e);
+    return { scheduled: 0, error: e?.message || String(e) };
+  }
+}
+
+// ============================================================================
+// FROST ALERTS — schedule payloads come from frostAlerts.js
+// buildFrostSchedule(). Own id range (300000+), so they never collide with
+// calendar reminders or nudges. Pass [] to clear.
+// ============================================================================
+const FROST_ID_BASE = 300000;
+
+export async function reconcileFrostAlerts(notifications = []) {
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return { scheduled: 0, skipped: "unsupported" };
+  try {
+    const pending = await LN.getPending();
+    const ours = (pending?.notifications || []).filter(
+      (n) => typeof n.id === "number" && n.id >= FROST_ID_BASE && n.id < FROST_ID_BASE + 50
+    );
+    if (ours.length) await LN.cancel({ notifications: ours.map((n) => ({ id: n.id })) });
+  } catch (e) {
+    console.warn("[frost] cancel failed", e?.message || e);
+  }
+  if (!notifications.length) return { scheduled: 0 };
+  const perm = await getReminderPermission();
+  if (perm !== "granted") return { scheduled: 0, skipped: perm };
+  try {
+    await LN.schedule({ notifications });
+    return { scheduled: notifications.length };
+  } catch (e) {
+    console.warn("[frost] schedule failed", e?.message || e);
     return { scheduled: 0, error: e?.message || String(e) };
   }
 }

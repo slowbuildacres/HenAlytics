@@ -210,6 +210,17 @@ export default async function handler(req, res) {
       errors.push({ step: 'delete_photos', error: String(e.message || e) });
     }
 
+    // Step 3b: share-card images (henalytics.com/s/... previews). The
+    // share_cards rows go with the auth user (FK cascade).
+    try {
+      const { data: cards } = await supabase.storage.from('share-cards').list(user.id, { limit: 1000 });
+      if (Array.isArray(cards) && cards.length > 0) {
+        await supabase.storage.from('share-cards').remove(cards.map((f) => `${user.id}/${f.name}`));
+      }
+    } catch (e) {
+      errors.push({ step: 'delete_share_cards', error: String(e.message || e) });
+    }
+
     // Step 4: Sign in with Apple — revoke the user's Apple token before the
     // account goes (the stored token row is removed with the user by FK
     // cascade). Failure is recorded but doesn't stop the deletion.

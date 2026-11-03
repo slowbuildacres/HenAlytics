@@ -630,3 +630,39 @@ export async function getWeeklyPrecip(lat, lon) {
     return null;
   }
 }
+
+// ============================================================================
+// 7-DAY FORECAST LOWS — for frost alerts (frostAlerts.js). Cached 3h.
+// Returns [{ date: "YYYY-MM-DD", lowF, highF }] (local calendar days) or null.
+// ============================================================================
+const WEEKFC_CACHE_KEY_PREFIX = 'henalytics_weekfc_';
+const WEEKFC_CACHE_TTL_MS = 3 * 60 * 60 * 1000;
+
+export async function getForecastDays(lat, lon, days = 7) {
+  if (lat == null || lon == null) return null;
+  const key = `${WEEKFC_CACHE_KEY_PREFIX}${lat.toFixed(2)}-${lon.toFixed(2)}-${days}`;
+  try {
+    const raw = localStorage.getItem(key);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (parsed.t && Date.now() - parsed.t < WEEKFC_CACHE_TTL_MS) return parsed.data;
+    }
+  } catch (e) {}
+  const url = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=${days}`;
+  try {
+    const res = await fetch(url);
+    if (!res.ok) return null;
+    const json = await res.json();
+    const t = json.daily && json.daily.time;
+    if (!Array.isArray(t) || !t.length) return null;
+    const cToF = (c) => (c == null ? null : Math.round(c * 9 / 5 + 32));
+    const lows = json.daily.temperature_2m_min || [];
+    const highs = json.daily.temperature_2m_max || [];
+    const data = t.map((date, i) => ({ date, lowF: cToF(lows[i]), highF: cToF(highs[i]) }));
+    try { localStorage.setItem(key, JSON.stringify({ t: Date.now(), data })); } catch (e) {}
+    return data;
+  } catch (e) {
+    console.warn('7-day forecast fetch failed', e);
+    return null;
+  }
+}
