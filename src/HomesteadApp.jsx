@@ -6565,6 +6565,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
 // clearly use the app (14+ days in, 20+ logs), at most once every 60 days,
 // and gone for good after they share or say "don't ask again".
 const APP_SHARE_URL = "https://henalytics.com/?ref=friend";
+const FB_PAGE_URL = "https://www.facebook.com/Henalytics"; // @Henalytics
 const APP_SHARE_TEXT = "I track my homestead (eggs, garden, animals, sales) with Henalytics. It's free and really handy:";
 
 async function shareTheApp() {
@@ -6605,6 +6606,7 @@ function TellAFriendCard({ data, update, setModal }) {
       <div style={{ display: "flex", gap: 14, marginTop: 8 }}>
         <button type="button" onClick={() => close({})} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: palette.inkSoft, textDecoration: "underline", fontFamily: FONT_BODY }}>Not now</button>
         <button type="button" onClick={() => close({ done: true })} style={{ background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: palette.inkSoft, textDecoration: "underline", fontFamily: FONT_BODY }}>Don't ask again</button>
+        <button type="button" onClick={() => openExternalUrl(FB_PAGE_URL)} style={{ marginLeft: "auto", background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, color: palette.leaf, fontWeight: 600, fontFamily: FONT_BODY }}>Follow us on Facebook</button>
       </div>
     </div>
   );
@@ -9639,6 +9641,7 @@ function gardenShareCard(data, hobby) {
     line: `of food grown in ${name ? "our" : "my"} garden this year`,
     chips: [summary ? `${summary} harvested` : null, cost > 0 ? (net >= 0 ? `+${moneyWhole((net))} more than we spent` : null) : null].filter(Boolean),
     foot: top.length ? top.join("  ·  ") : null,
+    list: value.rows.slice(0, 5).map((r) => ({ label: r.plant, value: moneyWhole(r.value) })),
     title: `${name || "My garden"} grew ${moneyWhole((value.total))} of food${season ? ` in ${year}` : ""} 🌱`,
     subtitle: `${summary ? `${summary} harvested` : "Harvests"} valued at grocery prices${cost > 0 && net >= 0 ? `, ${moneyWhole((net))} more than it cost to grow` : ""}. Tracked with Henalytics.`,
     stats: [
@@ -9651,37 +9654,64 @@ function gardenShareCard(data, hobby) {
 
 // The drawn card. layout "square" (1080×1080 share image) or "wide"
 // (1200×630 link preview for Facebook).
-function BragCardArt({ card, layout = "square", innerRef }) {
+// Share-card sizes. Screen size (CSS px) → exported image at 3× (or 2× wide).
+//   portrait 4:5  → 1080×1350  Facebook & Instagram feed (takes the most room)
+//   square   1:1  → 1080×1080
+//   story    9:16 → 1080×1920  Stories / Reels
+//   wide  1.91:1  → 1200×630   link previews (Facebook's required shape)
+const BRAG_SIZES = {
+  portrait: { w: 360, h: 450, out: 1080, label: "Post", hint: "4:5 · Facebook & Instagram feed" },
+  square: { w: 360, h: 360, out: 1080, label: "Square", hint: "1:1" },
+  story: { w: 288, h: 512, out: 1080, label: "Story", hint: "9:16 · Stories" },
+  wide: { w: 600, h: 315, out: 1200 },
+};
+
+function BragCardArt({ card, layout = "portrait", innerRef }) {
   const wide = layout === "wide";
+  const tall = layout === "portrait" || layout === "story";
+  const story = layout === "story";
+  const size = BRAG_SIZES[layout] || BRAG_SIZES.portrait;
   const chips = card.chips || [];
+  const list = tall ? (card.list || []).slice(0, story ? 4 : 3) : [];
+  const k = story ? 0.9 : 1; // story is narrower
   return (
     <div ref={innerRef} style={{
-      // Square: fills the popup up to 360px wide, always 1:1 (rendered to
-      // 1080×1080). Wide: fixed 600×315, drawn off-screen (1200×630).
-      width: wide ? 600 : "min(360px, 100%)", height: wide ? 315 : undefined,
-      aspectRatio: wide ? undefined : "1 / 1", boxSizing: "border-box",
+      // Always drawn at its exact design size (the preview is a scaled copy),
+      // so the export is pixel-exact: 360×450 → 1080×1350, etc.
+      width: size.w, height: size.h, flexShrink: 0, boxSizing: "border-box",
       borderRadius: wide ? 0 : 18, overflow: "hidden",
-      background: "linear-gradient(160deg, #2C1810 0%, #3D2416 60%, #4A3220 100%)",
+      background: "linear-gradient(165deg, #2C1810 0%, #3D2416 55%, #4A3220 100%)",
       color: "#F4EDE0", fontFamily: FONT_BODY, position: "relative",
-      padding: wide ? "30px 40px 20px" : "22px 18px 14px",
+      padding: wide ? "30px 40px 20px" : tall ? `${28 * k}px ${22 * k}px 16px` : "22px 18px 14px",
       display: "flex", flexDirection: "column", textAlign: wide ? "left" : "center",
     }}>
-      <div style={{ position: "absolute", right: wide ? 34 : -18, top: wide ? 24 : -14, fontSize: wide ? 120 : 100, opacity: 0.12, lineHeight: 1 }}>{card.emoji}</div>
+      <div style={{ position: "absolute", right: wide ? 34 : -22, top: wide ? 24 : -16, fontSize: wide ? 120 : tall ? 130 : 100, opacity: 0.12, lineHeight: 1 }}>{card.emoji}</div>
       <div style={{ flex: 1, display: "flex", flexDirection: "column", justifyContent: "center", minHeight: 0 }}>
-        <div style={{ fontSize: wide ? 13 : 10, letterSpacing: 2, textTransform: "uppercase", color: "rgba(244,237,224,0.6)", marginBottom: 6 }}>{card.kicker}</div>
-        {!wide && <div style={{ fontSize: 30, lineHeight: 1, marginBottom: 4 }}>{card.emoji}</div>}
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 76 : 56, lineHeight: 1, color: "#A8C078" }}>{card.big}</div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 26 : 17, lineHeight: 1.2, marginTop: 6, color: "#F4EDE0" }}>{card.line}</div>
+        <div style={{ fontSize: wide ? 13 : 10, letterSpacing: 2, textTransform: "uppercase", color: "rgba(244,237,224,0.6)", marginBottom: tall ? 10 : 6 }}>{card.kicker}</div>
+        {!wide && <div style={{ fontSize: tall ? 34 * k : 30, lineHeight: 1, marginBottom: tall ? 6 : 4 }}>{card.emoji}</div>}
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 76 : tall ? 62 * k : 56, lineHeight: 1, color: "#A8C078" }}>{card.big}</div>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: wide ? 26 : tall ? 20 * k : 17, lineHeight: 1.2, marginTop: tall ? 8 : 6, color: "#F4EDE0" }}>{card.line}</div>
         {chips.length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : 12 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : tall ? 16 : 12 }}>
             {chips.map((c, i) => (
-              <span key={i} style={{ fontSize: wide ? 14 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
+              <span key={i} style={{ fontSize: wide ? 14 : tall ? 12 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
             ))}
           </div>
         )}
-        {card.foot && <div style={{ fontSize: wide ? 14 : 11, color: "rgba(244,237,224,0.75)", marginTop: wide ? 14 : 10, lineHeight: 1.4 }}>{card.foot}</div>}
+        {list.length > 0 ? (
+          <div style={{ marginTop: story ? 22 : 14, display: "flex", flexDirection: "column", gap: 5, textAlign: "left" }}>
+            {list.map((r, i) => (
+              <div key={i} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 12px", borderRadius: 10, background: "rgba(244,237,224,0.07)" }}>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13 * k, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.label}</span>
+                <span style={{ fontFamily: FONT_DISPLAY, fontSize: 17 * k, color: "#A8C078" }}>{r.value}</span>
+              </div>
+            ))}
+          </div>
+        ) : card.foot ? (
+          <div style={{ fontSize: wide ? 14 : 11, color: "rgba(244,237,224,0.75)", marginTop: wide ? 14 : 10, lineHeight: 1.4 }}>{card.foot}</div>
+        ) : null}
       </div>
-      <div style={{ fontSize: wide ? 13 : 9, letterSpacing: 1.5, color: "rgba(244,237,224,0.5)", marginTop: 8 }}>
+      <div style={{ fontSize: wide ? 13 : tall ? 10 : 9, letterSpacing: 1.5, color: "rgba(244,237,224,0.55)", marginTop: 10 }}>
         🐔 HENALYTICS.COM{wide ? " · FREE HOMESTEAD TRACKER" : ""}
       </div>
     </div>
@@ -9690,6 +9720,10 @@ function BragCardArt({ card, layout = "square", innerRef }) {
 
 function BragShareModal({ card, user, onClose, onSignIn }) {
   const squareRef = useRef(null);
+  const [shape, setShape] = useState(() => {
+    try { return localStorage.getItem("henalytics_share_shape") || "portrait"; } catch (_) { return "portrait"; }
+  });
+  const pickShape = (k) => { setShape(k); try { localStorage.setItem("henalytics_share_shape", k); } catch (_) {} };
   const wideRef = useRef(null);
   const [busy, setBusy] = useState("");
   const [link, setLink] = useState(null);
@@ -9698,7 +9732,7 @@ function BragShareModal({ card, user, onClose, onSignIn }) {
   const shareImage = async () => {
     setBusy("image");
     try {
-      const blob = await renderNodeToBlob(squareRef.current, { width: 1080 });
+      const blob = await renderNodeToBlob(squareRef.current, { width: (BRAG_SIZES[shape] || BRAG_SIZES.portrait).out });
       const r = await shareImageBlob(blob, { filename: `henalytics-${card.kind || "card"}.png`, title: card.title, text: `${shareText} henalytics.com` });
       if (r === "downloaded") toast("Image saved. Post it anywhere! 📸");
     } catch (e) {
@@ -9722,8 +9756,32 @@ function BragShareModal({ card, user, onClose, onSignIn }) {
 
   return (
     <Modal open onClose={onClose} title="Share it">
-      <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-        <BragCardArt card={card} layout="square" innerRef={squareRef} />
+      <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 10 }}>
+        {["portrait", "square", "story"].map((k) => (
+          <button key={k} type="button" onClick={() => pickShape(k)} title={BRAG_SIZES[k].hint} style={{
+            padding: "6px 12px", borderRadius: 999, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+            border: `1.5px solid ${shape === k ? palette.ink : palette.line}`,
+            background: shape === k ? palette.ink : "transparent", color: shape === k ? palette.bg : palette.ink,
+          }}>{BRAG_SIZES[k].label}</button>
+        ))}
+      </div>
+      {(() => {
+        // Scaled-down preview; the export comes from the exact-size copy below.
+        const sz = BRAG_SIZES[shape] || BRAG_SIZES.portrait;
+        const avail = Math.max(200, Math.min(360, (typeof window !== "undefined" ? window.innerWidth : 390) - 80));
+        const scale = Math.min(1, (shape === "story" ? Math.min(avail, 230) : avail) / sz.w);
+        return (
+          <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
+            <div style={{ width: sz.w * scale, height: sz.h * scale, position: "relative", boxShadow: "3px 4px 0 " + palette.line, borderRadius: 18 * scale }}>
+              <div style={{ position: "absolute", left: 0, top: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
+                <BragCardArt card={card} layout={shape} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+      <div aria-hidden="true" style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}>
+        <BragCardArt card={card} layout={shape} innerRef={squareRef} />
       </div>
       {/* Off-screen wide version, rendered for the Facebook link preview. */}
       <div aria-hidden="true" style={{ position: "fixed", left: -10000, top: 0, pointerEvents: "none" }}>
@@ -13573,6 +13631,12 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         label="Tell a friend about Henalytics"
         sub="Share the app with another homesteader or your Facebook group"
         onClick={() => { shareTheApp(); }}
+      />
+      <SectionBtn
+        icon={Share2}
+        label="Follow Henalytics on Facebook"
+        sub="New features, giveaways and homestead tips at @Henalytics"
+        onClick={() => { openExternalUrl(FB_PAGE_URL); }}
       />
       {isNativeApp() && <DailyNudgeSetting data={data} update={update} />}
       {isNativeApp() && (data.hobbies || []).some((h) => h.type === "garden" && !h.hidden) && <FrostAlertSetting data={data} update={update} />}

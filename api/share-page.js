@@ -18,6 +18,7 @@ const ID_RE = /^[a-z0-9]{10}$/;
 const SITE = 'https://henalytics.com';
 const APP_STORE = 'https://apps.apple.com/app/id6768749008';
 const PLAY = 'https://play.google.com/store/apps/details?id=com.henalytics.app';
+const FB_PAGE = 'https://www.facebook.com/Henalytics';
 
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({
   '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;',
@@ -72,6 +73,8 @@ ${notFound ? '<meta name="robots" content="noindex">' : '<meta name="robots" con
   .btn { display:block; text-align:center; padding:14px; border-radius:10px; font-weight:700; font-size:15px; text-decoration:none; border:2px solid var(--ink); }
   .btn.primary { background:var(--ink); color:var(--bg); }
   .btn.ghost { color:var(--ink); }
+  .follow { margin:18px 0 0; text-align:center; font-size:14px; color:var(--soft); }
+  .follow a { color:var(--leaf); font-weight:700; }
   footer { margin-top:24px; font-size:12px; color:var(--soft); text-align:center; }
   footer a { color:var(--soft); }
 </style>
@@ -92,6 +95,7 @@ ${notFound ? '<meta name="robots" content="noindex">' : '<meta name="robots" con
       <a class="btn ghost" href="${SITE}/">Use it on the web</a>
     </div>
   </div>
+  <p class="follow">Follow <a href="${FB_PAGE}">@Henalytics on Facebook</a> for tips, new features and giveaways.</p>
   <footer>Shared from Henalytics · <a href="${SITE}/garden-value">What's your garden worth?</a> · <a href="${SITE}/privacy.html">Privacy</a></footer>
 </main>
 </body>
