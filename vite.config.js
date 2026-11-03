@@ -1,6 +1,56 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { VitePWA } from 'vite-plugin-pwa';
+import { fileURLToPath } from 'node:url';
+import { computeHarvestValue, FALLBACK_PRICE } from './src/gardenValue.js';
+
+// The public calculator page (henalytics.com/garden-value, garden-value.html).
+// Two small build hooks, both scoped to that one HTML file:
+//
+// 1. Its static copy quotes a few example prices. Fill them in from
+//    gardenValue.js so the copy can't drift from the price table:
+//      {{price:<crop>|<unit>}} → value of 1 <unit> of <crop>, e.g. "$2.50"
+//      {{fallback|<slot>}}     → FALLBACK_PRICE[slot]
+// 2. vite-plugin-pwa injects the manifest link and service-worker
+//    registration into every HTML entry. The calculator is a landing page,
+//    not the app: registering there would precache the whole ~3.5 MB app
+//    on a visitor's phone data, and the manifest (no start_url) would make
+//    "Add to Home Screen" install the calculator instead of the app. So
+//    strip both from this page only. Must run after VitePWA, hence the
+//    'post' order and its place after VitePWA() in the plugin list.
+const isGardenValuePage = (ctx) => /garden-value\.html$/.test(ctx.filename || ctx.path || '');
+function gardenValuePage() {
+  const usd = (n) => '$' + Number(n).toFixed(2);
+  return [
+    {
+      name: 'henalytics-garden-value-copy',
+      transformIndexHtml: {
+        order: 'pre',
+        handler(html, ctx) {
+          if (!isGardenValuePage(ctx)) return html;
+          return html
+            .replace(/\{\{price:([^|}]+)\|([a-z]+)\}\}/g, (_, plant, unit) =>
+              usd(computeHarvestValue([{ plant, quantity: 1, unit }]).total))
+            .replace(/\{\{fallback\|(lb|each|bunch)\}\}/g, (_, slot) => usd(FALLBACK_PRICE[slot]));
+        },
+      },
+    },
+    {
+      name: 'henalytics-garden-value-no-pwa',
+      enforce: 'post',
+      apply: 'build',
+      transformIndexHtml: {
+        order: 'post',
+        handler(html, ctx) {
+          if (!isGardenValuePage(ctx)) return html;
+          return html
+            .replace(/<link rel="manifest"[^>]*>/g, '')
+            .replace(/<script id="vite-plugin-pwa:register-sw"[^>]*><\/script>/g, '');
+        },
+      },
+    },
+  ];
+}
 
 // Service worker config for offline app-shell support.
 //
@@ -30,6 +80,15 @@ import { VitePWA } from 'vite-plugin-pwa';
 // updates seamlessly. cleanupOutdatedCaches removes old cached assets
 // from prior builds so the user's storage doesn't fill up.
 export default defineConfig({
+  build: {
+    rollupOptions: {
+      input: {
+        index: fileURLToPath(new URL('./index.html', import.meta.url)),
+        // Public "What's your garden worth?" calculator, served at /garden-value
+        gardenValue: fileURLToPath(new URL('./garden-value.html', import.meta.url)),
+      },
+    },
+  },
   plugins: [
     react(),
     VitePWA({
@@ -62,6 +121,7 @@ export default defineConfig({
         navigateFallbackDenylist: [
           /^\/api\//,
           /^\/cal\//,          // live calendar feed (.ics)
+          /^\/garden-value/,   // public garden value calculator (own page)
           /^\/\.well-known\//,  // Apple / Android app association files
           /\/rest\/v1\//,
           /\/auth\/v1\//,
@@ -84,5 +144,6 @@ export default defineConfig({
         ],
       },
     }),
+    gardenValuePage(),
   ],
 });
