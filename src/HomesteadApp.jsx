@@ -140,6 +140,7 @@ import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
 import HorsesPage, { HorsesAnalytics } from "./Horses.jsx";
 import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
+import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import BakingPage, { BakingAnalytics } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics } from "./Canning.jsx";
 import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
@@ -5974,7 +5975,7 @@ useNativeBackButton(React.useCallback(() => {
           <JournalPage data={data} update={update} setModal={setModal} />
         )}
         {page === "sales" && (
-          <SalesPage data={data} update={update} />
+          <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} />
         )}
         </ErrorBoundary>
       </main>
@@ -13174,6 +13175,12 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
     return <BragShareModal card={gardenShareCard(data, gh)} user={user} onClose={close}
       onSignIn={() => setModal({ type: "signup" })} />;
+  }
+  if (modal.type === "stockEmails") {
+    return <StockEmailsModal data={data} update={update} user={user} preset={modal.preset || {}} toast={toast} onClose={close} />;
+  }
+  if (modal.type === "stockEmailTutorial") {
+    return <StockEmailTutorial onClose={close} onStart={() => setModal({ type: "stockEmails" })} />;
   }
   if (modal.type === "nudgeOffer") return <NudgeOfferModal data={data} update={update} onClose={close} />;
   if (modal.type === "calendarSync") return <CalendarSyncModal data={data} update={update} user={user} onClose={close} />;

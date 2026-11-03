@@ -221,6 +221,16 @@ export default async function handler(req, res) {
       errors.push({ step: 'delete_share_cards', error: String(e.message || e) });
     }
 
+    // Step 3c: photos added to "what's fresh" customer emails.
+    try {
+      const { data: shots } = await supabase.storage.from('email-photos').list(user.id, { limit: 1000 });
+      if (Array.isArray(shots) && shots.length > 0) {
+        await supabase.storage.from('email-photos').remove(shots.map((f) => `${user.id}/${f.name}`));
+      }
+    } catch (e) {
+      errors.push({ step: 'delete_email_photos', error: String(e.message || e) });
+    }
+
     // Step 4: Sign in with Apple — revoke the user's Apple token before the
     // account goes (the stored token row is removed with the user by FK
     // cascade). Failure is recorded but doesn't stop the deletion.

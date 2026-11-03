@@ -139,6 +139,7 @@
       <li><strong>Your zip code or approximate location.</strong> Used to show local weather and determine your USDA hardiness zone for garden recommendations. Stored as part of your homestead profile.</li>
       <li><strong>Your region for the Homestead Games.</strong> The Games show anonymous standings by country, state/province, and (optionally) US county. For US and Canadian homesteads, your state or province is set automatically from the town-level location you already provided for weather — never from your device's GPS. Elsewhere, you pick your country and region from a list, and nothing more precise than a US county is ever collected (county is always optional and never inferred). You can change your region, switch how you're counted, or leave the Games entirely at any time from the trophy page.</li>
       <li><strong>Photos you upload.</strong> Photos of your garden, animals, or harvests are stored privately, accessible only to you (and any farmhands you've invited to your homestead).</li>
+      <li><strong>Your customers' contact details (if you use customer emails).</strong> If you sell from a farm stand, you can save your customers' names and email addresses and sort them into lists. These are part of your homestead data: they're used only to send the "what's fresh" emails you choose to send, never contacted by Henalytics for anything else, and never shared or sold. Photos you add to one of those emails are stored publicly so your customers' email apps can show them. When a customer unsubscribes, their email address is kept for your homestead only so they don't get your emails again. Please only add people who asked to hear from you.</li>
     </ul>
 
     <h3>Crash reports and app usage</h3>
@@ -165,6 +166,7 @@
       <li>Your homestead data is shown back to you in the app, used for the analytics and weekly digest features.</li>
       <li>Your zip code or location is used to fetch weather data from weather APIs and to display your USDA hardiness zone.</li>
       <li>Your email is used to send you the weekly digest (if you opted in), invite emails (if you invite a farmhand), or to respond to support requests.</li>
+      <li>If you send a "what's fresh" email, Henalytics sends it to the customers on the lists you pick, from your homestead's name, with your reply-to address and mailing address on it, and with an unsubscribe link in every email.</li>
       <li>If you invite a farmhand, they get access to the homestead you shared with them — that's the whole point of the feature.</li>
       <li><strong>Homestead Games &amp; community stats.</strong> Your yearly totals (like eggs collected or pounds harvested) are combined with other homesteads' totals into anonymous regional standings — country, state, and county — and community-wide aggregates. Other users only ever see combined regional totals, never your individual numbers, your name, or your homestead's name, and a region's totals are only shown once enough homesteads share that region (at least 3 per country or state, 5 per county). Choosing "leave my homestead out" on the trophy page removes your contribution from the next daily update.</li>
     </ul>
@@ -179,7 +181,7 @@
     <ul>
       <li><strong>Vercel</strong> — hosts the app and serves the web pages you see. They process page requests but don't store your homestead data. <a href="https://vercel.com/legal/privacy-policy">Vercel privacy policy</a>.</li>
       <li><strong>Supabase</strong> — stores your account (email, hashed password), your homestead data, and your photos. <a href="https://supabase.com/privacy">Supabase privacy policy</a>.</li>
-      <li><strong>Resend</strong> — sends transactional emails (weekly digest, farmhand invites, account notifications). They process your email address to deliver mail. <a href="https://resend.com/legal/privacy-policy">Resend privacy policy</a>.</li>
+      <li><strong>Resend</strong> — sends transactional emails (weekly digest, farmhand invites, account notifications, and the customer emails you send). They process your email address to deliver mail. <a href="https://resend.com/legal/privacy-policy">Resend privacy policy</a>.</li>
       <li><strong>Stripe</strong> — if you choose to donate, Stripe processes the payment. I never see your card details. <a href="https://stripe.com/privacy">Stripe privacy policy</a>.</li>
       <li><strong>Zippopotam</strong> — converts your zip code to a latitude/longitude for weather lookups. Only the zip code is sent. No personal data attached. <a href="https://www.zippopotam.us/">Zippopotam</a>.</li>
       <li><strong>Open-Meteo</strong> — provides weather forecasts. Only a latitude/longitude is sent. <a href="https://open-meteo.com/en/terms">Open-Meteo terms</a>.</li>

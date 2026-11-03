@@ -999,7 +999,7 @@ function CustomerModal({ customer, onSave, onClose }) {
           <Field label="Notes (optional)">
             <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
           </Field>
-          <Btn onClick={() => { if (!name.trim()) return; onSave({ id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
+          <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
         </div>
       </div>
     </div>
@@ -1453,7 +1453,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   );
 }
 
-export default function SalesPage({ data, update }) {
+export default function SalesPage({ data, update, onEmailCustomers }) {
   const [showAddSale, setShowAddSale] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -1659,6 +1659,21 @@ export default function SalesPage({ data, update }) {
         </span>
         <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
       </button>
+
+      {onEmailCustomers && (
+        <button type="button" onClick={onEmailCustomers} style={{
+          width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
+          background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+        }}>
+          <span style={{ fontSize:22 }}>📧</span>
+          <span style={{ flex:1 }}>
+            <span style={{ display:"block",fontWeight:700,fontSize:14 }}>Email your customers</span>
+            <span style={{ display:"block",fontSize:12,color:palette.inkSoft }}>Tell them what's in stock. Tap items, pick a list (eggs, milk…), send.</span>
+          </span>
+          <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
+        </button>
+      )}
 
       {/* Revenue summary cards */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>

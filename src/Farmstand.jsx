@@ -12,7 +12,7 @@
 //   hobby.items[] = [{ id, name, costPerUnit, pricePerUnit, unit, archived }]
 // ============================================================================
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -621,6 +621,21 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
   const [sellingItem, setSellingItem] = useState(null);
   const [restockingItem, setRestockingItem] = useState(null);
   const [infraModal, setInfraModal] = useState({ open: false, entry: null });
+  const [justRestocked, setJustRestocked] = useState(null); // { item, stock } → "tell your customers?"
+
+  // Customer emails tutorial: pops up once the first time someone opens the
+  // Farm Stand, then lives behind "How customer emails work".
+  const tutorialSeen = !!(data.tutorialsSeen && data.tutorialsSeen.stockEmails);
+  useEffect(() => {
+    if (tutorialSeen || !setModal) return;
+    const t = setTimeout(() => {
+      update(d => { d.tutorialsSeen = { ...(d.tutorialsSeen || {}), stockEmails: true }; return d; });
+      setModal({ type: "stockEmailTutorial" });
+    }, 700);
+    return () => clearTimeout(t);
+  }, [tutorialSeen]); // eslint-disable-line react-hooks/exhaustive-deps
+  const emailCustomers = (preset) => setModal && setModal({ type: "stockEmails", preset: preset || {} });
+  const emailContacts = (Array.isArray(data.customers) ? data.customers : []).filter(c => c && /@/.test(String(c.email || ""))).length;
 
   const items = (hobby?.items || []).filter(i => !i.archived);
   const farmstandSales = useMemo(
@@ -757,6 +772,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
       });
       return d;
     });
+    setJustRestocked({ item, stock: (Number(item.stock) || 0) + (Number(restockData.qty) || 0) });
   };
 
   const deleteRestockEntry = (entryId) => {
@@ -815,11 +831,45 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
         </div>
       )}
 
+      {justRestocked && setModal && (
+        <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#E3EDD3",border:`1.5px solid ${palette.line}`,borderRadius:12,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
+          <span style={{ flex:1,minWidth:180 }}>📦 <strong>{justRestocked.item.name}</strong> restocked. Let your customers know?</span>
+          <Btn small onClick={() => {
+            const it = justRestocked.item;
+            const price = Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? `/${it.unit}` : ""}` : "";
+            emailCustomers({ item: it.name, qty: String(justRestocked.stock), unit: it.unit || "", price });
+            setJustRestocked(null);
+          }}>📧 Email customers</Btn>
+          <button type="button" onClick={() => setJustRestocked(null)} aria-label="Dismiss" style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:2 }}><X size={18}/></button>
+        </div>
+      )}
+
       {/* Revenue stats */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
         <StatCard label="This month" value={fmtMoney(monthRevenue)} sub="farmstand revenue" accent={palette.leaf} />
         <StatCard label="This year" value={fmtMoney(yearRevenue)} sub={`${farmstandSales.length} sale${farmstandSales.length===1?"":"s"} total`} accent={palette.feather} />
       </div>
+
+      {/* Customer emails */}
+      {setModal && (
+        <div style={{ background:palette.card,border:`2px solid ${palette.ink}`,borderRadius:14,padding:"14px 16px",marginBottom:16,boxShadow:`3px 4px 0 ${palette.line}` }}>
+          <div style={{ display:"flex",alignItems:"center",gap:12,flexWrap:"wrap" }}>
+            <div style={{ fontSize:30,lineHeight:1 }}>📧</div>
+            <div style={{ flex:1,minWidth:180 }}>
+              <div style={{ fontFamily:FONT_DISPLAY,fontSize:19,color:palette.ink }}>Tell customers what's fresh</div>
+              <div style={{ fontSize:13,color:palette.inkSoft,lineHeight:1.45,marginTop:2 }}>
+                {emailContacts > 0
+                  ? `Tap what's in stock and email your ${emailContacts} customer${emailContacts===1?"":"s"} in a few seconds.`
+                  : "Add your customers' emails, then send a \"Here's what's fresh\" email whenever you restock."}
+              </div>
+            </div>
+            <Btn onClick={() => emailCustomers()}>{emailContacts > 0 ? "Email customers" : "Set up"}</Btn>
+          </div>
+          <button type="button" onClick={() => setModal({ type: "stockEmailTutorial" })} style={{ background:"none",border:"none",padding:0,marginTop:8,color:palette.leaf,fontSize:12,fontWeight:600,cursor:"pointer",textDecoration:"underline",fontFamily:"inherit" }}>
+            How customer emails work
+          </button>
+        </div>
+      )}
 
       {/* Items section */}
       <div style={{ marginBottom: 24 }}>
