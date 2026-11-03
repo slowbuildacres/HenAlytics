@@ -77,7 +77,8 @@ Apple requires apps that offer Sign in with Apple to revoke the user's Apple tok
 
 - Right after an Apple sign-in, the app saves Apple's refresh token to `public.apple_auth_tokens`, through the `save_apple_refresh_token` function. The app can't read that table back. The SQL is in `supabase/migrations/20261103c_apple_token_revoke.sql`.
 - `api/delete-account.js` sends that token to Apple's revoke endpoint before deleting the account. The deletion email to the owner reports whether it worked.
-- **Vercel env var needed:** `APPLE_PRIVATE_KEY` = the full contents of the `AuthKey_794HU6VJF5.p8` file, including the `-----BEGIN/END PRIVATE KEY-----` lines.
+- **The Apple key:** `api/delete-account.js` signs the revoke request with the `AuthKey_794HU6VJF5.p8` key, stored encrypted in Supabase Vault as `apple_private_key`. To store or replace it, paste the file into `docs/apple-key-to-vault.sql` and run it in the SQL editor.
+  - Alternatively, a Vercel env var `APPLE_PRIVATE_KEY` takes priority if it's set.
   - `APPLE_KEY_ID`, `APPLE_TEAM_ID` and `APPLE_CLIENT_ID` default to `794HU6VJF5`, `32S8LFT6HD` and `com.henalytics.app.signin`.
 - To check it's working: after an Apple sign-in, `select user_id, updated_at from public.apple_auth_tokens;` shows a row.
 

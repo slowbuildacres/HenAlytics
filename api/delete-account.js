@@ -28,8 +28,8 @@ import { getCorsOrigin } from './_cors.js';
 //   SUPABASE_SERVICE_ROLE_KEY
 //   RESEND_API_KEY (for owner notification — optional, won't block deletion)
 //   EMAIL_FROM, OWNER_EMAIL (optional, with sensible defaults)
-//   APPLE_PRIVATE_KEY (+ optional APPLE_KEY_ID / APPLE_TEAM_ID / APPLE_CLIENT_ID)
-//     for revoking Sign in with Apple — see _lib/appleRevoke.js
+//   APPLE_PRIVATE_KEY (optional; otherwise read from Supabase Vault secret
+//     'apple_private_key') for revoking Sign in with Apple — see _lib/appleRevoke.js
 
 import { createClient } from '@supabase/supabase-js';
 import { revokeAppleToken } from './_lib/appleRevoke.js';
@@ -228,7 +228,13 @@ export default async function handler(req, res) {
         } else if (!tok || !tok.refresh_token) {
           errors.push({ step: 'apple_revoke', error: 'No stored Apple token for this account' });
         } else {
-          const r = await revokeAppleToken(tok.refresh_token);
+          // Key from the env var, else from Supabase Vault.
+          let privateKey;
+          if (!process.env.APPLE_PRIVATE_KEY) {
+            const { data: k } = await supabase.rpc('get_apple_private_key');
+            if (typeof k === 'string' && k) privateKey = k;
+          }
+          const r = await revokeAppleToken(tok.refresh_token, { privateKey });
           if (r.ok) summary.appleRevoked = true;
           else errors.push({ step: 'apple_revoke', error: r.error });
         }

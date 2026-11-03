@@ -53,3 +53,26 @@ $$;
 
 revoke all on function public.save_apple_refresh_token(text) from public, anon;
 grant execute on function public.save_apple_refresh_token(text) to authenticated;
+
+-- ---------------------------------------------------------------------------
+-- The Apple .p8 signing key lives in Supabase Vault (encrypted at rest) as the
+-- secret named 'apple_private_key', so it doesn't have to be a Vercel env var.
+-- Only the service role (api/delete-account.js) can read it.
+-- Store / replace it with docs/apple-key-to-vault.sql.
+-- ---------------------------------------------------------------------------
+create extension if not exists supabase_vault;  -- already on in Supabase projects
+
+create or replace function public.get_apple_private_key()
+returns text
+language sql
+security definer
+set search_path = ''
+as $$
+  select decrypted_secret from vault.decrypted_secrets
+  where name = 'apple_private_key'
+  order by updated_at desc nulls last
+  limit 1
+$$;
+
+revoke all on function public.get_apple_private_key() from public, anon, authenticated;
+grant execute on function public.get_apple_private_key() to service_role;

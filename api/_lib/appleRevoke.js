@@ -6,8 +6,10 @@
 // https://developer.apple.com/documentation/sign_in_with_apple/revoke_tokens
 //
 // Env vars:
-//   APPLE_PRIVATE_KEY  (required) contents of AuthKey_<KEYID>.p8, including the
+//   APPLE_PRIVATE_KEY  contents of AuthKey_<KEYID>.p8, including the
 //                      BEGIN/END lines. Literal "\n" sequences are accepted.
+//                      If unset, api/delete-account.js reads it from Supabase
+//                      Vault (secret 'apple_private_key') instead.
 //   APPLE_KEY_ID       default 794HU6VJF5
 //   APPLE_TEAM_ID      default 32S8LFT6HD
 //   APPLE_CLIENT_ID    default com.henalytics.app.signin (the Services ID the
@@ -41,9 +43,11 @@ export function makeAppleClientSecret({ privateKey, keyId, teamId, clientId }, n
 }
 
 // Returns { ok: true } or { ok: false, error }. Never throws.
-export async function revokeAppleToken(refreshToken, { env = process.env, fetchImpl = fetch } = {}) {
+// privateKey (optional) overrides APPLE_PRIVATE_KEY, e.g. a key read from
+// Supabase Vault.
+export async function revokeAppleToken(refreshToken, { env = process.env, fetchImpl = fetch, privateKey } = {}) {
   try {
-    const cfg = appleConfig(env);
+    const cfg = appleConfig(privateKey ? { ...env, APPLE_PRIVATE_KEY: privateKey } : env);
     if (!cfg.privateKey) return { ok: false, error: 'APPLE_PRIVATE_KEY not set' };
     const body = new URLSearchParams({
       client_id: cfg.clientId,
