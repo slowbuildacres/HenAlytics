@@ -113,7 +113,7 @@
     </div>
 
     <h1>Privacy Policy</h1>
-    <p class="updated">Last updated: June 12, 2026</p>
+    <p class="updated">Last updated: November 3, 2026</p>
 
     <div class="highlight">
       <strong>The short version:</strong> Henalytics is a small, owner-operated app. I collect the minimum data needed to make the app work — your email so you can sign in, and your zip code or location so I can show you weather and your USDA hardiness zone. I don't sell anything to anyone. I don't run ads. There are no third-party trackers or analytics.
@@ -130,6 +130,7 @@
     <ul>
       <li><strong>Your email address.</strong> Used for sign-in and account recovery. Stored by Supabase (my authentication provider).</li>
       <li><strong>Your password.</strong> Stored as a one-way hash by Supabase — I never see it in plaintext, and neither do they.</li>
+      <li><strong>If you sign in with Google or Apple.</strong> Google or Apple shares your email address (and name, if you allow it) so your account can be created or matched to an existing one with the same email. If you sign in with Apple, a sign-in token from Apple is stored securely so the app can tell Apple to disconnect Henalytics if you delete your account. It's never shown in the app or used for anything else.</li>
     </ul>
 
     <h3>What you enter into the app</h3>
@@ -139,6 +140,13 @@
       <li><strong>Your region for the Homestead Games.</strong> The Games show anonymous standings by country, state/province, and (optionally) US county. For US and Canadian homesteads, your state or province is set automatically from the town-level location you already provided for weather — never from your device's GPS. Elsewhere, you pick your country and region from a list, and nothing more precise than a US county is ever collected (county is always optional and never inferred). You can change your region, switch how you're counted, or leave the Games entirely at any time from the trophy page.</li>
       <li><strong>Photos you upload.</strong> Photos of your garden, animals, or harvests are stored privately, accessible only to you (and any farmhands you've invited to your homestead).</li>
     </ul>
+
+    <h3>Crash reports and app usage</h3>
+    <ul>
+      <li><strong>Crash reports.</strong> If the app hits an error, it sends a short technical report: the error message, which screen you were on, your device type (iPhone, Android or web) and the app version. These reports don't include your name, email, account ID or homestead data. They're used only to find and fix bugs and are deleted after 90 days.</li>
+      <li><strong>Which days you use the app.</strong> When you're signed in, the app records the date (not the time) of each day you open it, along with your device type. I use this only to see whether the app is working for people, like how many come back week to week. It's never shared or sold, and it's deleted with your account.</li>
+    </ul>
+    <p>Both are first-party: they go straight to the Henalytics database, not to an analytics company.</p>
 
     <h3>What I don't collect</h3>
     <ul>
@@ -201,6 +209,7 @@
       <li>Homesteads you own with no other members are deleted along with all entries, photos, sales, and calendar events.</li>
       <li>Homesteads you share with farmhands transfer to the oldest other member so they don't lose access. Your own membership row and personal access are removed.</li>
       <li>All photos you uploaded are removed from storage.</li>
+      <li>Your app-usage dates are deleted. If you signed in with Apple, Apple is told to disconnect Henalytics from your Apple ID.</li>
     </ul>
     <p>
       Backup snapshots taken by Supabase may retain your data briefly before they cycle out (typically within 30 days). Logs of API requests may retain truncated metadata (timestamps, IP addresses) for shorter periods for security and abuse-prevention purposes.
