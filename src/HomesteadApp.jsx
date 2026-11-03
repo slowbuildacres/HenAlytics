@@ -106,6 +106,7 @@ import { computeHarvestValue, plantKey } from "./gardenValue.js";
 import SeedInventory, { needsBuying as seedNeedsBuying, SeedUseModal, matchingPackets, useSeedShop } from "./SeedInventory.jsx";
 import { seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
 import { eggInsight } from "./eggInsights.js";
+import CustomerTextsModal from "./CustomerTexts.jsx";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
 import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
@@ -10468,6 +10469,13 @@ function EggLayersSummary({ hobby, data, entries, sales, update, setModal }) {
       {/* Eggs on hand — only renders when inventory tracking is enabled */}
       <EggInventoryCard hobby={hobby} entries={entries} sales={sales} setModal={setModal} />
 
+      {(sales || []).some((x) => x && x.hobbyType === "eggs") && (
+        <button type="button" onClick={() => setModal({ type: "customerTexts", preset: { item: "Fresh eggs", emoji: "🥚" } })} style={{
+          width: "100%", padding: "11px 14px", borderRadius: 10, cursor: "pointer",
+          border: `1.5px solid ${palette.ink}`, background: palette.card, color: palette.ink,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
+        }}>📣 Text customers that eggs are ready</button>
+      )}
       {eggCount >= 24 && (
         <button type="button" onClick={() => setModal({ type: "eggShare", hobbyId: hobby.id })} style={{
           width: "100%", padding: "11px 14px", borderRadius: 10, cursor: "pointer",
@@ -13161,6 +13169,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     return <GardenValueModal hobby={gh} data={data} update={update} onClose={close}
       onShare={() => setModal({ type: "gardenShare", hobbyId: gh.id })} />;
   }
+  if (modal.type === "customerTexts") return <CustomerTextsModal data={data} update={update} onClose={close} preset={modal.preset || {}} />;
   if (modal.type === "seedUse") {
     const gh = data.hobbies.find((h) => h.type === "garden");
     if (!gh) return null;

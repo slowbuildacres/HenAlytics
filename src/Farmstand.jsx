@@ -621,6 +621,9 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
   const [sellingItem, setSellingItem] = useState(null);
   const [restockingItem, setRestockingItem] = useState(null);
   const [infraModal, setInfraModal] = useState({ open: false, entry: null });
+  // After a restock: "Tell your customers?" (opens CustomerTexts prefilled).
+  const [restockNotice, setRestockNotice] = useState(null);
+  const openTexts = (preset) => setModal && setModal({ type: "customerTexts", preset: preset || {} });
 
   const items = (hobby?.items || []).filter(i => !i.archived);
   const farmstandSales = useMemo(
@@ -788,8 +791,24 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
         <RestockModal
           item={restockingItem}
           onClose={() => setRestockingItem(null)}
-          onRestock={(restockData) => recordRestock(restockingItem, restockData)}
+          onRestock={(restockData) => {
+            recordRestock(restockingItem, restockData);
+            setRestockNotice({
+              item: restockingItem.name,
+              qty: `${restockData.qty} ${restockingItem.unit}${Number(restockData.qty) === 1 ? "" : "s"}`,
+              price: restockingItem.pricePerUnit ? `${fmtMoney(restockingItem.pricePerUnit)}/${restockingItem.unit}` : "",
+            });
+          }}
         />
+      )}
+
+      {restockNotice && setModal && (
+        <div style={{ display:"flex",alignItems:"center",gap:10,background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,padding:"10px 12px",marginBottom:12 }}>
+          <div style={{ fontSize:22 }}>📣</div>
+          <div style={{ flex:1,fontSize:13,color:palette.ink,lineHeight:1.4 }}><strong>{restockNotice.item}</strong> restocked. Tell your customers?</div>
+          <Btn small onClick={() => { openTexts(restockNotice); setRestockNotice(null); }}>Text them</Btn>
+          <button type="button" onClick={() => setRestockNotice(null)} aria-label="Dismiss" style={{ background:"none",border:"none",cursor:"pointer",fontSize:18,color:palette.inkSoft }}>×</button>
+        </div>
       )}
 
       {/* Stock warnings banner — only when at least one tracked item is low/out */}
@@ -826,6 +845,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:8,flexWrap:"wrap" }}>
           <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:0,color:palette.ink }}>Items at the stand</h3>
           <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
+            {setModal && <Btn small variant="ghost" onClick={() => openTexts()}>📣 Text customers</Btn>}
             <Btn small variant="ghost" onClick={() => setInfraModal({ open: true, entry: null })}>🔨 Infrastructure</Btn>
             {setModal && (
               <Btn small variant="ghost" onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}>💵 Add Expense</Btn>

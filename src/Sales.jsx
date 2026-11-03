@@ -18,6 +18,7 @@ import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses } from "./expenseFifo.js";
+import CustomerTextsModal from "./CustomerTexts.jsx";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -999,7 +1000,9 @@ function CustomerModal({ customer, onSave, onClose }) {
           <Field label="Notes (optional)">
             <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
           </Field>
-          <Btn onClick={() => { if (!name.trim()) return; onSave({ id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
+          {/* Spread the existing record so fields edited elsewhere (phone,
+              groups for restock texts) survive a name/notes edit here. */}
+          <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
         </div>
       </div>
     </div>
@@ -1464,6 +1467,7 @@ export default function SalesPage({ data, update }) {
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showYearReport, setShowYearReport] = useState(false);
+  const [showTexts, setShowTexts] = useState(false);
 
   // Profit/expense window — defaults to last 12 months so brand-new homesteads
   // and long-time users both see something meaningful immediately. Users can
@@ -1637,13 +1641,15 @@ export default function SalesPage({ data, update }) {
       {showAddCustomer && <CustomerModal onSave={saveCustomer} onClose={() => setShowAddCustomer(false)} />}
       {editingCustomer && <CustomerModal customer={editingCustomer} onSave={saveCustomer} onClose={() => setEditingCustomer(null)} />}
       {showYearReport && <YearEndReportModal data={data} onClose={() => setShowYearReport(false)} />}
+      {showTexts && <CustomerTextsModal data={data} update={update} onClose={() => setShowTexts(false)} />}
 
       {/* Header */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10 }}>
         <h2 style={{ fontFamily:FONT_DISPLAY,fontSize:26,margin:0,color:palette.ink }}>sales</h2>
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <Btn onClick={() => setShowAddSale(true)}>+ Log sale</Btn>
           <Btn onClick={() => setShowAddExpense(true)}>+ Log expense</Btn>
+          <Btn variant="ghost" onClick={() => setShowTexts(true)}>📣 Text customers</Btn>
         </div>
       </div>
 
