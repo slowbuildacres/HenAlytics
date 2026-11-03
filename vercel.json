@@ -2,6 +2,7 @@
   "rewrites": [
     { "source": "/privacy", "destination": "/privacy.html" },
     { "source": "/terms", "destination": "/terms.html" },
+    { "source": "/garden-value", "destination": "/garden-value.html" },
     { "source": "/cal/:token/henalytics.ics", "destination": "/api/calendar-feed?t=:token" }
   ],
   "crons": [
