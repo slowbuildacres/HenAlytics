@@ -98,8 +98,9 @@ import {
 } from "./animalPhotos.js";
 import {
   getDailyWeather, requestBrowserLocation, reverseGeocode, geocodePlace, formatWeather,
-  getWeeklyPrecip, testStation, getYearWeather,
+  getWeeklyPrecip, testStation, getYearWeather, getForecast,
 } from "./weather.js";
+import { computeHarvestValue, plantKey } from "./gardenValue.js";
 import { autoDetectHardiness } from "./hardiness.js";
 import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
@@ -6240,12 +6241,12 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       .filter(({ season }) => season.sortOrder >= cutoff)
       .map(({ e }) => e);
     inWindow.sort((a, b) => b.date.localeCompare(a.date) || b.created - a.created);
-    const CAP = 20;
+    const CAP = hobby.type === "garden" ? 5 : 20;
     const visible = inWindow.slice(0, CAP);
     // "Hidden" = anything not visible: older-than-prev-season OR beyond the cap.
     const hidden = entries.length - visible.length;
     return { visible, hidden };
-  }, [entries, data]);
+  }, [entries, data, hobby.type]);
   const recent = recentScope.visible;
 // Handler for the quick-log "Plant Annual" tile, which opens PlanCropModal
   // and receives the user's crop selection + generated events via onConfirm.
@@ -6365,7 +6366,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       )}
 
       {/* WHAT NEEDS ATTENTION — proactive nudges based on entry history */}
-      <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} data={data} />
+      {hobby.type !== "garden" && <NeedsAttentionCard hobby={hobby} entries={entries} setModal={setModal} data={data} />}
 
       {/* HOBBY-SPECIFIC SUMMARY */}
       {["egg_layers", "meat_chickens"].includes(hobby.type) && (
@@ -6373,7 +6374,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       )}
       {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} sales={data.sales || []} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
-      {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} onPlanAnnualConfirm={handlePlanAnnualConfirm} />}
+      {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} onPlanAnnualConfirm={handlePlanAnnualConfirm} />}
 
       {/* QUICK LOG TILES — for garden, the quick log is rendered at the TOP
           of GardenSummary instead (users asked for it to be the first thing
@@ -6982,62 +6983,28 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
         </div>
       );
     }
-    // Built-in quick-log tiles as a data array so we can filter by hiddenQuickLogs.
-    // Tiles without an action key (Plant Annual, Close Season — they open their own
-    // modals) are NOT hideable since they're flow controls, not log actions.
-    const builtInTiles = [
-      { action: "watered",     icon: Droplet,        label: "Watered",      color: "#3F7CAC" },
-      { action: "fertilized",  icon: Leaf,           label: "Fertilized",   color: palette.leafSoft || "#A8C078" },
-      { action: "harvested",   icon: Scissors,       label: "Harvested",    color: palette.accent },
-      { action: "issue",       icon: AlertTriangle,  label: "Report Issue", color: palette.yolk },
-      { action: "note",        icon: NotebookPen,    label: "Note",         color: palette.feather },
-    ];
-    const visibleBuiltIns = builtInTiles.filter(t => !isQuickLogHidden(hobby, t.action));
-    const customLogs = readCustomLogs(hobby);
-
+    // Four big buttons for what people actually log (Nov 2026 usage: watered,
+    // planted and harvested dominate); everything else lives under "More".
+    // Hidden quick logs (Settings → customize) are still respected.
+    const primary = [
+      !isQuickLogHidden(hobby, "watered") && { key: "watered", icon: Droplet, label: "Watered", color: "#3F7CAC", onClick: () => setModal({ type: "log", action: "watered" }) },
+      { key: "planted", icon: Sprout, label: "Planted", color: palette.leaf, onClick: () => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm }) },
+      !isQuickLogHidden(hobby, "harvested") && { key: "harvested", icon: Scissors, label: "Harvest", color: palette.accent, onClick: () => setModal({ type: "log", action: "harvested" }) },
+      !isQuickLogHidden(hobby, "note") && { key: "note", icon: NotebookPen, label: "Note", color: palette.feather, onClick: () => setModal({ type: "log", action: "note" }) },
+    ].filter(Boolean);
     return (
-      <div style={grid}>
-        {visibleBuiltIns.map(t => (
-          <Tile
-            key={t.action}
-            icon={t.icon}
-            label={t.label}
-            color={t.color}
-            onClick={() => setModal({ type: "log", action: t.action })}
-          />
-        ))}
-        {/* Plant Annual and Close Season are flow controls (open their own modals),
-            not log actions — they're not hideable and stay outside the filter. */}
-        <Tile icon={Sprout} label="Plant Annual" color={palette.leaf} onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })} />
-        {/* Start a Seed — jumps straight to the seed-starting batch flow without
-            having to scroll to the Seed Starts section first. */}
-        <Tile icon={Sprout} label="Start a Seed" color={palette.leafSoft || palette.leaf} onClick={() => setModal({ type: "addSeedStart", hobbyId: hobby.id })} />
-        {/* User-defined custom logs render between built-ins and the "+ Custom" tile. */}
-        {customLogs.map(c => (
-          <Tile
-            key={c.id}
-            icon={NotebookPen}
-            label={c.label}
-            color={palette.feather}
-            onClick={() => setModal({ type: "log", action: "custom", customLogId: c.id })}
-          />
-        ))}
-        {/* + Custom is always visible — opens the picker/manage modal even at the cap. */}
-        <Tile
-          icon={Plus}
-          label="+ Custom"
-          color={palette.ink}
-          onClick={() => setModal({ type: "customLogPicker", hobbyId: hobby.id })}
-        />
-        {/* Add Expense — logs a hobby-attributed expense to data.expenses[]
-            for FIFO matching in the Sales tab. Always visible. */}
-        <Tile
-          icon={DollarSign}
-          label="Add Expense"
-          color={palette.accent}
-          onClick={() => setModal({ type: "addExpense", hobbyId: hobby.id })}
-        />
-        <Tile icon={Leaf} label="Close Out" color={palette.ink} onClick={() => setModal({ type: "closeOutCrops", hobbyId: hobby.id })} />
+      <div>
+        <div style={{ display: "grid", gridTemplateColumns: `repeat(${primary.length}, minmax(0, 1fr))`, gap: 8 }}>
+          {primary.map((t) => <Tile key={t.key} icon={t.icon} label={t.label} color={t.color} onClick={t.onClick} />)}
+        </div>
+        <button type="button" onClick={() => setModal({ type: "gardenMore", hobbyId: hobby.id })} style={{
+          width: "100%", marginTop: 8, padding: "10px 12px", borderRadius: 12, cursor: "pointer",
+          border: `1.5px solid ${palette.line}`, background: palette.bgAlt, color: palette.ink,
+          fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+          display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
+        }}>
+          <Plus size={16} /> More — fertilize, issue, seeds, expense, scanner…
+        </button>
       </div>
     );
   }
@@ -7651,21 +7618,14 @@ function AnnualSection({ hobby, season, seasonEntries, setModal, update = null, 
           aria-expanded={open}
         >
           <span style={{ fontSize:12,display:"inline-block",transform: open ? "rotate(90deg)" : "rotate(0deg)",transition:"transform 0.15s" }}>▶</span>
-          🌱 Annuals
+          <span style={{ whiteSpace:"nowrap" }}>🌱 Annuals</span>
           <span style={{ fontSize:12,color:palette.inkSoft,fontFamily:FONT_BODY,fontWeight:400 }}>
             {rowsData.length > 0 ? `(${rowsData.length})` : ""}
           </span>
         </button>
         <div style={{ display:"flex",alignItems:"center",gap:6 }}>
           {reorder && <ReorderArrows reorder={reorder} />}
-          {annuals.length > 0 && (
-            <button
-              onClick={() => setModal({ type: "closeOutCrops", hobbyId: hobby.id })}
-              style={{ background:"none",border:`1.5px solid ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
-            >
-              ✓ Close out
-            </button>
-          )}
+          {/* "Close out" lives in the garden's More menu now. */}
           <button
             onClick={() => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })}
             style={{ background:"none",border:`1.5px dashed ${palette.line}`,borderRadius:8,padding:"4px 10px",fontSize:12,color:palette.inkSoft,cursor:"pointer",fontFamily:FONT_BODY }}
@@ -8940,9 +8900,32 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
 }
 
 // ============ HOBBY SUMMARIES ============
-function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
+function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualConfirm }) {
   // Perennials section shown at bottom of garden home regardless of season
   const perennials = hobby.perennials || [];
+
+  // Tabs: Growing | Perennials | Map (remembered per device).
+  const [gardenTab, setGardenTab] = useState(() => {
+    try { return localStorage.getItem("henalytics_garden_tab") || "growing"; } catch (_) { return "growing"; }
+  });
+  const chooseTab = (t) => { setGardenTab(t); try { localStorage.setItem("henalytics_garden_tab", t); } catch (_) {} };
+
+  // No more "start a season" gate for brand-new gardens: almost half of
+  // gardeners never got past it. First time the garden opens with no season
+  // (and no closed ones), quietly start "<year> Garden". People who closed a
+  // season on purpose still see the start/reopen screen below.
+  const needsAutoSeason = !hobby.currentSeason && (hobby.archivedSeasons || []).length === 0;
+  useEffect(() => {
+    if (!needsAutoSeason) return;
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h && !h.currentSeason && (h.archivedSeasons || []).length === 0) {
+        h.currentSeason = { id: newId(), name: `${new Date().getFullYear()} Garden`, startDate: todayStr(), autoStarted: true };
+      }
+      return d;
+    });
+  }, [needsAutoSeason, hobby.id]);
+  if (needsAutoSeason) return null;
 
   if (!hobby.currentSeason) {
     const archivedList = hobby.archivedSeasons || [];
@@ -9159,74 +9142,359 @@ function GardenSummary({ hobby, data, update, setModal, onPlanAnnualConfirm }) {
     </div>
   );
 
+  // What the garden is worth this season (harvest at grocery prices − costs).
+  const gardenValue = computeHarvestValue(harvests, hobby.harvestPrices || {});
+  const seasonCost = gardenSeasonCost(data, hobby, season, seasonEntries);
+  const net = gardenValue.total - seasonCost;
+  const annualsCount = (hobby.annuals || []).filter((a) => (a.seasonId || "") === season.id).length || plantings;
+
+  const tabBtn = (key, label) => (
+    <button key={key} type="button" onClick={() => chooseTab(key)} style={{
+      flex: 1, padding: "9px 6px", border: "none", borderRadius: 8, cursor: "pointer",
+      background: gardenTab === key ? palette.card : "transparent",
+      boxShadow: gardenTab === key ? "1px 1px 0 " + palette.line : "none",
+      color: palette.ink, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
+    }}>{label}</button>
+  );
+
   return (
     <div>
-      {/* Layout order (per user request):
-          quick log → active season summary → garden map →
-          [reorderable: seed starts / perennials / orchard / annuals] →
-          harvest breakdown → plant & disease scanner (bottom). */}
+      {/* Layout (Nov 2026): today → 4 log buttons (+ More) → season worth →
+          Growing | Perennials | Map tabs. Rare actions live under More. */}
+      <GardenTodayCard hobby={hobby} data={data} entries={data.entries.garden || []} setModal={setModal} setPage={setPage} />
 
-      {/* QUICK LOG — first thing on the garden home. The shared hobby-page
-          quick log is suppressed for garden (see HobbyHome). */}
-      <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 22, margin: "4px 0 12px", color: palette.ink }}>
-        quick log
-      </h2>
       <QuickLogTiles hobby={hobby} setModal={setModal} onPlanAnnualConfirm={onPlanAnnualConfirm} />
 
-      <div style={{ height: 18 }} />
+      <div style={{ height: 14 }} />
 
-      {/* Active season summary */}
-      <div style={{
-        background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
-        marginBottom: 10,
-      }}>
-        <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 4 }}>
-          Active Season · {season.name}
+      {/* Season card — now leads with what the garden is worth */}
+      <div
+        onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })}
+        style={{ background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14, marginBottom: 12, cursor: "pointer" }}
+      >
+        <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 }}>
+          {season.name} · day {Math.max(0, days)}
         </div>
-        <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap" }}>
-          <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.leafSoft, lineHeight: 1 }}>{plantings}</div>
-          <div style={{ fontSize: 13, opacity: 0.85 }}>annuals · {harvestSummary(harvests)} harvested · day {days}</div>
-        </div>
+        {gardenValue.total > 0 ? (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 8, flexWrap: "wrap" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 30, color: palette.leafSoft, lineHeight: 1 }}>{fmtMoney(gardenValue.total)}</div>
+              <div style={{ fontSize: 13, opacity: 0.9 }}>of food grown</div>
+              <div style={{
+                marginLeft: "auto", fontSize: 12, fontWeight: 700, padding: "3px 8px", borderRadius: 999,
+                background: net >= 0 ? palette.leafSoft : palette.yolkSoft, color: palette.ink,
+              }}>
+                {net >= 0 ? `+${fmtMoney(net)} ahead` : `${fmtMoney(Math.abs(net))} to break even`}
+              </div>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+              {harvestSummary(harvests)} harvested · {fmtMoney(seasonCost)} spent · tap for details
+            </div>
+          </>
+        ) : (
+          <>
+            <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+              <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.leafSoft, lineHeight: 1 }}>{annualsCount}</div>
+              <div style={{ fontSize: 13, opacity: 0.85 }}>{annualsCount === 1 ? "crop" : "crops"} planted{seasonCost > 0 ? ` · ${fmtMoney(seasonCost)} spent` : ""}</div>
+            </div>
+            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 6 }}>
+              Log a harvest and see what your garden is worth at grocery prices.
+            </div>
+          </>
+        )}
       </div>
 
-      {/* Switch season — make a past season active again (current one is set
-          aside, not deleted). Discoverable even while a season is active
-          (e.g. someone wrapped up the wrong season, then started a new one). */}
-      {(hobby.archivedSeasons || []).length > 0 && (
-        <button
-          onClick={() => setModal({ type: "reopenSeason" })}
-          style={{ width: "100%", marginBottom: 10, padding: "8px 10px", background: "transparent", border: `1.5px dashed ${palette.line}`, borderRadius: 10, cursor: "pointer", fontSize: 12, color: palette.inkSoft, fontFamily: FONT_BODY }}
-        >
-          ↩ Switch season
+      {/* Growing | Perennials | Map */}
+      <div style={{ display: "flex", gap: 4, padding: 4, background: palette.bgAlt, borderRadius: 10, marginBottom: 12 }}>
+        {tabBtn("growing", "🌱 Growing")}
+        {tabBtn("perennials", "🌳 Perennials")}
+        {tabBtn("map", "🗺️ Map")}
+      </div>
+
+      {gardenTab === "growing" && sectionOrder
+        .filter((key) => key === "seed_starts" || key === "annuals")
+        .map((key) => sectionEls[key])}
+
+      {gardenTab === "perennials" && (perennials.length === 0 ? (
+        <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"14px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
+          🌳 Track perennials and fruit trees (asparagus, berries, apples…). They carry over every year.
         </button>
-      )}
+      ) : sectionOrder
+        .filter((key) => key === "perennials" || key === "orchard")
+        .map((key) => sectionEls[key]))}
 
-      {/* Garden map — right under the summary so the overview reads together. */}
-      {gardenMapCard}
-
-      {/* When the user has no perennials at all, show the "track perennials"
-          prompt instead of two empty perennial/orchard cards. */}
-      {perennials.length === 0 && (
-        <button onClick={() => setModal({ type:"addPerennial",hobbyId:hobby.id })} style={{ width:"100%",marginBottom:14,padding:"10px",background:"transparent",border:`1.5px dashed ${palette.line}`,borderRadius:10,cursor:"pointer",fontSize:13,color:palette.inkSoft,fontFamily:FONT_BODY }}>
-          🌳 Track perennials (fruit trees, asparagus, berry bushes...)
-        </button>
-      )}
-
-      {/* Reorderable sections — Seed Starts / Perennials / Orchard / Annuals.
-          Order is user-controlled via up/down arrows in each header and
-          persisted in hobby.gardenSectionOrder. When there are no perennials,
-          the two perennial cards are skipped (the prompt above covers that). */}
-      {sectionOrder.map((key) => {
-        if ((key === "perennials" || key === "orchard") && perennials.length === 0) return null;
-        return sectionEls[key];
-      })}
-
-      {/* Harvest breakdown — collapsible per-plant tally for this season. */}
-      <HarvestBreakdownSection harvests={harvests} />
-
-      {/* Plant & Disease Scanner — at the bottom, collapsible. */}
-      <PlantScannerSection setModal={setModal} />
+      {gardenTab === "map" && gardenMapCard}
     </div>
+  );
+}
+
+// ============================================================================
+// GARDEN HOME (Nov 2026 redesign)
+// ----------------------------------------------------------------------------
+// Usage data (Nov 3): of 2,689 homesteads with the garden on, only 32% had
+// ever logged anything — the quick log was hidden until a season was
+// started, and the page stacked ~11 buttons + up to 9 sections. The garden
+// home is now: Today card → 4 big log buttons (+ More) → season card with
+// what the garden is worth → Growing | Perennials | Map tabs.
+// ============================================================================
+
+// Garden costs for a season: costs typed on garden log entries + expenses
+// logged with the 💵 Add Expense tile (data.expenses, hobbyId = garden),
+// recurring expanded, within the season's date window. Mirrors the Stats tab.
+function gardenSeasonCost(data, hobby, season, seasonEntries) {
+  const today = todayStr();
+  const start = season && season.startDate ? season.startDate : "0000-00-00";
+  const end = (season && season.endDate) || today;
+  const entryCost = (seasonEntries || []).reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const logged = Array.isArray(data.expenses) ? data.expenses.filter((x) => x && x.hobbyId === hobby.id) : [];
+  const loggedCost = expandRecurringExpenses(logged)
+    .filter((x) => x.date && x.date <= today && x.date >= start && x.date <= end)
+    .reduce((s, x) => s + (Number(x.amount) || 0), 0);
+  return entryCost + loggedCost;
+}
+
+// ---- Today in the garden ---------------------------------------------------
+function GardenTodayCard({ hobby, data, entries, setModal, setPage }) {
+  const todayIso = todayStr();
+  const loc = data.homesteadLocation;
+  const [weekRain, setWeekRain] = React.useState(null);
+  const [forecast, setForecast] = React.useState(null);
+  React.useEffect(() => {
+    let cancelled = false;
+    if (!loc || loc.lat == null || loc.lon == null) return;
+    getWeeklyPrecip(loc.lat, loc.lon).then((r) => { if (!cancelled) setWeekRain(r); }).catch(() => {});
+    getForecast(loc.lat, loc.lon).then((r) => { if (!cancelled) setForecast(r); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, [loc && loc.lat, loc && loc.lon]);
+
+  const dayMs = 86400000;
+  const daysBetweenIso = (a, b) => Math.round((parseLocalDate(b) - parseLocalDate(a)) / dayMs);
+  const rows = [];
+
+  // Frost / heat
+  const tonightLow = forecast && forecast.tomorrow ? forecast.tomorrow.lowF : null;
+  const todayHigh = forecast && forecast.today ? forecast.today.highF : null;
+  if (tonightLow != null && tonightLow <= 32) {
+    rows.push({ icon: "❄️", tone: "warn", text: `Frost tonight — low ${fmtTemp(tonightLow)}`, sub: "Cover or pick anything frost-tender." });
+  } else if (tonightLow != null && tonightLow <= 36) {
+    rows.push({ icon: "🌡️", tone: "warn", text: `Close to frost tonight — low ${fmtTemp(tonightLow)}`, sub: "Low spots can still frost. Cover tender plants to be safe." });
+  }
+  if (todayHigh != null && todayHigh >= 92) {
+    rows.push({ icon: "🔥", tone: "warn", text: `Hot today — high ${fmtTemp(todayHigh)}`, sub: "Water early or late, and check seedlings and containers." });
+  }
+
+  // Watering (same three sources the old nudge used)
+  const waterDates = [];
+  entries.forEach((e) => { if (e.action === "watered" && e.date) waterDates.push(e.date); });
+  (hobby.annuals || []).forEach((a) => (a.actions || []).forEach((ac) => { if (ac && ac.type === "Water" && ac.date) waterDates.push(ac.date); }));
+  (hobby.perennials || []).forEach((p) => (p.actions || []).forEach((ac) => { if (ac && ac.type === "Water" && ac.date) waterDates.push(ac.date); }));
+  const lastWater = waterDates.length ? waterDates.reduce((m, d) => (d > m ? d : m)) : null;
+  const wateredDays = lastWater ? daysBetweenIso(lastWater, todayIso) : null;
+  const rainIn = weekRain && weekRain.totalIn != null ? weekRain.totalIn : null;
+  const rainText = rainIn == null ? null : rainIn > 0 ? `${rainIn}" of rain in the last 7 days` : "No rain in the last 7 days";
+  if (rainIn != null && rainIn >= 0.75) {
+    rows.push({ icon: "🌧️", text: `${rainIn}" of rain this week`, sub: "Your beds probably don't need watering today." });
+  } else if (wateredDays === null || wateredDays >= 4) {
+    rows.push({
+      icon: "💧",
+      text: wateredDays === null ? "No watering logged yet" : `Last watered ${wateredDays} days ago`,
+      sub: rainText || undefined,
+      actionLabel: "Log watering",
+      onAction: () => setModal({ type: "log", action: "watered" }),
+    });
+  } else {
+    rows.push({ icon: "💧", tone: "quiet", text: wateredDays === 0 ? "Watered today" : `Watered ${wateredDays} day${wateredDays === 1 ? "" : "s"} ago`, sub: rainText || undefined });
+  }
+
+  // This week on the calendar (sow / start / transplant) + ready to pick
+  const gardenEvents = (data.calendarEvents || []).filter((e) => e && e.date && (e.type === "garden" || e.cropId));
+  const upcoming = gardenEvents
+    .filter((e) => e.kind !== "harvest" && e.date >= todayIso && daysBetweenIso(todayIso, e.date) <= 7)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const readySoon = gardenEvents
+    .filter((e) => e.kind === "harvest" && daysBetweenIso(e.date, todayIso) <= 21 && daysBetweenIso(todayIso, e.date) <= 7)
+    .sort((a, b) => (a.date < b.date ? -1 : 1));
+  const dayName = (iso) => iso === todayIso ? "Today" : parseLocalDate(iso).toLocaleDateString(undefined, { weekday: "short" });
+  upcoming.slice(0, 3).forEach((e) => {
+    rows.push({ icon: "📅", text: `${dayName(e.date)} · ${String(e.title || "").replace(/^\p{Extended_Pictographic}️?\s*/u, "")}`, onTap: setPage ? () => setPage("calendar") : undefined });
+  });
+  if (upcoming.length > 3) rows.push({ icon: "📅", tone: "quiet", text: `+${upcoming.length - 3} more this week`, onTap: setPage ? () => setPage("calendar") : undefined });
+  if (readySoon.length) {
+    const names = readySoon.map((e) => (e.varietyName || String(e.title || "").replace(/^\p{Extended_Pictographic}️?\s*/u, "").replace(/ should be ready to harvest$/i, ""))).filter(Boolean);
+    const uniq = [...new Set(names)].slice(0, 4);
+    rows.push({
+      icon: "🧺",
+      text: `Ready to pick: ${uniq.join(", ")}${names.length > uniq.length ? "…" : ""}`,
+      sub: "Based on your planting dates.",
+      actionLabel: "Log harvest",
+      onAction: () => setModal({ type: "log", action: "harvested" }),
+    });
+  }
+
+  const dateLabel = parseLocalDate(todayIso).toLocaleDateString(undefined, { weekday: "long", month: "short", day: "numeric" });
+  return (
+    <div style={{
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 14,
+      padding: 14, marginBottom: 14,
+    }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 8 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink }}>today in the garden</div>
+        <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap" }}>{dateLabel}</div>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+        {rows.map((r, i) => (
+          <div key={i}
+            onClick={r.onTap}
+            style={{
+              display: "flex", alignItems: "center", gap: 10,
+              padding: "9px 10px", borderRadius: 10,
+              background: r.tone === "warn" ? "#FBE5DE" : palette.bg,
+              border: `1px solid ${r.tone === "warn" ? palette.accent : palette.line}`,
+              cursor: r.onTap ? "pointer" : "default",
+              opacity: r.tone === "quiet" ? 0.85 : 1,
+            }}>
+            <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>{r.icon}</div>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: r.tone === "warn" ? palette.accent : palette.ink, lineHeight: 1.3 }}>{r.text}</div>
+              {r.sub && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, lineHeight: 1.35 }}>{r.sub}</div>}
+            </div>
+            {r.onAction && (
+              <button type="button" onClick={(e) => { e.stopPropagation(); r.onAction(); }} style={{
+                flexShrink: 0, padding: "7px 10px", borderRadius: 8, cursor: "pointer",
+                border: `1.5px solid ${palette.ink}`, background: palette.ink, color: palette.bg,
+                fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+              }}>{r.actionLabel}</button>
+            )}
+          </div>
+        ))}
+      </div>
+      {!loc && (
+        <button type="button" onClick={() => setModal({ type: "location" })} style={{
+          marginTop: 8, background: "none", border: "none", padding: 0, cursor: "pointer",
+          color: palette.leaf, fontWeight: 600, fontSize: 12, textDecoration: "underline", fontFamily: FONT_BODY,
+        }}>
+          Add your location to get rain and frost alerts here
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ---- "More" sheet: the less-used garden actions ------------------------------
+function GardenMoreModal({ hobby, setModal, onClose }) {
+  const customLogs = readCustomLogs(hobby);
+  const go = (m) => setModal(m);
+  const items = [
+    !isQuickLogHidden(hobby, "fertilized") && { icon: "🌿", label: "Fertilized", onClick: () => go({ type: "log", action: "fertilized" }) },
+    !isQuickLogHidden(hobby, "issue") && { icon: "⚠️", label: "Report an issue", sub: "Pests, disease, damage", onClick: () => go({ type: "log", action: "issue" }) },
+    { icon: "🌱", label: "Start seeds indoors", onClick: () => go({ type: "addSeedStart", hobbyId: hobby.id }) },
+    { icon: "🌳", label: "Add a perennial or fruit tree", onClick: () => go({ type: "addPerennial", hobbyId: hobby.id }) },
+    { icon: "💵", label: "Add an expense", sub: "Seeds, soil, tools — counts against what your garden grew", onClick: () => go({ type: "addExpense", hobbyId: hobby.id }) },
+    { icon: "🔍", label: "Identify a plant or problem", sub: "Photo scanner", onClick: () => go({ type: "plantScanner" }) },
+    ...customLogs.map((c) => ({ icon: "📝", label: c.label, sub: "Your custom log", onClick: () => go({ type: "log", action: "custom", customLogId: c.id }) })),
+    { icon: "➕", label: "Make a custom log button", onClick: () => go({ type: "customLogPicker", hobbyId: hobby.id }) },
+    (hobby.archivedSeasons || []).length > 0 && { icon: "↩️", label: "Switch season", onClick: () => go({ type: "reopenSeason" }) },
+    { icon: "🍂", label: "Close out crops or wrap up the season", onClick: () => go({ type: "closeOutCrops", hobbyId: hobby.id }) },
+  ].filter(Boolean);
+  return (
+    <Modal open onClose={onClose} title="More garden actions">
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {items.map((it, i) => (
+          <button key={i} type="button" onClick={it.onClick} style={{
+            display: "flex", alignItems: "center", gap: 12, width: "100%", textAlign: "left",
+            padding: "11px 12px", borderRadius: 10, cursor: "pointer",
+            border: `1.5px solid ${palette.line}`, background: palette.card, fontFamily: FONT_BODY,
+          }}>
+            <span style={{ fontSize: 20, width: 26, textAlign: "center", flexShrink: 0 }}>{it.icon}</span>
+            <span style={{ flex: 1, minWidth: 0 }}>
+              <span style={{ display: "block", fontSize: 14, fontWeight: 600, color: palette.ink }}>{it.label}</span>
+              {it.sub && <span style={{ display: "block", fontSize: 12, color: palette.inkSoft, marginTop: 1 }}>{it.sub}</span>}
+            </span>
+          </button>
+        ))}
+      </div>
+    </Modal>
+  );
+}
+
+// ---- What the garden is worth ------------------------------------------------
+const VALUE_SLOT_LABEL = { lb: "lb", each: "each", bunch: "bunch" };
+function GardenValueModal({ hobby, data, update, onClose }) {
+  const season = hobby.currentSeason;
+  const seasonEntries = season ? (data.entries.garden || []).filter((e) => e.seasonId === season.id) : [];
+  const harvests = season ? collectGardenHarvests(data, { seasonId: season.id, season }) : [];
+  const overrides = hobby.harvestPrices || {};
+  const value = computeHarvestValue(harvests, overrides);
+  const cost = season ? gardenSeasonCost(data, hobby, season, seasonEntries) : 0;
+  const net = value.total - cost;
+
+  const setPrice = (plant, slot, raw) => {
+    const v = raw === "" ? null : Number(raw);
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      const key = plantKey(plant);
+      h.harvestPrices = h.harvestPrices || {};
+      const cur = { ...(h.harvestPrices[key] || {}) };
+      if (v == null || Number.isNaN(v)) delete cur[slot]; else cur[slot] = Math.max(0, v);
+      if (Object.keys(cur).length) h.harvestPrices[key] = cur; else delete h.harvestPrices[key];
+      return d;
+    });
+  };
+
+  const stat = (label, val, color) => (
+    <div style={{ flex: 1, minWidth: 0, padding: "10px 8px", borderRadius: 10, background: palette.card, border: `1.5px solid ${palette.line}`, textAlign: "center" }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: color || palette.ink, lineHeight: 1.1 }}>{val}</div>
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{label}</div>
+    </div>
+  );
+
+  return (
+    <Modal open onClose={onClose} title={season ? `${season.name}: what it's worth` : "What your garden is worth"}>
+      <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+        {stat("food grown", fmtMoney(value.total), palette.leaf)}
+        {stat("spent", fmtMoney(cost))}
+        {stat(net >= 0 ? "ahead" : "so far", `${net >= 0 ? "+" : "−"}${fmtMoney(Math.abs(net))}`, net >= 0 ? palette.leaf : palette.accent)}
+      </div>
+      {value.rows.length === 0 ? (
+        <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.5, padding: 12, background: palette.bgAlt, borderRadius: 10 }}>
+          No harvests logged this season yet. Log a harvest and it shows up here valued at grocery prices.
+        </div>
+      ) : (
+        <>
+          <div style={{ fontSize: 12, color: palette.inkSoft, lineHeight: 1.45, marginBottom: 8 }}>
+            Valued at typical US grocery prices. Tap a price to use what produce costs where you shop.
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {value.rows.map((r) => (
+              <div key={`${r.plant}|${r.slot}`} style={{
+                display: "flex", alignItems: "center", gap: 8, padding: "8px 10px",
+                borderRadius: 10, background: palette.card, border: `1.5px solid ${palette.line}`,
+              }}>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.plant}</div>
+                  <div style={{ fontSize: 11, color: palette.inkSoft }}>{r.qty} {VALUE_SLOT_LABEL[r.slot]}{r.qty === 1 || r.slot === "lb" ? "" : r.slot === "bunch" ? "es" : ""}</div>
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 3, fontSize: 12, color: palette.inkSoft }}>
+                  {currencySymbol()}
+                  <input
+                    type="number" inputMode="decimal" step="0.05" min="0"
+                    defaultValue={r.price}
+                    onBlur={(e) => { if (String(r.price) !== e.target.value) setPrice(r.plant, r.slot, e.target.value); }}
+                    style={{ ...inputStyle, width: 64, padding: "5px 6px", fontSize: 13, borderColor: r.custom ? palette.leaf : undefined }}
+                  />
+                  /{VALUE_SLOT_LABEL[r.slot]}
+                </label>
+                <div style={{ width: 64, textAlign: "right", fontFamily: FONT_DISPLAY, fontSize: 16, color: palette.leaf }}>{fmtMoney(r.value)}</div>
+              </div>
+            ))}
+          </div>
+        </>
+      )}
+      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.45 }}>
+        Spent = costs on garden logs + expenses added from the garden this season. Volume harvests (pints, quarts) count as about ¾ lb per pint.
+      </div>
+    </Modal>
   );
 }
 
@@ -12256,6 +12524,14 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
+  if (modal.type === "gardenMore") {
+    const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
+    return <GardenMoreModal hobby={gh} setModal={setModal} onClose={close} />;
+  }
+  if (modal.type === "gardenValue") {
+    const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
+    return <GardenValueModal hobby={gh} data={data} update={update} onClose={close} />;
+  }
   if (modal.type === "nudgeOffer") return <NudgeOfferModal data={data} update={update} onClose={close} />;
   if (modal.type === "calendarSync") return <CalendarSyncModal data={data} update={update} user={user} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
