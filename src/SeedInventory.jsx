@@ -13,7 +13,8 @@
 // hobby, so it syncs and survives season close-outs.
 // ============================================================================
 
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
+import { loadSeedAffiliate, seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
 
 const palette = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -176,7 +177,93 @@ async function shareText(text, toast) {
 }
 
 // props: hobby (garden), update, cropOptions (names), toast
-export default function SeedInventory({ hobby, update, cropOptions = [], toast }) {
+// Packets in the seed box that match a planted crop name ("Cherokee Purple
+// Tomato" ↔ a "Tomatoes" packet). Plurals and case don't matter.
+const normWord = (w) => w.replace(/oes$/, "o").replace(/ies$/, "y").replace(/(?<=[a-z]{3})s$/, "");
+const normWords = (s) => String(s || "").toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length > 1).map(normWord);
+export function matchingPackets(seeds, plantName) {
+  const plantWords = new Set(normWords(plantName));
+  if (!plantWords.size) return [];
+  return (seeds || []).filter((p) => {
+    if (!p || p.amount === "out") return false;
+    const cropWords = normWords(p.crop);
+    const varietyWords = normWords(p.variety);
+    // The crop's main word ("Bush Beans" → bean) is enough: the popup only
+    // asks, so a loose match costs one tap at most.
+    const cropHit = cropWords.length > 0 && plantWords.has(cropWords[cropWords.length - 1]);
+    const varietyHit = varietyWords.length > 0 && varietyWords.every((w) => plantWords.has(w));
+    return cropHit || varietyHit;
+  });
+}
+
+// Right after logging a planting: "Did that come from your seed box?" One
+// tap to set how much is left in each matching packet.
+export function SeedUseModal({ hobby, plantName, update, onClose }) {
+  const packets = matchingPackets(hobby.seeds, plantName);
+  const [picked, setPicked] = useState({});
+  if (!packets.length) return null;
+  const save = () => {
+    update((d) => {
+      const g = (d.hobbies || []).find((h) => h.id === hobby.id);
+      if (g && Array.isArray(g.seeds)) {
+        g.seeds.forEach((p) => { if (picked[p.id]) { p.amount = picked[p.id]; p.lastUsed = new Date().toISOString().slice(0, 10); } });
+      }
+      return d;
+    });
+    onClose();
+  };
+  const any = Object.keys(picked).length > 0;
+  return (
+    <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 210, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 12 }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 16, padding: 16, fontFamily: FONT_BODY, marginBottom: "env(safe-area-inset-bottom)" }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 21, color: palette.ink, marginBottom: 4 }}>🌾 From your seed box?</div>
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.45 }}>
+          You planted {plantName}. How much is left in the packet? Your "To buy" list keeps itself up to date.
+        </div>
+        <div style={{ display: "flex", flexDirection: "column", gap: 8, marginBottom: 14 }}>
+          {packets.map((p) => (
+            <div key={p.id} style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10, padding: "10px 12px" }}>
+              <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink, marginBottom: 6 }}>
+                {p.crop}{p.variety ? <span style={{ fontWeight: 400, color: palette.inkSoft }}> · {p.variety}</span> : null}
+                {p.year ? <span style={{ fontWeight: 400, color: palette.inkSoft, fontSize: 12 }}> ({p.year})</span> : null}
+              </div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {AMOUNTS.map((a) => (
+                  <Chip key={a.key} active={(picked[p.id] || "") === a.key}
+                    tone={a.key === "out" || a.key === "low" ? palette.accent : palette.ink}
+                    onClick={() => setPicked((x) => ({ ...x, [p.id]: a.key }))}>
+                    {a.key === "out" ? "Used it up" : a.label}
+                  </Chip>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "flex", gap: 8 }}>
+          <button type="button" onClick={save} disabled={!any} style={{
+            flex: 1, padding: "11px 14px", borderRadius: 8, border: `1.5px solid ${palette.ink}`,
+            background: any ? palette.ink : palette.bgAlt, color: any ? palette.bg : palette.inkSoft,
+            fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: any ? "pointer" : "default",
+          }}>Update seed box</button>
+          <button type="button" onClick={onClose} style={{
+            padding: "11px 14px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: "transparent",
+            color: palette.ink, fontFamily: FONT_BODY, fontSize: 14, cursor: "pointer",
+          }}>Not from the box</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Affiliate shop config (null until set up in app_config "seed_affiliate").
+export function useSeedShop() {
+  const [cfg, setCfg] = useState(null);
+  useEffect(() => { let on = true; loadSeedAffiliate().then((c) => { if (on) setCfg(c); }); return () => { on = false; }; }, []);
+  return cfg;
+}
+
+export default function SeedInventory({ hobby, update, cropOptions = [], toast, openUrl }) {
+  const shop = useSeedShop();
   const seeds = Array.isArray(hobby.seeds) ? hobby.seeds : [];
   const [adding, setAdding] = useState(false);
   const [editingId, setEditingId] = useState(null);
@@ -271,6 +358,15 @@ export default function SeedInventory({ hobby, update, cropOptions = [], toast }
           background: palette.yolk, color: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer",
         }}>📤 Share or copy my seed list</button>
       )}
+      {filter === "buy" && toBuy.length > 0 && shop && shop.homeUrl && openUrl && (
+        <div style={{ marginTop: -2, marginBottom: 10 }}>
+          <button type="button" onClick={() => openUrl(shop.homeUrl)} style={{
+            width: "100%", padding: "10px 14px", borderRadius: 8, border: `1.5px solid ${palette.ink}`,
+            background: palette.card, color: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer",
+          }}>🛒 Shop seeds at {shop.name}</button>
+          <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>{AFFILIATE_DISCLOSURE}</div>
+        </div>
+      )}
 
       {shown.length === 0 && (
         <div style={{ fontSize: 13, color: palette.inkSoft, fontStyle: "italic", padding: "6px 2px" }}>
@@ -310,6 +406,12 @@ export default function SeedInventory({ hobby, update, cropOptions = [], toast }
                     tone={a.key === "out" || a.key === "low" ? palette.accent : palette.ink}
                     onClick={() => setAmount(p.id, a.key)}>{a.label}</Chip>
                 ))}
+                {filter === "buy" && shop && openUrl && seedShopUrl(shop, p.crop, p.variety) && (
+                  <button type="button" onClick={() => openUrl(seedShopUrl(shop, p.crop, p.variety))} style={{
+                    background: "none", border: "none", padding: 0, cursor: "pointer", fontSize: 12, fontWeight: 600,
+                    color: palette.leaf, fontFamily: FONT_BODY, textDecoration: "underline",
+                  }}>Find it 🛒</button>
+                )}
                 <span style={{ marginLeft: "auto", fontSize: 11, color: palette.inkSoft }}>{v.label}</span>
               </div>
               {p.notes ? <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 6, fontStyle: "italic" }}>{p.notes}</div> : null}

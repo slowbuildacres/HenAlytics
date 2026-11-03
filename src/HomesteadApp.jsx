@@ -103,7 +103,9 @@ import {
   getWeeklyPrecip, testStation, getYearWeather, getForecast, getForecastDays,
 } from "./weather.js";
 import { computeHarvestValue, plantKey } from "./gardenValue.js";
-import SeedInventory, { needsBuying as seedNeedsBuying } from "./SeedInventory.jsx";
+import SeedInventory, { needsBuying as seedNeedsBuying, SeedUseModal, matchingPackets, useSeedShop } from "./SeedInventory.jsx";
+import { seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
+import { eggInsight } from "./eggInsights.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
 import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
@@ -6436,6 +6438,13 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       }
       return d;
     });
+    // Seed box: offer to mark the packet used. PlanCropModal closes itself
+    // right after onConfirm, so open ours on the next tick.
+    const gardenH = (data.hobbies || []).find((x) => x.type === "garden");
+    const seedName = [variety && variety.name, cropName].filter(Boolean).join(" ");
+    if (gardenH && matchingPackets(gardenH.seeds, seedName).length) {
+      setTimeout(() => setModal({ type: "seedUse", plantName: seedName }), 0);
+    }
   };
 
   return (
@@ -6452,7 +6461,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
       {["egg_layers", "meat_chickens"].includes(hobby.type) && (
         <FeedTrackerCard hobby={hobby} data={data} update={update} setModal={setModal} />
       )}
-      {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} entries={entries} sales={data.sales || []} update={update} setModal={setModal} />}
+      {hobby.type === "egg_layers" && <EggLayersSummary hobby={hobby} data={data} entries={entries} sales={data.sales || []} update={update} setModal={setModal} />}
       {hobby.type === "meat_chickens" && <MeatChickensSummary hobby={hobby} entries={entries} update={update} setModal={setModal} />}
       {hobby.type === "garden" && <GardenSummary hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} onPlanAnnualConfirm={handlePlanAnnualConfirm} />}
 
@@ -9131,8 +9140,9 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
           </div>
         )}
       </div>
+      <WinterChecklistCard data={data} update={update} types={["garden"]} />
       {/* Between seasons is seed-ordering time: keep the seed box handy. */}
-      <SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={seedCropOptions} />
+      <SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={seedCropOptions} openUrl={openExternalUrl} />
       </div>
     );
   }
@@ -9311,6 +9321,9 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
 
       <div style={{ height: 14 }} />
 
+      <WinterChecklistCard data={data} update={update} types={["garden"]}
+        onOpenSeeds={() => chooseTab("seeds")} onOpenMap={() => chooseTab("map")} />
+
       {/* Season card — now leads with what the garden is worth */}
       <div
         onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })}
@@ -9376,7 +9389,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
         .map((key) => sectionEls[key]))}
 
       {gardenTab === "seeds" && (
-        <SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={seedCropOptions} />
+        <SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={seedCropOptions} openUrl={openExternalUrl} />
       )}
 
       {gardenTab === "map" && gardenMapCard}
@@ -9718,7 +9731,7 @@ function BragCardArt({ card, layout = "portrait", innerRef }) {
   );
 }
 
-function BragShareModal({ card, user, onClose, onSignIn }) {
+function BragShareModal({ card, user, onClose, onSignIn, children }) {
   const squareRef = useRef(null);
   const [shape, setShape] = useState(() => {
     try { return localStorage.getItem("henalytics_share_shape") || "portrait"; } catch (_) { return "portrait"; }
@@ -9756,6 +9769,7 @@ function BragShareModal({ card, user, onClose, onSignIn }) {
 
   return (
     <Modal open onClose={onClose} title="Share it">
+      {children}
       <div style={{ display: "flex", gap: 6, justifyContent: "center", marginBottom: 10 }}>
         {["portrait", "square", "story"].map((k) => (
           <button key={k} type="button" onClick={() => pickShape(k)} title={BRAG_SIZES[k].hint} style={{
@@ -9804,6 +9818,209 @@ function BragShareModal({ card, user, onClose, onSignIn }) {
         {link && <> Your link: <span style={{ wordBreak: "break-all", color: palette.ink }}>{link}</span></>}
       </div>
     </Modal>
+  );
+}
+
+// ---- Egg cost share card ---------------------------------------------------
+// "Our eggs cost $2.10 a dozen" vs. the store. Same cost math as the egg
+// stats card (feed/bedding/infrastructure logs + Add Expense rows for this
+// hobby), over this calendar year.
+const DEFAULT_STORE_EGG_PRICE = 4.0;
+function eggYearNumbers(data, hobby, year = new Date().getFullYear()) {
+  const y = String(year);
+  const today = todayStr();
+  const ents = (data.entries && data.entries[hobby.id]) || [];
+  const inYear = (d) => typeof d === "string" && d.slice(0, 4) === y && d <= today;
+  const eggs = ents.filter((e) => inYear(e.date) && (e.action === "eggs" || e.action === "eggs_laid")).reduce((t, e) => t + (Number(e.count) || 0), 0);
+  const entryCost = ents.filter((e) => inYear(e.date) && ["fed", "bedding", "infrastructure"].includes(e.action)).reduce((t, e) => t + (Number(e.cost) || 0), 0);
+  const logged = expandRecurringExpenses((data.expenses || []).filter((x) => x && x.hobbyId === hobby.id))
+    .filter((x) => inYear(x.date)).reduce((t, x) => t + (Number(x.amount) || 0), 0);
+  const cost = entryCost + logged;
+  const dozens = eggs / 12;
+  return { year: Number(y), eggs, dozens, cost, perDozen: dozens > 0 ? cost / dozens : 0 };
+}
+
+function eggShareCard(data, hobby, storePrice) {
+  const n = eggYearNumbers(data, hobby);
+  const name = String(data.homesteadName || "").trim();
+  const store = Number(storePrice) > 0 ? Number(storePrice) : null;
+  const money2 = (v) => fmtMoney(Math.round(v * 100) / 100);
+  const hasCost = n.cost > 0 && n.eggs > 0;
+  const saved = hasCost && store ? n.dozens * store - n.cost : null;
+  const eggsText = `${Math.round(n.eggs).toLocaleString()} eggs`;
+  return {
+    kind: "egg_cost",
+    emoji: "🥚",
+    kicker: name || `${n.year} flock`,
+    big: hasCost ? money2(n.perDozen) : Math.round(n.eggs).toLocaleString(),
+    line: hasCost ? "a dozen for our backyard eggs" : `eggs from our flock in ${n.year}`,
+    chips: [
+      hasCost ? `${eggsText} in ${n.year}` : `${Math.floor(n.dozens).toLocaleString()} dozen`,
+      store && hasCost ? (n.perDozen < store ? `Store eggs: ${money2(store)}/dozen` : null) : null,
+    ].filter(Boolean),
+    foot: null,
+    list: [
+      { label: "Eggs collected", value: Math.round(n.eggs).toLocaleString() },
+      saved != null && saved > 0 ? { label: "Saved vs. the store", value: moneyWhole(saved) } : null,
+      hasCost ? { label: "Spent on the flock", value: moneyWhole(n.cost) } : null,
+      { label: "Dozens", value: Math.floor(n.dozens).toLocaleString() },
+    ].filter(Boolean),
+    title: hasCost
+      ? `${name || "Our"} backyard eggs cost ${money2(n.perDozen)} a dozen in ${n.year} 🥚`
+      : `${name || "Our flock"}: ${eggsText} in ${n.year} 🥚`,
+    subtitle: `${eggsText} collected${hasCost ? `, ${moneyWhole(n.cost)} spent on feed and supplies` : ""}${saved > 0 ? `, ${moneyWhole(saved)} less than store eggs` : ""}. Tracked with Henalytics.`,
+    stats: [
+      { label: "Eggs collected", value: Math.round(n.eggs).toLocaleString() },
+      hasCost ? { label: "Cost per dozen", value: money2(n.perDozen) } : null,
+      store ? { label: "Store price", value: `${money2(store)}/dozen` } : null,
+      saved > 0 ? { label: "Saved vs. store", value: moneyWhole(saved) } : null,
+    ].filter(Boolean),
+  };
+}
+
+function EggShareModal({ data, hobby, update, user, onClose, onSignIn }) {
+  const [price, setPrice] = useState(() => String(hobby.storeEggPrice || DEFAULT_STORE_EGG_PRICE));
+  const card = eggShareCard(data, hobby, Number(price));
+  const save = () => {
+    const v = Number(price);
+    if (v > 0 && v !== hobby.storeEggPrice) update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h.storeEggPrice = Math.round(v * 100) / 100; return d; });
+  };
+  return (
+    <BragShareModal card={card} user={user} onClose={() => { save(); onClose(); }} onSignIn={onSignIn}>
+      <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: palette.inkSoft, marginBottom: 12 }}>
+        Store eggs cost
+        <span style={{ display: "flex", alignItems: "center", gap: 3 }}>
+          {currencySymbol()}
+          <input type="number" inputMode="decimal" step="0.25" min="0" value={price}
+            onChange={(e) => setPrice(e.target.value)} onBlur={save}
+            style={{ ...inputStyle, width: 72, padding: "5px 8px", fontSize: 14 }} />
+        </span>
+        a dozen where I shop
+      </label>
+    </BragShareModal>
+  );
+}
+
+// ---- Egg insight card ------------------------------------------------------
+function EggInsightCard({ data, entries }) {
+  const lat = data && data.homesteadLocation ? data.homesteadLocation.lat : null;
+  const insight = React.useMemo(() => eggInsight({ entries, lat }), [entries, lat]);
+  if (!insight) return null;
+  const tone = {
+    calm: { bg: "#EEF3E4", border: palette.leaf, fg: palette.ink },
+    good: { bg: "#EEF3E4", border: palette.leaf, fg: palette.ink },
+    check: { bg: "#FBE5DE", border: palette.accent, fg: palette.accent },
+  }[insight.tone] || {};
+  return (
+    <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 14px", marginBottom: 12, borderRadius: 12, background: tone.bg, border: `1.5px solid ${tone.border}` }}>
+      <div style={{ fontSize: 24, lineHeight: 1 }}>{insight.icon}</div>
+      <div style={{ flex: 1 }}>
+        <div style={{ fontSize: 14, fontWeight: 700, color: tone.fg, lineHeight: 1.3 }}>{insight.title}</div>
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginTop: 4, lineHeight: 1.5 }}>{insight.body}</div>
+      </div>
+    </div>
+  );
+}
+
+// ---- Winter on the homestead ----------------------------------------------
+// A seasonal checklist (Nov–Feb north, May–Aug south) for the slow months, so
+// the app stays useful when the garden is asleep. Ticks are saved per winter:
+// data.winterChecklist = { "<season key>": { done: { id: true }, hidden } }.
+function winterSeason(now = new Date()) {
+  const south = getCurrentHemisphere() === "south";
+  const m = now.getMonth(), y = now.getFullYear();
+  if (south) return m >= 4 && m <= 7 ? `S${y}` : null;
+  if (m >= 10) return `${y}-${y + 1}`;
+  if (m <= 1) return `${y - 1}-${y}`;
+  return null;
+}
+
+const WINTER_ITEMS = {
+  egg_layers: [
+    { id: "water", icon: "💧", text: "Keep water from freezing", sub: "A heated base, or swap waterers morning and evening. Hens lay less when they can't drink." },
+    { id: "lamp", icon: "🔥", text: "Heat lamp? Secure it twice, or skip it", sub: "Heat lamps start many coop fires. Most cold-hardy breeds are fine without heat." },
+    { id: "vent", icon: "🌬️", text: "Check coop ventilation", sub: "Frostbite comes from damp air, not cold. Vents above the roost, no drafts at roost height." },
+    { id: "bedding", icon: "🌾", text: "Add deep bedding", sub: "Fresh straw or shavings for warmth. Deep litter composts in place over winter." },
+    { id: "collect", icon: "🥚", text: "Collect eggs twice a day", sub: "Eggs can freeze and crack in the nest on cold days." },
+  ],
+  garden: [
+    { id: "seedbox", icon: "🌾", text: "Take stock of your seed box", sub: "Mark what's low or getting old before you order.", action: "seeds" },
+    { id: "order", icon: "🛒", text: "Order seeds", sub: "Popular varieties sell out by February.", action: "shop" },
+    { id: "plan", icon: "🗺️", text: "Plan next year's beds", sub: "On the garden map, Henalytics flags crops from the same family in the same spot.", action: "map" },
+    { id: "tools", icon: "🧰", text: "Clean, sharpen and oil tools", sub: "Saves rust and blisters come spring." },
+    { id: "onions", icon: "🧅", text: "Start onions and leeks indoors", sub: "Usually 10 to 12 weeks before your last frost." },
+  ],
+};
+
+function WinterChecklistCard({ data, update, types, onOpenSeeds, onOpenMap }) {
+  const season = winterSeason();
+  const shop = useSeedShop();
+  if (!season) return null;
+  const state = (data.winterChecklist && data.winterChecklist[season]) || {};
+  if (state.hidden) return null;
+  const items = types.flatMap((t) => (WINTER_ITEMS[t] || []).map((it) => ({ ...it, key: `${t}:${it.id}` })));
+  if (!items.length) return null;
+  const done = state.done || {};
+  const doneCount = items.filter((it) => done[it.key]).length;
+  const setState = (fn) => update((d) => {
+    d.winterChecklist = d.winterChecklist || {};
+    const cur = d.winterChecklist[season] || {};
+    d.winterChecklist[season] = fn({ ...cur, done: { ...(cur.done || {}) } });
+    return d;
+  });
+  const toggle = (key) => setState((st) => { if (st.done[key]) delete st.done[key]; else st.done[key] = true; return st; });
+  const actionFor = (it) => {
+    if (it.action === "seeds" && onOpenSeeds) return { label: "Open", run: onOpenSeeds };
+    if (it.action === "map" && onOpenMap) return { label: "Open map", run: onOpenMap };
+    if (it.action === "shop") {
+      if (shop && shop.homeUrl) return { label: "Shop", run: () => openExternalUrl(shop.homeUrl), disclose: true };
+      if (onOpenSeeds) return { label: "My list", run: onOpenSeeds };
+    }
+    return null;
+  };
+  const allDone = doneCount === items.length;
+  return (
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 14, padding: 14, marginBottom: 14 }}>
+      <div style={{ display: "flex", alignItems: "baseline", gap: 8, marginBottom: 10 }}>
+        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 20, color: palette.ink, flex: 1 }}>❄️ winter on the homestead</div>
+        <div style={{ fontSize: 12, color: palette.inkSoft }}>{doneCount} of {items.length}</div>
+      </div>
+      {allDone ? (
+        <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.5 }}>All set for winter. Nice work! 🎉</div>
+      ) : (
+        <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+          {items.map((it) => {
+            const on = !!done[it.key];
+            const act = actionFor(it);
+            return (
+              <div key={it.key} style={{ display: "flex", alignItems: "flex-start", gap: 10, padding: "8px 10px", borderRadius: 10, background: palette.bg, border: `1px solid ${palette.line}`, opacity: on ? 0.6 : 1 }}>
+                <button type="button" onClick={() => toggle(it.key)} aria-label={on ? "Mark not done" : "Mark done"} style={{
+                  flexShrink: 0, width: 22, height: 22, marginTop: 1, borderRadius: 6, cursor: "pointer",
+                  border: `1.5px solid ${on ? palette.leaf : palette.inkSoft}`, background: on ? palette.leaf : "transparent",
+                  color: "#fff", fontSize: 13, lineHeight: "18px", padding: 0,
+                }}>{on ? "✓" : ""}</button>
+                <div style={{ flex: 1, minWidth: 0 }} onClick={() => toggle(it.key)}>
+                  <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink, textDecoration: on ? "line-through" : "none" }}>{it.icon} {it.text}</div>
+                  {!on && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2, lineHeight: 1.4 }}>{it.sub}</div>}
+                  {!on && act && act.disclose && <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 3, lineHeight: 1.35 }}>{AFFILIATE_DISCLOSURE}</div>}
+                </div>
+                {!on && act && (
+                  <button type="button" onClick={act.run} style={{
+                    flexShrink: 0, padding: "5px 10px", borderRadius: 8, cursor: "pointer",
+                    border: `1.5px solid ${palette.ink}`, background: palette.ink, color: palette.bg,
+                    fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
+                  }}>{act.label}</button>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <button type="button" onClick={() => setState((st) => ({ ...st, hidden: true }))} style={{
+        marginTop: 10, background: "none", border: "none", padding: 0, cursor: "pointer",
+        fontSize: 12, color: palette.inkSoft, textDecoration: "underline", fontFamily: FONT_BODY,
+      }}>Hide for this winter</button>
+    </div>
   );
 }
 
@@ -10210,7 +10427,7 @@ function EggInventoryCard({ hobby, entries, sales, setModal }) {
   );
 }
 
-function EggLayersSummary({ hobby, entries, sales, update, setModal }) {
+function EggLayersSummary({ hobby, data, entries, sales, update, setModal }) {
   const today = todayStr();
   const flocks = hobby.flocks || [];
   const totalBirds = flocks.reduce((s, f) => s + (f.birdCount || 0), 0);
@@ -10237,8 +10454,12 @@ function EggLayersSummary({ hobby, entries, sales, update, setModal }) {
     );
   }
 
+  const eggCount = eggsLaid.reduce((s, e) => s + (Number(e.count) || 0), 0);
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 10, marginBottom: 14 }}>
+      {data && <EggInsightCard data={data} entries={entries} />}
+      {data && update && <WinterChecklistCard data={data} update={update} types={["egg_layers"]} />}
+
       {/* All flocks egg baskets */}
       {flocks.map(flock => (
         <FlockBasket key={flock.id} flock={flock} hobby={hobby} entries={entries} update={update} setModal={setModal} birdEmoji={birdEmoji} />
@@ -10246,6 +10467,14 @@ function EggLayersSummary({ hobby, entries, sales, update, setModal }) {
 
       {/* Eggs on hand — only renders when inventory tracking is enabled */}
       <EggInventoryCard hobby={hobby} entries={entries} sales={sales} setModal={setModal} />
+
+      {eggCount >= 24 && (
+        <button type="button" onClick={() => setModal({ type: "eggShare", hobbyId: hobby.id })} style={{
+          width: "100%", padding: "11px 14px", borderRadius: 10, cursor: "pointer",
+          border: `1.5px solid ${palette.ink}`, background: palette.yolkSoft, color: palette.ink,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
+        }}>📤 Share what our eggs cost vs. the store</button>
+      )}
 
       {/* + Add Flock button */}
       <button
@@ -12881,7 +13110,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const targetHobby = modal.hobbyIdOverride
       ? (data.hobbies.find((h) => h.id === modal.hobbyIdOverride) || hobby)
       : hobby;
-    return <LogModal hobby={targetHobby} action={modal.action} customLogId={modal.customLogId} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry} />;
+    return <LogModal hobby={targetHobby} action={modal.action} customLogId={modal.customLogId} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry}
+      onPlanted={(plantName) => {
+        const gh = data.hobbies.find((h) => h.type === "garden");
+        if (gh && matchingPackets(gh.seeds, plantName).length) setTimeout(() => setModal({ type: "seedUse", plantName }), 0);
+      }} />;
   }
   if (modal.type === "planCrop") return <PlanCropModal data={data} update={update} onClose={close} onConfirm={modal.onConfirm} />;
   if (modal.type === "planBirds") return <PlanBirdsModal update={update} onClose={close} prefillDate={modal.prefillDate} />;
@@ -12927,6 +13160,15 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
     return <GardenValueModal hobby={gh} data={data} update={update} onClose={close}
       onShare={() => setModal({ type: "gardenShare", hobbyId: gh.id })} />;
+  }
+  if (modal.type === "seedUse") {
+    const gh = data.hobbies.find((h) => h.type === "garden");
+    if (!gh) return null;
+    return <SeedUseModal hobby={gh} plantName={modal.plantName} update={update} onClose={close} />;
+  }
+  if (modal.type === "eggShare") {
+    const eh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
+    return <EggShareModal data={data} hobby={eh} update={update} user={user} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
   }
   if (modal.type === "gardenShare") {
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
@@ -20160,7 +20402,7 @@ function CloseOutCropsModal({ hobbyId, data, update, setModal, onClose }) {
 }
 
 // ============ LOG MODAL (DIFFERENT BY ACTION) ============
-function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry }) {
+function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry, onPlanted }) {
   const isEdit = !!existingEntry;
 
   // Push 4b — multi-batch support for meat chickens. Active batches live in
@@ -20688,6 +20930,8 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       return d;
     });
     onClose();
+    // Seed box follow-up for new garden plantings (see SeedUseModal).
+    if (!isEdit && action === "planted" && cleanFields.plant && onPlanted) onPlanted(String(cleanFields.plant));
   };
 
   const titles = {
