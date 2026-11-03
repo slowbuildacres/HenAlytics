@@ -12143,7 +12143,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "farmhand") return <FarmhandModal user={user} role={role} homesteadName={data.homesteadName} onClose={close} />;
   if (modal.type === "location") return <LocationModal data={data} update={update} onClose={close} />;
-  if (modal.type === "calendarSync") return <CalendarSyncModal data={data} onClose={close} />;
+  if (modal.type === "calendarSync") return <CalendarSyncModal data={data} update={update} user={user} onClose={close} />;
   if (modal.type === "photos") return <PhotosModal data={data} user={user} onClose={close} />;
   if (modal.type === "tutorial") return <TutorialModal onClose={close} />;
   if (modal.type === "whatsNew") return <WhatsNewModal onClose={close} />;
@@ -15262,45 +15262,100 @@ function FrostDateSettings({ data, update }) {
 }
 
 // ============================================================================
-// CALENDAR SYNC — .ics export with per-app instructions
+// CALENDAR SYNC — live subscription link (recommended) + one-time .ics export
+// ----------------------------------------------------------------------------
+// Live link: a private, random token stored on the homestead
+// (data.calendarFeedToken). /api/calendar-feed serves that homestead's
+// calendarEvents as iCalendar, so Google / Outlook / Apple Calendar keep
+// themselves up to date. "Turn off" deletes the token; "New link" replaces it.
 // ============================================================================
-function CalendarSyncModal({ data, onClose }) {
+const CAL_FEED_HOST = "henalytics.com";
+const newCalendarFeedToken = () => {
+  const bytes = new Uint8Array(20);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("");
+};
+
+function CalendarSyncModal({ data, update, user, onClose }) {
   const [busy, setBusy] = useState(false);
   const [msg, setMsg] = useState("");
   const [which, setWhich] = useState("google");
+  const [copied, setCopied] = useState(false);
+  const [confirmOff, setConfirmOff] = useState(false);
+  const [showFile, setShowFile] = useState(false);
   const upcoming = (data.calendarEvents || []).filter((e) => e && e.date >= todayStr()).length;
+
+  const token = typeof data.calendarFeedToken === "string" ? data.calendarFeedToken : "";
+  const httpsUrl = token ? `https://${CAL_FEED_HOST}/cal/${token}/henalytics.ics` : "";
+  const webcalUrl = token ? `webcal://${CAL_FEED_HOST}/cal/${token}/henalytics.ics` : "";
+
+  const makeLink = () => {
+    update((d) => { d.calendarFeedToken = newCalendarFeedToken(); return d; });
+    setConfirmOff(false);
+  };
+  const turnOff = () => {
+    update((d) => { delete d.calendarFeedToken; return d; });
+    setConfirmOff(false);
+  };
+  const copy = async () => {
+    let ok = false;
+    try { await navigator.clipboard.writeText(httpsUrl); ok = true; } catch (_) {
+      try {
+        const ta = document.createElement("textarea");
+        ta.value = httpsUrl; ta.style.position = "fixed"; ta.style.opacity = "0";
+        document.body.appendChild(ta); ta.select();
+        ok = document.execCommand("copy");
+        document.body.removeChild(ta);
+      } catch (__) {}
+    }
+    if (ok) { setCopied(true); setTimeout(() => setCopied(false), 2000); }
+  };
+
+  const openIn = (k) => {
+    if (k === "google") openExternalUrl(`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(webcalUrl)}`);
+    if (k === "outlook") openExternalUrl(`https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(httpsUrl)}&name=${encodeURIComponent("Henalytics")}`);
+    if (k === "apple") { try { window.location.href = webcalUrl; } catch (_) {} }
+  };
 
   const go = async () => {
     setBusy(true); setMsg("");
     try {
       const r = await exportCalendarICS(data);
       if (r.cancelled) setMsg("");
-      else setMsg(`Saved ${r.count} event${r.count === 1 ? "" : "s"}. Now follow the steps below.`);
+      else setMsg(`Saved ${r.count} event${r.count === 1 ? "" : "s"}. Import it into your calendar app.`);
     } catch (e) {
       setMsg("Couldn't create the file. Try again.");
     }
     setBusy(false);
   };
 
-  const steps = {
+  const liveSteps = {
     google: [
-      "Tap the button above and save the file.",
-      "On a computer, open calendar.google.com → ⚙️ Settings → Import & export.",
-      "Choose the file, pick which calendar it goes in, then Import.",
-      "Tip: make a separate \"Homestead\" calendar first so you can color it or hide it.",
+      "Tap \"Open in Google Calendar\" and choose Add. (Works best on a computer; on a phone, the Google Calendar app picks it up after it syncs.)",
+      "No luck? On a computer go to calendar.google.com → \"Other calendars\" + → From URL, paste the link, then Add calendar.",
+      "Google checks for changes every several hours, so new events can take a while to appear.",
     ],
     outlook: [
-      "Tap the button above and save the file.",
-      "Outlook on the web: Calendar → Add calendar → Upload from file.",
-      "Outlook desktop: File → Open & Export → Import/Export → iCalendar (.ics).",
-      "On a phone, opening the file from email or Files also works.",
+      "Tap \"Open in Outlook\" and choose Import / Subscribe.",
+      "Work or school Outlook: Calendar → Add calendar → Subscribe from web, paste the link.",
+      "Outlook desktop: Home → Add Calendar → From Internet, paste the link.",
     ],
     apple: [
-      "iPhone/iPad: tap the button, then choose Calendar in the share sheet (or save to Files and tap it). Tap \"Add All\".",
-      "Mac: double-click the downloaded file — Calendar opens and asks which calendar to add it to.",
-      "Importing again later updates the same events instead of doubling them.",
+      "iPhone/iPad: tap \"Open in Apple Calendar\" and choose Subscribe.",
+      "If nothing happens: Settings → Apps → Calendar → Calendar Accounts → Add Account → Other → Add Subscribed Calendar, paste the link.",
+      "Mac: Calendar → File → New Calendar Subscription, paste the link.",
     ],
   };
+  const openLabel = { google: "Open in Google Calendar", outlook: "Open in Outlook", apple: "Open in Apple Calendar" };
+
+  const tabBtn = (k, label) => (
+    <button key={k} type="button" onClick={() => setWhich(k)} style={{
+      flex: 1, padding: "8px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: "inherit",
+      border: `1.5px solid ${which === k ? palette.ink : palette.line}`,
+      background: which === k ? palette.ink : palette.bg,
+      color: which === k ? palette.bg : palette.ink,
+    }}>{label}</button>
+  );
 
   return (
     <Modal open onClose={onClose} title="Sync with your calendar">
@@ -15309,30 +15364,77 @@ function CalendarSyncModal({ data, onClose }) {
         fontSize: 13, color: palette.ink, marginBottom: 14, lineHeight: 1.5,
         border: `1.5px solid ${palette.line}`,
       }}>
-        Exports your Henalytics calendar ({upcoming} upcoming, plus the past year) as a calendar file that Google, Outlook and Apple Calendar all accept. Each event gets an 8am reminder.
+        Get a private link that Google, Outlook or Apple Calendar subscribe to. Anything you add in Henalytics ({upcoming} upcoming right now) shows up there on its own, with an 8am reminder.
       </div>
 
-      <Btn variant="primary" onClick={go} disabled={busy} style={{ width: "100%", marginBottom: 8 }}>
-        {busy ? "Preparing…" : "📅 Export calendar file"}
-      </Btn>
-      {msg && <div style={{ fontSize: 12, color: palette.leaf, marginBottom: 10 }}>{msg}</div>}
+      {!user ? (
+        <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
+          Sign in to get a live link — it needs your homestead saved in the cloud. You can still save a one-time calendar file below.
+        </div>
+      ) : !token ? (
+        <Btn variant="primary" onClick={makeLink} style={{ width: "100%", marginBottom: 14 }}>
+          🔗 Create my live calendar link
+        </Btn>
+      ) : (
+        <>
+          <div style={{
+            padding: 10, background: palette.card, border: `1.5px solid ${palette.ink}`,
+            borderRadius: 8, marginBottom: 8, fontSize: 12, color: palette.ink,
+            wordBreak: "break-all", fontFamily: "ui-monospace, Menlo, monospace",
+          }}>
+            {httpsUrl}
+          </div>
+          <div style={{ display: "flex", gap: 8, marginBottom: 12 }}>
+            <Btn variant="ghost" small onClick={copy} style={{ flex: 1 }}>{copied ? "Copied ✓" : "📋 Copy link"}</Btn>
+          </div>
 
-      <div style={{ display: "flex", gap: 6, margin: "12px 0 10px" }}>
-        {[["google", "Google"], ["outlook", "Outlook"], ["apple", "Apple"]].map(([k, label]) => (
-          <button key={k} type="button" onClick={() => setWhich(k)} style={{
-            flex: 1, padding: "8px 6px", borderRadius: 6, cursor: "pointer", fontSize: 12, fontFamily: "inherit",
-            border: `1.5px solid ${which === k ? palette.ink : palette.line}`,
-            background: which === k ? palette.ink : palette.bg,
-            color: which === k ? palette.bg : palette.ink,
-          }}>{label}</button>
-        ))}
-      </div>
-      <ol style={{ margin: 0, paddingLeft: 20, fontSize: 13, color: palette.ink, lineHeight: 1.6 }}>
-        {steps[which].map((t, i) => <li key={i} style={{ marginBottom: 4 }}>{t}</li>)}
-      </ol>
+          <div style={{ display: "flex", gap: 6, marginBottom: 10 }}>
+            {tabBtn("google", "Google")}{tabBtn("outlook", "Outlook")}{tabBtn("apple", "Apple")}
+          </div>
+          <Btn variant="primary" onClick={() => openIn(which)} style={{ width: "100%", marginBottom: 10 }}>
+            {openLabel[which]}
+          </Btn>
+          <ol style={{ margin: "0 0 12px", paddingLeft: 20, fontSize: 13, color: palette.ink, lineHeight: 1.6 }}>
+            {liveSteps[which].map((t, i) => <li key={i} style={{ marginBottom: 4 }}>{t}</li>)}
+          </ol>
 
-      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 14, lineHeight: 1.5 }}>
-        This is a snapshot: events you add in Henalytics later need another export. Re-exporting is safe in Apple Calendar and Outlook, which update events they already have. Google Calendar's import adds new events but won't pick up edits to ones it already imported.
+          <div style={{ fontSize: 11, color: palette.inkSoft, lineHeight: 1.5, marginBottom: 6 }}>
+            Anyone with this link can see your calendar events (not the rest of your homestead), so only paste it into your own calendar apps.
+          </div>
+          {!confirmOff ? (
+            <div style={{ display: "flex", gap: 12, fontSize: 12 }}>
+              <button type="button" onClick={makeLink} style={{ background: "none", border: "none", padding: 0, color: palette.inkSoft, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+                Make a new link
+              </button>
+              <button type="button" onClick={() => setConfirmOff(true)} style={{ background: "none", border: "none", padding: 0, color: palette.accent, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+                Turn off live link
+              </button>
+            </div>
+          ) : (
+            <div style={{ fontSize: 12, color: palette.ink, lineHeight: 1.5 }}>
+              Turn it off? Calendars subscribed to this link will stop updating.{" "}
+              <button type="button" onClick={turnOff} style={{ background: "none", border: "none", padding: 0, color: palette.accent, fontWeight: 600, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>Turn off</button>{" · "}
+              <button type="button" onClick={() => setConfirmOff(false)} style={{ background: "none", border: "none", padding: 0, color: palette.inkSoft, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>Keep it</button>
+            </div>
+          )}
+        </>
+      )}
+
+      <div style={{ borderTop: `1.5px solid ${palette.line}`, marginTop: 16, paddingTop: 12 }}>
+        <button type="button" onClick={() => setShowFile((v) => !v)} style={{ background: "none", border: "none", padding: 0, color: palette.inkSoft, textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: 12 }}>
+          {showFile ? "Hide one-time file" : "Or save a one-time calendar file instead"}
+        </button>
+        {showFile && (
+          <div style={{ marginTop: 10 }}>
+            <Btn variant="ghost" onClick={go} disabled={busy} style={{ width: "100%", marginBottom: 6 }}>
+              {busy ? "Preparing…" : "📅 Save calendar file (.ics)"}
+            </Btn>
+            {msg && <div style={{ fontSize: 12, color: palette.leaf, marginBottom: 6 }}>{msg}</div>}
+            <div style={{ fontSize: 11, color: palette.inkSoft, lineHeight: 1.5 }}>
+              A snapshot of today's calendar. It won't pick up events you add later — the live link does.
+            </div>
+          </div>
+        )}
       </div>
     </Modal>
   );

@@ -1,7 +1,8 @@
 {
   "rewrites": [
     { "source": "/privacy", "destination": "/privacy.html" },
-    { "source": "/terms", "destination": "/terms.html" }
+    { "source": "/terms", "destination": "/terms.html" },
+    { "source": "/cal/:token/henalytics.ics", "destination": "/api/calendar-feed?t=:token" }
   ],
   "crons": [
     { "path": "/api/send-chore-emails", "schedule": "0 23 * * 0" },
