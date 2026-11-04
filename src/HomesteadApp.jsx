@@ -84,7 +84,7 @@ import {
 import {
   areRemindersSupported, getReminderPermission, requestReminderPermission,
   reconcileReminders, cancelAllReminders, initReminderTapHandling,
-  reconcileNudges, reconcileFrostAlerts,
+  reconcileNudges, reconcileFrostAlerts, reconcileWrappedAlert,
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
 import { buildWidgetSnapshot, pushWidgetSnapshot } from "./widgetBridge.js";
@@ -141,6 +141,7 @@ import HorsesPage, { HorsesAnalytics } from "./Horses.jsx";
 import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
+import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import BakingPage, { BakingAnalytics } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics } from "./Canning.jsx";
 import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
@@ -2240,6 +2241,8 @@ const buildNudgeMessages = (types) => {
   return msgs;
 };
 
+// Pages that show the Homestead Wrapped banner (home + every hobby page + Year).
+const WRAPPED_BANNER_PAGES = ["home", "year", "rabbits", "bees", "incubator", "goats", "cows", "pigs", "sheep", "horses", "sourdough", "farmstand", "baking", "canning", "freeze_drying", "dehydrating", "fermentation", "tincture", "oil_infusion", "salve", "tea", "dogs", "cats", "maple_syrup", "hunting", "soap"];
 const WIDGET_ACTIONS = ["eggs", "fed", "watered", "harvested", "note", "bedding", "sold_eggs", "used_eggs"];
 // Hobbies whose quick-log tiles live on the Home page rather than their own page.
 const WIDGET_HOME_TYPES = ["garden", "egg_layers", "meat_chickens"];
@@ -2250,6 +2253,7 @@ const parseWidgetUrl = (url) => {
     // For custom schemes "henalytics://log?x" parses with host "log"; some
     // engines put it in pathname instead ("//log"). Accept both.
     const route = (u.host || u.pathname.replace(/^\/+/, "")).toLowerCase();
+    if (route === "wrapped") return { kind: "wrapped" };
     if (route === "open") {
       // Optional ?page=<hobby type or id> (frost alerts open the garden).
       const pg = u.searchParams.get("page");
@@ -3952,6 +3956,37 @@ useEffect(() => {
     return () => { cancelled = true; };
   }, [frostCropsKey, frostLat, frostLon, frostOff, frostResumeTick, todayKey]);
 
+  // ---- Homestead Wrapped (Wrapped.jsx) ---------------------------------------
+  // Banner Dec 1 – Jan 15 (or any time with ?wrapped=1), auto-open from the
+  // ?wrapped=1 link, and a phone reminder for Dec 1 at 10am once someone has
+  // a real year logged (only if reminders are already allowed; never prompts).
+  const wrappedYearNow = React.useMemo(() => activeWrappedYear(new Date(), wrappedPreviewRequested()), [todayKey]);
+  const wrappedAutoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (wrappedAutoOpenedRef.current || !data?.hobbies || !wrappedPreviewRequested()) return;
+    wrappedAutoOpenedRef.current = true;
+    setModal({ type: "wrapped" });
+  }, [data?.hobbies]); // eslint-disable-line react-hooks/exhaustive-deps
+  const wrappedYearLogs = React.useMemo(() => {
+    const y = String(new Date().getFullYear());
+    return Object.values(data?.entries || {}).reduce((n, arr) => n + (Array.isArray(arr) ? arr.filter((e) => e && String(e.date || "").startsWith(y)).length : 0), 0);
+  }, [data?.entries]);
+  const wrappedSeenThisYear = !!(data?.wrapped && data.wrapped[new Date().getFullYear()] && data.wrapped[new Date().getFullYear()].seenAt);
+  useEffect(() => {
+    (async () => {
+      if (!(await areRemindersSupported())) return;
+      const now = new Date();
+      const at = new Date(now.getFullYear(), 11, 1, 10, 0, 0);
+      if (wrappedSeenThisYear || wrappedYearLogs < 10 || now >= at) { reconcileWrappedAlert(null); return; }
+      reconcileWrappedAlert({
+        title: "🎄 Your Homestead Wrapped is here!",
+        body: `See your ${now.getFullYear()} in eggs, harvests and more, then share it with family.`,
+        schedule: { at, allowWhileIdle: true },
+        extra: { kind: "wrapped", url: "henalytics://wrapped" },
+      });
+    })();
+  }, [wrappedSeenThisYear, wrappedYearLogs >= 10, todayKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- Today widget snapshot (widgetBridge.js) ------------------------------
   // Eggs today, tonight's frost (only with tender crops in), and the next
   // calendar items, handed to the home-screen widget on every relevant change
@@ -4005,7 +4040,7 @@ useEffect(() => {
         try {
           // Daily nudges carry a henalytics:// log link — reuse the widget
           // deep-link path so it opens straight to the right log form.
-          if (extra && (extra.kind === "nudge" || extra.kind === "frost") && extra.url && parseWidgetUrl(extra.url)) {
+          if (extra && (extra.kind === "nudge" || extra.kind === "frost" || extra.kind === "wrapped") && extra.url && parseWidgetUrl(extra.url)) {
             pendingWidgetUrlRef.current = extra.url;
             setWidgetUrlTick((t) => t + 1);
             return;
@@ -4444,6 +4479,10 @@ useEffect(() => {
     if (!w) return;
     // Stop the "snap to first visible hobby" effect from overriding us.
     initialActiveHobbySetRef.current = true;
+    if (w.kind === "wrapped") {
+      setModal({ type: "wrapped" });
+      return;
+    }
     if (w.kind === "open") {
       setModal(null);
       const oh = w.hobbyId && data.hobbies.find((x) => (x.id === w.hobbyId || x.type === w.hobbyId) && !x.hidden);
@@ -5769,6 +5808,9 @@ useNativeBackButton(React.useCallback(() => {
               return d;
             })}
           />
+        )}
+        {wrappedYearNow && WRAPPED_BANNER_PAGES.includes(page) && (
+          <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
         {page === "home" && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
@@ -13175,6 +13217,10 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
     return <BragShareModal card={gardenShareCard(data, gh)} user={user} onClose={close}
       onSignIn={() => setModal({ type: "signup" })} />;
+  }
+  if (modal.type === "wrapped") {
+    const wy = modal.year || activeWrappedYear(new Date(), true);
+    return <WrappedViewer data={data} update={update} user={user} year={wy} toast={toast} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
   }
   if (modal.type === "stockEmails") {
     return <StockEmailsModal data={data} update={update} user={user} preset={modal.preset || {}} toast={toast} onClose={close} />;

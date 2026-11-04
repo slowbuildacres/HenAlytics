@@ -317,3 +317,26 @@ export async function reconcileFrostAlerts(notifications = []) {
     return { scheduled: 0, error: e?.message || String(e) };
   }
 }
+
+// ============================================================================
+// HOMESTEAD WRAPPED — one reminder on Dec 1 (Wrapped.jsx). Own id, replaced
+// on every call; pass null to clear (e.g. once Wrapped has been opened).
+// ============================================================================
+const WRAPPED_ID = 310000;
+
+export async function reconcileWrappedAlert(notification = null) {
+  const LN = isNativeApp() ? lnPlugin() : null;
+  if (!LN) return { scheduled: 0, skipped: "unsupported" };
+  try { await LN.cancel({ notifications: [{ id: WRAPPED_ID }] }); } catch (_) {}
+  if (!notification) return { scheduled: 0 };
+  const perm = await getReminderPermission();
+  if (perm !== "granted") return { scheduled: 0, skipped: perm };
+  try {
+    await LN.schedule({ notifications: [{ ...notification, id: WRAPPED_ID }] });
+    return { scheduled: 1 };
+  } catch (e) {
+    console.warn("[wrapped] schedule failed", e?.message || e);
+    return { scheduled: 0, error: e?.message || String(e) };
+  }
+}
+
