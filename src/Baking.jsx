@@ -15,6 +15,9 @@
 // ============================================================================
 
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, ExternalLink, Star } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -664,7 +667,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function BakingPage({ hobby, data, update, setModal }) {
+export default function BakingPage({ hobby, data, update, setModal, nl = null }) {
   const [editRecipe, setEditRecipe] = useState(null); // recipe obj or "new"
   const [logBake, setLogBake] = useState(false);
   const [logBakeRecipeId, setLogBakeRecipeId] = useState("");
@@ -812,6 +815,42 @@ export default function BakingPage({ hobby, data, update, setModal }) {
       return d;
     });
   };
+
+  if (nl) {
+    const made = bakes.filter((b) => b.action !== "infrastructure");
+    const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const lastMonth = made.filter((b) => (b.date || "") >= monthAgo).reduce((t, b) => t + (Number(b.qty) || 0), 0);
+    const ctx = {
+      key: "baking",
+      summary: { big: lastMonth, small: "baked in the last 30 days", line: made.length ? `${made.length} bake${made.length === 1 ? "" : "s"} logged` : "" },
+      newLabel: "Log a bake", onNew: () => { setLogBakeRecipeId(""); setLogBake(true); },
+      goingTitle: "Recipes",
+      going: activeRecipes.map((r) => ({ id: r.id, title: r.name || "Recipe", onOpen: () => setEditRecipe(r),
+        sub: [String(typeFor(r.type).label || "").replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").trim(), r.notes ? (r.notes.length > 60 ? r.notes.slice(0, 60) + "…" : r.notes) : null].filter(Boolean).join(" · "),
+        actions: [{ label: "Bake this", run: () => { setLogBakeRecipeId(r.id); setLogBake(true); } }] })),
+      shelfTitle: "Recent bakes", shelfEmpty: "No bakes yet. Log one and it shows up here.",
+      shelf: recentBakes.filter((b) => b.action !== "infrastructure").map((b) => ({ id: b.id, title: b.recipeName || "Bake",
+        sub: [b.date ? new Date(b.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "", `${b.qty || 0} ${b.unit || "items"}`, b.cost > 0 ? fmtMoney(b.cost) : null, b.rating > 0 ? `${b.rating} of 5` : null].filter(Boolean).join(" · "),
+        actions: [{ label: "Sell", run: () => setSellingBake(b) }] })),
+      extras: [
+        { key: "recipe", label: "Add a recipe", icon: NlPlus, run: () => setEditRecipe("new") },
+        { key: "pantry", label: "Pantry supplies", sub: "Flour, sugar and what's left", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Pans, mixers and tools", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        {editRecipe && <RecipeModal recipe={editRecipe === "new" ? null : editRecipe} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveRecipe} onDelete={deleteRecipe} onClose={() => setEditRecipe(null)} />}
+        {logBake && <LogBakeModal recipes={recipes} pantry={Array.isArray(data.pantry) ? data.pantry : []} presetRecipeId={logBakeRecipeId} onSave={saveBake} onClose={() => { setLogBake(false); setLogBakeRecipeId(""); }} />}
+        {sellingBake && <SellBakeModal bake={sellingBake} onSell={recordSale} onClose={() => setSellingBake(null)} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -992,6 +1031,30 @@ export default function BakingPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+
+// 3.0 Stats: bakes, items, sold, favorites.
+export function bakingStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const made = ((data.entries && data.entries.baking) || []).filter((b) => b && b.action !== "infrastructure" && inR(b.date));
+  const items = made.reduce((t, b) => t + (Number(b.qty) || 0), 0);
+  const cost = made.reduce((t, b) => t + (Number(b.cost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "baking" && inR(x.date)).reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const by = new Map(); for (const b of made) { const k = String(b.recipeName || "Bake").trim(); by.set(k, (by.get(k) || 0) + (Number(b.qty) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} made` }));
+  const facts = [];
+  if (items >= 12) facts.push({ key: "items", icon: "bread", big: String(items), line: "baked goods from our kitchen", title: `${items} baked goods`, sub: `From ${made.length} bake${made.length === 1 ? "" : "s"}.` });
+  if (rows.length > 1 && rows[0].value >= 2) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "our most-baked recipe", title: `Most baked: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Baked", value: items, sub: `${made.length} bake${made.length === 1 ? "" : "s"}` },
+      ...(revenue ? [{ label: "Sold", value: `$${revenue.toFixed(2)}`, sub: "Baked goods sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: items ? `$${(cost / items).toFixed(2)} each` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🥧", kicker: "Our kitchen",
+  };
+}
 
 export function BakingAnalytics({ hobby, entries = [], sales = [], spouseMode = false, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const bakingSales = useMemo(() => sales.filter(s => s.hobbyType === "baking"), [sales]);

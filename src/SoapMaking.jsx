@@ -16,6 +16,9 @@
 // ============================================================================
 
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, DollarSign as NlDollar, Gift as NlGift } from "lucide-react";
 import { X, Trash2 } from "lucide-react";
 import { fmtMoney } from "./units.js";
 
@@ -299,7 +302,7 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-export default function SoapMakingPage({ hobby, data, update, setModal }) {
+export default function SoapMakingPage({ hobby, data, update, setModal, nl = null }) {
   const [batchModal, setBatchModal] = useState({ open: false, batch: null });
   const [moveModal, setMoveModal] = useState({ open: false, mode: "sell", batchId: null });
   if (!hobby) return null;
@@ -396,6 +399,44 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
     );
   };
 
+  if (nl) {
+    const shortDate = (x) => (x ? fmtDate(x) : "");
+    const row = (b) => {
+      const st = soapBatchStats(b, sales);
+      return {
+        id: b.id, title: b.name || "Soap", left: st.remaining, unit: "bars", onOpen: () => setBatchModal({ open: true, batch: b }),
+        sub: [`${st.remaining} of ${st.bars} bars`, b.madeDate ? `made ${shortDate(b.madeDate)}` : null, st.costPerBar ? `$${st.costPerBar.toFixed(2)} a bar` : null].filter(Boolean).join(" · "),
+        pct: !st.cured && b.madeDate && b.cureWeeks ? (1 - st.daysLeft / (b.cureWeeks * 7)) * 100 : null,
+        badge: st.cured ? null : { tone: "ready", text: `Ready ${shortDate(b.expectedCureDate)}` },
+        actions: st.remaining > 0 ? [{ label: "Sell", run: () => setMoveModal({ open: true, mode: "sell", batchId: b.id }) }, { label: "Use or gift", run: () => setMoveModal({ open: true, mode: "use", batchId: b.id }) }] : [{ label: "Archive", run: () => setArchived(b.id, true) }],
+      };
+    };
+    const ctx = {
+      key: "soap",
+      summary: { big: readyBars, small: `bar${readyBars === 1 ? "" : "s"} ready to use or sell`, line: [curingBars ? `${curingBars} still curing` : null, yearRevenue ? `$${yearRevenue.toFixed(2)} sold this year` : null].filter(Boolean).join(" · ") },
+      newLabel: "Make a batch", onNew: () => setBatchModal({ open: true, batch: null }),
+      goingTitle: "Curing", going: curing.map(row),
+      shelfTitle: "Ready", shelfEmpty: "No cured bars yet.",
+      shelf: active.filter((b) => soapBatchStats(b, sales).cured).map(row),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Soap", sub: `${b.bars || 0} bars · made ${shortDate(b.madeDate)} · tap to restore`, onOpen: () => setArchived(b.id, false) })),
+      pastTitle: "Archived batches",
+      extras: [
+        { key: "sell", label: "Sell bars", icon: NlDollar, run: () => setMoveModal({ open: true, mode: "sell", batchId: null }) },
+        { key: "use", label: "Use or gift bars", icon: NlGift, run: () => setMoveModal({ open: true, mode: "use", batchId: null }) },
+        { key: "expense", label: "Expense", sub: "Lye, oils, molds", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {batchModal.open && <BatchModal batch={batchModal.batch} onSave={saveBatch} onDelete={deleteBatch} onClose={() => setBatchModal({ open: false, batch: null })} />}
+        {moveModal.open && <MoveBarsModal mode={moveModal.mode} batches={batches} sales={sales} customers={data.customers || []} presetBatchId={moveModal.batchId} onSale={addSale} onUse={addUse} onClose={() => setMoveModal({ open: false, mode: "sell", batchId: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
+
   return (
     <div>
       {batchModal.open && <BatchModal batch={batchModal.batch} onSave={saveBatch} onDelete={deleteBatch} onClose={() => setBatchModal({ open: false, batch: null })} />}
@@ -443,6 +484,33 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
 // ---------------------------------------------------------------------------
 // Analytics — filters by batch madeDate and sale date within dateRange.
 // ---------------------------------------------------------------------------
+// 3.0 Stats: bars made, sold, used, revenue, by batch.
+export function soapStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const sales = data.sales || [];
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.madeDate));
+  const st = bs.map((b) => ({ b, s: soapBatchStats(b, sales) }));
+  const bars = st.reduce((t, x) => t + x.s.bars, 0);
+  const sold = st.reduce((t, x) => t + x.s.sold, 0);
+  const revenue = sales.filter((x) => x && x.hobbyType === "soap" && inR(x.date)).reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const cost = st.reduce((t, x) => t + x.s.cost, 0);
+  const gifted = st.reduce((t, x) => t + x.s.gifted, 0);
+  const rows = st.map(({ b, s }) => ({ key: b.id, name: b.name || "Soap", value: s.bars, label: `${s.bars} bars` })).sort((a, b) => b.value - a.value).slice(0, 8);
+  const facts = [];
+  if (bars >= 10) facts.push({ key: "bars", icon: "spark", big: String(bars), line: "bars of soap made by hand", title: `${bars} bars of soap`, sub: `That's about ${Math.round(bars * 30)} showers.` });
+  if (gifted >= 3) facts.push({ key: "gifts", icon: "spark", big: String(gifted), line: "bars given as gifts", title: `${gifted} bars given away`, sub: "Lucky friends." });
+  return {
+    cards: [
+      { label: "Bars made", value: bars, sub: `${bs.length} batch${bs.length === 1 ? "" : "es"}` },
+      { label: "Sold", value: revenue ? `$${revenue.toFixed(2)}` : sold, sub: `${sold} bars` },
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: bars ? `$${(cost / bars).toFixed(2)} a bar` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "Your batches", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🧼", kicker: "Our soap",
+  };
+}
+
 export function SoapMakingAnalytics({ hobby, sales = [], dateRange = null }) {
   if (!hobby) return null;
   const inRange = (d) => {

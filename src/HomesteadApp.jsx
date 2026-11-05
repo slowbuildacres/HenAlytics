@@ -172,13 +172,13 @@ import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
 import SheepPage, { SheepAnalytics, SheepNewLook } from "./Sheep.jsx";
 import HorsesPage, { HorsesAnalytics, HorsesNewLook } from "./Horses.jsx";
 import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
-import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
+import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
 import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
-import BakingPage, { BakingAnalytics } from "./Baking.jsx";
+import BakingPage, { BakingAnalytics, bakingStats } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics, canningStats } from "./Canning.jsx";
 import { PantryStatsPage } from "./newlook/pantry/PantryScreens.jsx";
 import FreezeDryingPage, { FreezeDryingAnalytics, freezeDryingStats } from "./FreezeDrying.jsx";
@@ -198,7 +198,7 @@ import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
 import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
 import HuntingPage, { HuntingAnalytics, huntingTotals } from "./Hunting.jsx";
-import SoapMakingPage, { SoapMakingAnalytics, soapBatchStats } from "./SoapMaking.jsx";
+import SoapMakingPage, { SoapMakingAnalytics, soapBatchStats, soapStats } from "./SoapMaking.jsx";
 import {
   initIap, identifyIapUser, purchaseProduct, restorePurchases,
   hasActiveSubscription, openManageSubscriptions, TIER_TO_IAP_PRODUCT,
@@ -5188,6 +5188,9 @@ useNativeBackButton(React.useCallback(() => {
     oil_infusion: { Page: OilInfusionPage, stats: oilInfusionStats, shelf: "Shelf", all: "All the numbers: batches, bottles, sales" },
     salve: { Page: SalvePage, stats: salveStats, shelf: "Shelf", all: "All the numbers: batches, tins, sales" },
     tea: { Page: TeaPage, stats: teaStats, shelf: "Blends", all: "All the numbers: blends, sales" },
+    sourdough: { Page: SourdoughPage, stats: sourdoughStats, shelf: "Bakes", all: "All the numbers: bakes, starters, sales", analytics: () => <SourdoughAnalytics hobby={hobby} sales={data.sales || []} entries={data.entries[hobby.id] || []} /> },
+    baking: { Page: BakingPage, stats: bakingStats, shelf: "Bakes", all: "All the numbers: bakes, recipes, sales", analytics: () => <BakingAnalytics hobby={hobby} entries={data.entries.baking || []} sales={data.sales || []} spouseMode={data.spouseMode} /> },
+    soap: { Page: SoapMakingPage, stats: soapStats, shelf: "Bars", all: "All the numbers: batches, sales, costs", analytics: () => <SoapMakingAnalytics hobby={hobby} sales={data.sales || []} /> },
   };
   const nlPantryCfg = newLook && hobby ? NL_PANTRY[hobby.type] : null;
   const nlPantryGroup = hobby && PRESERVING_TYPES.includes(hobby.type) ? PRESERVING_TYPES : hobby && HERBAL_TYPES.includes(hobby.type) ? HERBAL_TYPES : null;
@@ -6228,7 +6231,7 @@ useNativeBackButton(React.useCallback(() => {
             <HuntingAnalytics hobby={data.hobbies.find(h=>h.id==="hunting")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "soap" && (
+        {page === "analytics" && activeHobby === "soap" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="soap")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SoapMakingAnalytics hobby={data.hobbies.find(h=>h.id==="soap")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
@@ -6243,7 +6246,7 @@ useNativeBackButton(React.useCallback(() => {
             <HorsesAnalytics hobby={data.hobbies.find(h=>h.id==="horses")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "sourdough" && (
+        {page === "analytics" && activeHobby === "sourdough" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} entries={data.entries?.["sourdough"] || []} />
           </AnalyticsShareWrapper>
@@ -6253,7 +6256,7 @@ useNativeBackButton(React.useCallback(() => {
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "baking" && (
+        {page === "analytics" && activeHobby === "baking" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
@@ -6466,7 +6469,7 @@ useNativeBackButton(React.useCallback(() => {
         {page === "farmstand" && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "baking" && (
+        {page === "baking" && !nlPantryCfg && (
           <BakingPage hobby={data.hobbies.find(h=>h.id==="baking")} data={data} update={update} setModal={setModal} />
         )}
         {page === "canning" && !nlPantryCfg && (
@@ -6531,7 +6534,7 @@ useNativeBackButton(React.useCallback(() => {
         {page === "hunting" && (
           <HuntingPage hobby={data.hobbies.find(h=>h.id==="hunting")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "soap" && (
+        {page === "soap" && !nlPantryCfg && (
           <SoapMakingPage hobby={data.hobbies.find(h=>h.id==="soap")} data={data} update={update} setModal={setModal} />
         )}
         {page === "maple_syrup" && (
@@ -6560,7 +6563,7 @@ useNativeBackButton(React.useCallback(() => {
             <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "sourdough" && (
+        {page === "sourdough" && !nlPantryCfg && (
           <SourdoughPage hobby={data.hobbies.find(h=>h.id==="sourdough")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (

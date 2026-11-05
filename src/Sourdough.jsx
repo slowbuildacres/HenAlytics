@@ -16,6 +16,10 @@
 // ============================================================================
 
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, Trash2, ChevronDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -354,7 +358,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function SourdoughPage({ hobby, data, update, setModal }) {
+export default function SourdoughPage({ hobby, data, update, setModal, nl = null }) {
   const [starterModal, setStarterModal] = useState({ open: false, starter: null });
   const [bakeModal, setBakeModal] = useState({ open: false, bake: null });
   const [infraModal, setInfraModal] = useState({ open: false, entry: null });
@@ -474,6 +478,48 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
       // Don't auto-create — leave it up to user. Empty state will guide them.
     }
   }, [hobby]);
+
+  if (nl) {
+    const fedWithUndo = (st) => {
+      const prev = st.lastFedAt || null;
+      feedStarter(st.id);
+      showUndo(`Fed ${st.name || "starter"}`, () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.starters || []).find((x) => x.id === st.id); if (t) t.lastFedAt = prev; return d; }));
+    };
+    const ctx = {
+      key: "sourdough",
+      summary: { big: last30dLoaves, small: `loa${last30dLoaves === 1 ? "f" : "ves"} in the last 30 days`, line: totalBakes ? `${totalLoaves} loaves from ${totalBakes} bake${totalBakes === 1 ? "" : "s"} so far` : "" },
+      newLabel: "Log a bake", onNew: () => setBakeModal({ open: true, bake: null }),
+      goingTitle: "Starters",
+      going: liveStarters.map((st) => {
+        const days = daysSince(st.lastFedAt);
+        return { id: st.id, title: st.name || "Starter", onOpen: () => setStarterModal({ open: true, starter: st }),
+          sub: [days === null ? "Not fed yet" : days === 0 ? "Fed today" : days === 1 ? "Fed yesterday" : `Fed ${days} days ago`, st.flour || st.flourType || null, st.hydration ? `${st.hydration}% hydration` : null].filter(Boolean).join(" · "),
+          badge: days != null && days >= 3 ? { tone: "alert", text: "Hungry" } : null,
+          actions: [{ label: "Fed it", primary: days == null || days >= 1, run: () => fedWithUndo(st) }] };
+      }),
+      shelfTitle: "Recent bakes", shelfEmpty: "No bakes yet. Log your next loaf.",
+      shelf: bakes.map((b) => ({ id: b.id, title: b.recipe || "Bake", onOpen: () => setBakeModal({ open: true, bake: b }),
+        sub: [fmtDate(b.date), `${Number(b.loafCount) || 0} loa${Number(b.loafCount) === 1 ? "f" : "ves"}`, b.crumbRating ? `crumb ${b.crumbRating} of 5` : null, b.costPerLoaf ? `$${Number(b.costPerLoaf).toFixed(2)} a loaf` : null].filter(Boolean).join(" · ") })),
+      past: archivedStarters.map((st) => ({ id: st.id, title: st.name || "Starter", sub: "Retired starter", onOpen: () => setStarterModal({ open: true, starter: st }) })),
+      pastTitle: "Retired starters",
+      extras: [
+        { key: "starter", label: "Add a starter", icon: NlPlus, run: () => setStarterModal({ open: true, starter: null }) },
+        { key: "pantry", label: "Pantry supplies", sub: "Flour, salt and what's left", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Dutch ovens, bannetons, tools", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {starterModal.open && <StarterModal starter={starterModal.starter} onClose={() => setStarterModal({ open: false, starter: null })} onSave={saveStarter} onDelete={deleteStarter} />}
+        {bakeModal.open && <BakeModal bake={bakeModal.bake} starters={starters} pantry={Array.isArray(data.pantry) ? data.pantry : []} onClose={() => setBakeModal({ open: false, bake: null })} onSave={saveBake} onDelete={deleteBake} />}
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -650,6 +696,31 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // SOURDOUGH ANALYTICS
 // ============================================================================
+// 3.0 Stats: bakes, loaves, best rated, sold.
+export function sourdoughStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bakes = (hobby && Array.isArray(hobby.bakes) ? hobby.bakes : []).filter((b) => inR(b.date));
+  const loaves = bakes.reduce((t, b) => t + (Number(b.loafCount) || 0), 0);
+  const cost = bakes.reduce((t, b) => t + (Number(b.costPerLoaf) || 0) * (Number(b.loafCount) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "sourdough" && inR(x.date)).reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const rated = bakes.filter((b) => Number(b.crumbRating) > 0);
+  const by = new Map(); for (const b of bakes) { const k = String(b.recipe || "Bake").trim(); by.set(k, (by.get(k) || 0) + (Number(b.loafCount) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} loa${v === 1 ? "f" : "ves"}` }));
+  const facts = [];
+  if (loaves >= 4) facts.push({ key: "loaves", icon: "bread", big: String(loaves), line: "loaves of sourdough baked", title: `${loaves} loaves baked`, sub: `About ${Math.round(loaves * 12)} slices.` });
+  if (rated.length >= 3) facts.push({ key: "crumb", icon: "trophy", big: `${(rated.reduce((t, b) => t + Number(b.crumbRating), 0) / rated.length).toFixed(1)} of 5`, line: "our average crumb", title: `Average crumb: ${(rated.reduce((t, b) => t + Number(b.crumbRating), 0) / rated.length).toFixed(1)} of 5`, sub: `Across ${rated.length} rated bakes.` });
+  return {
+    cards: [
+      { label: "Loaves", value: loaves, sub: `${bakes.length} bake${bakes.length === 1 ? "" : "s"}` },
+      ...(revenue ? [{ label: "Sold", value: `$${revenue.toFixed(2)}`, sub: "Bread sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: loaves ? `$${(cost / loaves).toFixed(2)} a loaf` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🍞", kicker: "Our kitchen",
+  };
+}
+
 export function SourdoughAnalytics({ hobby, sales = [], entries = [], /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   if (!hobby) {
     return <div style={{ padding:40,textAlign:"center",color:palette.inkSoft }}>Loading…</div>;
