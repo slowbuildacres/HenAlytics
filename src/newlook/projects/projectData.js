@@ -97,13 +97,18 @@ export function inventory(data, p) {
   if (!h) return { count: 0, word: "", rows: [] };
   if (k.hobbyType === "egg_layers") {
     const flocks = (h.flocks || []).filter((f) => f && !f.archived);
-    const rows = flocks.map((f) => ({ name: f.name || "Flock", detail: `${Number(f.birdCount) || 0} ${f.birdType ? String(f.birdType).toLowerCase() : "birds"}${f.breed ? ` · ${f.breed}` : ""}` }));
+    const PLURAL = { Chicken: "chickens", Duck: "ducks", Turkey: "turkeys", Quail: "quail", Goose: "geese", Guinea: "guineas", Peafowl: "peafowl" };
+    const SINGULAR = { Chicken: "chicken", Duck: "duck", Turkey: "turkey", Quail: "quail", Goose: "goose", Guinea: "guinea", Peafowl: "peafowl" };
+    const word = (t, n) => (n === 1 ? SINGULAR[t] || "bird" : PLURAL[t] || "birds");
+    const rows = flocks.map((f) => { const n = Number(f.birdCount) || 0; return { name: f.name || "Flock", detail: `${n} ${word(f.birdType, n)}${f.breed ? ` · ${f.breed}` : ""}` }; });
     return { count: flocks.reduce((t, f) => t + (Number(f.birdCount) || 0), 0), word: "birds", rows };
   }
   if (k.hobbyType === "meat_chickens") {
-    const b = h.currentBatch;
-    const rows = [b, ...(h.archivedBatches || [])].filter((x) => x && inR(x.startDate, p)).map((x) => ({ name: x.name || `Batch started ${x.startDate}`, detail: `${Number(x.startCount) || 0} ${x.breed || "birds"}` }));
-    return { count: rows.length ? [b, ...(h.archivedBatches || [])].filter((x) => x && inR(x.startDate, p)).reduce((t, x) => t + (Number(x.startCount) || 0), 0) : 0, word: "birds", rows };
+    const seen = new Set();
+    const batches = [...(h.currentBatches || []), h.currentBatch, ...(h.archivedBatches || [])]
+      .filter((x) => x && inR(x.startDate, p) && !seen.has(x.id || x.startDate) && seen.add(x.id || x.startDate));
+    const rows = batches.map((x) => ({ name: x.name || `Batch started ${x.startDate}`, detail: `${Number(x.startCount) || 0} ${x.birdType ? String(x.birdType).toLowerCase() : "birds"}${x.breed ? ` · ${x.breed}` : ""}` }));
+    return { count: batches.reduce((t, x) => t + (Number(x.startCount) || 0), 0), word: "birds", rows };
   }
   if (k.hobbyType === "garden") {
     const s = h.currentSeason;
@@ -175,6 +180,12 @@ export function healthLogs(data, p) {
     .map((e) => ({ date: e.date, what: [e.animalName, e.treatment || e.medication || e.condition || e.reason || e.note || e.notes || String(e.action).replace(/_/g, " ")].filter(Boolean).join(": ") }));
   for (const c of (h.careLogs || h.care || [])) {
     if (c && inR(c.date, p)) rows.push({ date: c.date, what: [c.kind || c.type, c.note || c.notes].filter(Boolean).join(": ") });
+  }
+  // Horses keep vet, deworming and farrier visits on the hobby.
+  for (const [key, label] of [["vet", "Vet"], ["deworming", "Dewormed"], ["farrier", "Farrier"]]) {
+    for (const c of Array.isArray(h[key]) ? h[key] : []) {
+      if (c && inR(c.date, p)) rows.push({ date: c.date, what: [label, c.reason || c.product || c.work || c.notes || c.note].filter(Boolean).join(": ") });
+    }
   }
   return rows.sort((a, b) => a.date.localeCompare(b.date));
 }
