@@ -1,4 +1,8 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
+// NEW_LOOK (3.0): the rebuilt bee screens reuse this file's forms.
+import { BeeToday, BeeHives, BeeHive, HivePicker } from "./newlook/bees/BeeScreens.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { X, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -987,6 +991,81 @@ export default function BeesPage({ hobby, data, update, setModal }) {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Hives / one hive with this file's own forms
+// (HiveModal, LogEntryModal). A log started without a hive asks which hive
+// first. New logs and a deleted hive show "Saved · Undo" / "Deleted · Undo".
+// ============================================================================
+const BEE_UNDO = { inspect: "inspection", harvest: "harvest", varroa: "mite test", feed: "feeding", treatment: "treatment", split: "split", swarm: "swarm", winter_prep: "winter prep", spring_buildup: "spring check", infrastructure: "equipment", death: "colony loss", note: "note" };
+
+export function BeesNewLook({ hobby, data, update, setModal, tab, onTab, onOpenJournal }) {
+  const hives = hobby.hives || [];
+  const entries = data.entries[hobby.id] || [];
+  const [hiveId, setHiveId] = useState(null);
+  const [form, setForm] = useState(null);   // { kind: "log"|"edit"|"hive", action, hiveId, entry, hive }
+  const [pick, setPick] = useState(null);   // action waiting for a hive
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setHiveId(null); }, [tab]);
+
+  const startLog = (action, id) => {
+    const target = id || (hives.filter((h) => !entries.some((e) => e.hiveId === h.id && e.action === "death")).length === 1 ? hives.find((h) => !entries.some((e) => e.hiveId === h.id && e.action === "death")).id : null);
+    if (!target) { setPick(action); return; }
+    setUndoCheck(null);
+    setForm({ kind: "log", action, hiveId: target, before: new Set(entries.map((e) => e.id)) });
+  };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    setUndoCheck(null);
+    if (!added.length) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const hn = (hives.find((h) => h.id === e.hiveId) || {}).name;
+    showUndo(`Saved ${BEE_UNDO[e.action] || "log"}${hn ? ` for ${hn}` : ""}`, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveHive = (hive) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; if (!h.hives) h.hives = []; const i = h.hives.findIndex((x) => x.id === hive.id); if (i >= 0) h.hives[i] = hive; else h.hives.push(hive); return d; });
+  const deleteHive = (hive) => {
+    const removed = entries.filter((e) => e.hiveId === hive.id);
+    const idx = hives.findIndex((x) => x.id === hive.id);
+    update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; h.hives = (h.hives || []).filter((x) => x.id !== hive.id); d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.hiveId !== hive.id); return d; });
+    setHiveId(null);
+    showUndo(`Deleted ${hive.name}`, () => update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;
+      h.hives = h.hives || []; h.hives.splice(Math.max(0, idx), 0, hive);
+      d.entries[hobby.id] = [...(d.entries[hobby.id] || []), ...removed];
+      return d;
+    }));
+  };
+  const act = {
+    log: startLog,
+    addHive: () => setForm({ kind: "hive", hive: null }),
+    editHive: (hive) => setForm({ kind: "hive", hive }),
+    openHive: (id) => { setHiveId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} },
+    editEntry: (entry, id) => setForm({ kind: "edit", entry, action: entry.action, hiveId: id }),
+    deleteHive,
+  };
+  useHobbyRequest(hobby.id, (a) => { if (a === "add") act.addHive(); else startLog(a); });
+
+  const f = form || {};
+  const formHive = hives.find((h) => h.id === f.hiveId);
+  const hive = hiveId ? hives.find((h) => h.id === hiveId) : null;
+  return (
+    <div>
+      {f.kind === "hive" && <HiveModal hive={f.hive} onSave={saveHive} onClose={() => setForm(null)} />}
+      {f.kind === "log" && formHive && <LogEntryModal hive={formHive} action={f.action} onSave={(entry) => update((d) => { if (!d.entries[hobby.id]) d.entries[hobby.id] = []; d.entries[hobby.id].push(entry); return d; })} onClose={closeForm} />}
+      {f.kind === "edit" && formHive && <LogEntryModal hive={formHive} action={f.action} existingEntry={f.entry} onSave={(entry) => update((d) => { const i = (d.entries[hobby.id] || []).findIndex((e) => e.id === entry.id); if (i !== -1) d.entries[hobby.id][i] = entry; return d; })} onClose={() => setForm(null)} />}
+      <HivePicker open={!!pick} onClose={() => setPick(null)} hives={hives} entries={entries} action={pick} onPick={(id) => { const a = pick; setPick(null); startLog(a, id); }} />
+      {tab === "animals" ? (
+        hive ? <BeeHive hobby={hobby} data={data} hive={hive} act={act} onBack={() => setHiveId(null)} /> : <BeeHives hobby={hobby} data={data} act={act} />
+      ) : (
+        <BeeToday hobby={hobby} data={data} setModal={setModal} act={act} onOpenJournal={onOpenJournal} />
       )}
     </div>
   );

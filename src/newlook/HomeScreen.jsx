@@ -19,6 +19,7 @@ import { SPECIES, milkOz, upcomingBirths, milkText } from "./livestock/livestock
 import { batchAlive, batchAgeDays } from "../meatBatches.js";
 import { upcomingKindles } from "./rabbits/rabbitData.js";
 import { farrierDue, rideTotals } from "./horses/horseData.js";
+import { hiveFacts } from "./bees/BeeScreens.jsx";
 import { isoDay } from "./eggs/eggFacts.js";
 
 const DAY = 86400000;
@@ -72,6 +73,16 @@ export function tileStat(entry, data, today) {
     if (due) return { big: null, small: `${due.horse.name}'s feet ${due.left < 0 ? "are overdue" : "are due this week"}` };
     const n = rideTotals(entry.hobby, isoDay(new Date(parseDay(today).getTime() - 6 * 86400000)), today).count;
     if (n) return { big: String(n), small: n === 1 ? "ride this week" : "rides this week" };
+  }
+  if (entry.type === "bees") {
+    const hives = entry.hobby.hives || [];
+    const f = hives.map((h) => hiveFacts(h, ents, today));
+    const mites = f.filter((x) => x.highMites).length;
+    const due = f.filter((x) => x.inspectDue).length;
+    if (mites) return { big: null, small: `${mites} hive${mites === 1 ? "" : "s"} with high mites` };
+    if (due) return { big: null, small: `${due} hive${due === 1 ? "" : "s"} due a look` };
+    const lbs = ents.filter((e) => e && e.action === "harvest" && String(e.date).startsWith(today.slice(0, 4))).reduce((s, e) => s + (Number(e.lbs) || 0), 0);
+    if (lbs) return { big: `${Math.round(lbs)} lbs`, small: "honey this year" };
   }
   if (entry.type === "rabbits") {
     const next = upcomingKindles(entry.hobby, ents, today)[0];

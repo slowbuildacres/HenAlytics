@@ -156,7 +156,8 @@ import {
   pantryItemDensity, pantryItemCostPerPurchaseUnit, pantryItemCostForUsage,
   computeRecipeCost,
 } from "./pantry.js";
-import BeesPage, { BeesAnalytics } from "./Bees.jsx";
+import BeesPage, { BeesAnalytics, BeesNewLook } from "./Bees.jsx";
+import { BeeStats } from "./newlook/bees/BeeScreens.jsx";
 import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 import GoatsPage, { GoatsAnalytics, GoatsNewLook } from "./Goats.jsx";
 import { LivestockStats } from "./newlook/livestock/LivestockScreens.jsx";
@@ -5172,6 +5173,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlPigs = !!(newLook && hobby && hobby.type === "pigs");
   const nlSheep = !!(newLook && hobby && hobby.type === "sheep");
   const nlHorses = !!(newLook && hobby && hobby.type === "horses");
+  const nlBees = !!(newLook && hobby && hobby.type === "bees");
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -6161,7 +6163,7 @@ useNativeBackButton(React.useCallback(() => {
             <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "bees" && (
+        {page === "analytics" && activeHobby === "bees" && !nlBees && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
@@ -6294,7 +6296,23 @@ useNativeBackButton(React.useCallback(() => {
         {page === "games" && (
           <GamesHubPage data={data} user={user} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
         )}
-        {page === "bees" && (
+        {newLook && nlBees && (page === "bees" || page === "analytics") && (
+          <HobbyTabs label="Bee sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Hives" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("bees"); } }} />
+        )}
+        {page === "bees" && nlBees && (
+          <BeesNewLook hobby={hobby} data={data} update={update} setModal={setModal} tab={nlHobbyTab} onTab={setNlHobbyTab} onOpenJournal={() => setPage("journal")} />
+        )}
+        {page === "analytics" && nlBees && (
+          <BeeStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <BeesAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} spouseMode={data.spouseMode} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "bees" && !nlBees && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
         )}
         {page === "incubator" && (

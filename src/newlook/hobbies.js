@@ -144,6 +144,14 @@ export const LOG_ACTIONS = {
     { key: "deworming", label: "Dewormer", icon: "pill", onPage: true },
     { key: "breeding", label: "Breeding", icon: "heart", onPage: true },
   ],
+  bees: [
+    { key: "inspect", label: "Inspect", icon: "inspect", primary: true, onPage: true },
+    { key: "harvest", label: "Harvest", icon: "harvest", onPage: true },
+    { key: "varroa", label: "Mite test", icon: "bug", onPage: true },
+    { key: "feed", label: "Feed", icon: "feed", onPage: true },
+    { key: "treatment", label: "Treatment", icon: "pill", onPage: true },
+    { key: "note", label: "Note", icon: "note", onPage: true },
+  ],
   rabbits: [
     { key: "fed", label: "Fed", icon: "feed", primary: true, onPage: true },
     { key: "bred", label: "Bred", icon: "heart", onPage: true },
