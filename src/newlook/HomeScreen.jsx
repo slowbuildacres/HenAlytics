@@ -17,6 +17,7 @@ import { collectGardenHarvests } from "../analytics.js";
 import { fmtMoney } from "../units.js";
 import { milkOz, upcomingKiddings, milkText } from "./goats/goatData.js";
 import { batchAlive, batchAgeDays } from "../meatBatches.js";
+import { upcomingKindles } from "./rabbits/rabbitData.js";
 
 const DAY = 86400000;
 const parseDay = (s) => { const p = String(s || "").split("-").map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); };
@@ -62,6 +63,10 @@ export function tileStat(entry, data, today) {
       const weeks = Math.floor(Math.max(...active.map((b) => batchAgeDays(b))) / 7) + 1;
       return { big: String(alive), small: `birds · week ${weeks}` };
     }
+  }
+  if (entry.type === "rabbits") {
+    const next = upcomingKindles(entry.hobby, ents, today)[0];
+    if (next && next.left >= 0 && next.left <= 14) return { big: null, small: `${next.doe.name} kindles ${next.left === 0 ? "today" : `in ${next.left} day${next.left === 1 ? "" : "s"}`}` };
   }
   if (entry.type === "goats") {
     // Milk today (same oz / 128 as the goat page), else the next kidding.

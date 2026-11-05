@@ -38,6 +38,11 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the rebuilt rabbit screens reuse this file's log forms.
+import { RabbitToday, RabbitHerd, RabbitProfile } from "./newlook/rabbits/RabbitScreens.jsx";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 
@@ -911,7 +916,7 @@ function FedRabbitModal({ hobby, hobbyId, update, onClose }) {
 
 // --- ⚖️ 💊 📝 LogRabbitEntryModal (shared) ---------------------------------
 
-function LogRabbitEntryModal({ hobby, hobbyId, action, update, onClose }) {
+function LogRabbitEntryModal({ hobby, hobbyId, action, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const hutches = hutchLabelsOf(live);
 
@@ -919,9 +924,10 @@ function LogRabbitEntryModal({ hobby, hobbyId, action, update, onClose }) {
   const isMulti = action === "health" || action === "note";
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
-  const [mode, setMode] = useState(live.length ? "all" : "custom");
-  const [customIds, setCustomIds] = useState([]);
+  // initialAnimalId (3.0 rabbit page): start on that rabbit.
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
+  const [mode, setMode] = useState(initialAnimalId ? "custom" : live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState(initialAnimalId ? [initialAnimalId] : []);
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -1026,13 +1032,13 @@ function LogRabbitEntryModal({ hobby, hobbyId, action, update, onClose }) {
 
 // --- 🐇 BredRabbitModal -----------------------------------------------------
 
-function BredRabbitModal({ hobby, hobbyId, update, onClose }) {
+function BredRabbitModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const does = live.filter(a => a.sex === "Doe");
   const bucks = live.filter(a => a.sex === "Buck");
 
   const [date, setDate] = useState(todayStr());
-  const [doeId, setDoeId] = useState(does[0]?.id || "");
+  const [doeId, setDoeId] = useState((initialAnimalId && does.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || does[0]?.id || "");
   const [buckId, setBuckId] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -1103,13 +1109,13 @@ function BredRabbitModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 🍼 LitterRabbitModal ---------------------------------------------------
 
-function LitterRabbitModal({ hobby, hobbyId, update, onClose }) {
+function LitterRabbitModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const does = live.filter(a => a.sex === "Doe");
   const bucks = live.filter(a => a.sex === "Buck");
 
   const [date, setDate] = useState(todayStr());
-  const [doeId, setDoeId] = useState(does[0]?.id || "");
+  const [doeId, setDoeId] = useState((initialAnimalId && does.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || does[0]?.id || "");
   const [sireId, setSireId] = useState("");
   const [kitsAlive, setKitsAlive] = useState("");
   const [kitsStillborn, setKitsStillborn] = useState("");
@@ -2077,6 +2083,103 @@ export function RabbitsAnalytics({hobby,entries}){
             ))}
           </div>
         </ChartCard>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Rabbits / one rabbit, using the same rabbit forms
+// ----------------------------------------------------------------------------
+// The screens live in src/newlook/rabbits/; this host owns the rabbit page's
+// own forms (fed, bred, litter, weight, health, note, remove, add/edit/move
+// rabbit), the herd count sheet, family tree and history, and hands the
+// screens `act`. Saves that add log entries show "Saved · Undo".
+// ============================================================================
+const RABBIT_UNDO = { fed: "feeding", bred: "breeding", litter: "litter", weight: "weight", health: "health log", note: "note" };
+
+export function RabbitsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
+  useEffect(() => { runMigrationIfNeeded(data, hobby, update); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  const entries = data.entries[hobby.id] || [];
+  const [local, setLocal] = useState(null);
+  const [form, setForm] = useState(null);
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, animalId = null) => setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)) });
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    setUndoCheck(null);
+    if (!added.length || !RABBIT_UNDO[added[0].action]) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const msg = e.action === "litter" ? `Saved ${Number(e.kitsAlive) || 0} kits${e.animalName ? ` for ${e.animalName}` : ""}`
+      : e.action === "bred" ? `Saved breeding${e.animalName ? ` for ${e.animalName}` : ""}`
+      : e.action === "weight" ? `Saved ${e.animalName ? `${e.animalName}'s ` : ""}weight`
+      : `Saved ${RABBIT_UNDO[e.action]}${added.length > 1 ? ` for ${added.length} rabbits` : ""}`;
+    showUndo(msg, () => update((d) => {
+      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id));
+      // A breeding also added a kindle reminder to the calendar.
+      if (e.action === "bred" && Array.isArray(d.calendarEvents)) {
+        d.calendarEvents = d.calendarEvents.filter((c) => !(c.date === e.kindleDate && String(c.title || "").includes("kindle expected") && String(c.title || "").includes(e.animalName || "doe")));
+      }
+      return d;
+    }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = {
+    fed: () => open("fed"),
+    bred: (id) => open("bred", id || null),
+    litter: (id) => open("litter", id || null),
+    weight: (id) => open("weight", id || null),
+    health: (id) => open("health", id || null),
+    note: (id) => open("note", id || null),
+    remove: () => setForm({ kind: "remove" }),
+    addRabbit: () => setLocal({ type: "addAnimal" }),
+    editRabbit: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    move: (id) => setLocal({ type: "moveRabbit", animalId: id }),
+    herdCount: () => setTallyOpen(true),
+    openProfile: (id) => { setProfileId(id); try { window.scrollTo(0, 0); } catch (_) {} if (tab !== "animals" && onTab) onTab("animals"); },
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "add") act.addRabbit(); else if (["fed", "bred", "litter", "weight", "health", "note"].includes(a)) open(a);
+  });
+
+  const tally = hobby.herdTally || {};
+  const TALLY = ["Doe", "Buck", "Unsexed"];
+  const tallyTotal = TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? (hobby.animals || []).find((a) => a.id === profileId) : null;
+  const f = form || {};
+
+  return (
+    <div>
+      <RabbitsModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
+      {f.kind === "fed" && <FedRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
+      {f.kind === "bred" && <BredRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {f.kind === "litter" && <LitterRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {["weight", "health", "note"].includes(f.kind) && <LogRabbitEntryModal hobby={hobby} hobbyId={hobby.id} action={f.kind} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {f.kind === "remove" && <RemoveRabbitModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={TALLY} noun="rabbits" />
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="rabbit" onClose={() => setView(null)} />
+      )}
+      {tab === "animals" ? (
+        profile ? <RabbitProfile hobby={hobby} data={data} rabbit={profile} act={act} onBack={() => setProfileId(null)} />
+          : <RabbitHerd hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <RabbitToday hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
       )}
     </div>
   );

@@ -146,7 +146,8 @@ import {
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
 import PlantScannerModal from "./PlantScannerModal.jsx";
-import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
+import RabbitsPage, { RabbitsAnalytics, RabbitsNewLook } from "./Rabbits.jsx";
+import { RabbitStats } from "./newlook/rabbits/RabbitScreens.jsx";
 import SalesPage, { AddExpenseModal, expandRecurringExpenses, YearEndReportModal } from "./Sales.jsx";
 import {
   PANTRY_CATEGORIES, PANTRY_CATEGORY_LABELS, INGREDIENT_DENSITIES,
@@ -5164,6 +5165,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlGarden = !!(newLook && hobby && hobby.type === "garden" && hobby.currentSeason);
   const nlGoats = !!(newLook && hobby && hobby.type === "goats");
   const nlMeat = !!(newLook && hobby && hobby.type === "meat_chickens");
+  const nlRabbits = !!(newLook && hobby && hobby.type === "rabbits");
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -6148,7 +6150,7 @@ useNativeBackButton(React.useCallback(() => {
             seedBox={<SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={ALMANAC_CROPS.map((c) => String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim())} openUrl={openExternalUrl} />}
             onOpenCalendar={() => setPage("calendar")} onOpenBarn={() => setModal({ type: "barn" })} />
         )}
-        {page === "analytics" && activeHobby === "rabbits" && (
+        {page === "analytics" && activeHobby === "rabbits" && !nlRabbits && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
@@ -6327,7 +6329,24 @@ useNativeBackButton(React.useCallback(() => {
             <PigsPage hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "rabbits" && (
+        {newLook && nlRabbits && (page === "rabbits" || page === "analytics") && (
+          <HobbyTabs label="Rabbit sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Rabbits" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("rabbits"); } }} />
+        )}
+        {page === "rabbits" && nlRabbits && (
+          <RabbitsNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab} onTab={setNlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlRabbits && (
+          <RabbitStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <RabbitsAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} spouseMode={data.spouseMode} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "rabbits" && !nlRabbits && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
             <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} user={user} />

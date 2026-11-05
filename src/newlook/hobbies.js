@@ -109,6 +109,14 @@ export const LOG_ACTIONS = {
     { key: "breeding", label: "Breeding", icon: "heart", onPage: true },
     { key: "note", label: "Note", icon: "note", onPage: true },
   ],
+  rabbits: [
+    { key: "fed", label: "Fed", icon: "feed", primary: true, onPage: true },
+    { key: "bred", label: "Bred", icon: "heart", onPage: true },
+    { key: "litter", label: "Litter", icon: "kid", onPage: true },
+    { key: "weight", label: "Weight", icon: "weight", onPage: true },
+    { key: "health", label: "Health", icon: "health", onPage: true },
+    { key: "note", label: "Note", icon: "note", onPage: true },
+  ],
   meat_chickens: [
     { key: "fed", label: "Fed", icon: "feed", primary: true },
     { key: "watered", label: "Watered", icon: "water" },
