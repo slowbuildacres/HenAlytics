@@ -24,7 +24,8 @@ function sexWords(t) {
   return ["hen", "hens", "rooster", "roosters"];
 }
 
-function Avatar({ bird }) {
+// Profile photo, else initials. Shared by every animal list in the new look.
+export function Avatar({ bird, size = 40 }) {
   const profile = profilePhotoOf(bird);
   const [url, setUrl] = useState(null);
   useEffect(() => {
@@ -36,8 +37,8 @@ function Avatar({ bird }) {
   const initials = String(bird.name || "?").slice(0, 2).toUpperCase();
   return (
     <span style={{
-      width: 40, height: 40, borderRadius: 20, flexShrink: 0, background: url ? `center / cover url(${url})` : "#EADFCB",
-      display: "flex", alignItems: "center", justifyContent: "center", font: `700 14px ${font.body}`, color: "#5A4433",
+      width: size, height: size, borderRadius: size / 2, flexShrink: 0, background: url ? `center / cover url(${url})` : "#EADFCB",
+      display: "flex", alignItems: "center", justifyContent: "center", font: `700 ${Math.round(size * 0.35)}px ${font.body}`, color: "#5A4433",
     }}>{url ? null : initials}</span>
   );
 }

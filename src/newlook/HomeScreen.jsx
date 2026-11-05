@@ -15,6 +15,7 @@ import HobbyGlyph from "./HobbyGlyph.jsx";
 import { computeHarvestValue } from "../gardenValue.js";
 import { collectGardenHarvests } from "../analytics.js";
 import { fmtMoney } from "../units.js";
+import { milkOz, upcomingKiddings, milkText } from "./goats/goatData.js";
 
 const DAY = 86400000;
 const parseDay = (s) => { const p = String(s || "").split("-").map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); };
@@ -52,6 +53,13 @@ export function tileStat(entry, data, today) {
         return { big: fmtMoney(Math.round(total)).replace(/\.00$/, ""), small: "grown" };
       }
     }
+  }
+  if (entry.type === "goats") {
+    // Milk today (same oz / 128 as the goat page), else the next kidding.
+    const oz = milkOz(ents, { from: today, to: today });
+    if (oz > 0) return { big: milkText(oz), small: "milk today" };
+    const next = upcomingKiddings(entry.hobby, today, 1)[0];
+    if (next && next.left >= 0 && next.left <= 30) return { big: null, small: `${(next.dam && next.dam.name) || "A doe"} due ${next.left === 0 ? "today" : `in ${next.left} day${next.left === 1 ? "" : "s"}`}` };
   }
   return { big: null, small: lastLogLine(ents, today) };
 }

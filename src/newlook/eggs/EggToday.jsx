@@ -15,7 +15,7 @@ import {
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, RoundButton, Sheet, Button } from "../ui.jsx";
 import { flockEggSummary, broodyDay } from "../../flockTools.js";
-import { computeFeedStatus } from "../../feedSupply.js";
+import FeedCard from "../FeedCard.jsx";
 import { computeEggsOnHand } from "../../eggInventory.js";
 import { winterSeason, WINTER_ITEMS } from "../../winterChecklist.js";
 import { eggInsight } from "../../eggInsights.js";
@@ -168,8 +168,6 @@ export default function EggToday({ hobby, data, update, setModal, onOpenJournal 
   const focus = flocks.find((f) => f.id === focusId) || flocks[0];
   const lat = data.homesteadLocation ? data.homesteadLocation.lat : null;
   const insight = useMemo(() => eggInsight({ entries, lat }), [entries, lat]);
-  const feed = computeFeedStatus(hobby, entries);
-  const ft = hobby.feedTracker || {};
   const onHand = computeEggsOnHand(hobby, entries, data.sales || []);
   const log = (action) => setModal({ type: "log", action, hobbyIdOverride: hobby.id });
   const hidden = Array.isArray(hobby.hiddenQuickLogs) ? hobby.hiddenQuickLogs : [];
@@ -218,25 +216,7 @@ export default function EggToday({ hobby, data, update, setModal, onOpenJournal 
         </div>
       )}
 
-      {feed ? (
-        <Card>
-          <Row first tint={feed.state === "low" || feed.state === "out" ? nl.alertTint : undefined}
-            icon={<Wheat size={20} strokeWidth={1.8} />} iconBg={feed.state === "low" || feed.state === "out" ? nl.alertChip : undefined}
-            title={feed.state === "learning" ? "Learning how fast they eat" : feed.state === "out" ? "Out of feed" : `About ${Math.max(1, Math.round(feed.daysLeft))} days of feed left`}
-            sub={feed.state === "learning"
-              ? `${Math.max(0, Math.round(feed.remainingLbs))} lbs on hand · a few more feedings to estimate`
-              : `${Math.max(0, Math.round(feed.remainingLbs))} lbs on hand${feed.runOutDate ? ` · runs out around ${prettyDay(feed.runOutDate)}` : ""}`}
-            trailing={<Button kind="link" onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })}>Update</Button>} />
-          <Row icon={<History size={20} strokeWidth={1.8} />} title="When did I last buy feed?" onClick={() => setModal({ type: "purchases" })} chevron />
-        </Card>
-      ) : !ft.promptDismissed && (
-        <Card>
-          <Row first icon={<Wheat size={20} strokeWidth={1.8} />} title="Track your feed supply" sub="Get a heads-up before the bin runs empty"
-            onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })}
-            trailing={<button type="button" aria-label="Dismiss feed tracking" onClick={(e) => { e.stopPropagation(); update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h.feedTracker = { ...(h.feedTracker || {}), enabled: false, promptDismissed: true }; return d; }); }}
-              style={{ width: 32, height: 32, border: "none", background: "none", cursor: "pointer", color: nl.soft, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={18} /></button>} />
-        </Card>
-      )}
+      <FeedCard hobby={hobby} entries={entries} update={update} setModal={setModal} />
 
       {onHand != null && (
         <Card>

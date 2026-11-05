@@ -6,6 +6,11 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the rebuilt goat screens reuse this file's log forms.
+import { GoatToday, GoatHerd, GoatProfile } from "./newlook/goats/GoatScreens.jsx";
+import { milkText } from "./newlook/goats/goatData.js";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { photosOf, profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -641,16 +646,17 @@ function FedGoatModal({ hobby, hobbyId, update, onClose }) {
 
 // --- ⚖️ 💊 📝 LogGoatEntryModal (shared for weight / health / note) --------
 
-function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
+function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
 
   // Weight is single-select (one number per goat). Health & note are multi.
   const isMulti = action === "health" || action === "note";
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
-  const [mode, setMode] = useState(live.length ? "all" : "custom");
-  const [customIds, setCustomIds] = useState([]);
+  // initialAnimalId (3.0 goat profile): start on that goat instead of the herd.
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
+  const [mode, setMode] = useState(initialAnimalId ? "custom" : live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState(initialAnimalId ? [initialAnimalId] : []);
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -754,7 +760,7 @@ function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
 
 // --- 🥛 MilkGoatModal -------------------------------------------------------
 
-function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
+function MilkGoatModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Milk is logged per-doe. Restrict the picker to does with a dairy
   // purpose (Dairy or Both); fall back to all live goats if the user
@@ -763,7 +769,7 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
   const choosable = dairy.length > 0 ? dairy : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [oz, setOz] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -826,13 +832,13 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
 // alive at weaning), use the 💕 Breeding tile, which opens the existing
 // rich BreedingModal — that's the canonical breeding flow for goats.
 
-function KiddingGoatModal({ hobby, hobbyId, update, onClose }) {
+function KiddingGoatModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const does = live.filter(a => a.sex === "Doe");
   const choosable = does.length > 0 ? does : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [count, setCount] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -859,7 +865,7 @@ function KiddingGoatModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🍼 Log kidding">
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>
-        Quick log of how many kids a doe just had. For the full breed-through-kidding record (dam, sire, dates, kids alive at weaning) use the 💕 Breeding tile instead.
+        Quick log of how many kids a doe just had. For the full breed-through-kidding record (dam, sire, dates, kids alive at weaning) log it under Breeding instead.
       </div>
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
@@ -1338,11 +1344,11 @@ const addDays = (dateStr, days) => {
 };
 
 // ============ BREEDING / KIDDING MODAL ============
-function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent }) {
+function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent, initialDamId = null }) {
   const dams = animals.filter(a => !a.archived && a.sex === "Doe");
   const sires = animals.filter(a => !a.archived && a.sex === "Buck");
 
-  const [damId, setDamId] = useState(breeding?.damId || dams[0]?.id || "");
+  const [damId, setDamId] = useState(breeding?.damId || initialDamId || dams[0]?.id || "");
   const [sireId, setSireId] = useState(breeding?.sireId || "");
   const [externalSireName, setExternalSireName] = useState(breeding?.externalSireName || "");
   const [useUnknownSire, setUseUnknownSire] = useState(
@@ -1792,6 +1798,117 @@ export default function GoatsPage({hobby,data,update,user,setModal:setAppModal})
     <div>
       <GoatModalRouter modal={localModal} hobby={hobby} update={update} user={user} onClose={()=>setLocalModal(null)}/>
       <GoatHome hobby={hobby} entries={entries} sales={data.sales||[]} update={update} setModal={setLocalModal} setAppModal={setAppModal} customers={data.customers||[]}/>
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Herd / goat profile, using the same goat forms
+// ----------------------------------------------------------------------------
+// The screens live in src/newlook/goats/; this host owns the goat page's own
+// modals (milk, kidding, breeding, weight, health, note, remove, add/edit
+// goat, herd count, family tree, history) and hands the screens `act` to open
+// them. A save that adds log entries shows "Saved · Undo" instead of asking
+// first. The Log picker opens these forms via requestHobbyAction().
+// ============================================================================
+const UNDO_WORDS = { milk: "milk", fed: "feeding", weight: "weight", health: "health log", note: "note", kid: "kidding" };
+
+export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onOpenJournal, onOpenCalendar }) {
+  const entries = data.entries[hobby.id] || [];
+  const [local, setLocal] = useState(null);           // add/edit goat, herd count
+  const [form, setForm] = useState(null);             // { kind, animalId?, breeding? }
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);             // { kind: "pedigree" | "history", animal }
+  const [undoCheck, setUndoCheck] = useState(null);   // ids before a log form opened
+
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, extra = {}) => {
+    setUndoCheck(null);
+    setForm({ kind, ...extra, before: new Set(entries.map((e) => e.id)) });
+  };
+  const closeForm = () => { if (form && form.before) setUndoCheck({ before: form.before, kind: form.kind }); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.before.has(e.id));
+    setUndoCheck(null);
+    if (!added.length || !["milk", "fed", "weight", "health", "note", "kid"].includes(added[0].action)) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const msg = e.action === "milk" ? `Saved ${milkText(e.oz)}${e.animalName ? ` from ${e.animalName}` : ""}`
+      : e.action === "weight" ? `Saved ${e.animalName ? `${e.animalName}'s ` : ""}weight`
+      : e.action === "kid" ? `Saved ${Number(e.count) || 1} kid${Number(e.count) === 1 ? "" : "s"}${e.animalName ? ` for ${e.animalName}` : ""}`
+      : `Saved ${UNDO_WORDS[e.action]}${added.length > 1 ? ` for ${added.length} goats` : ""}`;
+    showUndo(msg, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = {
+    milk: (id) => open("milk", { animalId: id || null }),
+    fed: () => open("fed"),
+    weight: (id) => open("weight", { animalId: id || null }),
+    health: (id) => open("health", { animalId: id || null }),
+    note: (id) => open("note", { animalId: id || null }),
+    kidding: (id) => open("kid", { animalId: id || null }),
+    breeding: (b, damId) => setForm({ kind: "breeding", breeding: b || null, animalId: damId || null }),
+    remove: () => setForm({ kind: "remove" }),
+    addGoat: () => setLocal({ type: "addAnimal" }),
+    editGoat: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    herdCount: () => setLocal({ type: "herdTally" }),
+    openProfile: (id) => { setProfileId(id); try { window.scrollTo(0, 0); } catch (_) {} },
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (action) => {
+    if (action === "milk") act.milk(); else if (action === "fed") act.fed(); else if (action === "weight") act.weight();
+    else if (action === "health") act.health(); else if (action === "note") act.note(); else if (action === "kid") act.kidding();
+    else if (action === "breeding") act.breeding(null); else if (action === "add") act.addGoat();
+  });
+
+  const saveBreeding = (breeding) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;
+    if (!Array.isArray(h.breedings)) h.breedings = [];
+    const i = h.breedings.findIndex((x) => x.id === breeding.id);
+    if (i >= 0) h.breedings[i] = breeding; else h.breedings.push(breeding);
+    return d;
+  });
+  const deleteBreeding = (id) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobby.id);
+    if (h) h.breedings = (h.breedings || []).filter((b) => b.id !== id);
+    if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter((e) => e.relatedId !== id);
+    return d;
+  });
+  const addCalendarEvent = (event) => update((d) => { if (!Array.isArray(d.calendarEvents)) d.calendarEvents = []; d.calendarEvents.push(event); return d; });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = herdTallyTotal(tally);
+  const tallyLine = HERD_TALLY_CATEGORIES.filter((k) => (Number(tally[k]) || 0) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? (hobby.animals || []).find((a) => a.id === profileId) : null;
+  const f = form || {};
+
+  return (
+    <div>
+      <GoatModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
+      {f.kind === "milk" && <MilkGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {f.kind === "fed" && <FedGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
+      {f.kind === "kid" && <KiddingGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {["weight", "health", "note"].includes(f.kind) && <LogGoatEntryModal hobby={hobby} hobbyId={hobby.id} action={f.kind} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {f.kind === "remove" && <RemoveGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      {f.kind === "breeding" && <BreedingModal animals={hobby.animals || []} breeding={f.breeding} initialDamId={f.animalId} onClose={() => setForm(null)} onSave={saveBreeding} onDelete={deleteBreeding} addCalendarEvent={addCalendarEvent} />}
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)}
+          onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="goat" onClose={() => setView(null)} />
+      )}
+
+      {tab === "animals" ? (
+        profile ? <GoatProfile hobby={hobby} data={data} goat={profile} act={act} onBack={() => setProfileId(null)} />
+          : <GoatHerd hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <GoatToday hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
+      )}
     </div>
   );
 }

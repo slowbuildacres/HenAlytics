@@ -98,6 +98,17 @@ export const LOG_ACTIONS = {
     { key: "note", label: "Note", icon: "note" },
     { key: "more", label: "More", icon: "more", modal: "gardenMore" },
   ],
+  // Goat forms live on the goat page: `onPage` sends the app there and asks
+  // the page to open its own form (requestHobbyAction).
+  goats: [
+    { key: "milk", label: "Milk", icon: "milk", primary: true, onPage: true },
+    { key: "fed", label: "Fed", icon: "feed", onPage: true },
+    { key: "health", label: "Health", icon: "health", onPage: true },
+    { key: "weight", label: "Weight", icon: "weight", onPage: true },
+    { key: "kid", label: "Kidding", icon: "kid", onPage: true },
+    { key: "breeding", label: "Breeding", icon: "heart", onPage: true },
+    { key: "note", label: "Note", icon: "note", onPage: true },
+  ],
   meat_chickens: [
     { key: "fed", label: "Fed", icon: "feed", primary: true },
     { key: "watered", label: "Watered", icon: "water" },

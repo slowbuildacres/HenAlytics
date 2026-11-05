@@ -157,7 +157,9 @@ import {
 } from "./pantry.js";
 import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
-import GoatsPage, { GoatsAnalytics } from "./Goats.jsx";
+import GoatsPage, { GoatsAnalytics, GoatsNewLook } from "./Goats.jsx";
+import { GoatStats } from "./newlook/goats/GoatScreens.jsx";
+import { requestHobbyAction } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
 import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
@@ -5157,6 +5159,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlRebuilt = !!(newLook && hobby && hobby.type === "egg_layers");
   // Garden: rebuilt when a season is running (no-season start/reopen screen stays as is).
   const nlGarden = !!(newLook && hobby && hobby.type === "garden" && hobby.currentSeason);
+  const nlGoats = !!(newLook && hobby && hobby.type === "goats");
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -5181,7 +5184,8 @@ useNativeBackButton(React.useCallback(() => {
     setLogPickerOpen(false);
     setActiveHobby(h.id);
     if (isHobbyPage) setPage(hobbyPage(h));
-    if (a.modal === "gardenMore") setModal({ type: "gardenMore", hobbyId: h.id });
+    if (a.onPage) { setPage(hobbyPage(h)); requestHobbyAction(h.id, a.key); }
+    else if (a.modal === "gardenMore") setModal({ type: "gardenMore", hobbyId: h.id });
     else if (a.key === "used_eggs" && !(h.eggInventory && h.eggInventory.enabled)) setModal({ type: "eggInventorySetup", hobbyId: h.id });
     else setModal({ type: "log", action: a.key, hobbyIdOverride: h.id });
   };
@@ -6155,7 +6159,7 @@ useNativeBackButton(React.useCallback(() => {
             <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "goats" && (
+        {page === "analytics" && activeHobby === "goats" && !nlGoats && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <GoatsAnalytics hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} />
           </AnalyticsShareWrapper>
@@ -6267,7 +6271,24 @@ useNativeBackButton(React.useCallback(() => {
         {page === "incubator" && (
           <IncubatorPage hobby={data.hobbies.find(h=>h.id==="incubator")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "goats" && (
+        {newLook && nlGoats && (page === "goats" || page === "analytics") && (
+          <HobbyTabs label="Goats sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Herd" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("goats"); } }} />
+        )}
+        {page === "goats" && nlGoats && (
+          <GoatsNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlGoats && (
+          <GoatStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <GoatsAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "goats" && !nlGoats && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} />
             <GoatsPage hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} user={user} />
