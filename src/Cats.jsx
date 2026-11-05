@@ -28,6 +28,9 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect } from "react";
+// NEW_LOOK (3.0): shared screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Wheat as NlWheat, Scale as NlScale, Shield as NlShield, Heart as NlHeart, Baby as NlBaby, DollarSign as NlDollar, Archive as NlArchive } from "lucide-react";
 import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
@@ -1315,7 +1318,7 @@ function HerdTallySection({ hobby, update }) {
   );
 }
 
-export default function CatsPage({ hobby, data, update, setModal, user }) {
+export default function CatsPage({ hobby, data, update, setModal, user, nl = null }) {
   const [dogModal, setDogModal] = useState({ open: false, cat: null });
   const [breedingModal, setBreedingModal] = useState({ open: false, breeding: null });
   const [litterModal, setLitterModal] = useState({ open: false, litter: null });
@@ -1441,6 +1444,135 @@ export default function CatsPage({ hobby, data, update, setModal, user }) {
   const totalRevenue = litters.reduce((s, l) =>
     s + (l.kittens || []).reduce((ps, p) => ps + (p.status === "sold" ? (p.placePrice || 0) : 0), 0)
   , 0);
+
+  if (nl) {
+    const all = cats;
+    const guards = all.filter((d) => d.isBarnCat);
+    const going = upcomingWhelpings.map((b) => {
+      const dam = (hobby?.animals || []).find((a) => a.id === b.damId);
+      const total = b.breedDate ? Math.max(1, Math.round((parseLocalDate(b.expectedBirthDate) - parseLocalDate(b.breedDate)) / 86400000)) : 65;
+      const day = b.breedDate ? Math.max(0, Math.round((new Date() - parseLocalDate(b.breedDate)) / 86400000)) : null;
+      const left = Math.ceil((parseLocalDate(b.expectedBirthDate) - new Date()) / 86400000);
+      return { id: b.id, title: `${dam?.name || "Dam"} ${left >= 0 ? `due ${fmtDate(b.expectedBirthDate)}` : "is past her due date"}`, onOpen: () => setBreedingModal({ open: true, breeding: b }),
+        sub: left >= 0 ? `${left} day${left === 1 ? "" : "s"} to go` : `due ${fmtDate(b.expectedBirthDate)}`, pct: day != null ? (day / total) * 100 : null,
+        actions: [{ label: "Log the litter", primary: left <= 3, run: () => setLitterModal({ open: true, litter: null }) }] };
+    });
+    const ctx = {
+      key: "cats",
+      summary: { big: all.length, small: `${all.length === 1 ? "cat" : "cats"}${guards.length ? ` · ${guards.length} ${guards.length === 1 ? "barn cat" : "barn cats"}` : ""}`, line: [guards.length ? (totalAttacks ? `${totalAttacks} threat${totalAttacks === 1 ? "" : "s"} caught` : "Nothing caught yet") : null, totalPuppiesBorn ? `${totalPuppiesBorn} kittens born` : null].filter(Boolean).join(" · ") },
+      newLabel: "Log vet or meds", onNew: () => setLogEntryAction("health"),
+      goingTitle: "Coming up", going,
+      shelfTitle: "Your cats", shelfEmpty: "Add your first cat to keep vet visits, weight and feeding in one place.",
+      shelf: all.map((d) => {
+        const threats = d.isBarnCat ? attacks.filter((a) => a.dogId === d.id).length : 0;
+        return { id: d.id, title: d.name, onOpen: () => setDogModal({ open: true, cat: d }),
+          sub: [d.breed, d.birthdate ? fmtAge(d.birthdate) : null, d.color || null].filter(Boolean).join(" · "),
+          badge: d.isBarnCat ? { tone: "good", text: threats ? `Barn cat · ${threats} stopped` : "Barn cat" } : null,
+          actions: [{ label: "History", run: () => setHistoryAnimal(d) }] };
+      }),
+      past: [
+        ...litters.map((l) => ({ id: `l${l.id}`, title: `Litter · ${fmtDate(l.birthDate)}`, sub: `${l.totalBorn || (l.kittens || []).length || 0} kittens`, onOpen: () => setLitterModal({ open: true, litter: l }) })),
+        ...archived.map((d) => ({ id: d.id, title: d.name, sub: [d.archivedReason || "Archived", d.archivedDate ? fmtDate(d.archivedDate) : null].filter(Boolean).join(" · "), onOpen: () => setDogModal({ open: true, cat: d }) })),
+      ],
+      pastTitle: "Litters and past cats", pastSub: "Tap one to open it.",
+      extras: [
+        { key: "add", label: "Add a cat", icon: NlPlus, run: () => setDogModal({ open: true, cat: null }) },
+        { key: "fed", label: "Fed", icon: NlWheat, run: () => setLogEntryAction("fed") },
+        { key: "weight", label: "Weight", icon: NlScale, run: () => setLogEntryAction("weight") },
+        { key: "note", label: "Note", icon: NlNote, run: () => setLogEntryAction("note") },
+        ...(guards.length ? [{ key: "attack", label: "Caught a pest", sub: "A mouse, rat or other pest", icon: NlShield, run: () => setAttackModal({ open: true, attack: null }) }] : []),
+        { key: "breeding", label: "Breeding", icon: NlHeart, run: () => setBreedingModal({ open: true, breeding: null }) },
+        { key: "litter", label: "Litter", icon: NlBaby, run: () => setLitterModal({ open: true, litter: null }) },
+        { key: "sale", label: "Sold or rehomed", icon: NlDollar, run: () => setLogEntryAction("sale") },
+        { key: "death", label: "Passed away", icon: NlArchive, run: () => setLogEntryAction("death") },
+        { key: "expense", label: "Expense", sub: "Food, vet bills, supplies", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {dogModal.open && (
+        <DogModal
+          cat={dogModal.cat} cats={hobby?.animals || []}
+          onSave={saveDog}
+          onDelete={dogModal.cat ? deleteDog : null}
+          onClose={() => setDogModal({ open: false, cat: null })}
+          update={update}
+          user={user}
+          hobbyId={hobby.id}
+        />
+      )}
+      {breedingModal.open && (
+        <BreedingModal
+          animals={hobby?.animals || []}
+          breeding={breedingModal.breeding}
+          onSave={saveBreeding}
+          onDelete={breedingModal.breeding ? deleteBreeding : null}
+          onClose={() => setBreedingModal({ open: false, breeding: null })}
+          addCalendarEvent={addCalendarEvent}
+        />
+      )}
+      {litterModal.open && (
+        <LitterModal
+          animals={hobby?.animals || []}
+          breedings={hobby?.breedings || []}
+          litter={litterModal.litter}
+          onSave={saveLitter}
+          onDelete={litterModal.litter ? deleteLitter : null}
+          onClose={() => setLitterModal({ open: false, litter: null })}
+        />
+      )}
+      {attackModal.open && (
+        <AttackModal
+          cats={hobby?.animals || []}
+          attack={attackModal.attack}
+          onSave={saveAttack}
+          onDelete={attackModal.attack ? deleteAttack : null}
+          onClose={() => setAttackModal({ open: false, attack: null })}
+        />
+      )}
+      {historyAnimal && (
+        <AnimalHistoryView
+          update={update}
+          animal={historyAnimal}
+          hobby={hobby}
+          entries={(data?.entries?.[hobby.id]) || []}
+          sales={data?.sales || []}
+          species="cat"
+          onClose={() => setHistoryAnimal(null)}
+        />
+      )}
+      {logEntryAction && (
+        <LogEntryModal
+          animals={hobby?.animals || []}
+          customers={data.customers || []}
+          action={logEntryAction}
+          onSave={(payload) => {
+            if (payload && payload.entry) {
+              addEntry(payload.entry);
+              if (payload.archiveReason && payload.animalId) {
+                archiveDog(payload.animalId, payload.archiveReason);
+              }
+              if (payload.saleData) {
+                update(d => {
+                  d.sales = d.sales || [];
+                  resolveSaleBuyer(d, payload.saleData);
+                  d.sales.push(payload.saleData);
+                  return d;
+                });
+              }
+            } else {
+              addEntry(payload);
+            }
+          }}
+          onClose={() => setLogEntryAction(null)}
+        />
+      )}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 100 }}>
