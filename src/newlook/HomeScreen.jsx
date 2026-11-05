@@ -16,6 +16,7 @@ import { computeHarvestValue } from "../gardenValue.js";
 import { collectGardenHarvests } from "../analytics.js";
 import { fmtMoney } from "../units.js";
 import { milkOz, upcomingKiddings, milkText } from "./goats/goatData.js";
+import { batchAlive, batchAgeDays } from "../meatBatches.js";
 
 const DAY = 86400000;
 const parseDay = (s) => { const p = String(s || "").split("-").map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); };
@@ -52,6 +53,14 @@ export function tileStat(entry, data, today) {
         const { total } = computeHarvestValue(harvests, entry.hobby.harvestPrices || {});
         return { big: fmtMoney(Math.round(total)).replace(/\.00$/, ""), small: "grown" };
       }
+    }
+  }
+  if (entry.type === "meat_chickens") {
+    const active = entry.hobby.currentBatches || [];
+    if (active.length) {
+      const alive = active.reduce((s, b) => s + batchAlive(b, ents), 0);
+      const weeks = Math.floor(Math.max(...active.map((b) => batchAgeDays(b))) / 7) + 1;
+      return { big: String(alive), small: `birds · week ${weeks}` };
     }
   }
   if (entry.type === "goats") {

@@ -160,6 +160,8 @@ import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 import GoatsPage, { GoatsAnalytics, GoatsNewLook } from "./Goats.jsx";
 import { GoatStats } from "./newlook/goats/GoatScreens.jsx";
 import SalesScreen from "./newlook/sales/SalesScreen.jsx";
+import { MeatToday, MeatBatches, MeatStats } from "./newlook/meat/MeatScreens.jsx";
+import { batchAlive, restorePastBatch as restorePastBatchIn } from "./meatBatches.js";
 import { requestHobbyAction } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
@@ -5161,6 +5163,7 @@ useNativeBackButton(React.useCallback(() => {
   // Garden: rebuilt when a season is running (no-season start/reopen screen stays as is).
   const nlGarden = !!(newLook && hobby && hobby.type === "garden" && hobby.currentSeason);
   const nlGoats = !!(newLook && hobby && hobby.type === "goats");
+  const nlMeat = !!(newLook && hobby && hobby.type === "meat_chickens");
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -6111,7 +6114,7 @@ useNativeBackButton(React.useCallback(() => {
         {wrappedYearNow && WRAPPED_BANNER_PAGES.includes(page) && (
           <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
-        {page === "home" && !(newLook && (nlRebuilt || nlGarden)) && (
+        {page === "home" && !(newLook && (nlRebuilt || nlGarden || nlMeat)) && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
         {/* NEW_LOOK (3.0) rebuilt hobbies: Today · animals · Stats */}
@@ -6231,11 +6234,28 @@ useNativeBackButton(React.useCallback(() => {
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && !(newLook && (nlRebuilt || nlGarden)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
+        {page === "analytics" && !(newLook && (nlRebuilt || nlGarden || nlMeat)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "analytics" && nlGarden && (
           <GardenStats hobby={hobby} data={data} setModal={setModal} spent={nlGardenSpent} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
+        )}
+        {newLook && nlMeat && (page === "home" || page === "analytics") && (
+          <HobbyTabs label="Meat bird sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Batches" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
+        )}
+        {nlMeat && page === "home" && nlHobbyTab !== "animals" && (
+          <MeatToday hobby={hobby} data={data} update={update} setModal={setModal} onOpenJournal={() => setPage("journal")} onTab={(k) => setNlHobbyTab(k)} />
+        )}
+        {nlMeat && page === "home" && nlHobbyTab === "animals" && (
+          <MeatBatches hobby={hobby} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "analytics" && nlMeat && (
+          <MeatStats hobby={hobby} data={data} setModal={setModal} allNumbers={
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
           } />
         )}
@@ -10978,33 +10998,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   // currentBatches with endDate cleared, and re-hydrate its entries into
   // data.entries[hobby.id] from the snapshot we stored at finalize time.
   // Behind a confirm prompt so accidental taps don't shuffle data around.
-  const restorePastBatch = (batchId) => {
-    update((d) => {
-      const h = d.hobbies.find((x) => x.id === hobby.id);
-      if (!h || !Array.isArray(h.archivedBatches)) return d;
-      const idx = h.archivedBatches.findIndex((b) => b.id === batchId);
-      if (idx === -1) return d;
-      const target = h.archivedBatches[idx];
-      const restored = JSON.parse(JSON.stringify(target));
-      // Clear finalize-only fields so the batch reads as active again.
-      const snapshotEntries = Array.isArray(restored.finalEntries) ? restored.finalEntries : [];
-      delete restored.finalEntries;
-      restored.endDate = "";
-      h.currentBatches = h.currentBatches || [];
-      h.currentBatches.push(restored);
-      h.archivedBatches.splice(idx, 1);
-      // Re-hydrate the entries. We de-dupe by entry id in case a parallel
-      // path already promoted some of them back (shouldn't happen, but
-      // belt-and-suspenders since data corruption here would be confusing).
-      d.entries[hobby.id] = d.entries[hobby.id] || [];
-      const existingIds = new Set(d.entries[hobby.id].map(e => e.id).filter(Boolean));
-      for (const e of snapshotEntries) {
-        if (!e || (e.id && existingIds.has(e.id))) continue;
-        d.entries[hobby.id].push(e);
-      }
-      return d;
-    }, { immediate: true });
-  };
+  const restorePastBatch = (batchId) => update((d) => restorePastBatchIn(d, hobby.id, batchId), { immediate: true });
 
   // Past batches section — extracted so we can render it in both the
   // "has active batches" path AND the "no active batches" empty-state path.
@@ -11110,14 +11104,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
       {activeBatches.map((batch) => {
         const days = Math.floor((Date.now() - new Date(batch.startDate).getTime()) / (1000 * 60 * 60 * 24));
         const weeks = (days / 7).toFixed(1);
-        const deaths = entries
-          .filter((e) => e.action === "death" && e.batchId === batch.id)
-          .reduce((s, e) => s + (Number(e.count) || 1), 0);
-        const butcheredCount = (batch.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
-        const softCulledCount = entries
-          .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
-          .reduce((s, e) => s + Number(e.cullCount), 0);
-        const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount + (Number(batch.countAdjustment) || 0));
+        const alive = batchAlive(batch, entries);
         return (
           <div
             key={batch.id}
