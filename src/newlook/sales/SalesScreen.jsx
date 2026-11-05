@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DollarSign, Users, Mail, ListOrdered, History, FileText, ChevronLeft, Lightbulb } from "lucide-react";
 import { nl, font, type } from "../theme.js";
-import { Card, CardHeader, Row, Button, ScreenTitle, Legacy } from "../ui.jsx";
+import { Card, CardHeader, Row, Button, Legacy } from "../ui.jsx";
 import HobbyGlyph from "../HobbyGlyph.jsx";
 import { RangeChips } from "../StatsParts.jsx";
 import { showUndo } from "../UndoBar.jsx";
@@ -20,6 +20,7 @@ import SalesPage, { AddSaleModal, AddExpenseModal, collectAllSales, computeReven
 import { fmtMoney } from "../../units.js";
 import { cleanName } from "../hobbies.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
+import SalesLog from "./SalesLog.jsx";
 
 const WINDOWS = [
   { key: "month", label: "This month" },
@@ -36,7 +37,7 @@ const when = (date, today) => {
   return n === 1 ? "yesterday" : prettyDay(date);
 };
 
-export default function SalesScreen({ data, update, setModal, onEmailCustomers, onPurchaseHistory }) {
+export default function SalesScreen({ data, update, setModal, onEmailCustomers, onPurchaseHistory, onOpenHobby, onBack }) {
   const today = isoDay();
   const [win, setWin] = useState("year");
   const [detail, setDetail] = useState(null);      // null | "charts" | "log" | "customers"
@@ -105,7 +106,7 @@ export default function SalesScreen({ data, update, setModal, onEmailCustomers, 
             {detail === "log" ? "Every sale and expense" : detail === "customers" ? "Customers" : "Sales charts"}
           </h1>
         </div>
-        <Legacy><SalesPage data={data} update={update} embedded focus={detail} /></Legacy>
+        {detail === "log" ? <SalesLog data={data} update={update} onOpenHobby={onOpenHobby} /> : <Legacy><SalesPage data={data} update={update} embedded focus={detail} /></Legacy>}
       </div>
     );
   }
@@ -118,7 +119,14 @@ export default function SalesScreen({ data, update, setModal, onEmailCustomers, 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {forms}
-      <ScreenTitle>Sales &amp; costs</ScreenTitle>
+      <div style={{ display: "flex", alignItems: "center", gap: 4, marginLeft: onBack ? -10 : 0 }}>
+        {onBack && (
+          <button type="button" aria-label="Back to More" onClick={onBack} style={{ width: 44, height: 44, border: "none", background: "none", cursor: "pointer", color: nl.ink, display: "flex", alignItems: "center", justifyContent: "center" }}>
+            <ChevronLeft size={24} strokeWidth={2} />
+          </button>
+        )}
+        <h1 style={{ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: type.title }}>Sales &amp; costs</h1>
+      </div>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 8 }}>
         <Button icon={ic(DollarSign)} onClick={() => open("sale")}>Log a sale</Button>

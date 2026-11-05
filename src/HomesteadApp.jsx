@@ -6285,7 +6285,7 @@ useNativeBackButton(React.useCallback(() => {
             } />
           </div>
         )}
-        {newLook && ["sales", "journal", "games", "photos"].includes(page) && nlBack()}
+        {newLook && ["journal", "games", "photos"].includes(page) && nlBack()}
         {/* Celebration card (Suggestions.jsx) — shows ONLY on the tab the
             celebration belongs to. "One hundred jars" appears on canning, not
             on garden or egg-layers. activeHobby is the match key. */}
@@ -6748,7 +6748,7 @@ useNativeBackButton(React.useCallback(() => {
           <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "sales" && newLook && (
-          <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
+          <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />
         )}
         {page === "sales" && !newLook && (
           <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
