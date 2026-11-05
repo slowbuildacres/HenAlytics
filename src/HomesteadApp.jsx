@@ -4725,7 +4725,8 @@ useEffect(() => {
       setModal(null);
       const oh = w.hobbyId && data.hobbies.find((x) => (x.id === w.hobbyId || x.type === w.hobbyId) && !x.hidden);
       if (oh) setActiveHobby(oh.id);
-      setPage(oh && !WIDGET_HOME_TYPES.includes(oh.type) ? oh.type : "home");
+      if (newLook) setPage(oh ? hobbyPage(oh) : "dash");
+      else setPage(oh && !WIDGET_HOME_TYPES.includes(oh.type) ? oh.type : "home");
       return;
     }
     // hobby=any → the hobby you were last on (or your first visible one).
@@ -4733,8 +4734,8 @@ useEffect(() => {
       ? (data.hobbies.find((x) => x.id === activeHobby && !x.hidden) || data.hobbies.find((x) => !x.hidden))
       : data.hobbies.find((x) => x.id === w.hobbyId || x.type === w.hobbyId);
     if (!h || h.hidden) {
-      toast("That hobby is turned off. Turn it on in Settings → Manage hobbies, or edit the widget.");
-      setPage("home");
+      toast(newLook ? "That hobby is turned off. Turn it on in More › Hobbies, or edit the widget." : "That hobby is turned off. Turn it on in Settings → Manage hobbies, or edit the widget.");
+      setPage(newLook ? "dash" : "home");
       return;
     }
     setActiveHobby(h.id);
@@ -4770,11 +4771,27 @@ useNativeBackButton(React.useCallback(() => {
   if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
   if (logPickerOpen) { setLogPickerOpen(false); return true; }
   if (switcherOpen) { setSwitcherOpen(false); return true; }
-  // Sub-page → home (new look: the all-homestead Home).
-  if (newLook ? page !== "dash" : page !== "home") { setPage(newLook ? "dash" : "home"); return true; }
+  if (nlProjectSection) { setNlProjectSection(null); return true; }
+  if (nlProjectForm) { setNlProjectForm(null); return true; }
+  if (nlProjectLog) { setNlProjectLog(null); return true; }
+  if (nlProjectInfo) { setNlProjectInfo(null); return true; }
+  // New look: screens under More go back to More (a project's pages back to
+  // the project), Year in review back to Stats, everything else to Home.
+  if (newLook) {
+    const parent = page === "project" ? "projects"
+      : page === "projectAet" ? "project"
+      : page === "projectGuide" ? (nlProjectId ? "project" : "projects")
+      : ["supporter", "look", "projects", "import", "sales", "journal", "games", "photos"].includes(page) ? "more"
+      : page === "year" ? "analytics"
+      : page !== "dash" ? "dash" : null;
+    if (parent) { setPage(parent); return true; }
+    return false;
+  }
+  // Sub-page → home.
+  if (page !== "home") { setPage("home"); return true; }
   // Home, nothing open — exit the app.
   return false;
-}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page, newLook, logPickerOpen, switcherOpen]));
+}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page, newLook, logPickerOpen, switcherOpen, nlProjectSection, nlProjectForm, nlProjectLog, nlProjectInfo, nlProjectId]));
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
