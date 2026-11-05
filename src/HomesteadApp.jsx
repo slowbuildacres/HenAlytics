@@ -142,6 +142,8 @@ import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
+import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
+import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
 import BakingPage, { BakingAnalytics } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics } from "./Canning.jsx";
 import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
@@ -6048,7 +6050,7 @@ useNativeBackButton(React.useCallback(() => {
           <JournalPage data={data} update={update} setModal={setModal} />
         )}
         {page === "sales" && (
-          <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} />
+          <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
         )}
         </ErrorBoundary>
       </main>
@@ -10406,6 +10408,9 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: stateColor }}>{headline}</div>
         <div style={{ fontSize: 11, color: palette.inkSoft }}>{sub}</div>
+        <button type="button" onClick={() => setModal({ type: "purchases" })} style={{ background: "none", border: "none", padding: 0, marginTop: 3, fontSize: 11, color: palette.leaf, fontWeight: 600, textDecoration: "underline", cursor: "pointer", fontFamily: FONT_BODY }}>
+          When did I last buy feed?
+        </button>
       </div>
       <Btn variant="accent" onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })} style={{ padding: "8px 12px", fontSize: 13 }}>
         + Feed
@@ -10557,6 +10562,18 @@ function EggLayersSummary({ hobby, data, entries, sales, update, setModal }) {
       >
         <Plus size={16} /> Add another flock
       </button>
+
+      {/* Brooder history — batches live on the Incubator hobby (often
+          hidden), so egg-layer folks get a direct way in from here. */}
+      {data && brooderHistory(data).length > 0 && (
+        <button
+          type="button"
+          onClick={() => setModal({ type: "brooderHistory" })}
+          style={{ padding: "10px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.ink, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+        >
+          🐣 Brooder history ({brooderHistory(data).length})
+        </button>
+      )}
 
       {/* Weekly summary across all flocks */}
       {eggsLaid.length > 0 && (
@@ -10712,6 +10729,24 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
         <button onClick={inc} style={{ width: 52, height: 52, borderRadius: 26, fontSize: 28, fontWeight: 700, border: `2px solid ${palette.ink}`, background: palette.yolk, cursor: "pointer", color: palette.ink, boxShadow: "2px 2px 0 " + palette.line, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
       </div>
 
+      {/* This flock's eggs: today (incl. the basket), last 7 and 30 days. */}
+      {(() => {
+        const sum = flockEggSummary(entries, flock.id, { today, basket: count });
+        const cell = (label, n) => (
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1 }}>{n}</div>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>{label}</div>
+          </div>
+        );
+        return (
+          <div style={{ display: "flex", marginTop: 10, padding: "8px 4px", background: palette.card, border: `1px solid ${palette.line}`, borderRadius: 10 }}>
+            {cell("Today", sum.today)}
+            {cell("7 days", sum.week)}
+            {cell("30 days", sum.month)}
+          </div>
+        );
+      })()}
+
       {count > 0 && (
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
           <button onClick={commit} style={{ flex: 1, padding: "9px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, color: palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer" }}>
@@ -10757,6 +10792,10 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
                         }} />
                       )}
                       <span>{b.name}</span>
+                      {b.broody && (() => {
+                        const dday = broodyDay(b, entries, today);
+                        return <span title="Broody" style={{ fontSize: 11, color: palette.inkSoft }}>🪺{dday ? ` day ${dday}` : ""}</span>;
+                      })()}
                     </button>
                   ))}
                 </div>
@@ -12053,6 +12092,12 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
     date: eggTrendMultiYear ? p.date : (p.date || "").slice(5),
     count: p.count,
   }));
+  // With 2+ flocks, the production chart gets a line per flock (+ total).
+  const chartFlocks = (hobby.flocks || []).filter(f => f && !f.archived);
+  const FLOCK_LINE_COLORS = [palette.leaf, palette.accent, "#4C8FD6", palette.feather || "#8B6F47", "#8E5BB5", "#2E9C8F"];
+  const eggTrendByFlock = chartFlocks.length > 1
+    ? eggSeriesByFlock(eggs, chartFlocks).map(r => ({ ...r, date: eggTrendMultiYear ? r.date : (r.date || "").slice(5) }))
+    : null;
 
   return (
     <div>
@@ -12241,9 +12286,17 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
       })()}
 
       {eggTrend.length > 0 && (
-        <ChartCard title="Egg production">
+        <ChartCard title={eggTrendByFlock ? "Egg production by flock" : "Egg production"}>
+          {eggTrendByFlock && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: palette.inkSoft, marginBottom: 6 }}>
+              <span><span style={{ display: "inline-block", width: 10, height: 3, background: palette.yolk, verticalAlign: "middle", marginRight: 4 }} />All flocks</span>
+              {chartFlocks.map((f, i) => (
+                <span key={f.id}><span style={{ display: "inline-block", width: 10, height: 3, background: FLOCK_LINE_COLORS[i % FLOCK_LINE_COLORS.length], verticalAlign: "middle", marginRight: 4 }} />{f.name}</span>
+              ))}
+            </div>
+          )}
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={eggTrend} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+            <LineChart data={eggTrendByFlock || eggTrend} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
               <XAxis
                 dataKey="date"
                 stroke={palette.inkSoft}
@@ -12254,7 +12307,16 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
               />
               <YAxis stroke={palette.inkSoft} fontSize={11} />
               <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} />
-              <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+              {eggTrendByFlock ? (
+                <>
+                  <Line type="monotone" dataKey="total" name="All flocks" stroke={palette.yolk} strokeWidth={3} dot={false} />
+                  {chartFlocks.map((f, i) => (
+                    <Line key={f.id} type="monotone" dataKey={f.id} name={f.name} stroke={FLOCK_LINE_COLORS[i % FLOCK_LINE_COLORS.length]} strokeWidth={2} dot={false} connectNulls />
+                  ))}
+                </>
+              ) : (
+                <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -13249,6 +13311,14 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     return <BragShareModal card={gardenShareCard(data, gh)} user={user} onClose={close}
       onSignIn={() => setModal({ type: "signup" })} />;
   }
+  if (modal.type === "brooderHistory") {
+    const inc = data.hobbies.find((h) => h.id === "incubator" || h.type === "incubator");
+    return <BrooderHistoryModal data={data} onClose={close} onOpenIncubator={inc ? () => {
+      if (inc.hidden) update((d) => { const h = d.hobbies.find((x) => x.id === inc.id); if (h) h.hidden = false; return d; });
+      close(); setActiveHobby(inc.id); setPage("incubator");
+    } : null} />;
+  }
+  if (modal.type === "purchases") return <PurchaseHistoryModal data={data} onClose={close} />;
   if (modal.type === "wrapped") {
     const wy = modal.year || activeWrappedYear(new Date(), true);
     return <WrappedViewer data={data} update={update} user={user} year={wy} toast={toast} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
@@ -17589,6 +17659,8 @@ function BirdPhotoSection({ bird, user, onCommit }) {
 
 function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose }) {
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
+  const flockEntries = React.useMemo(() => ((data && data.entries && data.entries[hobbyId]) || []), [data, hobbyId]);
+  const hatchChoices = React.useMemo(() => hatchChoicesForFlock(data, flockId), [data, flockId]);
   const [birds, setBirds] = useState(() =>
     (flock?.namedBirds || []).map(b => ({ ...b }))
   );
@@ -17946,23 +18018,67 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                   (updating the flock counter, logging an entry) happen via the
                   Broody tile on the main page, not here; this is just the flag
                   for users who'd rather just track without logging an event. */}
-              <button
-                type="button"
-                onClick={() => updateBird(b.id, { broody: !b.broody })}
-                style={{
-                  marginTop: 8,
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "6px 10px",
-                  background: b.broody ? palette.yolkSoft : "transparent",
-                  border: `1.5px solid ${b.broody ? palette.yolk : palette.line}`,
-                  borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
-                  fontSize: 12, color: palette.ink, width: "100%",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ fontSize: 14 }}>{b.broody ? "🪺" : "○"}</span>
-                <span>{b.broody ? "Currently broody" : "Not broody"} — tap to toggle</span>
-              </button>
+              {/* Hatch date + age. Quick picks: brooder batches whose chicks
+                  moved into this flock (flockTools.hatchChoicesForFlock). */}
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap" }}>Hatched</label>
+                  <input
+                    type="date"
+                    style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, flex: 1 }}
+                    value={b.hatchDate || ""}
+                    max={todayStr()}
+                    onChange={(e) => updateBird(b.id, { hatchDate: e.target.value || null })}
+                  />
+                </div>
+                {b.hatchDate && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 3 }}>{ageLabel(b.hatchDate, todayStr())}</div>}
+                {!b.hatchDate && hatchChoices.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
+                    {hatchChoices.slice(0, 3).map((hc) => (
+                      <button key={hc.id} type="button" onClick={() => updateBird(b.id, { hatchDate: hc.hatchDate })}
+                        style={{ padding: "3px 9px", borderRadius: 999, border: `1px solid ${palette.line}`, background: palette.card, fontSize: 11, color: palette.ink, cursor: "pointer", fontFamily: FONT_BODY }}>
+                        🐣 {hc.name}, {new Date(hc.hatchDate + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Broody: the date she went broody is stamped, so we can show
+                  "day N"; breaking closes the spell into broodyHistory. */}
+              {(() => {
+                const day = broodyDay(b, flockEntries, todayStr());
+                const spells = Array.isArray(b.broodyHistory) ? b.broodyHistory.slice(-3).reverse() : [];
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => updateBird(b.id, broodyPatch(b, !b.broody, todayStr()))}
+                      style={{
+                        marginTop: 8,
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px",
+                        background: b.broody ? palette.yolkSoft : "transparent",
+                        border: `1.5px solid ${b.broody ? palette.yolk : palette.line}`,
+                        borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+                        fontSize: 12, color: palette.ink, width: "100%",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ fontSize: 14 }}>{b.broody ? "🪺" : "○"}</span>
+                      <span style={{ flex: 1 }}>
+                        {b.broody ? (day ? `Broody · day ${day}` : "Currently broody") : "Not broody"}
+                        {b.broody && b.broodySince && <span style={{ color: palette.inkSoft }}> (since {new Date(b.broodySince + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })})</span>}
+                      </span>
+                      <span style={{ color: palette.inkSoft, textDecoration: "underline" }}>{b.broody ? "Mark as broken" : "Mark broody"}</span>
+                    </button>
+                    {spells.length > 0 && (
+                      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.5 }}>
+                        Past broody spells: {spells.map(broodySpellLabel).join(" · ")}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <BirdPhotoSection bird={b} user={user} onCommit={(nextPhotos) => commitBirdPhotos(b.id, nextPhotos)} />
               {dyingBirdId === b.id ? (
                 <div style={{ marginTop: 8, padding: 10, background: palette.bgAlt, border: `1.5px solid ${palette.accent}`, borderRadius: 8 }}>
@@ -20851,7 +20967,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             if (namedId) {
               const nb = (fl.namedBirds || []).find(b => b.id === namedId);
               if (nb) {
-                nb.broody = (status === "started");
+                Object.assign(nb, broodyPatch(nb, status === "started", entry.date || todayStr()));
                 // Stamp the bird's name on the entry so the activity feed
                 // and Journal can display "Henrietta — went broody" without
                 // an extra lookup later.

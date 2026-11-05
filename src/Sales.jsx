@@ -1453,7 +1453,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   );
 }
 
-export default function SalesPage({ data, update, onEmailCustomers }) {
+export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHistory }) {
   const [showAddSale, setShowAddSale] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
@@ -1659,6 +1659,21 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
         </span>
         <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
       </button>
+
+      {onPurchaseHistory && (
+        <button type="button" onClick={onPurchaseHistory} style={{
+          width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
+          background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+        }}>
+          <span style={{ fontSize:22 }}>🧾</span>
+          <span style={{ flex:1 }}>
+            <span style={{ display:"block",fontWeight:700,fontSize:14 }}>Purchase history</span>
+            <span style={{ display:"block",fontSize:12,color:palette.inkSoft }}>When you last bought each thing, what it cost, and how often you buy it.</span>
+          </span>
+          <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
+        </button>
+      )}
 
       {onEmailCustomers && (
         <button type="button" onClick={onEmailCustomers} style={{
