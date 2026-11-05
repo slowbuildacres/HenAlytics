@@ -26,6 +26,19 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
 
     static let appGroup = "group.com.henalytics.app"
 
+    override public func load() {
+        // A Siri voice log (VoiceIntents.swift) just added eggs to the tally:
+        // tell the web layer so an already-open app folds them in now.
+        NotificationCenter.default.addObserver(self, selector: #selector(voiceTallyChanged),
+                                               name: .henTallyChanged, object: nil)
+    }
+
+    @objc private func voiceTallyChanged() {
+        DispatchQueue.main.async { [weak self] in
+            self?.notifyListeners("tallyChanged", data: [:])
+        }
+    }
+
     @objc func setToday(_ call: CAPPluginCall) {
         guard let json = call.getString("json"), json.count < 20_000 else {
             call.reject("Missing or oversized snapshot")
@@ -38,6 +51,10 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         defaults.set(json, forKey: "today")
         // Today + Egg Tally both read this snapshot.
         WidgetCenter.shared.reloadAllTimelines()
+        // Flock names feed Siri's "Log eggs for <flock>" phrase.
+        if #available(iOS 17.0, *) {
+            HenalyticsShortcuts.updateAppShortcutParameters()
+        }
         call.resolve(["ok": true])
     }
 

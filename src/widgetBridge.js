@@ -162,6 +162,26 @@ export async function takeWidgetTally() {
   }
 }
 
+// iOS: a Siri voice log ("log eggs in Henalytics", ios/App/App/VoiceIntents.swift)
+// adds to the same tally while the app may already be open. The native side
+// fires "tallyChanged" so we can take it right away. Returns an unsubscribe fn.
+export function onWidgetTallyChanged(cb) {
+  const p = plugin();
+  if (!p || typeof p.addListener !== 'function' || typeof cb !== 'function') return () => {};
+  let handle = null;
+  let removed = false;
+  try {
+    Promise.resolve(p.addListener('tallyChanged', () => cb())).then((h) => {
+      handle = h;
+      if (removed && h && typeof h.remove === 'function') h.remove();
+    }).catch(() => {});
+  } catch (_) {}
+  return () => {
+    removed = true;
+    try { if (handle && typeof handle.remove === 'function') handle.remove(); } catch (_) {}
+  };
+}
+
 let _last = '';
 // Send the snapshot to the native widget store. No-op on web; skips writes
 // when nothing changed (WidgetKit reloads are budgeted).

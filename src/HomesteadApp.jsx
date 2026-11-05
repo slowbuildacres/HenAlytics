@@ -87,7 +87,7 @@ import {
   reconcileNudges, reconcileFrostAlerts, reconcileWrappedAlert,
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
-import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally } from "./widgetBridge.js";
+import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged } from "./widgetBridge.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -1681,7 +1681,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 55;
+const CURRENT_VERSION = 56;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1794,6 +1794,8 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🎙️ Log eggs with your voice (iPhone) — say \"Hey Siri, log eggs in Henalytics\". Siri asks how many (and which flock, if you have more than one) and adds them to today, same as the egg counter. Ask \"Hey Siri, how many eggs today in Henalytics\" to hear your count. Works from your Apple Watch, AirPods and CarPlay too, and the phrases show up in the Shortcuts app.",  // SIRI_EGGS_WHATSNEW
+  "🐔 Flock upgrades — see how many days a hen has been broody (and her past broody spells), add hatch dates so every bird shows its age, and look back at your whole brooder history. Egg counts now split by flock on the egg layers page and in Stats, and \"When did I last buy feed?\" shows the last time you bought anything, plus every purchase.",  // FLOCK_FEATURES_WHATSNEW
   "🥚 Egg Counter widget (phone app) — add it to your home screen, pick a flock, and tap + every time you collect. No need to open the app; the count saves to that day on its own, just like the counter on the egg layers page. Long-press the widget to switch flocks. This update also fixes the app not opening on iOS 27.",
   "\uD83C\uDF42 Fall Community Giveaway \u2014 running October 1 through December 31, and this one's big: TWO winners, one prize each. Up for grabs are an Omlet 1.5 Gallon Insulated Chicken Waterer and a HenGear small nest box with roll-out tray. To enter, just have a Henalytics account and follow us on Facebook \u2014 that's it, one entry per account. A reminder popup appears each Friday while it runs. No purchase necessary and donating never improves your odds \u2014 donating in the app is what makes these giveaways happen, and lets them keep growing.",  // GIVEAWAY_FALL_WHATSNEW
   "🌾 Feed supply tracker — never get surprised by an empty feed bin again. On any animal page (chickens, goats, cows, pigs, sheep, rabbits, dogs, cats, horses), tap the new feed banner, tell Henalytics how many lbs you've got, and your normal feed logs teach it how fast you burn through it. You'll see days remaining and an estimated empty date, and when you're about 5 days out it drops a reminder on your calendar — which also rides your weekly chore email. Log purchases with a cost and they flow straight into your Feed expenses. Works with cups or lbs feedings. (Horses got a new \u{1F33E} Fed button so the barn can join in.)",  // FEED_TRACKER_WHATSNEW
@@ -4025,6 +4027,12 @@ useEffect(() => {
   // the stale-basket sweep below then saves yesterday's basket to its day.
   const widgetTallyBusyRef = useRef(false);
   const hasHobbies = !!data?.hobbies;
+  // Siri voice logs land in the same tally while the app is open (iOS).
+  const [voiceTallyTick, setVoiceTallyTick] = useState(0);
+  useEffect(() => {
+    if (!isNativeApp()) return undefined;
+    return onWidgetTallyChanged(() => setVoiceTallyTick((t) => t + 1));
+  }, []);
   useEffect(() => {
     if (!isNativeApp() || !hasHobbies || widgetTallyBusyRef.current) return;
     widgetTallyBusyRef.current = true;
@@ -4041,7 +4049,7 @@ useEffect(() => {
         widgetTallyBusyRef.current = false;
       }
     })();
-  }, [frostResumeTick, hasHobbies]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [frostResumeTick, voiceTallyTick, hasHobbies]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Offer the daily nudge once, right after someone's 2nd log on the phone
   // app (they've shown they want to track; that's when a reminder helps).
