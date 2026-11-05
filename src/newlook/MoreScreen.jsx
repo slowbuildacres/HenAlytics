@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from "react";
 import {
   DollarSign, Sparkles, BookOpen, Trophy, Heart, Home as HomeIcon, MapPin, Settings,
-  Cloud, CloudOff, Image as ImageIcon, Wand2,
+  Cloud, CloudOff, Image as ImageIcon,
 } from "lucide-react";
 import { nl, font, type } from "./theme.js";
 import { Card, Row, Badge } from "./ui.jsx";
@@ -41,7 +41,7 @@ export function syncLine({ signedIn, online, status, lastSyncAt, now = Date.now(
 export default function MoreScreen({
   data, user, isSupporter, syncStatus, online, lastSyncAt, homesteadSwitcher,
   onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport,
-  onHobbies, onBarn, onSettings, newLook, onToggleNewLook,
+  onHobbies, onBarn, onSettings,
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
@@ -96,13 +96,6 @@ export default function MoreScreen({
         <Row first icon={ic(HomeIcon)} title="Hobbies" sub="Add, hide or customize" onClick={onHobbies} chevron />
         <Row icon={ic(MapPin)} title="Homestead details" sub="Location, zone, farmhands" onClick={onBarn} chevron />
         <Row icon={ic(Settings)} title="All settings" sub="Reminders, units, export, help" onClick={onSettings} chevron />
-        {onToggleNewLook && (
-          <Row icon={ic(Wand2)} title="New look (preview)" sub="Turn off to go back to the current design"
-            onClick={() => onToggleNewLook(!newLook)}
-            trailing={<span role="switch" aria-checked={!!newLook} style={{
-              width: 44, height: 26, borderRadius: 13, background: newLook ? nl.good : nl.field, position: "relative", flexShrink: 0,
-            }}><span style={{ position: "absolute", top: 3, left: newLook ? 21 : 3, width: 20, height: 20, borderRadius: 10, background: "#fff" }} /></span>} />
-        )}
       </Card>
     </div>
   );

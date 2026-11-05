@@ -89,7 +89,7 @@ import {
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
 import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged } from "./widgetBridge.js";
 // NEW_LOOK (3.0): the redesign, built behind a per-device switch (src/newlook/flag.js).
-import { useNewLook } from "./newlook/flag.js";
+import { useNewLook, NEW_LOOK_LAUNCHED } from "./newlook/flag.js";
 import { nl } from "./newlook/theme.js";
 import NavBar from "./newlook/NavBar.jsx";
 import LogPicker from "./newlook/LogPicker.jsx";
@@ -6028,7 +6028,6 @@ useNativeBackButton(React.useCallback(() => {
             onHobbies={() => setModal({ type: "manageHobbies" })}
             onBarn={() => setModal({ type: "barn" })}
             onSettings={() => setModal({ type: "settings" })}
-            newLook={newLook} onToggleNewLook={setNewLook}
           />
         )}
         {newLook && isHobbyPage && activeEntry && (
@@ -14345,14 +14344,14 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         }}
       />
 
-      {/* NEW_LOOK (3.0) preview switch — on this device only. */}
-      <SectionBtn
+      {/* NEW_LOOK (3.0) preview switch — on this device only; gone at launch. */}
+      {!NEW_LOOK_LAUNCHED && <SectionBtn
         icon={Sparkles}
         label="Try the new look (preview)"
         sub="See the redesign we're building. Switch back anytime from More."
         accent={palette.yolk}
         onClick={() => { onClose(); setTimeout(() => window.dispatchEvent(new CustomEvent("henalytics-newlook", { detail: true })), 0); }}
-      />
+      />}
       <SectionBtn
         icon={Sparkles}
         label="Show the new look tour again"
