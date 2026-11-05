@@ -181,7 +181,7 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
         <div style={{ marginTop: "auto", paddingTop: 20, display: "flex", flexDirection: "column", gap: 12, paddingBottom: "env(safe-area-inset-bottom)" }}>
           {step === 2 && (
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, minHeight: 44, color: nl.ink }}>
-              <input type="checkbox" checked={importAfter} onChange={(e) => setImportAfter(e.target.checked)} style={{ width: 22, height: 22 }} />
+              <input type="checkbox" checked={importAfter} onChange={(e) => setImportAfter(e.target.checked)} style={{ width: 22, height: 22, accentColor: nl.ink }} />
               I have old records in a spreadsheet to bring in
             </label>
           )}

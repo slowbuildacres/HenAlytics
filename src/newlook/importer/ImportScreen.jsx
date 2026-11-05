@@ -192,7 +192,7 @@ export default function ImportScreen({ data, update, onBack, toast }) {
           <Card padded style={{ display: "flex", flexDirection: "column", gap: 10 }}>
             <div style={{ fontFamily: font.display, fontSize: 20 }}>Match your columns</div>
             <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, minHeight: 36 }}>
-              <input type="checkbox" checked={hasHeader} onChange={(e) => toggleHeader(e.target.checked)} style={{ width: 20, height: 20 }} />
+              <input type="checkbox" checked={hasHeader} onChange={(e) => toggleHeader(e.target.checked)} style={{ width: 20, height: 20, accentColor: nl.good }} />
               The first row is headings
             </label>
             {fields.map((f) => (
@@ -223,7 +223,7 @@ export default function ImportScreen({ data, update, onBack, toast }) {
                   <select aria-label="Flock" style={selStyle()} value={flockId} onChange={(e) => setFlockId(e.target.value)}>{flocks.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}</select>
                 ) : <div style={{ fontSize: 14 }}>Into {flock ? flock.name : "your flock"}</div>}
                 <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 14, minHeight: 36 }}>
-                  <input type="checkbox" checked={skipDupes} onChange={(e) => setSkipDupes(e.target.checked)} style={{ width: 20, height: 20 }} />
+                  <input type="checkbox" checked={skipDupes} onChange={(e) => setSkipDupes(e.target.checked)} style={{ width: 20, height: 20, accentColor: nl.good }} />
                   Skip days that already have eggs logged
                 </label>
               </>
