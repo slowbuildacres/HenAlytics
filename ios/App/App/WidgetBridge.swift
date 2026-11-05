@@ -2,7 +2,8 @@
 // WidgetBridge: hands the "Today" widget its data.
 // ----------------------------------------------------------------------------
 // The web app (src/widgetBridge.js) calls WidgetBridge.setToday({ json })
-// whenever eggs, calendar items or the frost outlook change. We store the JSON
+// whenever eggs, flocks, calendar items or the frost outlook change, and
+// WidgetBridge.takeTally() to collect egg tally widget taps. We store the JSON
 // in the shared App Group (group.com.henalytics.app, key "today"), where
 // HenalyticsWidget.swift reads it, and ask WidgetKit to redraw the widget.
 //
@@ -19,7 +20,8 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let identifier = "WidgetBridgePlugin"
     public let jsName = "WidgetBridge"
     public let pluginMethods: [CAPPluginMethod] = [
-        CAPPluginMethod(name: "setToday", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "setToday", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeTally", returnType: CAPPluginReturnPromise)
     ]
 
     static let appGroup = "group.com.henalytics.app"
@@ -34,8 +36,24 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
             return
         }
         defaults.set(json, forKey: "today")
-        WidgetCenter.shared.reloadTimelines(ofKind: "HenalyticsToday")
+        // Today + Egg Tally both read this snapshot.
+        WidgetCenter.shared.reloadAllTimelines()
         call.resolve(["ok": true])
+    }
+
+    /// Egg tally widget: return the taps it has collected
+    /// ({ flockId: { "YYYY-MM-DD": n } } as JSON) and clear them. The web app
+    /// folds them into the flocks' egg baskets (src/widgetBridge.js).
+    @objc func takeTally(_ call: CAPPluginCall) {
+        guard let defaults = UserDefaults(suiteName: WidgetBridgePlugin.appGroup) else {
+            call.resolve(["json": ""])
+            return
+        }
+        let json = defaults.string(forKey: "eggTally") ?? ""
+        if !json.isEmpty {
+            defaults.removeObject(forKey: "eggTally")
+        }
+        call.resolve(["json": json])
     }
 }
 

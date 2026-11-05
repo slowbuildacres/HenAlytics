@@ -10,6 +10,10 @@
 //   • "Quick Log"   — medium home-screen widget: Eggs, Harvest, Water, Note.
 //   • "One-Tap Log" — small home-screen OR lock-screen widget. Long-press →
 //                     Edit Widget to choose what it logs.
+//   • "Egg Counter" — small/medium, interactive: tap + as you collect for
+//                     the flock you picked (Edit Widget). Taps go to the
+//                     App Group key "eggTally"; the app folds them into that
+//                     flock's egg basket on open, which saves to the day.
 // Every tap opens the app straight into the matching log form via a
 // henalytics:// link that HomesteadApp.jsx handles (see WIDGET DEEP LINKS).
 // ============================================================================
@@ -151,6 +155,16 @@ struct QuickLogWidget: Widget {
 
 let henAppGroup = "group.com.henalytics.app"
 
+/// One egg-layer flock from the app's snapshot (src/widgetBridge.js).
+/// basket = eggs in today's in-app basket; logged = eggs already saved today.
+struct TodayFlock: Decodable {
+    let id: String
+    let name: String
+    let emoji: String?
+    let basket: Int?
+    let logged: Int?
+}
+
 struct TodaySnapshot: Decodable {
     struct Frost: Decodable { let lowText: String; let crops: [String]? }
     struct Task: Decodable { let date: String; let title: String }
@@ -159,6 +173,7 @@ struct TodaySnapshot: Decodable {
     let eggsToday: Int?
     let frost: Frost?
     let tasks: [Task]?
+    let flocks: [TodayFlock]?
 
     static func load() -> TodaySnapshot? {
         guard let defaults = UserDefaults(suiteName: henAppGroup),
@@ -382,6 +397,237 @@ struct OneTapWidget: Widget {
     }
 }
 
+// MARK: - Egg Counter (small + medium, interactive, one flock)
+
+/// Taps waiting for the app: { flockId: { "yyyy-MM-dd": n } }, n may be
+/// negative (− after the app already had eggs in the basket).
+enum EggTallyStore {
+    static let key = "eggTally"
+
+    static func load() -> [String: [String: Int]] {
+        guard let defaults = UserDefaults(suiteName: henAppGroup),
+              let json = defaults.string(forKey: key),
+              let data = json.data(using: .utf8),
+              let value = try? JSONDecoder().decode([String: [String: Int]].self, from: data) else { return [:] }
+        return value
+    }
+
+    static func save(_ value: [String: [String: Int]]) {
+        guard let defaults = UserDefaults(suiteName: henAppGroup) else { return }
+        if value.isEmpty {
+            defaults.removeObject(forKey: key)
+            return
+        }
+        if let data = try? JSONEncoder().encode(value), let json = String(data: data, encoding: .utf8) {
+            defaults.set(json, forKey: key)
+        }
+    }
+
+    static func pending(flockId: String, day: String) -> Int {
+        load()[flockId]?[day] ?? 0
+    }
+
+    /// Adds `delta` for the day, never letting the shown count drop below 0
+    /// (`floor` = minus what the app's basket already holds).
+    static func add(flockId: String, day: String, delta: Int, floor: Int) {
+        var all = load()
+        var days = all[flockId] ?? [:]
+        let next = max(floor, (days[day] ?? 0) + delta)
+        if next == 0 {
+            days.removeValue(forKey: day)
+        } else {
+            days[day] = next
+        }
+        all[flockId] = days.isEmpty ? nil : days
+        save(all)
+    }
+}
+
+enum FlockDirectory {
+    static func flocks() -> [TodayFlock] { TodaySnapshot.load()?.flocks ?? [] }
+    static func entities() -> [FlockEntity] { flocks().map { FlockEntity(id: $0.id, name: $0.name) } }
+}
+
+struct FlockEntity: AppEntity {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Flock" }
+    static var defaultQuery = FlockQuery()
+
+    var id: String
+    var name: String
+
+    var displayRepresentation: DisplayRepresentation {
+        DisplayRepresentation(title: "\(name)")
+    }
+}
+
+struct FlockQuery: EntityQuery {
+    func entities(for identifiers: [FlockEntity.ID]) async throws -> [FlockEntity] {
+        FlockDirectory.entities().filter { identifiers.contains($0.id) }
+    }
+
+    func suggestedEntities() async throws -> [FlockEntity] {
+        FlockDirectory.entities()
+    }
+
+    func defaultResult() async -> FlockEntity? {
+        FlockDirectory.entities().first
+    }
+}
+
+struct PickFlockIntent: WidgetConfigurationIntent {
+    static var title: LocalizedStringResource { "Choose a flock" }
+    static var description: IntentDescription { "Count eggs for this flock." }
+
+    @Parameter(title: "Flock")
+    var flock: FlockEntity?
+}
+
+/// The + / − buttons. Runs in the widget, no app launch.
+struct TallyEggsIntent: AppIntent {
+    static var title: LocalizedStringResource { "Count eggs" }
+    static var isDiscoverable: Bool { false }
+
+    @Parameter(title: "Flock")
+    var flockId: String
+
+    @Parameter(title: "Change")
+    var delta: Int
+
+    init() {}
+
+    init(flockId: String, delta: Int) {
+        self.flockId = flockId
+        self.delta = delta
+    }
+
+    func perform() async throws -> some IntentResult {
+        let day = henLocalDay(Date())
+        let snap = TodaySnapshot.load()
+        let base = snap?.day == day ? (snap?.flocks?.first(where: { $0.id == flockId })?.basket ?? 0) : 0
+        EggTallyStore.add(flockId: flockId, day: day, delta: delta, floor: -base)
+        return .result()
+    }
+}
+
+struct EggTallyEntry: TimelineEntry {
+    let date: Date
+    let flock: TodayFlock?
+    let count: Int
+    let logged: Int
+    let hasFlocks: Bool
+}
+
+struct EggTallyProvider: AppIntentTimelineProvider {
+    func placeholder(in context: Context) -> EggTallyEntry {
+        EggTallyEntry(date: .now, flock: TodayFlock(id: "", name: "The girls", emoji: "🐔", basket: 6, logged: 0),
+                      count: 6, logged: 0, hasFlocks: true)
+    }
+
+    func snapshot(for configuration: PickFlockIntent, in context: Context) async -> EggTallyEntry {
+        makeEntry(configuration, date: .now)
+    }
+
+    func timeline(for configuration: PickFlockIntent, in context: Context) async -> Timeline<EggTallyEntry> {
+        // Now, and just after midnight so the count starts fresh each day.
+        let cal = Calendar.current
+        let midnight = cal.date(byAdding: .minute, value: 1, to: cal.startOfDay(for: cal.date(byAdding: .day, value: 1, to: .now)!))!
+        return Timeline(entries: [makeEntry(configuration, date: .now), makeEntry(configuration, date: midnight)],
+                        policy: .after(midnight))
+    }
+
+    private func makeEntry(_ configuration: PickFlockIntent, date: Date) -> EggTallyEntry {
+        let day = henLocalDay(date)
+        let snap = TodaySnapshot.load()
+        let flocks = snap?.flocks ?? []
+        guard let flock = flocks.first(where: { $0.id == configuration.flock?.id }) ?? flocks.first else {
+            return EggTallyEntry(date: date, flock: nil, count: 0, logged: 0, hasFlocks: false)
+        }
+        let fresh = snap?.day == day
+        let base = fresh ? (flock.basket ?? 0) : 0
+        let logged = fresh ? (flock.logged ?? 0) : 0
+        let count = max(0, base + EggTallyStore.pending(flockId: flock.id, day: day))
+        return EggTallyEntry(date: date, flock: flock, count: count, logged: logged, hasFlocks: true)
+    }
+}
+
+struct EggTallyView: View {
+    @Environment(\.widgetFamily) private var family
+    var entry: EggTallyEntry
+
+    var body: some View {
+        Group {
+            if let flock = entry.flock {
+                tally(flock)
+            } else {
+                VStack(spacing: 6) {
+                    Text("🥚").font(.system(size: 34))
+                    Text("Open Henalytics to add your flock")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(Color.henInk)
+                        .multilineTextAlignment(.center)
+                }
+            }
+        }
+        .widgetURL(URL(string: "henalytics://open?page=egg_layers"))
+        .containerBackground(for: .widget) { Color.henBg }
+    }
+
+    private func tally(_ flock: TodayFlock) -> some View {
+        VStack(spacing: family == .systemSmall ? 2 : 4) {
+            HStack(spacing: 4) {
+                Text(flock.emoji ?? "🐔").font(.system(size: 13))
+                Text(flock.name)
+                    .font(.system(size: 13, weight: .semibold, design: .serif))
+                    .foregroundStyle(Color.henInk)
+                    .lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            Text("\(entry.count)")
+                .font(.system(size: family == .systemSmall ? 38 : 42, weight: .bold, design: .serif))
+                .foregroundStyle(Color.henInk)
+                .contentTransition(.numericText())
+            Text(entry.logged > 0 ? "\(entry.logged) more saved today" : "eggs today")
+                .font(.system(size: 10))
+                .foregroundStyle(Color.henInkSoft)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+            HStack(spacing: 6) {
+                tallyButton("−", flockId: flock.id, delta: -1, prominent: false)
+                tallyButton("+", flockId: flock.id, delta: 1, prominent: true)
+                if family != .systemSmall {
+                    tallyButton("+6", flockId: flock.id, delta: 6, prominent: false)
+                    tallyButton("+12", flockId: flock.id, delta: 12, prominent: false)
+                }
+            }
+        }
+    }
+
+    private func tallyButton(_ label: String, flockId: String, delta: Int, prominent: Bool) -> some View {
+        Button(intent: TallyEggsIntent(flockId: flockId, delta: delta)) {
+            Text(label)
+                .font(.system(size: 18, weight: .bold))
+                .foregroundStyle(Color.henInk)
+                .frame(maxWidth: .infinity, minHeight: 34)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(prominent ? Color.henYolk : Color.henCard))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.henInk.opacity(0.18), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct EggTallyWidget: Widget {
+    let kind = "HenalyticsEggTally"
+
+    var body: some WidgetConfiguration {
+        AppIntentConfiguration(kind: kind, intent: PickFlockIntent.self, provider: EggTallyProvider()) { entry in
+            EggTallyView(entry: entry)
+        }
+        .configurationDisplayName("Egg Counter")
+        .description("Tap + as you collect. It saves to today on its own. Long-press → Edit Widget to pick a flock.")
+        .supportedFamilies([.systemSmall, .systemMedium])
+    }
+}
+
 // MARK: - Bundle
 
 @main
@@ -390,5 +636,6 @@ struct HenalyticsWidgetBundle: WidgetBundle {
         TodayWidget()
         QuickLogWidget()
         OneTapWidget()
+        EggTallyWidget()
     }
 }

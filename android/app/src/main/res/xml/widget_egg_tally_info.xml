@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Egg Counter. Picks a flock when placed (EggTallyConfigActivity) and can be
+     reconfigured; on Android 12+ placing it without picking uses the first
+     flock. Refreshes every 30 min so the count starts fresh after midnight. -->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:targetCellWidth="2"
+    android:targetCellHeight="2"
+    android:resizeMode="horizontal|vertical"
+    android:updatePeriodMillis="1800000"
+    android:initialLayout="@layout/widget_egg_tally"
+    android:previewLayout="@layout/widget_egg_tally"
+    android:configure="com.henalytics.app.EggTallyConfigActivity"
+    android:widgetFeatures="reconfigurable|configuration_optional"
+    android:description="@string/widget_egg_tally_desc"
+    android:widgetCategory="home_screen" />

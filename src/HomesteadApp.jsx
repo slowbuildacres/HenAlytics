@@ -87,7 +87,7 @@ import {
   reconcileNudges, reconcileFrostAlerts, reconcileWrappedAlert,
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
-import { buildWidgetSnapshot, pushWidgetSnapshot } from "./widgetBridge.js";
+import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally } from "./widgetBridge.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -1679,7 +1679,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 54;
+const CURRENT_VERSION = 55;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1792,6 +1792,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🥚 Egg Counter widget (phone app) — add it to your home screen, pick a flock, and tap + every time you collect. No need to open the app; the count saves to that day on its own, just like the counter on the egg layers page. Long-press the widget to switch flocks. This update also fixes the app not opening on iOS 27.",
   "\uD83C\uDF42 Fall Community Giveaway \u2014 running October 1 through December 31, and this one's big: TWO winners, one prize each. Up for grabs are an Omlet 1.5 Gallon Insulated Chicken Waterer and a HenGear small nest box with roll-out tray. To enter, just have a Henalytics account and follow us on Facebook \u2014 that's it, one entry per account. A reminder popup appears each Friday while it runs. No purchase necessary and donating never improves your odds \u2014 donating in the app is what makes these giveaways happen, and lets them keep growing.",  // GIVEAWAY_FALL_WHATSNEW
   "🌾 Feed supply tracker — never get surprised by an empty feed bin again. On any animal page (chickens, goats, cows, pigs, sheep, rabbits, dogs, cats, horses), tap the new feed banner, tell Henalytics how many lbs you've got, and your normal feed logs teach it how fast you burn through it. You'll see days remaining and an estimated empty date, and when you're about 5 days out it drops a reminder on your calendar — which also rides your weekly chore email. Log purchases with a cost and they flow straight into your Feed expenses. Works with cups or lbs feedings. (Horses got a new \u{1F33E} Fed button so the barn can join in.)",  // FEED_TRACKER_WHATSNEW
   "🧺 Eggs on hand — a live count of the eggs actually in your fridge. Tap the new Use Eggs tile on the egg layers page, count what you've got right now, and from then on every egg you collect adds to it and every egg you sell (from the tile or the Sales tab) or use comes off. Log what happened to them — ate, donated, tossed, set to hatch — and your stats page shows where your eggs actually go. Year in Review gets a \"where they went\" breakdown too. Totally optional; the tile can be hidden in Manage Hobbies like any other.",  // EGG_INVENTORY_WHATSNEW
@@ -3992,6 +3993,11 @@ useEffect(() => {
   // calendar items, handed to the home-screen widget on every relevant change
   // and on resume. Debounced; the bridge skips unchanged snapshots.
   const widgetEggKey = (data?.entries?.egg_layers || []).filter((e) => e && e.date === todayKey).length;
+  // Flock names + today's baskets, so the egg tally widget follows the app.
+  const widgetFlockKey = (data?.hobbies || [])
+    .filter((h) => h && h.type === "egg_layers" && !h.hidden)
+    .flatMap((h) => (h.flocks || []).filter((f) => f && !f.archived).map((f) => `${f.id}:${f.name}:${f.birdType}:${f.eggBasket ? `${f.eggBasket.date}=${f.eggBasket.count}` : ""}`))
+    .join("|");
   useEffect(() => {
     if (!isNativeApp() || !data?.hobbies) return;
     let cancelled = false;
@@ -4008,7 +4014,32 @@ useEffect(() => {
       if (!cancelled) pushWidgetSnapshot(buildWidgetSnapshot(data, { frost }));
     }, 800);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [calendarEventsKey, widgetEggKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [calendarEventsKey, widgetEggKey, widgetFlockKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Egg tally widget → flock baskets --------------------------------------
+  // Taps on the widget's + / − build a per-flock, per-day tally in the native
+  // store. On launch and every resume, take it and fold it into the flocks'
+  // egg baskets (today) or entries (past days), same as the in-app counter;
+  // the stale-basket sweep below then saves yesterday's basket to its day.
+  const widgetTallyBusyRef = useRef(false);
+  const hasHobbies = !!data?.hobbies;
+  useEffect(() => {
+    if (!isNativeApp() || !hasHobbies || widgetTallyBusyRef.current) return;
+    widgetTallyBusyRef.current = true;
+    (async () => {
+      try {
+        const tally = await takeWidgetTally();
+        if (tally && Object.keys(tally).length) {
+          const today = todayStr();
+          update((d) => applyWidgetTally(d, tally, today).d);
+        }
+      } catch (_) {
+        // a lost tally is better than a crash; the widget keeps nothing else
+      } finally {
+        widgetTallyBusyRef.current = false;
+      }
+    })();
+  }, [frostResumeTick, hasHobbies]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Offer the daily nudge once, right after someone's 2nd log on the phone
   // app (they've shown they want to track; that's when a reminder helps).
