@@ -1726,7 +1726,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 56;
+const CURRENT_VERSION = 57;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1839,6 +1839,11 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "✨ A whole new Henalytics — every screen rebuilt to make things easier to find. Home shows what needs you today, each hobby has Today, its animals or plants, and Stats, and the yellow Log button logs anything in two taps. Saves show a few seconds of Undo instead of \"Are you sure?\" popups. Your animals, logs and numbers are exactly where you left them.",  // NEWLOOK_30_WHATSNEW
+  "🌙 Dark mode for everyone (More › Look & app icon). Supporters also get Meadow and Barn colors, new app icons on iPhone, and a Wrapped of their month on the 1st of every month.",
+  "🎓 4-H & FFA — start a project and the record book fills itself in from what you already log: animals, production, costs, sales, health and photos. Log project hours and shows, write goals and the project story, then download a PDF ready to sign. FFA projects get an AET summary to type from.",
+  "📊 Bring in old records — egg counts, harvests and sales from Excel, Google Sheets or a CSV (More › Bring in old records).",
+  "🎙️ More Siri (iPhone): \"Log a feeding\", \"Log milk\" and \"Log a harvest\" in Henalytics. Widgets got the new colors too, with a dark version.",
   "🎙️ Log eggs with your voice (iPhone) — say \"Hey Siri, log eggs in Henalytics\". Siri asks how many (and which flock, if you have more than one) and adds them to today, same as the egg counter. Ask \"Hey Siri, how many eggs today in Henalytics\" to hear your count. Works from your Apple Watch, AirPods and CarPlay too, and the phrases show up in the Shortcuts app.",  // SIRI_EGGS_WHATSNEW
   "🐔 Flock upgrades — see how many days a hen has been broody (and her past broody spells), add hatch dates so every bird shows its age, and look back at your whole brooder history. Egg counts now split by flock on the egg layers page and in Stats, and \"When did I last buy feed?\" shows the last time you bought anything, plus every purchase.",  // FLOCK_FEATURES_WHATSNEW
   "🥚 Egg Counter widget (phone app) — add it to your home screen, pick a flock, and tap + every time you collect. No need to open the app; the count saves to that day on its own, just like the counter on the egg layers page. Long-press the widget to switch flocks. This update also fixes the app not opening on iOS 27.",

@@ -10,7 +10,7 @@
 
 import { useCallback, useState } from "react";
 
-export const NEW_LOOK_LAUNCHED = false;
+export const NEW_LOOK_LAUNCHED = true;
 const KEY = "henalytics_newlook";
 
 function readInitial() {
