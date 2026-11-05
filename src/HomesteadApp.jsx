@@ -103,6 +103,7 @@ import { HobbyTabs } from "./newlook/ui.jsx";
 import EggToday from "./newlook/eggs/EggToday.jsx";
 import EggBirds from "./newlook/eggs/EggBirds.jsx";
 import EggStats from "./newlook/eggs/EggStats.jsx";
+import YearScreen from "./newlook/YearScreen.jsx";
 import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
 import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
@@ -144,7 +145,7 @@ import {
 import GardenMapModal from "./GardenMap.jsx";
 import PlantScannerModal from "./PlantScannerModal.jsx";
 import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
-import SalesPage, { AddExpenseModal, expandRecurringExpenses } from "./Sales.jsx";
+import SalesPage, { AddExpenseModal, expandRecurringExpenses, YearEndReportModal } from "./Sales.jsx";
 import {
   PANTRY_CATEGORIES, PANTRY_CATEGORY_LABELS, INGREDIENT_DENSITIES,
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
@@ -3327,6 +3328,7 @@ export default function HomesteadApp() {
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [nlNotice, setNlNotice] = useState(null); // announcement opened from the Home card
   const [nlHobbyTab, setNlHobbyTab] = useState("today"); // rebuilt hobbies: "today" | "animals"
+  const [nlYear, setNlYear] = useState(() => new Date().getFullYear());
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -5141,12 +5143,18 @@ useNativeBackButton(React.useCallback(() => {
 
   // ---- NEW_LOOK (3.0) navigation -------------------------------------------
   const isHobbyPage = HOBBY_PAGES.includes(page);
+  // Years with any logs, newest first (Year in review's year chips).
+  const nlYears = newLook && page === "year" ? (() => {
+    const set = new Set([new Date().getFullYear()]);
+    Object.values(data.entries || {}).forEach((arr) => (Array.isArray(arr) ? arr : []).forEach((e) => { const y = Number(String((e && e.date) || "").slice(0, 4)); if (y > 2000) set.add(y); }));
+    return [...set].sort((a, b) => b - a);
+  })() : [];
   // Hobbies already rebuilt for 3.0 (more join phase by phase).
   const nlRebuilt = !!(newLook && hobby && hobby.type === "egg_layers");
   const nlTab = page === "dash" ? "home"
-    : page === "analytics" ? "stats"
+    : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
-    : ["more", "sales", "year", "journal", "games", "photos"].includes(page) ? "more"
+    : ["more", "sales", "journal", "games", "photos"].includes(page) ? "more"
     : "home";
   const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
   // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
@@ -6056,7 +6064,7 @@ useNativeBackButton(React.useCallback(() => {
             } />
           </div>
         )}
-        {newLook && ["sales", "year", "journal", "games", "photos"].includes(page) && nlBack()}
+        {newLook && ["sales", "journal", "games", "photos"].includes(page) && nlBack()}
         {/* Celebration card (Suggestions.jsx) — shows ONLY on the tab the
             celebration belongs to. "One hundred jars" appears on canning, not
             on garden or egg-layers. activeHobby is the match key. */}
@@ -6203,8 +6211,20 @@ useNativeBackButton(React.useCallback(() => {
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
         )}
-        {page === "year" && (
+        {page === "year" && !newLook && (
           <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /* STEP3_REVIEW_PROMPT */ />
+        )}
+        {page === "year" && newLook && (
+          <YearScreen
+            data={data} year={nlYear} years={nlYears} onYear={setNlYear}
+            onBack={() => setPage("analytics")}
+            wrappedOpen={!!wrappedYearNow} wrappedYear={wrappedYearNow}
+            onOpenWrapped={() => setModal({ type: "wrapped", year: wrappedYearNow })}
+            onOpenHobby={(e) => { setActiveHobby(e.hobby.id); setPage("analytics"); }}
+            onYearEndReport={() => setModal({ type: "yearEndReport" })}
+          >
+            <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} />
+          </YearScreen>
         )}
         {/* HOMESTEAD_GAMES — regional standings hub (trophy icon in header) */}
         {page === "games" && (
@@ -13485,6 +13505,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     if (!gh) return null;
     return <SeedUseModal hobby={gh} plantName={modal.plantName} update={update} onClose={close} />;
   }
+  if (modal.type === "yearEndReport") return <YearEndReportModal data={data} onClose={close} />;
   if (modal.type === "shareCard" && modal.card) {
     return <BragShareModal card={modal.card} user={user} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
   }
