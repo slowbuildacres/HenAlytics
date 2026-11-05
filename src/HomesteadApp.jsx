@@ -174,7 +174,7 @@ import { SPECIES } from "./newlook/livestock/livestockData.js";
 import SalesScreen from "./newlook/sales/SalesScreen.jsx";
 import { MeatToday, MeatBatches, MeatStats } from "./newlook/meat/MeatScreens.jsx";
 import { batchAlive, restorePastBatch as restorePastBatchIn } from "./meatBatches.js";
-import { requestHobbyAction } from "./newlook/hobbyRequests.js";
+import { requestHobbyAction, useHobbyRequest } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics, CowsNewLook } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
 import SheepPage, { SheepAnalytics, SheepNewLook } from "./Sheep.jsx";
@@ -188,7 +188,7 @@ import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
 import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
 import BakingPage, { BakingAnalytics, bakingStats } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics, canningStats } from "./Canning.jsx";
-import { PantryStatsPage } from "./newlook/pantry/PantryScreens.jsx";
+import { PantryStatsPage, pantryNew } from "./newlook/pantry/PantryScreens.jsx";
 import FeedCard from "./newlook/FeedCard.jsx";
 import { petStats } from "./newlook/pantry/petStats.js";
 import FreezeDryingPage, { FreezeDryingAnalytics, freezeDryingStats } from "./FreezeDrying.jsx";
@@ -3468,6 +3468,8 @@ useEffect(() => {
   const [nlProjectForm, setNlProjectForm] = useState(null); // { kind } | { project }
   const [nlProjectLog, setNlProjectLog] = useState(null);   // "hours" | "show"
   const [nlProjectInfo, setNlProjectInfo] = useState(null);
+  // Log picker → a kitchen/craft/pet hobby's main form ("Canning batch"…).
+  useHobbyRequest(activeHobby, () => { if (pantryNew.fn) pantryNew.fn(); }, (a) => a === "new");
   // In the new look, every "Support Henalytics" button (announcements, Year
   // in review, Games, old screens) opens the Supporter screen instead of the
   // old popup.
@@ -5323,7 +5325,7 @@ useNativeBackButton(React.useCallback(() => {
   };
   // A Log picker action → the same log forms the hobby page opens.
   const nlLogAction = (entry, a) => {
-    const h = entry.hobby;
+    const h = (a.hobbyId && data.hobbies.find((x) => x.id === a.hobbyId)) || entry.hobby;
     setLogPickerOpen(false);
     setActiveHobby(h.id);
     if (isHobbyPage) setPage(hobbyPage(h));

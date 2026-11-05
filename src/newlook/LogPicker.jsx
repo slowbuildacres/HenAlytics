@@ -12,10 +12,11 @@ import React, { useEffect, useState } from "react";
 import {
   Egg, Wheat, DollarSign, Utensils, Bird, Archive, NotebookPen, ShoppingBasket,
   Droplet, MoreHorizontal, Truck, ArrowRight, Milk, Stethoscope, Scale, Baby, Heart, Flame, Scissors, Mountain, Hammer, Pill, Search, Bug, Clock, Award,
+  CookingPot, Snowflake, Sun, FlaskConical, Droplets, Leaf, Croissant, Target,
 } from "lucide-react";
 import { nl, font } from "./theme.js";
 import { Sheet, Chip } from "./ui.jsx";
-import { switcherEntries, LOG_ACTIONS } from "./hobbies.js";
+import { switcherEntries, LOG_ACTIONS, pantryActions } from "./hobbies.js";
 import { NAV_HEIGHT } from "./theme.js";
 import HobbyGlyph from "./HobbyGlyph.jsx";
 
@@ -23,6 +24,7 @@ const ICONS = {
   egg: Egg, feed: Wheat, sold: DollarSign, used: Utensils, nest: Bird, bedding: Archive,
   note: NotebookPen, harvest: ShoppingBasket, water: Droplet, more: MoreHorizontal, move: Truck,
   milk: Milk, health: Stethoscope, weight: Scale, kid: Baby, heart: Heart, heat: Flame, shear: Scissors, ride: Mountain, farrier: Hammer, pill: Pill, inspect: Search, bug: Bug, clock: Clock, award: Award,
+  pot: CookingPot, snow: Snowflake, sun: Sun, flask: FlaskConical, drops: Droplets, leaf: Leaf, bread: Croissant, target: Target,
 };
 
 // `extra`: more chips after the hobbies, e.g. 4-H & FFA:
@@ -34,7 +36,7 @@ export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAct
   // Re-open on the hobby you're in.
   useEffect(() => { if (open) setSel(startKey); }, [open, startKey]);
   const entry = entries.find((e) => e.key === sel) || entries[0];
-  const actions = entry ? (entry.isExtra ? entry.actions : LOG_ACTIONS[entry.type]) : null;
+  const actions = entry ? (entry.isExtra ? entry.actions : LOG_ACTIONS[entry.type] || pantryActions(entry, hobbies)) : null;
 
   return (
     <Sheet open={open} onClose={onClose} label="Log something" above={`calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom))`} maxHeight="70vh">
@@ -54,7 +56,7 @@ export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAct
           {actions.map((a) => {
             const Icon = ICONS[a.icon] || NotebookPen;
             return (
-              <button key={a.key} type="button" onClick={() => (entry.isExtra ? onExtraAction(entry.key, a) : onAction(entry, a))} style={{
+              <button key={a.id || a.key} type="button" onClick={() => (entry.isExtra ? onExtraAction(entry.key, a) : onAction(entry, a))} style={{
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
                 minHeight: 68, padding: "8px 4px", borderRadius: 16, cursor: "pointer",
                 background: a.primary ? nl.yolk : nl.card, border: `1px solid ${a.primary ? nl.yolk : nl.line}`,

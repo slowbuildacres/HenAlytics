@@ -82,6 +82,27 @@ export function entryForHobby(hobbies, activeHobbyId) {
 // action; `modal` = another modal type. Hobbies not listed here log on their
 // own page for now (each one gets its picker actions when it is rebuilt in
 // phase 3), so the picker offers "Open <hobby>" instead.
+// Kitchen, craft and pet hobbies (the shared Today/Shelf screens): one
+// "start a batch" action each, which opens the page and its main form.
+const PANTRY_NEW = {
+  canning: ["Canning batch", "pot"], freeze_drying: ["Freeze-dryer run", "snow"], dehydrating: ["Dehydrator batch", "sun"],
+  fermentation: ["Start a ferment", "flask"], tincture: ["Tincture", "flask"], oil_infusion: ["Oil infusion", "drops"],
+  salve: ["Salve", "leaf"], tea: ["Tea blend", "leaf"], soap: ["Soap batch", "drops"], sourdough: ["Bake", "feed"],
+  baking: ["Bake", "bread"], maple_syrup: ["Sap or boil", "water"], hunting: ["Harvest", "target"],
+  dogs: ["Vet or meds", "health"], cats: ["Vet or meds", "health"],
+};
+export function pantryActions(entry, hobbies) {
+  if (!entry) return null;
+  const subs = entry.ids && entry.ids.length > 1 || entry.type === "preserving" || entry.type === "herbalism"
+    ? (hobbies || []).filter((h) => h && entry.ids.includes(h.id))
+    : [entry.hobby];
+  const out = subs.filter((h) => h && PANTRY_NEW[h.type]).map((h, i) => ({
+    key: "new", id: `new:${h.id}`, label: subs.length > 1 ? (cleanName(h.name) || PANTRY_NEW[h.type][0]) : PANTRY_NEW[h.type][0],
+    icon: PANTRY_NEW[h.type][1], primary: i === 0, onPage: true, hobbyId: h.id,
+  }));
+  return out.length ? out : null;
+}
+
 export const LOG_ACTIONS = {
   egg_layers: [
     { key: "eggs", label: "Eggs", icon: "egg", primary: true },

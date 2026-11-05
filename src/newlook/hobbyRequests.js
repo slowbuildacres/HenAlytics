@@ -17,12 +17,17 @@ export function requestHobbyAction(hobbyId, action) {
   if (typeof window !== "undefined") window.dispatchEvent(new CustomEvent(EVENT));
 }
 
-export function useHobbyRequest(hobbyId, handler) {
+// `accepts(action)` (optional): only take requests this listener handles, so
+// two listeners on one hobby (the page and the app) don't steal each other's.
+export function useHobbyRequest(hobbyId, handler, accepts) {
   const ref = useRef(handler);
   ref.current = handler;
+  const acc = useRef(accepts);
+  acc.current = accepts;
   useEffect(() => {
     const take = () => {
       if (!pending || pending.hobbyId !== hobbyId) return;
+      if (acc.current && !acc.current(pending.action)) return;
       // Ignore stale requests (the page never opened).
       const p = pending; pending = null;
       if (Date.now() - p.at < 5000) ref.current(p.action);

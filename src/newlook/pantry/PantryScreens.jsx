@@ -173,8 +173,13 @@ export function PantryStats({ ctx, data, setModal, allNumbers, range, onRange, a
   );
 }
 
+// The page on screen's main action (ctx.onNew), so the Log picker can start
+// a batch from anywhere: the app opens the page, then calls pantryNew.fn().
+export const pantryNew = { fn: null };
+
 // Pick the screen for the tab the app is on.
 export function PantryView({ tab, ctx, onOpenJournal, onSeeAll }) {
+  pantryNew.fn = ctx.onNew || null;
   return tab === "animals" ? <PantryShelf ctx={ctx} /> : <PantryToday ctx={ctx} onOpenJournal={onOpenJournal} onSeeAll={onSeeAll} />;
 }
 
