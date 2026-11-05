@@ -17,6 +17,9 @@
 // ============================================================================
 
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Tag as NlTag, DollarSign as NlDollar } from "lucide-react";
 import { X } from "lucide-react";
 import { fmtMoney, fmtWeight } from "./units.js";
 
@@ -271,7 +274,7 @@ function tagStatus(t) {
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-export default function HuntingPage({ hobby, data, update, setModal }) {
+export default function HuntingPage({ hobby, data, update, setModal, nl = null }) {
   const [harvestModal, setHarvestModal] = useState({ open: false, item: null });
   const [tagModal, setTagModal] = useState({ open: false, item: null });
   const [gearModal, setGearModal] = useState({ open: false, item: null });
@@ -320,6 +323,47 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
 
   const sectionH = { fontFamily: FONT_DISPLAY, fontSize: 18, margin: "0 0 10px", color: palette.ink };
   const row = { padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, cursor: "pointer" };
+
+  if (nl) {
+    const harvests = (hobby.harvests || []).slice().sort((a, b) => ((b.date || "") < (a.date || "") ? -1 : 1));
+    const gear = (hobby.gear || []).slice().sort((a, b) => ((b.date || "") < (a.date || "") ? -1 : 1));
+    const ctx = {
+      key: "hunting",
+      summary: { big: t.meatLbs ? fmtWeight(t.meatLbs) : "0", small: `of meat in ${year}`, line: [`${t.harvests.length} harvest${t.harvests.length === 1 ? "" : "s"}`, t.meatLbs ? `${fmtMoney(t.costPerLb)} a lb vs. ${fmtMoney(t.valuePerLb)} at the store` : null, openTags.length ? `${openTags.length} open tag${openTags.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") },
+      newLabel: "Log a harvest", onNew: () => setHarvestModal({ open: true, item: null }),
+      goingTitle: "Open tags",
+      going: openTags.map((tg) => ({ id: tg.id, title: tg.name || `${tg.species || ""} tag`.trim(), onOpen: () => setTagModal({ open: true, item: tg }),
+        sub: [tg.species, tg.state, tg.expires ? `expires ${fmtDate(tg.expires)}` : null, Number(tg.cost) ? fmtMoney(tg.cost) : null].filter(Boolean).join(" · "),
+        actions: [{ label: "Fill it", run: () => setHarvestModal({ open: true, item: null }) }] })),
+      shelfTitle: "Harvests", shelfEmpty: "No harvests logged yet. Good luck out there.",
+      shelf: harvests.map((hv) => ({ id: hv.id, title: [hv.species, hv.sex].filter(Boolean).join(" · ") || "Harvest", onOpen: () => setHarvestModal({ open: true, item: hv }),
+        sub: [fmtDate(hv.date), hv.weapon, hv.meatLbs ? `${fmtWeight(Number(hv.meatLbs))} of meat` : null, hv.location || null].filter(Boolean).join(" · ") })),
+      past: gear.map((g) => ({ id: g.id, title: g.item || "Gear", sub: [g.category, fmtDate(g.date), Number(g.cost) ? fmtMoney(g.cost) : null].filter(Boolean).join(" · "), onOpen: () => setGearModal({ open: true, item: g }) })),
+      pastTitle: "Gear", pastSub: "Tap one to edit it.",
+      extras: [
+        { key: "tag", label: "Add a tag", sub: "Licenses and tags you bought", icon: NlTag, run: () => setTagModal({ open: true, item: null }) },
+        { key: "gear", label: "Add gear", sub: "Ammo, blinds, processing tools", icon: NlHammer, run: () => setGearModal({ open: true, item: null }) },
+        { key: "price", label: `Store meat price: ${fmtMoney(t.valuePerLb)} a lb`, sub: "What you'd pay for meat at the store", icon: NlDollar, run: () => { setPriceDraft(String(t.valuePerLb)); setEditPrice(true); } },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {harvestModal.open && <HarvestModal harvest={harvestModal.item} tags={tags} onSave={saveHarvest} onDelete={deleteHarvest} onClose={() => setHarvestModal({ open: false, item: null })} />}
+        {tagModal.open && <TagModal tag={tagModal.item} onSave={saveTag} onDelete={deleteTag} onClose={() => setTagModal({ open: false, item: null })} />}
+        {gearModal.open && <GearModal item={gearModal.item} onSave={saveGear} onDelete={deleteGear} onClose={() => setGearModal({ open: false, item: null })} />}
+        {editPrice && (
+          <ModalShell title="Store meat price" onClose={() => setEditPrice(false)}>
+            <Field label="Price per lb at the store"><input type="number" step="0.01" min={0} value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} style={inputStyle} /></Field>
+            <Btn onClick={() => { const v = parseFloat(priceDraft); mutate((h) => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
+          </ModalShell>
+        )}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -426,6 +470,27 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
 // dateRange — we filter harvests/tags/gear to it ourselves since these
 // records live on the hobby, not in data.entries.
 // ---------------------------------------------------------------------------
+// 3.0 Stats: harvests, meat, cost per lb vs. the store, by species.
+export function huntingStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const t = huntingTotals(hobby, (d) => range === "all" || (d || "").startsWith(year));
+  const by = new Map(); for (const h of t.harvests) { const k = h.species || "Other"; by.set(k, (by.get(k) || 0) + (Number(h.meatLbs) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([name, v]) => ({ key: name, name, value: v, label: `${Math.round(v)} lbs` }));
+  const facts = [];
+  if (t.meatLbs >= 10) facts.push({ key: "meals", icon: "trophy", big: String(Math.round(t.meatLbs * 2)), line: "family dinners we hunted", title: `About ${Math.round(t.meatLbs * 2)} family dinners`, sub: `${Math.round(t.meatLbs)} lbs at half a pound a plate.` });
+  if (t.meatLbs && t.storeValue > t.totalCost) facts.push({ key: "saved", icon: "money", big: fmtMoney(t.storeValue - t.totalCost), line: "less than buying it at the store", title: `${fmtMoney(t.storeValue - t.totalCost)} less than the store`, sub: `At ${fmtMoney(t.valuePerLb)} a lb.` });
+  return {
+    cards: [
+      { label: "Harvests", value: t.harvests.length, sub: rows.map((r) => r.name).slice(0, 3).join(", ") },
+      { label: "Meat", value: t.meatLbs ? fmtWeight(t.meatLbs) : "—", sub: t.meatLbs ? `store value ${fmtMoney(t.storeValue)}` : "" },
+      { label: "Spent", value: fmtMoney(t.totalCost), sub: "Tags, gear, processing" },
+      { label: "Cost per lb", value: t.meatLbs ? fmtMoney(t.costPerLb) : "—", sub: `vs. ${fmtMoney(t.valuePerLb)} at the store` },
+    ],
+    bars: rows.length ? { title: "Meat by species", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🦌", kicker: "Our hunt",
+  };
+}
+
 export function HuntingAnalytics({ hobby, dateRange = null }) {
   if (!hobby) return null;
   const inRange = (d) => {

@@ -27,6 +27,9 @@
 // ============================================================================
 
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Plus, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -278,7 +281,7 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
 }
 
 // ============ MAIN PAGE ============
-export default function MapleSyrupPage({ hobby, data, update, setModal }) {
+export default function MapleSyrupPage({ hobby, data, update, setModal, nl = null }) {
   const seasons = (hobby.seasons || []).slice().sort((a, b) => (b.year || 0) - (a.year || 0));
   const allEntries = data.entries[hobby.id] || [];
 
@@ -373,6 +376,47 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
     if (!stats) return [];
     return stats.entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 30);
   }, [stats]);
+
+  if (nl) {
+    const LABEL = { sap_collected: "Sap collected", boil: "Boil", tap_set: "Taps set", supplies: "Supplies", infrastructure: "Equipment", note: "Note" };
+    const open = (action, entry = null) => setEntryModal({ open: true, action, entry });
+    const st = stats;
+    const ctx = {
+      key: "maple_syrup",
+      summary: currentSeason
+        ? { big: `${(st.totalSyrupGal || 0).toFixed(1)} gal`, small: `of syrup in ${currentSeason.name || currentSeason.year || "this season"}`, line: [st.totalSapGal ? `${st.totalSapGal.toFixed(0)} gal of sap` : null, st.effectiveTaps ? `${st.effectiveTaps} taps` : null, st.boilEfficiency ? `${st.boilEfficiency.toFixed(0)} to 1 sap to syrup` : null].filter(Boolean).join(" · ") }
+        : { big: "0", small: "seasons yet", line: "Start a season when you tap your trees." },
+      newLabel: currentSeason ? "Log sap collected" : "Start a season", onNew: () => (currentSeason ? open("sap_collected") : setSeasonModal({ open: true, season: null })),
+      goingTitle: "This season",
+      going: currentSeason ? [{ id: currentSeason.id, title: currentSeason.name || String(currentSeason.year || "Season"), onOpen: () => setSeasonModal({ open: true, season: currentSeason }),
+        sub: [`${(st.totalSapBoiled || 0).toFixed(0)} of ${(st.totalSapGal || 0).toFixed(0)} gal of sap boiled`, st.expectedSyrup ? `about ${st.expectedSyrup.toFixed(1)} gal of syrup in what you've collected` : null].filter(Boolean).join(" · "),
+        pct: st.totalSapGal ? (st.totalSapBoiled / st.totalSapGal) * 100 : null,
+        actions: [{ label: "Boil", primary: st.totalSapGal > st.totalSapBoiled, run: () => open("boil") }, { label: "Set taps", run: () => open("tap_set") }] }] : [],
+      shelfTitle: "Logs this season", shelfEmpty: currentSeason ? "Nothing logged this season yet." : "Start a season to log sap and boils.",
+      shelf: recentEntries.map((e) => ({ id: e.id, title: LABEL[e.action] || e.customLabel || "Log", onOpen: () => open(e.action, e),
+        sub: [e.date ? new Date(e.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "", e.action === "sap_collected" ? `${e.gallons} gal sap` : e.action === "boil" ? `${e.sapGal} gal sap to ${e.syrupGal} gal syrup` : e.action === "tap_set" ? `${e.count} taps` : e.cost ? `$${Number(e.cost).toFixed(2)}${e.item ? ` · ${e.item}` : ""}` : null, e.note || null].filter(Boolean).join(" · ") })),
+      past: seasons.filter((x) => !currentSeason || x.id !== currentSeason.id).map((x) => ({ id: x.id, title: x.name || String(x.year || "Season"), sub: "Tap to make this the current season", onOpen: () => setCurrentSeason(x.id) })),
+      pastTitle: "Other seasons", pastSub: "Tap one to switch to it.",
+      extras: [
+        ...(currentSeason ? [
+          { key: "supplies", label: "Supplies cost", sub: "Buckets, filters, bottles", icon: NlBasket, run: () => open("supplies") },
+          { key: "infra", label: "Equipment", sub: "Evaporators, tubing, the sugar shack", icon: NlHammer, run: () => open("infrastructure") },
+          { key: "note", label: "Note", icon: NlNote, run: () => open("note") },
+        ] : []),
+        { key: "season", label: "Start a new season", icon: NlPlus, run: () => setSeasonModal({ open: true, season: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {seasonModal.open && <SeasonModal season={seasonModal.season} onSave={saveSeason} onDelete={deleteSeason} onClose={() => setSeasonModal({ open: false, season: null })} />}
+        {entryModal.open && <LogEntryModal action={entryModal.action} season={currentSeason} entry={entryModal.entry} onSave={saveEntry} onClose={() => setEntryModal({ open: false, action: null, entry: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 80 }}>
@@ -500,6 +544,30 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
 }
 
 // ============ ANALYTICS ============
+// 3.0 Stats: syrup and sap by season.
+export function mapleStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const seasons = (hobby && hobby.seasons) || [];
+  const ents = ((data.entries && data.entries[hobby.id]) || []).filter((e) => range === "all" || String(e.date || "").startsWith(year));
+  const syrup = ents.filter((e) => e.action === "boil").reduce((t, e) => t + (Number(e.syrupGal) || 0), 0);
+  const sap = ents.filter((e) => e.action === "sap_collected").reduce((t, e) => t + (Number(e.gallons) || 0), 0);
+  const boiled = ents.filter((e) => e.action === "boil").reduce((t, e) => t + (Number(e.sapGal) || 0), 0);
+  const cost = ents.filter((e) => e.action === "supplies" || e.action === "infrastructure").reduce((t, e) => t + (Number(e.cost) || 0), 0);
+  const rows = seasons.map((x) => { const v = ((data.entries && data.entries[hobby.id]) || []).filter((e) => e.seasonId === x.id && e.action === "boil").reduce((t, e) => t + (Number(e.syrupGal) || 0), 0); return { key: x.id, name: x.name || String(x.year || "Season"), value: v, label: `${v.toFixed(1)} gal` }; }).filter((r) => r.value > 0);
+  const facts = [];
+  if (syrup >= 0.5) facts.push({ key: "pancakes", icon: "drop", big: String(Math.round(syrup * 128 / 2)), line: "pancake breakfasts of our own syrup", title: `About ${Math.round(syrup * 128 / 2)} pancake breakfasts`, sub: "At 2 oz of syrup a plate." });
+  if (sap >= 40) facts.push({ key: "sap", icon: "leaf", big: `${Math.round(sap)} gal`, line: "of sap carried from our trees", title: `${Math.round(sap)} gallons of sap`, sub: "Every drop carried by hand or tubing." });
+  return {
+    cards: [
+      { label: "Syrup", value: `${syrup.toFixed(1)} gal`, sub: boiled && syrup ? `${(boiled / syrup).toFixed(0)} to 1 sap to syrup` : "" },
+      { label: "Sap", value: `${Math.round(sap)} gal`, sub: `${Math.round(boiled)} gal boiled` },
+      ...(cost ? [{ label: "Spent", value: `$${cost.toFixed(2)}`, sub: syrup ? `$${(cost / syrup).toFixed(2)} a gallon of syrup` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "Syrup by season", right: "", rows } : null,
+    facts, emoji: "🍁", kicker: "Our sugarbush",
+  };
+}
+
 export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const seasons = (hobby.seasons || []).slice().sort((a, b) => (a.year || 0) - (b.year || 0));
   const allEntries = entries || [];

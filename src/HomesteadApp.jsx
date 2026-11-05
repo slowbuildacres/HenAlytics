@@ -196,8 +196,8 @@ import SalvePage, { SalveAnalytics, salveStats } from "./Salve.jsx";
 import TeaPage, { TeaAnalytics, teaStats } from "./Tea.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
-import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
-import HuntingPage, { HuntingAnalytics, huntingTotals } from "./Hunting.jsx";
+import MapleSyrupPage, { MapleSyrupAnalytics, mapleStats } from "./MapleSyrup.jsx";
+import HuntingPage, { HuntingAnalytics, huntingTotals, huntingStats } from "./Hunting.jsx";
 import SoapMakingPage, { SoapMakingAnalytics, soapBatchStats, soapStats } from "./SoapMaking.jsx";
 import {
   initIap, identifyIapUser, purchaseProduct, restorePurchases,
@@ -5190,6 +5190,8 @@ useNativeBackButton(React.useCallback(() => {
     tea: { Page: TeaPage, stats: teaStats, shelf: "Blends", all: "All the numbers: blends, sales" },
     sourdough: { Page: SourdoughPage, stats: sourdoughStats, shelf: "Bakes", all: "All the numbers: bakes, starters, sales", analytics: () => <SourdoughAnalytics hobby={hobby} sales={data.sales || []} entries={data.entries[hobby.id] || []} /> },
     baking: { Page: BakingPage, stats: bakingStats, shelf: "Bakes", all: "All the numbers: bakes, recipes, sales", analytics: () => <BakingAnalytics hobby={hobby} entries={data.entries.baking || []} sales={data.sales || []} spouseMode={data.spouseMode} /> },
+    maple_syrup: { Page: MapleSyrupPage, stats: mapleStats, shelf: "Logs", all: "All the numbers: seasons, sap, boils, costs", analytics: () => <MapleSyrupAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} /> },
+    hunting: { Page: HuntingPage, stats: huntingStats, shelf: "Harvests", all: "All the numbers: harvests, tags, gear", analytics: () => <HuntingAnalytics hobby={hobby} /> },
     soap: { Page: SoapMakingPage, stats: soapStats, shelf: "Bars", all: "All the numbers: batches, sales, costs", analytics: () => <SoapMakingAnalytics hobby={hobby} sales={data.sales || []} /> },
   };
   const nlPantryCfg = newLook && hobby ? NL_PANTRY[hobby.type] : null;
@@ -6226,7 +6228,7 @@ useNativeBackButton(React.useCallback(() => {
             <CatsAnalytics hobby={data.hobbies.find(h=>h.id==="cats")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "hunting" && (
+        {page === "analytics" && activeHobby === "hunting" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="hunting")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <HuntingAnalytics hobby={data.hobbies.find(h=>h.id==="hunting")} />
           </AnalyticsShareWrapper>
@@ -6236,7 +6238,7 @@ useNativeBackButton(React.useCallback(() => {
             <SoapMakingAnalytics hobby={data.hobbies.find(h=>h.id==="soap")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "maple_syrup" && (
+        {page === "analytics" && activeHobby === "maple_syrup" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
           </AnalyticsShareWrapper>
@@ -6531,13 +6533,13 @@ useNativeBackButton(React.useCallback(() => {
             <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "hunting" && (
+        {page === "hunting" && !nlPantryCfg && (
           <HuntingPage hobby={data.hobbies.find(h=>h.id==="hunting")} data={data} update={update} setModal={setModal} />
         )}
         {page === "soap" && !nlPantryCfg && (
           <SoapMakingPage hobby={data.hobbies.find(h=>h.id==="soap")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "maple_syrup" && (
+        {page === "maple_syrup" && !nlPantryCfg && (
           <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} setModal={setModal} />
         )}
         {newLook && nlHorses && (page === "horses" || page === "analytics") && (
