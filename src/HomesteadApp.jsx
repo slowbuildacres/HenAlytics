@@ -104,6 +104,7 @@ import EggToday from "./newlook/eggs/EggToday.jsx";
 import EggBirds from "./newlook/eggs/EggBirds.jsx";
 import EggStats from "./newlook/eggs/EggStats.jsx";
 import YearScreen from "./newlook/YearScreen.jsx";
+import { GardenToday, GardenPlants, GardenPlan, GardenStats } from "./newlook/garden/GardenScreens.jsx";
 import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
 import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
@@ -128,6 +129,7 @@ import { eggInsight } from "./eggInsights.js";
 import { computeFeedStatus, feedEntryLbs, FEED_BURN_WINDOW_DAYS } from "./feedSupply.js";
 import { computeEggsOnHand } from "./eggInventory.js";
 import { winterSeason, WINTER_ITEMS } from "./winterChecklist.js";
+import { planAnnualConfirm } from "./gardenPlanting.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
 import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
@@ -4262,6 +4264,8 @@ useEffect(() => {
     setSwitcherOpen(false);
     setPage(newLook ? "dash" : "home");
   }, [newLook]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Each hobby opens on its Today tab.
+  useEffect(() => { setNlHobbyTab("today"); }, [activeHobby]);
   // A notice opened from the Home card closes like its popup did; forget it then.
   useEffect(() => {
     const still = { whatsNew: showWhatsNew, appStoreLaunch: showAppStoreLaunch, giveaway: showGiveaway, supporterThanks: showSupporterThanks, milestone: showMilestone };
@@ -5151,6 +5155,10 @@ useNativeBackButton(React.useCallback(() => {
   })() : [];
   // Hobbies already rebuilt for 3.0 (more join phase by phase).
   const nlRebuilt = !!(newLook && hobby && hobby.type === "egg_layers");
+  // Garden: rebuilt when a season is running (no-season start/reopen screen stays as is).
+  const nlGarden = !!(newLook && hobby && hobby.type === "garden" && hobby.currentSeason);
+  const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
+  const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
     : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
@@ -6098,7 +6106,7 @@ useNativeBackButton(React.useCallback(() => {
         {wrappedYearNow && WRAPPED_BANNER_PAGES.includes(page) && (
           <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
-        {page === "home" && !(newLook && nlRebuilt) && (
+        {page === "home" && !(newLook && (nlRebuilt || nlGarden)) && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
         {/* NEW_LOOK (3.0) rebuilt hobbies: Today · animals · Stats */}
@@ -6108,11 +6116,29 @@ useNativeBackButton(React.useCallback(() => {
             active={page === "analytics" ? "stats" : nlHobbyTab}
             onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
         )}
-        {newLook && nlRebuilt && page === "home" && nlHobbyTab === "today" && (
+        {newLook && nlRebuilt && page === "home" && nlHobbyTab !== "animals" && (
           <EggToday hobby={hobby} data={data} update={update} setModal={setModal} onOpenJournal={() => setPage("journal")} />
         )}
         {newLook && nlRebuilt && page === "home" && nlHobbyTab === "animals" && (
           <EggBirds hobby={hobby} data={data} update={update} setModal={setModal} />
+        )}
+        {newLook && nlGarden && (page === "home" || page === "analytics") && (
+          <HobbyTabs label="Garden sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Plants" }, { key: "plan", label: "Plan" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
+        )}
+        {newLook && nlGarden && page === "home" && (nlHobbyTab === "today" || !["animals", "plan"].includes(nlHobbyTab)) && (
+          <GardenToday hobby={hobby} data={data} update={update} setModal={setModal} frost={frostTonight} spent={nlGardenSpent}
+            onPlanAnnualConfirm={nlPlanConfirm} onOpenJournal={() => setPage("journal")} onTab={(k) => setNlHobbyTab(k)} />
+        )}
+        {newLook && nlGarden && page === "home" && nlHobbyTab === "animals" && (
+          <GardenPlants hobby={hobby} data={data} setModal={setModal} onPlanAnnualConfirm={nlPlanConfirm} />
+        )}
+        {newLook && nlGarden && page === "home" && nlHobbyTab === "plan" && (
+          <GardenPlan hobby={hobby} data={data} setModal={setModal}
+            seedBox={<SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={ALMANAC_CROPS.map((c) => String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim())} openUrl={openExternalUrl} />}
+            onOpenCalendar={() => setPage("calendar")} onOpenBarn={() => setModal({ type: "barn" })} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
@@ -6200,8 +6226,13 @@ useNativeBackButton(React.useCallback(() => {
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && !(newLook && nlRebuilt) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
+        {page === "analytics" && !(newLook && (nlRebuilt || nlGarden)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+        )}
+        {page === "analytics" && nlGarden && (
+          <GardenStats hobby={hobby} data={data} setModal={setModal} spent={nlGardenSpent} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
         )}
         {page === "analytics" && newLook && nlRebuilt && (
           <EggStats hobby={hobby} data={data} setModal={setModal} allNumbers={
@@ -6720,117 +6751,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
   // PlanCropModal handles pushing calendar events; we just need to mirror
   // the legacy quick-log behavior of creating a plantings[] record and
   // ensuring an annuals[] record exists for this crop+season.
-  const handlePlanAnnualConfirm = (payload) => {
-    if (!payload) return;
-    const { cropId, cropName, variety, method, events, isCustom, customDate } = payload;
-    // Pick the planting date based on what kind of event matches the method.
-    // Falls back to today if no matching event (defensive — shouldn't happen).
-    let plantingDate;
-    if (isCustom) {
-      plantingDate = customDate || todayStr();
-    } else if (Array.isArray(events) && events.length > 0) {
-      const matchKind = method === "indoor" ? "indoor"
-        : method === "direct" ? "direct"
-        : method === "transplant" ? "transplant"
-        : null;
-      const matchEvent = matchKind ? events.find(e => e.kind === matchKind) : null;
-      plantingDate = matchEvent ? matchEvent.date : todayStr();
-    } else {
-      plantingDate = todayStr();
-    }
-    // Display name for the planting record: variety name takes precedence,
-    // then the crop's display name, then the raw cropName fallback for custom.
-    const plantName = (variety && variety.name) || cropName || "Unknown";
-    update((d) => {
-      const gh = d.hobbies.find(x => x.type === "garden");
-      const sid = gh?.currentSeason?.id || "";
-
-      // Push a `planted` entry into data.entries.garden so Recent Activity,
-      // analytics, and the journal pick it up. Without this the planting was
-      // silently missing from Recent Activity (BUGFIX: previously this flow
-      // only created plantings[] + annuals[] but skipped the entry, so users
-      // saw the calendar event but no "Planted X" row appeared in recent
-      // activity. Mirrors step 1 of the legacy seed-start-transplant save.)
-      //
-      // Date selection for the Recent Activity row:
-      //   - Custom crop path: use customDate (user-picked).
-      //   - User edited the date in the modal: use plantingDate (they
-      //     deliberately backdated/forward-dated, respect that).
-      //   - User didn't edit: use today. plantingDate is the almanac's
-      //     suggested sow/transplant date and is usually weeks off — using
-      //     it as the entry date would bury the row far down the feed.
-      // The `plantings[]` record below keeps `plantingDate` regardless —
-      // that record represents the actual planting event/plan.
-      let entryDate;
-      if (isCustom) {
-        entryDate = plantingDate; // already user-picked
-      } else {
-        const matchKind = method === "indoor" ? "indoor"
-          : method === "direct" ? "direct"
-          : method === "transplant" ? "transplant"
-          : null;
-        const matchEvent = matchKind && Array.isArray(events)
-          ? events.find(e => e.kind === matchKind)
-          : null;
-        entryDate = (matchEvent && matchEvent.userEdited) ? plantingDate : todayStr();
-      }
-      if (!d.entries) d.entries = {};
-      if (!Array.isArray(d.entries.garden)) d.entries.garden = [];
-      d.entries.garden.push({
-        id: newId(),
-        date: entryDate,
-        action: "planted",
-        plant: plantName,
-        quantity: "",
-        seasonId: sid,
-        created: Date.now(),
-      });
-
-      // Create planting record
-      d.plantings = d.plantings || [];
-      d.plantings.push({
-        id: newId(),
-        plant: plantName,
-        quantity: "",
-        date: plantingDate,
-        harvested: false,
-      });
-      // Ensure annual record exists for this plant in the current season.
-      // Mirrors the logic in the legacy quick-log "planted" save handler.
-      if (gh) {
-        if (!Array.isArray(gh.annuals)) gh.annuals = [];
-        const nm = plantName.trim() || "Unnamed";
-        // If this annual was previously deleted (tombstoned), the new
-        // planting expresses intent to bring it back. Clear the tombstone
-        // so migrateData rebuilds the record on next load too.
-        const tombKey = `${nm.toLowerCase()}|${sid}`;
-        if (Array.isArray(gh.deletedAnnualKeys) && gh.deletedAnnualKeys.includes(tombKey)) {
-          gh.deletedAnnualKeys = gh.deletedAnnualKeys.filter(k => k !== tombKey);
-        }
-        const exists = gh.annuals.some(
-          a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
-               (a.seasonId || "") === sid
-        );
-        if (!exists) {
-          gh.annuals.push({
-            id: newId(),
-            name: nm,
-            seasonId: sid,
-            actions: [],
-            created: Date.now(),
-          });
-        }
-      }
-      return d;
-    });
-    // Seed box: offer to mark the packet used. PlanCropModal closes itself
-    // right after onConfirm, so open ours on the next tick.
-    const gardenH = (data.hobbies || []).find((x) => x.type === "garden");
-    const seedName = [variety && variety.name, cropName].filter(Boolean).join(" ");
-    if (gardenH && matchingPackets(gardenH.seeds, seedName).length) {
-      setTimeout(() => setModal({ type: "seedUse", plantName: seedName }), 0);
-    }
-  };
+  const handlePlanAnnualConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
 
   return (
     <div>

@@ -1,0 +1,297 @@
+// ============================================================================
+// Garden (3.0) — Today · Plants · Plan · Stats
+// ----------------------------------------------------------------------------
+// The old garden page stacked everything (tips, quick log, checklist, money
+// card, then Growing/Perennials/Seeds/Map tabs ~1,100px down). Same features,
+// sorted into four tabs:
+//   Today  — frost, watering, quick log, this week's jobs, food grown
+//   Plants — growing annuals, perennials and trees, seed starts
+//   Plan   — garden map, seed box, what to start for your zone
+//   Stats  — harvest, value vs. cost, fun facts, harvest by crop
+// Detail screens (annual, perennial, seed start, map, seasons) are the
+// existing ones, opened from here.
+// ============================================================================
+
+import React, { useEffect, useMemo, useState } from "react";
+import {
+  Snowflake, Droplet, ShoppingBasket, Sprout, MoreHorizontal, Share2, BookOpen, Map as MapIcon,
+  Package, CalendarDays, MapPin, Trophy, Leaf, ChevronDown, Plus, Archive,
+} from "lucide-react";
+import { nl, font, type } from "../theme.js";
+import { Card, CardHeader, Row, Badge, Button } from "../ui.jsx";
+import { winterSeason, WINTER_ITEMS } from "../../winterChecklist.js";
+import { getWeeklyPrecip } from "../../weather.js";
+import { needsBuying, seedViability } from "../../SeedInventory.jsx";
+import { fmtMoney } from "../../units.js";
+import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
+import { annualRows, perennialRows, seedStartRows, plantingWindows, seasonHarvests, harvestByCrop, gardenFunFacts } from "./gardenData.js";
+import { computeHarvestValue } from "../../gardenValue.js";
+import { totalHarvestLbs } from "../../analytics.js";
+
+const money0 = (v) => fmtMoney(Math.round(v)).replace(/\.00$/, "");
+const STATUS = {
+  growing: ["quiet", "Growing"], harvesting: ["good", "Harvesting"], harvested: ["quiet", "Picked"],
+  done: ["quiet", "Done"], sprouting: ["quiet", "Sprouting"], ready: ["ready", "Ready to move"],
+};
+const Ico = ({ I }) => <I size={20} strokeWidth={1.8} />;
+
+// ------------------------------------------------------------------- Today
+export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnualConfirm, onOpenJournal, onTab, spent }) {
+  const today = isoDay();
+  const ents = (data.entries && data.entries.garden) || [];
+  const loc = data.homesteadLocation;
+  const [rain, setRain] = useState(null);
+  useEffect(() => {
+    let off = false;
+    if (loc && loc.lat != null) getWeeklyPrecip(loc.lat, loc.lon).then((r) => { if (!off) setRain(r); }).catch(() => {});
+    return () => { off = true; };
+  }, [loc && loc.lat, loc && loc.lon]); // eslint-disable-line react-hooks/exhaustive-deps
+  const lastWater = ents.filter((e) => e && e.action === "watered" && e.date && e.date <= today).map((e) => e.date).sort().pop() || null;
+  const days = lastWater ? Math.round((parseDay(today) - parseDay(lastWater)) / DAY) : null;
+  const rainIn = rain && rain.totalIn != null ? rain.totalIn : null;
+  const log = (action) => setModal({ type: "log", action, hobbyIdOverride: hobby.id });
+  const harvests = useMemo(() => seasonHarvests(data, hobby), [data, hobby]);
+  const value = useMemo(() => computeHarvestValue(harvests, hobby.harvestPrices || {}).total, [harvests, hobby.harvestPrices]);
+  const windows = useMemo(() => plantingWindows(data, today, 2), [data, today]);
+  const season = winterSeason();
+  const wst = season ? ((data.winterChecklist && data.winterChecklist[season]) || {}) : null;
+  const winterItems = season && !(wst && wst.hidden) ? (WINTER_ITEMS.garden || []).map((it) => ({ ...it, key: `garden:${it.id}` })) : [];
+  const done = (wst && wst.done) || {};
+  const toggle = (k) => update((d) => {
+    d.winterChecklist = d.winterChecklist || {};
+    const cur = d.winterChecklist[season] || {};
+    const nd = { ...(cur.done || {}) };
+    if (nd[k]) delete nd[k]; else nd[k] = true;
+    d.winterChecklist[season] = { ...cur, done: nd };
+    return d;
+  });
+  const soon = windows ? windows.list.filter((w) => (parseDay(w.date) - parseDay(today)) / DAY <= 21) : [];
+  const jobAction = (it) => it.action === "seeds" || it.action === "shop" ? { label: "Seed box", run: () => onTab("plan") } : it.action === "map" ? { label: "Map", run: () => setModal({ type: "gardenMap" }) } : null;
+
+  const quick = [
+    { k: "harvest", label: "Harvest", I: ShoppingBasket, primary: true, run: () => log("harvested") },
+    { k: "water", label: "Watered", I: Droplet, run: () => log("watered") },
+    { k: "plant", label: "Planted", I: Sprout, run: () => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm }) },
+    { k: "more", label: "More", I: MoreHorizontal, run: () => setModal({ type: "gardenMore", hobbyId: hobby.id }) },
+  ];
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Card>
+        {frost && (
+          <Row first tint={nl.alertTint} iconBg={nl.alertChip} icon={<Snowflake size={20} color={nl.alert} strokeWidth={2} />}
+            title={`Frost tonight, ${frost.lowText}`} sub={frost.crops && frost.crops.length ? `Cover ${frost.crops.join(", ").toLowerCase()}` : "Cover anything tender"} />
+        )}
+        <Row first={!frost} icon={<Ico I={Droplet} />}
+          title={rainIn != null && rainIn >= 0.75 ? `${rainIn}" of rain this week` : days == null ? "No watering logged yet" : days === 0 ? "Watered today" : `Watered ${days} day${days === 1 ? "" : "s"} ago`}
+          sub={rainIn != null && rainIn >= 0.75 ? "Your beds probably don't need watering today." : rainIn != null ? (rainIn > 0 ? `${rainIn}" of rain in the last 7 days` : "No rain in the last 7 days") : (loc ? null : "Add your location for rain and frost alerts")}
+          trailing={days === 0 ? null : <button type="button" onClick={() => log("watered")} style={{ minHeight: 36, padding: "0 12px", borderRadius: 999, border: `1.5px solid ${nl.good}`, background: "transparent", color: nl.goodInk, font: `600 13px ${font.body}`, cursor: "pointer" }}>Watered</button>} />
+      </Card>
+
+      <div style={{ display: "flex", gap: 8 }}>
+        {quick.map((q) => (
+          <button key={q.k} type="button" onClick={q.run} style={{
+            flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 0", minHeight: 68, borderRadius: 16, cursor: "pointer",
+            background: q.primary ? nl.yolk : nl.card, border: `1px solid ${q.primary ? nl.yolk : nl.line}`, color: nl.ink, font: `600 12px ${font.body}`,
+          }}><q.I size={22} strokeWidth={1.8} aria-hidden="true" />{q.label}</button>
+        ))}
+      </div>
+
+      {(soon.length > 0 || winterItems.length > 0) && (
+        <Card>
+          <CardHeader title="This week" right={windows ? windows.label || `Zone ${windows.zone}` : null} />
+          {soon.map((w) => (
+            <Row key={w.date + w.verb} icon={<Ico I={Sprout} />} iconBg={nl.goodTint}
+              title={`${w.verb}: ${w.crops.slice(0, 3).join(", ").toLowerCase()}${w.crops.length > 3 ? ` +${w.crops.length - 3}` : ""}`}
+              sub={w.date <= today ? "Now" : prettyDay(w.date)} trailing={<Badge tone="good">Planting</Badge>} />
+          ))}
+          {winterItems.map((it) => {
+            const on = !!done[it.key];
+            const act = jobAction(it);
+            return (
+              <div key={it.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", borderTop: `1px solid ${nl.rule}` }}>
+                <button type="button" aria-pressed={on} aria-label={on ? `Undo: ${it.text}` : `Done: ${it.text}`} onClick={() => toggle(it.key)} style={{
+                  width: 28, height: 28, borderRadius: 14, flexShrink: 0, boxSizing: "border-box", cursor: "pointer",
+                  border: on ? "none" : `1.5px solid ${nl.navIdle}`, background: on ? nl.good : "transparent",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>{on && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}</button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: type.body, fontWeight: 600, textDecoration: on ? "line-through" : "none", color: on ? nl.soft : nl.ink }}>{it.text}</div>
+                  {!on && <div style={{ fontSize: type.small, color: nl.soft }}>{it.sub}</div>}
+                </div>
+                {act && !on && <Button kind="link" onClick={act.run}>{act.label}</Button>}
+              </div>
+            );
+          })}
+        </Card>
+      )}
+
+      <div style={{ background: nl.ink, color: nl.paper, borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+        <button type="button" onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", color: nl.paper, font: "inherit" }}>
+          <span style={{ display: "block", fontFamily: font.display, fontSize: 22, lineHeight: 1.1 }}><span style={{ color: nl.yolk }}>{money0(value)}</span> of food grown</span>
+          <span style={{ display: "block", fontSize: 13, color: "#D8CBB8", marginTop: 2 }}>
+            {hobby.currentSeason ? hobby.currentSeason.name : "This season"}{spent > 0 ? ` · ${value >= spent ? `${money0(value - spent)} ahead of costs` : `${money0(spent - value)} to break even`}` : ""}
+          </span>
+        </button>
+        <button type="button" aria-label="Share what your garden grew" onClick={() => setModal({ type: "gardenShare", hobbyId: hobby.id })} style={{ width: 44, height: 44, borderRadius: 22, border: "1.5px solid #6B5646", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.paper }}>
+          <Share2 size={20} strokeWidth={2} />
+        </button>
+      </div>
+
+      <Card><Row first icon={<Ico I={BookOpen} />} title="Everything you've logged" sub="Edit or delete past entries in the Journal" onClick={onOpenJournal} chevron /></Card>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------ Plants
+export function GardenPlants({ hobby, data, setModal, onPlanAnnualConfirm }) {
+  const [seg, setSeg] = useState("growing");
+  const [showDone, setShowDone] = useState(false);
+  const annuals = useMemo(() => annualRows(hobby, data), [hobby, data]);
+  const perennials = useMemo(() => perennialRows(hobby), [hobby]);
+  const starts = useMemo(() => seedStartRows(hobby), [hobby]);
+  const segs = [["growing", `Growing · ${annuals.active.length}`], ["perennials", `Perennials · ${perennials.length}`], ["starts", `Seed starts${starts.length ? ` · ${starts.length}` : ""}`]];
+  const add = seg === "growing" ? () => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })
+    : seg === "perennials" ? () => setModal({ type: "addPerennial", hobbyId: hobby.id })
+    : () => setModal({ type: "addSeedStart", hobbyId: hobby.id });
+  const addLabel = seg === "growing" ? "Add a plant" : seg === "perennials" ? "Add a perennial or tree" : "Start seeds";
+  const row = (r, i, onClick) => {
+    const st = STATUS[r.status];
+    return <Row key={r.id} first={i === 0} icon={<Ico I={r.tree ? Leaf : Sprout} />} iconBg={r.status === "harvesting" || r.status === "ready" ? nl.goodTint : undefined}
+      title={r.name} sub={r.sub} trailing={st ? <Badge tone={st[0]}>{st[1]}</Badge> : null} onClick={onClick} />;
+  };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div role="tablist" aria-label="Plant lists" style={{ display: "flex", gap: 6, padding: 4, background: "#EDE4D4", borderRadius: 15 }}>
+        {segs.map(([k, label]) => (
+          <button key={k} type="button" role="tab" aria-selected={seg === k} onClick={() => setSeg(k)} style={{
+            flex: 1, minHeight: 40, borderRadius: 12, border: "none", cursor: "pointer", padding: "0 6px",
+            background: seg === k ? nl.card : "transparent", color: seg === k ? nl.ink : nl.soft, font: `600 13px ${font.body}`,
+          }}>{label}</button>
+        ))}
+      </div>
+      {seg === "growing" && (annuals.active.length ? (
+        <Card>{annuals.active.map((r, i) => row(r, i, () => setModal({ type: "annualDetail", hobbyId: hobby.id, annualId: r.id })))}</Card>
+      ) : <Card padded><div style={{ fontSize: 14, color: nl.soft }}>Nothing growing yet this season. Add what you planted to track harvests.</div></Card>)}
+      {seg === "growing" && annuals.done.length > 0 && (
+        <>
+          <Button kind="link" icon={<Archive size={15} />} onClick={() => setShowDone((v) => !v)}>{showDone ? "Hide" : `${annuals.done.length} finished this season`}</Button>
+          {showDone && <Card>{annuals.done.map((r, i) => row(r, i, () => setModal({ type: "annualDetail", hobbyId: hobby.id, annualId: r.id })))}</Card>}
+        </>
+      )}
+      {seg === "perennials" && (perennials.length
+        ? <Card>{perennials.map((r, i) => row(r, i, () => setModal({ type: "perennialDetail", hobbyId: hobby.id, perennialId: r.id })))}</Card>
+        : <Card padded><div style={{ fontSize: 14, color: nl.soft }}>Add asparagus, berries, herbs or fruit trees to log harvests year after year.</div></Card>)}
+      {seg === "starts" && (starts.length
+        ? <Card>{starts.map((r, i) => row(r, i, () => setModal({ type: "seedStartDetail", hobbyId: hobby.id, batchId: r.id })))}</Card>
+        : <Card padded><div style={{ fontSize: 14, color: nl.soft }}>Track seeds you start indoors: how many sprouted and when they go out.</div></Card>)}
+      <div style={{ display: "flex", gap: 8 }}>
+        <Button kind="quiet" icon={<Plus size={18} />} onClick={add} style={{ flex: 1 }}>{addLabel}</Button>
+      </div>
+      <Button kind="link" onClick={() => setModal({ type: "gardenMore", hobbyId: hobby.id })} style={{ color: nl.soft, alignSelf: "center" }}>Wrap up the season and more</Button>
+    </div>
+  );
+}
+
+// -------------------------------------------------------------------- Plan
+export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onOpenBarn }) {
+  const today = isoDay();
+  const [boxOpen, setBoxOpen] = useState(false);
+  const season = hobby.currentSeason;
+  const areas = season && season.gardenMap && Array.isArray(season.gardenMap.areas) ? season.gardenMap.areas : null;
+  const hasMap = areas ? areas.some((a) => a.photoPath || (a.grid && a.grid.beds && a.grid.beds.length)) : !!(season && season.gardenMap && season.gardenMap.photoPath);
+  const pins = areas ? areas.reduce((n, a) => n + (Array.isArray(a.pins) ? a.pins.length : 0), 0) : 0;
+  const seeds = (hobby.seeds || []).filter(Boolean);
+  const toBuy = seeds.filter((p) => { try { return needsBuying(p); } catch (_) { return false; } });
+  const useFirst = seeds.filter((p) => { try { return seedViability(p).status === "use"; } catch (_) { return false; } });
+  const windows = useMemo(() => plantingWindows(data, today, 3), [data, today]);
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <Card>
+        <CardHeader title="Garden map" right={<Button kind="link" onClick={() => setModal({ type: "gardenMap" })}>{hasMap ? "Open map" : "Start a map"}</Button>} />
+        <Row icon={<Ico I={MapIcon} />} title={hasMap ? `${pins} plant${pins === 1 ? "" : "s"} pinned` : "Map your beds"}
+          sub={hasMap ? "See what's planted where, with crop rotation tips" : "Use a photo or draw a grid. Henalytics flags same-family crops in the same bed."}
+          onClick={() => setModal({ type: "gardenMap" })} chevron />
+      </Card>
+
+      <Card>
+        <CardHeader title="Seed box" right={`${seeds.length} packet${seeds.length === 1 ? "" : "s"}`} />
+        {useFirst.slice(0, 2).map((p) => (
+          <Row key={p.id} icon={<Ico I={Package} />} title={[p.crop, p.variety].filter(Boolean).join(", ")} sub={p.year ? `Packed ${p.year} · use up this year` : "Use up this year"} trailing={<Badge tone="ready">Use first</Badge>} />
+        ))}
+        <Row first={!useFirst.length} icon={<Ico I={Package} />} title={toBuy.length ? `${toBuy.length} on your shopping list` : seeds.length ? "Nothing to buy right now" : "Add the seeds you have"}
+          sub="Low, out, or past their seed life" onClick={() => setBoxOpen((v) => !v)}
+          trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: boxOpen ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
+        {boxOpen && <div style={{ padding: "0 12px 12px", borderTop: `1px solid ${nl.rule}` }}>{seedBox}</div>}
+      </Card>
+
+      <Card>
+        <CardHeader title="What to start" right={<Button kind="link" onClick={onOpenCalendar}>Full calendar</Button>} />
+        {windows ? (windows.list.length ? windows.list.map((w, i) => (
+          <Row key={w.date + w.verb} first={i === 0} icon={<Ico I={CalendarDays} />}
+            title={`${w.verb}: ${w.crops.slice(0, 3).join(", ").toLowerCase()}${w.crops.length > 3 ? ` +${w.crops.length - 3} more` : ""}`}
+            sub={w.date <= today ? "Now" : prettyDay(w.date)} />
+        )) : <div style={{ padding: "0 14px 14px", fontSize: 14, color: nl.soft }}>Nothing to start for a while.</div>)
+          : <Row first icon={<Ico I={MapPin} />} title="Add your location" sub="To see planting dates for your zone" onClick={onOpenBarn} chevron />}
+        {windows && <div style={{ padding: "0 14px 12px", fontSize: 12, color: nl.soft }}>Last spring frost around {prettyDay(windows.lastFrost)}</div>}
+      </Card>
+    </div>
+  );
+}
+
+// ------------------------------------------------------------------- Stats
+export function GardenStats({ hobby, data, setModal, spent, allNumbers }) {
+  const [showAll, setShowAll] = useState(false);
+  const harvests = useMemo(() => seasonHarvests(data, hobby), [data, hobby]);
+  const { total, crops } = useMemo(() => harvestByCrop(harvests, hobby.harvestPrices), [harvests, hobby.harvestPrices]);
+  const lbs = totalHarvestLbs(harvests);
+  const facts = useMemo(() => gardenFunFacts({ data, hobby, harvests }), [data, hobby, harvests]);
+  const top = crops.slice(0, 5);
+  const maxV = Math.max(1, ...top.map((c) => c.value || c.lbs));
+  const COLORS = ["#B4472E", "#8B6F47", "#E3A92B", "#4C6B2F", "#3F6E8F"];
+  const FI = { harvest: ShoppingBasket, trophy: Trophy, water: Droplet, leaf: Leaf };
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ fontSize: type.small, color: nl.soft }}>{hobby.currentSeason ? hobby.currentSeason.name : "This season"}</div>
+      <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
+        <Card padded><div style={{ fontSize: type.small, color: nl.soft }}>Harvested</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{Math.round(lbs).toLocaleString("en-US")} lbs</div><div style={{ fontSize: 12, color: nl.soft }}>{harvests.length} harvest{harvests.length === 1 ? "" : "s"} logged</div></Card>
+        <Card padded onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })}><div style={{ fontSize: type.small, color: nl.soft }}>Food grown</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1, color: nl.good }}>{money0(total)}</div><div style={{ fontSize: 12, color: nl.soft }}>{spent > 0 ? `Spent ${money0(spent)} · ${total >= spent ? `${money0(total - spent)} ahead` : `${money0(spent - total)} to go`}` : "At grocery prices"}</div></Card>
+      </div>
+      {facts.length > 0 && (
+        <div role="region" aria-label="Garden fun facts, swipe for more" style={{ display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", margin: "0 -20px", padding: "0 20px", scrollbarWidth: "none" }}>
+          {facts.map((f, i) => {
+            const I = FI[f.icon] || Leaf;
+            return (
+              <div key={f.key} style={{ flex: facts.length === 1 ? "1 0 100%" : "0 0 min(300px, 82%)", scrollSnapAlign: "start", boxSizing: "border-box", background: nl.yolkTint, borderRadius: 20, padding: "12px 12px 14px 16px", display: "flex", flexDirection: "column", gap: 4 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 11, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 700, color: nl.yolkInk }}>
+                  <I size={14} strokeWidth={2} aria-hidden="true" />Fun fact
+                  <span style={{ marginLeft: "auto", letterSpacing: 0, textTransform: "none", fontWeight: 600 }}>{i + 1} of {facts.length}</span>
+                  <button type="button" aria-label={`Share: ${f.title}`} onClick={() => setModal({ type: "shareCard", card: { kind: `garden_fact_${f.key}`, emoji: "🌱", kicker: data.homesteadName || "Our garden", big: f.big, line: f.line, chips: [], list: [], title: `${f.title} 🌱`, subtitle: f.sub, stats: [] } })}
+                    style={{ width: 32, height: 32, marginLeft: 2, border: "none", borderRadius: 16, background: "rgba(255,253,248,0.6)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.yolkInk }}><Share2 size={16} strokeWidth={2} /></button>
+                </div>
+                <div style={{ fontFamily: font.display, fontSize: 20, lineHeight: 1.15 }}>{f.title}</div>
+                <div style={{ fontSize: 12, lineHeight: 1.35, color: "#5A4433" }}>{f.sub}</div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+      <Card padded>
+        <div style={{ fontSize: 15, fontWeight: 600, marginBottom: 10 }}>Harvest by crop</div>
+        {top.length ? top.map((c, i) => (
+          <div key={c.plant} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, marginTop: i ? 10 : 0 }}>
+            <span style={{ width: 92, flexShrink: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.plant}</span>
+            <span style={{ flex: 1, height: 14, borderRadius: 7, background: nl.chip, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${Math.max(4, ((c.value || c.lbs) / maxV) * 100)}%`, background: COLORS[i % COLORS.length], borderRadius: 7 }} /></span>
+            <span style={{ width: 64, textAlign: "right", color: nl.soft, flexShrink: 0 }}>{c.value ? money0(c.value) : `${Math.round(c.lbs)} lbs`}</span>
+          </div>
+        )) : <div style={{ fontSize: 14, color: nl.soft }}>Log a harvest to see what your garden grows best.</div>}
+      </Card>
+      <button type="button" onClick={() => setShowAll((v) => !v)} aria-expanded={showAll} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 48, borderRadius: 14, border: `1.5px solid ${nl.field}`, background: "transparent", cursor: "pointer", color: nl.ink, font: `600 14px ${font.body}` }}>
+        {showAll ? "Hide the detailed numbers" : "All the numbers: seasons, by plant, costs, waterings"}
+        <ChevronDown size={16} style={{ transform: showAll ? "rotate(180deg)" : "none" }} aria-hidden="true" />
+      </button>
+      {showAll && <div>{allNumbers}</div>}
+    </div>
+  );
+}
