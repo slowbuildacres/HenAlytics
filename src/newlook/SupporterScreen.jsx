@@ -132,12 +132,13 @@ export default function SupporterScreen({
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
               {TIERS.map((t) => (
                 <button key={t.tier} type="button" onClick={() => onCheckout(t.tier)} aria-label={`$${t.amount} a month, ${t.label}`} style={{
-                  position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, minHeight: 68, borderRadius: 14, cursor: "pointer",
+                  position: "relative", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2, minHeight: 80, borderRadius: 14, cursor: "pointer",
                   border: t.popular ? `2px solid ${nl.ink}` : `1.5px solid ${nl.field}`, background: t.popular ? nl.yolkTint : nl.card,
                   color: t.popular ? nl.yolkInk : nl.soft, font: `600 12px ${font.body}`, padding: "6px 2px",
                 }}>
                   {t.popular && <span style={{ position: "absolute", top: -9, fontSize: 10, fontWeight: 700, padding: "2px 7px", borderRadius: 999, background: nl.ink, color: nl.paper }}>POPULAR</span>}
                   <span style={{ fontFamily: font.display, fontSize: 22, color: t.popular ? nl.yolkInk : nl.ink, lineHeight: 1 }}>${t.amount}</span>
+                  <span style={{ fontSize: 10.5, fontWeight: 500 }}>a month</span>
                   <span>{t.label}</span>
                 </button>
               ))}
