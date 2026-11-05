@@ -94,6 +94,7 @@ import { nl, LOOKS } from "./newlook/theme.js";
 import { useAppearance } from "./newlook/appearance.js";
 import SupporterScreen from "./newlook/SupporterScreen.jsx";
 import LookScreen from "./newlook/LookScreen.jsx";
+import ImportScreen from "./newlook/importer/ImportScreen.jsx";
 import { ProjectsHome, ProjectRecord, ProjectForm, SectionSheet, ProjectLogSheet, PdfGuide, AetSummary, InfoSheet } from "./newlook/projects/ProjectScreens.jsx";
 import { projectsOf } from "./newlook/projects/projectData.js";
 import { GraduationCap } from "lucide-react";
@@ -5301,7 +5302,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlTab = page === "dash" ? "home"
     : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
-    : ["more", "sales", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet"].includes(page) ? "more"
+    : ["more", "sales", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet", "import"].includes(page) ? "more"
     : "home";
   const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
   // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
@@ -5610,7 +5611,7 @@ useNativeBackButton(React.useCallback(() => {
         <SetupFlow
           hobbies={data.hobbies}
           onSignIn={() => setModal({ type: "signin" })}
-          onFinish={({ name, showIds, location }) => {
+          onFinish={({ name, showIds, location, importAfter }) => {
             update((d) => {
               if (name) d.homesteadName = name;
               if (location) {
@@ -5627,7 +5628,7 @@ useNativeBackButton(React.useCallback(() => {
               d.newLookWelcomeSeen = true; // new users never saw the old look
               return d;
             });
-            setPage("dash");
+            setPage(importAfter ? "import" : "dash");
           }}
         />
       )}
@@ -6206,6 +6207,7 @@ useNativeBackButton(React.useCallback(() => {
             lookName={LOOKS[appearance.effectiveLook] ? LOOKS[appearance.effectiveLook].name + (appearance.dark ? ", dark" : "") : "Farmhouse"}
             onLook={() => setPage("look")}
             onProjects={() => setPage("projects")}
+            onImport={() => setPage("import")}
             projectsLine={(() => { const n = projectsOf(data).length; return n ? `${n} project${n === 1 ? "" : "s"}` : "Record books that fill themselves in"; })()}
             onHobbies={() => setModal({ type: "manageHobbies" })}
             onBarn={() => setModal({ type: "barn" })}
@@ -6253,6 +6255,9 @@ useNativeBackButton(React.useCallback(() => {
         )}
         {newLook && page === "projectAet" && (data.projects || []).some((x) => x.id === nlProjectId) && (
           <AetSummary data={data} project={(data.projects || []).find((x) => x.id === nlProjectId)} toast={toast} onBack={() => setPage("project")} />
+        )}
+        {newLook && page === "import" && (
+          <ImportScreen data={data} update={update} toast={toast} onBack={() => setPage("more")} />
         )}
         {newLook && page === "look" && (
           <LookScreen appearance={appearance} isSupporter={appearance.supporterOk} toast={toast}

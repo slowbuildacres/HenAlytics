@@ -64,6 +64,7 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
   const [loc, setLoc] = useState(null);
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
+  const [importAfter, setImportAfter] = useState(false);
   const zone = loc ? zoneFor(loc) : null;
 
   const toggle = (key) => setPicked((s) => { const n = new Set(s); if (n.has(key)) n.delete(key); else n.add(key); return n; });
@@ -88,7 +89,7 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
   };
   const finish = (withLocation) => {
     const ids = all.flatMap((g) => g.items).filter((e) => picked.has(e.key)).flatMap((e) => e.ids);
-    onFinish({ name: name.trim(), showIds: ids, location: withLocation && loc ? { ...loc, zone } : null });
+    onFinish({ name: name.trim(), showIds: ids, location: withLocation && loc ? { ...loc, zone } : null, importAfter });
   };
 
   return (
@@ -178,6 +179,12 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
         )}
 
         <div style={{ marginTop: "auto", paddingTop: 20, display: "flex", flexDirection: "column", gap: 12, paddingBottom: "env(safe-area-inset-bottom)" }}>
+          {step === 2 && (
+            <label style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 15, minHeight: 44, color: nl.ink }}>
+              <input type="checkbox" checked={importAfter} onChange={(e) => setImportAfter(e.target.checked)} style={{ width: 22, height: 22 }} />
+              I have old records in a spreadsheet to bring in
+            </label>
+          )}
           <Dots step={step} />
           {step === 0 && <button type="button" style={cta()} onClick={() => setStep(1)}>Continue</button>}
           {step === 1 && <button type="button" style={{ ...cta(), opacity: picked.size ? 1 : 0.5 }} disabled={!picked.size} onClick={() => setStep(2)}>{picked.size ? `Continue with ${picked.size}` : "Pick at least one"}</button>}

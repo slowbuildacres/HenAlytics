@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from "react";
 import {
   DollarSign, Sparkles, BookOpen, Trophy, Heart, Home as HomeIcon, MapPin, Settings,
-  Cloud, CloudOff, Image as ImageIcon, Palette, GraduationCap,
+  Cloud, CloudOff, Image as ImageIcon, Palette, GraduationCap, FileUp,
 } from "lucide-react";
 import { nl, font, type } from "./theme.js";
 import { Card, Row, Badge } from "./ui.jsx";
@@ -41,7 +41,7 @@ export function syncLine({ signedIn, online, status, lastSyncAt, now = Date.now(
 export default function MoreScreen({
   data, user, isSupporter, syncStatus, online, lastSyncAt, homesteadSwitcher,
   onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport, supportLine,
-  onHobbies, onBarn, onSettings, onLook, lookName, onProjects, projectsLine,
+  onHobbies, onBarn, onSettings, onLook, lookName, onProjects, projectsLine, onImport,
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
@@ -96,6 +96,7 @@ export default function MoreScreen({
       <Card>
         <Row first icon={ic(HomeIcon)} title="Hobbies" sub="Add, hide or customize" onClick={onHobbies} chevron />
         <Row icon={ic(MapPin)} title="Homestead details" sub="Location, zone, farmhands" onClick={onBarn} chevron />
+        {onImport && <Row icon={ic(FileUp)} title="Bring in old records" sub="From Excel or Google Sheets" onClick={onImport} chevron />}
         {onLook && <Row icon={ic(Palette)} title="Look & app icon" sub={lookName || "Farmhouse"} onClick={onLook} chevron />}
         <Row icon={ic(Settings)} title="All settings" sub="Reminders, units, export, help" onClick={onSettings} chevron />
       </Card>
