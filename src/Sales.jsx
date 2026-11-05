@@ -13,7 +13,7 @@
 // read alongside data.sales for egg revenue stats (never deleted).
 // ============================================================================
 
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useEffect } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -103,7 +103,7 @@ const RABBIT_FORMS = ["Whole rabbit", "Cuts / pieces", "Live rabbit"];
 // ============================================================================
 // COMPUTE REVENUE from a sale entry
 // ============================================================================
-function computeRevenue(sale) {
+export function computeRevenue(sale) {
   if (sale.totalRevenue != null) return Number(sale.totalRevenue) || 0;
   const qty = Number(sale.qty) || 0;
   const price = Number(sale.pricePerUnit) || 0;
@@ -221,7 +221,7 @@ function Field({ label, children }) {
 // ============================================================================
 // ADD / EDIT SALE MODAL — 3-step wizard
 // ============================================================================
-function AddSaleModal({ data, update, onClose, existingSale }) {
+export function AddSaleModal({ data, update, onClose, existingSale }) {
   const isEdit = !!existingSale;
   const customers = data.customers || [];
   const visibleHobbies = (data.hobbies || []).filter(h => !h.hidden);
@@ -1453,14 +1453,61 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   );
 }
 
-export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHistory }) {
+// What a sale was, in a few words ("Eggs", "Honey"), for one-line summaries.
+export function saleKind(sale) {
+  const meta = HOBBY_META[sale && sale.hobbyType] || HOBBY_META.other || { label: "Sale" };
+  if (sale && sale.hobbyType === "eggs" && sale.qty) return `${sale.qty} ${sale.unit === "dozen" ? "dozen eggs" : "eggs"}`;
+  if (sale && sale.crop) return sale.crop;
+  return meta.label;
+}
+
+// Delete a sale and unwind what it touched (legacy sold_eggs twin, brooder
+// disposition). Shared by the Sales log and the 3.0 Undo bar.
+export function removeSale(d, id) {
+  const target = (d.sales || []).find(s => s.id === id);
+  d.sales = (d.sales||[]).filter(s => s.id !== id);
+  if (d.entries?.["egg_layers"]) {
+    d.entries["egg_layers"] = d.entries["egg_layers"].filter(
+      e => !(e.action === "sold_eggs" && e.id === id)
+    );
+  }
+  if (target?.brooderBatchId && target?.dispositionId) {
+    const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
+    const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);
+    if (batch && Array.isArray(batch.dispositions)) {
+      batch.dispositions = batch.dispositions.filter(x => x.id !== target.dispositionId);
+      if (batch.archived) batch.archived = false;
+    }
+  }
+  return d;
+}
+
+// Sold / spent / profit for a window, the Sales page's numbers. Legacy
+// per-flock egg sales are merged into data.sales so they count, exactly as
+// the totals above them do. Shared with the 3.0 Sales screen.
+export function profitStats(data, windowKey, mode, legacyEggSales = null) {
+  const window = resolveWindow(windowKey, new Date());
+  const legacy = legacyEggSales || collectAllSales(data).filter(s => s.isLegacy);
+  const saleIds = new Set((data.sales || []).map(s => s.id));
+  const mergedData = { ...data, sales: [...(data.sales || []), ...legacy.filter(s => !saleIds.has(s.id))] };
+  return mode === "fifo" ? computeFifoStats(mergedData, window) : computeSimpleStats(mergedData, window);
+}
+
+// `embedded` (3.0): shown under the new Sales screen, so its own title and
+// shortcut buttons are hidden. `focus` scrolls to "log" or "customers".
+export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHistory, embedded = false, focus = null }) {
   const [showAddSale, setShowAddSale] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [editingOccurrenceDate, setEditingOccurrenceDate] = useState(null);
   const [filterType, setFilterType] = useState("all");
-  const [showCustomers, setShowCustomers] = useState(false);
+  const [showCustomers, setShowCustomers] = useState(focus === "customers");
+  useEffect(() => {
+    if (!focus) return;
+    const el = document.getElementById(focus === "customers" ? "sales-customers" : focus === "log" ? "sales-log" : null);
+    if (el) setTimeout(() => el.scrollIntoView({ block: "start" }), 50);
+  }, [focus]);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showYearReport, setShowYearReport] = useState(false);
@@ -1565,51 +1612,10 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
   // Simple mode: cash in vs cash out within the window. No backlog tracking.
   // Matches the standard homesteader mental model ("did I spend more than I
   // made this month?").
-  const fifoStats = useMemo(() => {
-    const window = resolveWindow(profitWindow, new Date());
-    // Build a synthetic data object that includes legacyEggSales merged into
-    // sales — otherwise old per-flock egg sales wouldn't count toward egg
-    // revenue in the FIFO view, even though they show up in totalRevenue
-    // above. Same merge logic as allSales but at the data shape level.
-    const saleIds = new Set((data.sales || []).map(s => s.id));
-    const mergedSales = [
-      ...(data.sales || []),
-      ...legacyEggSales.filter(s => !saleIds.has(s.id)),
-    ];
-    const mergedData = { ...data, sales: mergedSales };
-    return profitMode === "simple"
-      ? computeSimpleStats(mergedData, window)
-      : computeFifoStats(mergedData, window);
-  }, [data, legacyEggSales, profitWindow, profitMode]);
+  const fifoStats = useMemo(() => profitStats(data, profitWindow, profitMode, legacyEggSales), [data, legacyEggSales, profitWindow, profitMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteSale = (id) => {
-    update(d => {
-      // Snapshot the sale before deletion so we can unwind the brooder
-      // disposition (if this was a brooder-linked chick sale).
-      const target = (d.sales || []).find(s => s.id === id);
-      d.sales = (d.sales||[]).filter(s => s.id !== id);
-      // Also remove any legacy `sold_eggs` entry with the same id. Otherwise
-      // a sale that was migrated from the old per-flock egg-sale logger would
-      // "resurrect" itself after deletion — the user would delete from data.sales,
-      // but the entry in data.entries["egg_layers"] would re-appear on next render.
-      if (d.entries?.["egg_layers"]) {
-        d.entries["egg_layers"] = d.entries["egg_layers"].filter(
-          e => !(e.action === "sold_eggs" && e.id === id)
-        );
-      }
-      // Brooder-linked: remove the matching disposition so the brooder's
-      // remaining count comes back. If the batch was auto-archived (count
-      // hit 0), un-archive it since we just freed up chicks.
-      if (target?.brooderBatchId && target?.dispositionId) {
-        const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
-        const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);
-        if (batch && Array.isArray(batch.dispositions)) {
-          batch.dispositions = batch.dispositions.filter(x => x.id !== target.dispositionId);
-          if (batch.archived) batch.archived = false;
-        }
-      }
-      return d;
-    });
+    update(d => removeSale(d, id));
   };
 
   const saveCustomer = (customer) => {
@@ -1638,6 +1644,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
       {editingCustomer && <CustomerModal customer={editingCustomer} onSave={saveCustomer} onClose={() => setEditingCustomer(null)} />}
       {showYearReport && <YearEndReportModal data={data} onClose={() => setShowYearReport(false)} />}
 
+      {!embedded && <>
       {/* Header */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10 }}>
         <h2 style={{ fontFamily:FONT_DISPLAY,fontSize:26,margin:0,color:palette.ink }}>sales</h2>
@@ -1689,6 +1696,8 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
           <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
         </button>
       )}
+
+      </>}
 
       {/* Revenue summary cards */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
@@ -1912,7 +1921,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
       )}
 
       {/* Filter + log */}
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8 }}>
+      <div id="sales-log" style={{ scrollMarginTop: 16, display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8 }}>
         <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>Sales &amp; expenses log</div>
         <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
           {availableTypes.map(t => (
@@ -2243,7 +2252,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
       })()}
 
       {/* Customers section */}
-      <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,overflow:"hidden",marginBottom:14 }}>
+      <div id="sales-customers" style={{ scrollMarginTop: 16, background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,overflow:"hidden",marginBottom:14 }}>
         <button onClick={() => setShowCustomers(!showCustomers)} style={{ width:"100%",padding:"14px 16px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:FONT_BODY }}>
           <div style={{ display:"flex",alignItems:"center",gap:10 }}>
             <User size={16} color={palette.inkSoft} />

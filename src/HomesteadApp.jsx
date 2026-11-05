@@ -159,6 +159,7 @@ import BeesPage, { BeesAnalytics } from "./Bees.jsx";
 import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
 import GoatsPage, { GoatsAnalytics, GoatsNewLook } from "./Goats.jsx";
 import { GoatStats } from "./newlook/goats/GoatScreens.jsx";
+import SalesScreen from "./newlook/sales/SalesScreen.jsx";
 import { requestHobbyAction } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
@@ -6384,7 +6385,10 @@ useNativeBackButton(React.useCallback(() => {
         {page === "journal" && (
           <JournalPage data={data} update={update} setModal={setModal} />
         )}
-        {page === "sales" && (
+        {page === "sales" && newLook && (
+          <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
+        )}
+        {page === "sales" && !newLook && (
           <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
         )}
         </ErrorBoundary>
