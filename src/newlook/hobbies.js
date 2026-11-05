@@ -152,6 +152,10 @@ export const LOG_ACTIONS = {
     { key: "treatment", label: "Treatment", icon: "pill", onPage: true },
     { key: "note", label: "Note", icon: "note", onPage: true },
   ],
+  incubator: [
+    { key: "newRun", label: "Set eggs", icon: "egg", primary: true, onPage: true },
+    { key: "newBrooder", label: "Add chicks", icon: "nest", onPage: true },
+  ],
   rabbits: [
     { key: "fed", label: "Fed", icon: "feed", primary: true, onPage: true },
     { key: "bred", label: "Bred", icon: "heart", onPage: true },

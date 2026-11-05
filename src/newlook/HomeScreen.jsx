@@ -20,6 +20,7 @@ import { batchAlive, batchAgeDays } from "../meatBatches.js";
 import { upcomingKindles } from "./rabbits/rabbitData.js";
 import { farrierDue, rideTotals } from "./horses/horseData.js";
 import { hiveFacts } from "./bees/BeeScreens.jsx";
+import { runState, remaining as broodLeft } from "./incubator/IncubatorScreens.jsx";
 import { isoDay } from "./eggs/eggFacts.js";
 
 const DAY = 86400000;
@@ -73,6 +74,12 @@ export function tileStat(entry, data, today) {
     if (due) return { big: null, small: `${due.horse.name}'s feet ${due.left < 0 ? "are overdue" : "are due this week"}` };
     const n = rideTotals(entry.hobby, isoDay(new Date(parseDay(today).getTime() - 6 * 86400000)), today).count;
     if (n) return { big: String(n), small: n === 1 ? "ride this week" : "rides this week" };
+  }
+  if (entry.type === "incubator") {
+    const run = (entry.hobby.runs || []).filter((r) => r && r.status !== "hatched" && r.status !== "closed").sort((a, b) => (a.dateSet < b.dateSet ? -1 : 1))[0];
+    if (run) { const st = runState(run, today); return { big: `Day ${st.day}`, small: `of ${st.inc.hatch} · ${st.text.toLowerCase().startsWith("day") ? run.name : st.text.toLowerCase()}` }; }
+    const chicks = (entry.hobby.brooderBatches || []).filter((b) => !b.archived).reduce((s, b) => s + broodLeft(b), 0);
+    if (chicks) return { big: String(chicks), small: "chicks in the brooder" };
   }
   if (entry.type === "bees") {
     const hives = entry.hobby.hives || [];

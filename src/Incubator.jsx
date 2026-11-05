@@ -2,6 +2,9 @@
 // INCUBATOR — tracks hatching runs by bird type with auto calendar reminders
 // ============================================================================
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): the rebuilt incubator screens reuse this file's forms.
+import { IncubatorToday, IncubatorHistory } from "./newlook/incubator/IncubatorScreens.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { X, Edit3, Trash2, Plus, Calendar } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -1746,6 +1749,31 @@ export default function IncubatorPage({ hobby, data, update, setModal }) {
     <div>
       <IncubatorModalRouter modal={localModal} hobby={hobby} data={data} update={update} setModal={setLocalModal} onClose={closeModal} />
       <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} setAppModal={setModal} data={data} />
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Hatches with this file's own forms (new run,
+// candle, log hatch → move to brooder, new brooder, chicks left, edit).
+// ============================================================================
+export function IncubatorNewLook({ hobby, data, update, setModal, tab, onTab }) {
+  const [localModal, setLocalModal] = useState(null);
+  const act = {
+    newRun: () => setLocalModal({ type: "addRun", hobbyId: hobby.id }),
+    editRun: (runId) => setLocalModal({ type: "editRun", runId }),
+    candle: (runId) => setLocalModal({ type: "candle", runId }),
+    logHatch: (runId) => setLocalModal({ type: "logHatch", runId }),
+    newBrooder: () => setLocalModal({ type: "addBrooder", hobbyId: hobby.id }),
+    editBrooder: (batchId) => setLocalModal({ type: "editBrooderBatch", batchId }),
+    brooderOut: (batchId) => setLocalModal({ type: "brooderDispose", batchId }),
+    toHistory: () => onTab && onTab("animals"),
+  };
+  useHobbyRequest(hobby.id, (a) => { if (a === "newRun") act.newRun(); else if (a === "newBrooder") act.newBrooder(); });
+  return (
+    <div>
+      <IncubatorModalRouter modal={localModal} hobby={hobby} data={data} update={update} setModal={setLocalModal} onClose={() => setLocalModal(null)} />
+      {tab === "animals" ? <IncubatorHistory hobby={hobby} act={act} /> : <IncubatorToday hobby={hobby} setModal={setModal} act={act} />}
     </div>
   );
 }
