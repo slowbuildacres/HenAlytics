@@ -94,6 +94,9 @@ import { nl, LOOKS } from "./newlook/theme.js";
 import { useAppearance } from "./newlook/appearance.js";
 import SupporterScreen from "./newlook/SupporterScreen.jsx";
 import LookScreen from "./newlook/LookScreen.jsx";
+import { ProjectsHome, ProjectRecord, ProjectForm, SectionSheet, ProjectLogSheet, PdfGuide, AetSummary, InfoSheet } from "./newlook/projects/ProjectScreens.jsx";
+import { projectsOf } from "./newlook/projects/projectData.js";
+import { GraduationCap } from "lucide-react";
 import { MonthlyRecapViewer, recapMonthKey, monthTeaser, monthHasStory, monthName } from "./newlook/MonthlyRecap.jsx";
 import NavBar from "./newlook/NavBar.jsx";
 import LogPicker from "./newlook/LogPicker.jsx";
@@ -3456,7 +3459,14 @@ useEffect(() => {
   // "unknown" until the server gives a definite answer — the new look keeps a
   // supporter's chosen colors meanwhile instead of flashing Farmhouse.
   const [supporterStatus, setSupporterStatus] = useState("unknown");
-  const appearance = useAppearance({ data, enabled: newLook, isSupporter, supporterStatus });
+  const appearance = useAppearance({ enabled: newLook, isSupporter, supporterStatus });
+  // 4-H & FFA (new look): open project, its section sheet, the new/edit form,
+  // the hours/show log sheet and the info sheets.
+  const [nlProjectId, setNlProjectId] = useState(null);
+  const [nlProjectSection, setNlProjectSection] = useState(null);
+  const [nlProjectForm, setNlProjectForm] = useState(null); // { kind } | { project }
+  const [nlProjectLog, setNlProjectLog] = useState(null);   // "hours" | "show"
+  const [nlProjectInfo, setNlProjectInfo] = useState(null);
   // In the new look, every "Support Henalytics" button (announcements, Year
   // in review, Games, old screens) opens the Supporter screen instead of the
   // old popup.
@@ -5291,7 +5301,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlTab = page === "dash" ? "home"
     : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
-    : ["more", "sales", "journal", "games", "photos", "supporter", "look"].includes(page) ? "more"
+    : ["more", "sales", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet"].includes(page) ? "more"
     : "home";
   const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
   // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
@@ -6195,6 +6205,8 @@ useNativeBackButton(React.useCallback(() => {
             supportLine={nlRecapFresh ? `${monthName(nlRecapKey)} recap is ready · thank you` : null}
             lookName={LOOKS[appearance.effectiveLook] ? LOOKS[appearance.effectiveLook].name + (appearance.dark ? ", dark" : "") : "Farmhouse"}
             onLook={() => setPage("look")}
+            onProjects={() => setPage("projects")}
+            projectsLine={(() => { const n = projectsOf(data).length; return n ? `${n} project${n === 1 ? "" : "s"}` : "Record books that fill themselves in"; })()}
             onHobbies={() => setModal({ type: "manageHobbies" })}
             onBarn={() => setModal({ type: "barn" })}
             onSettings={() => setModal({ type: "settings" })}
@@ -6212,10 +6224,40 @@ useNativeBackButton(React.useCallback(() => {
             onContact={() => openExternalUrl("mailto:slowbuildacres@gmail.com")} onOpenUrl={openExternalUrl}
           />
         )}
+        {newLook && page === "projects" && (
+          <ProjectsHome data={data} onBack={() => setPage("more")}
+            onOpen={(id) => { setNlProjectId(id); setPage("project"); }}
+            onNew={(kind) => setNlProjectForm({ kind })}
+            onGuide={() => { setNlProjectId(null); setPage("projectGuide"); }}
+            onInfo={setNlProjectInfo} />
+        )}
+        {newLook && page === "project" && (() => {
+          const pj = (data.projects || []).find((x) => x.id === nlProjectId);
+          if (!pj) return <ProjectsHome data={data} onBack={() => setPage("more")} onOpen={(id) => setNlProjectId(id)} onNew={(kind) => setNlProjectForm({ kind })} onGuide={() => setPage("projectGuide")} onInfo={setNlProjectInfo} />;
+          return (
+            <ProjectRecord data={data} project={pj} toast={toast}
+              onBack={() => setPage("projects")}
+              onSection={setNlProjectSection}
+              onEdit={() => setNlProjectForm({ project: pj })}
+              onAet={() => setPage("projectAet")}
+              onDelete={() => {
+                const logs = (data.projectLogs || []).filter((l) => l.projectId === pj.id);
+                update((d) => { d.projects = (d.projects || []).filter((x) => x.id !== pj.id); d.projectLogs = (d.projectLogs || []).filter((l) => l.projectId !== pj.id); return d; });
+                setPage("projects");
+                showUndo(`Deleted ${pj.title} project`, () => update((d) => { d.projects = [...(d.projects || []), pj]; d.projectLogs = [...(d.projectLogs || []), ...logs]; return d; }));
+              }} />
+          );
+        })()}
+        {newLook && page === "projectGuide" && (
+          <PdfGuide data={data} project={(data.projects || []).find((x) => x.id === nlProjectId)} onBack={() => setPage(nlProjectId ? "project" : "projects")} />
+        )}
+        {newLook && page === "projectAet" && (data.projects || []).some((x) => x.id === nlProjectId) && (
+          <AetSummary data={data} project={(data.projects || []).find((x) => x.id === nlProjectId)} toast={toast} onBack={() => setPage("project")} />
+        )}
         {newLook && page === "look" && (
           <LookScreen appearance={appearance} isSupporter={appearance.supporterOk} toast={toast}
             onBack={() => setPage("more")} onSupport={() => setPage("supporter")}
-            onChange={(patch) => update((d) => { d.appearance = { ...(d.appearance || {}), ...patch }; return d; })} />
+            onChange={appearance.set} />
         )}
         {newLook && isHobbyPage && activeEntry && (
           <div style={{ marginBottom: 12 }}>
@@ -6731,7 +6773,36 @@ useNativeBackButton(React.useCallback(() => {
             open={logPickerOpen} onClose={() => setLogPickerOpen(false)}
             hobbies={data.hobbies} activeHobbyId={activeHobby}
             onAction={nlLogAction} onOpenHobby={(e) => nlOpenEntry(e)} HobbyIcon={HobbyIcon}
+            extra={projectsOf(data).length ? [{ key: "projects", name: "4-H & FFA", icon: <GraduationCap size={16} strokeWidth={2} aria-hidden="true" />, actions: [
+              { key: "hours", label: "Project hours", icon: "clock", primary: true }, { key: "show", label: "Show or fair", icon: "award" },
+            ] }] : []}
+            onExtraAction={(k, a) => { setLogPickerOpen(false); setNlProjectLog(a.key); }}
           />
+          {nlProjectForm && (
+            <ProjectForm open data={data} kindKey={nlProjectForm.kind} project={nlProjectForm.project} onClose={() => setNlProjectForm(null)}
+              onSave={(pj) => {
+                const isNew = !nlProjectForm.project;
+                update((d) => { d.projects = isNew ? [...(d.projects || []), pj] : (d.projects || []).map((x) => (x.id === pj.id ? pj : x)); return d; });
+                setNlProjectForm(null);
+                if (isNew) { setNlProjectId(pj.id); setPage("project"); }
+              }} />
+          )}
+          {nlProjectSection && (data.projects || []).some((x) => x.id === nlProjectId) && (
+            <SectionSheet which={nlProjectSection} data={data} update={update} project={(data.projects || []).find((x) => x.id === nlProjectId)}
+              onClose={() => setNlProjectSection(null)}
+              onLog={(k) => { setNlProjectSection(null); setNlProjectLog(k); }}
+              onOpenHobby={(hid) => { const h = data.hobbies.find((x) => x.id === hid); if (h) { setActiveHobby(h.id); setPage(hobbyPage(h)); } }} />
+          )}
+          {nlProjectLog && (
+            <ProjectLogSheet kind={nlProjectLog} data={data} defaultProjectId={page === "project" ? nlProjectId : null}
+              onClose={() => setNlProjectLog(null)}
+              onSave={(log) => {
+                update((d) => { d.projectLogs = [...(d.projectLogs || []), log]; return d; });
+                setNlProjectLog(null);
+                showUndo(log.kind === "show" ? `Logged ${log.showName}` : `Logged ${log.hours} hour${log.hours === 1 ? "" : "s"}`, () => update((d) => { d.projectLogs = (d.projectLogs || []).filter((x) => x.id !== log.id); return d; }));
+              }} />
+          )}
+          <InfoSheet which={nlProjectInfo} onClose={() => setNlProjectInfo(null)} />
           <UndoHost />
           <HobbySwitcherSheet
             open={switcherOpen} onClose={() => setSwitcherOpen(false)}

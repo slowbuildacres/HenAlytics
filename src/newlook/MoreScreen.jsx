@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from "react";
 import {
   DollarSign, Sparkles, BookOpen, Trophy, Heart, Home as HomeIcon, MapPin, Settings,
-  Cloud, CloudOff, Image as ImageIcon, Palette,
+  Cloud, CloudOff, Image as ImageIcon, Palette, GraduationCap,
 } from "lucide-react";
 import { nl, font, type } from "./theme.js";
 import { Card, Row, Badge } from "./ui.jsx";
@@ -41,7 +41,7 @@ export function syncLine({ signedIn, online, status, lastSyncAt, now = Date.now(
 export default function MoreScreen({
   data, user, isSupporter, syncStatus, online, lastSyncAt, homesteadSwitcher,
   onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport, supportLine,
-  onHobbies, onBarn, onSettings, onLook, lookName,
+  onHobbies, onBarn, onSettings, onLook, lookName, onProjects, projectsLine,
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
@@ -75,6 +75,7 @@ export default function MoreScreen({
         <Row first={!!data.salesHidden} icon={ic(Sparkles)} title="Year in review" onClick={onYear} chevron />
         <Row icon={ic(BookOpen)} title="Journal" onClick={onJournal} chevron />
         <Row icon={ic(ImageIcon)} title="Photos" onClick={onPhotos} chevron />
+        {onProjects && <Row icon={ic(GraduationCap)} title="4-H & FFA" sub={projectsLine} onClick={onProjects} chevron />}
         <Row icon={ic(Trophy)} title="Homestead Games" onClick={onGames} chevron />
       </Card>
 

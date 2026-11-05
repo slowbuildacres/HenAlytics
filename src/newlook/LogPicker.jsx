@@ -11,7 +11,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Egg, Wheat, DollarSign, Utensils, Bird, Archive, NotebookPen, ShoppingBasket,
-  Droplet, MoreHorizontal, Truck, ArrowRight, Milk, Stethoscope, Scale, Baby, Heart, Flame, Scissors, Mountain, Hammer, Pill, Search, Bug,
+  Droplet, MoreHorizontal, Truck, ArrowRight, Milk, Stethoscope, Scale, Baby, Heart, Flame, Scissors, Mountain, Hammer, Pill, Search, Bug, Clock, Award,
 } from "lucide-react";
 import { nl, font } from "./theme.js";
 import { Sheet, Chip } from "./ui.jsx";
@@ -22,17 +22,19 @@ import HobbyGlyph from "./HobbyGlyph.jsx";
 const ICONS = {
   egg: Egg, feed: Wheat, sold: DollarSign, used: Utensils, nest: Bird, bedding: Archive,
   note: NotebookPen, harvest: ShoppingBasket, water: Droplet, more: MoreHorizontal, move: Truck,
-  milk: Milk, health: Stethoscope, weight: Scale, kid: Baby, heart: Heart, heat: Flame, shear: Scissors, ride: Mountain, farrier: Hammer, pill: Pill, inspect: Search, bug: Bug,
+  milk: Milk, health: Stethoscope, weight: Scale, kid: Baby, heart: Heart, heat: Flame, shear: Scissors, ride: Mountain, farrier: Hammer, pill: Pill, inspect: Search, bug: Bug, clock: Clock, award: Award,
 };
 
-export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAction, onOpenHobby, HobbyIcon }) {
-  const entries = switcherEntries(hobbies);
+// `extra`: more chips after the hobbies, e.g. 4-H & FFA:
+//   [{ key, name, icon (JSX), actions: [{ key, label, icon }] }] → onExtraAction(key, action)
+export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAction, onOpenHobby, HobbyIcon, extra = [], onExtraAction }) {
+  const entries = [...switcherEntries(hobbies), ...extra.map((x) => ({ ...x, isExtra: true, ids: [] }))];
   const startKey = (entries.find((e) => e.ids.includes(activeHobbyId)) || entries[0] || {}).key;
   const [sel, setSel] = useState(startKey);
   // Re-open on the hobby you're in.
   useEffect(() => { if (open) setSel(startKey); }, [open, startKey]);
   const entry = entries.find((e) => e.key === sel) || entries[0];
-  const actions = entry ? LOG_ACTIONS[entry.type] : null;
+  const actions = entry ? (entry.isExtra ? entry.actions : LOG_ACTIONS[entry.type]) : null;
 
   return (
     <Sheet open={open} onClose={onClose} label="Log something" above={`calc(${NAV_HEIGHT}px + env(safe-area-inset-bottom))`} maxHeight="70vh">
@@ -41,7 +43,7 @@ export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAct
         <div role="group" aria-label="Pick a hobby" style={{ display: "flex", gap: 8, overflowX: "auto", margin: "0 -16px", padding: "0 16px 2px", scrollbarWidth: "none" }}>
           {entries.map((e) => (
             <Chip key={e.key} selected={e.key === entry?.key} onClick={() => setSel(e.key)}
-              icon={<HobbyGlyph type={e.type} size={16} strokeWidth={2} />}>
+              icon={e.isExtra ? e.icon : <HobbyGlyph type={e.type} size={16} strokeWidth={2} />}>
               {e.name}
             </Chip>
           ))}
@@ -52,7 +54,7 @@ export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAct
           {actions.map((a) => {
             const Icon = ICONS[a.icon] || NotebookPen;
             return (
-              <button key={a.key} type="button" onClick={() => onAction(entry, a)} style={{
+              <button key={a.key} type="button" onClick={() => (entry.isExtra ? onExtraAction(entry.key, a) : onAction(entry, a))} style={{
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
                 minHeight: 68, padding: "8px 4px", borderRadius: 16, cursor: "pointer",
                 background: a.primary ? nl.yolk : nl.card, border: `1px solid ${a.primary ? nl.yolk : nl.line}`,

@@ -1,8 +1,10 @@
 // ============================================================================
 // New look (3.0) — Look & app icon
 // ----------------------------------------------------------------------------
-// data.appearance = { look: "farmhouse"|"meadow"|"barn", mode: "system"|"light"|"dark", icon }
-// lives in the synced data, so a homestead looks the same on every phone.
+// { look: "farmhouse"|"meadow"|"barn", mode: "system"|"light"|"dark", icon }
+// is kept on this phone (localStorage), not in the homestead's synced data:
+// it's a personal choice, and farmhands sharing a homestead each pick their
+// own (Supporter perks belong to the person, too).
 // Dark mode and Farmhouse are free for everyone; Meadow, Barn and the extra
 // app icons are Supporter perks. If a supporter's membership ends, the app
 // quietly goes back to Farmhouse (their pick is kept, so it comes back if
@@ -17,6 +19,10 @@ import { useEffect, useState } from "react";
 import { LOOKS, applyLook } from "./theme.js";
 
 const CACHE = "henalytics_supporter_cache";
+const KEY = "henalytics_appearance";
+function readPref() {
+  try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; } catch (_) { return {}; }
+}
 
 function readCache() {
   try { return localStorage.getItem(CACHE) === "1"; } catch (_) { return false; }
@@ -29,8 +35,8 @@ function systemDark() {
   try { return !!(window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches); } catch (_) { return false; }
 }
 
-export function appearanceOf(data) {
-  const a = (data && data.appearance) || {};
+export function appearanceOf(raw) {
+  const a = raw || {};
   return {
     look: LOOKS[a.look] ? a.look : "farmhouse",
     mode: a.mode === "light" || a.mode === "dark" ? a.mode : "system",
@@ -39,8 +45,14 @@ export function appearanceOf(data) {
 }
 
 // supporterStatus: "unknown" | "yes" | "no" (definitive answers only).
-export function useAppearance({ data, enabled, isSupporter, supporterStatus }) {
+export function useAppearance({ enabled, isSupporter, supporterStatus }) {
   const [sysDark, setSysDark] = useState(systemDark);
+  const [raw, setRaw] = useState(readPref);
+  const set = (patch) => setRaw((cur) => {
+    const next = { ...cur, ...patch };
+    try { localStorage.setItem(KEY, JSON.stringify(next)); } catch (_) { /* ignore */ }
+    return next;
+  });
   useEffect(() => {
     if (typeof window === "undefined" || !window.matchMedia) return undefined;
     const mq = window.matchMedia("(prefers-color-scheme: dark)");
@@ -54,7 +66,7 @@ export function useAppearance({ data, enabled, isSupporter, supporterStatus }) {
     else if (supporterStatus === "no") writeCache(false);
   }, [supporterStatus]);
 
-  const pref = appearanceOf(data);
+  const pref = appearanceOf(raw);
   const supporterOk = isSupporter || (supporterStatus === "unknown" && readCache());
   const look = LOOKS[pref.look].supporter && !supporterOk ? "farmhouse" : pref.look;
   const dark = pref.mode === "dark" || (pref.mode === "system" && sysDark);
@@ -78,5 +90,5 @@ export function useAppearance({ data, enabled, isSupporter, supporterStatus }) {
     return () => { off = true; };
   }, [effDark]);
 
-  return { ...pref, effectiveLook: effLook, dark: effDark, supporterOk, sysDark };
+  return { ...pref, effectiveLook: effLook, dark: effDark, supporterOk, sysDark, set };
 }

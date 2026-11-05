@@ -2449,7 +2449,7 @@ function downloadBlob(blob, filename) {
 }
 // Phones: hand the file to the share sheet (Save to Files, Mail, Drive…).
 // Elsewhere (or if sharing files isn't supported): download it.
-async function shareOrDownload(blob, filename, title) {
+export async function shareOrDownload(blob, filename, title) {
   try {
     const file = new File([blob], filename, { type: blob.type });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
