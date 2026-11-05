@@ -38,7 +38,37 @@ export const SPECIES = {
     extraLogs: [{ key: "heat", label: "Heat" }, { key: "ai", label: "AI" }, { key: "preg_test", label: "Preg check" }],
     groupBy: "pasture",
   },
+  pigs: {
+    key: "pigs", noun: "pig", plural: "pigs", Noun: "Pigs", emoji: "🐖",
+    female: ["Sow", "Gilt"], male: ["Boar"], notBreeding: ["Barrow"],
+    groups: [{ key: "Sow", label: "Sows" }, { key: "Gilt", label: "Gilts" }, { key: "Boar", label: "Boars" }, { key: "Barrow", label: "Barrows" }, { key: "Piglet", label: "Piglets" }],
+    sexWord: { Sow: "sow", Gilt: "gilt", Boar: "boar", Barrow: "barrow", Piglet: "piglet" },
+    she: "sow", shePlural: "sows", sire: "boar",
+    birthAction: "litter", young: "piglet", youngPlural: "piglets", birthNoun: "farrowing", birthLabel: "Farrowing", born: "farrowed", dueVerb: "due to farrow",
+    gestation: 114, milk: false, milkOz: () => 0,
+    // Pigs record breedings as "bred" log entries with a farrowDate.
+    bredAction: "bred", dueField: "farrowDate", sireNameField: "boarName",
+    youngCount: (e) => Number(e.pigletsAlive != null ? e.pigletsAlive : e.count) || 0,
+    tally: ["Sow", "Boar", "Barrow", "Gilt", "Piglet", "Unsexed"],
+  },
 };
+
+const youngOf = (sp, e) => (sp.youngCount ? sp.youngCount(e) : Number(e.count) || 1);
+
+// Every breeding: hobby.breedings, plus (pigs) "bred" entries turned into
+// the same shape { id, damId, breedDate, expectedBirthDate, birthedDate }.
+export function allBreedings(sp, hobby, entries) {
+  const list = (hobby.breedings || []).filter(Boolean);
+  if (!sp || !sp.bredAction) return list;
+  const births = (entries || []).filter((e) => e && e.action === sp.birthAction);
+  for (const e of entries || []) {
+    if (!e || e.action !== sp.bredAction) continue;
+    const birth = births.filter((b) => b.animalId === e.animalId && b.date >= e.date).sort((a, b) => (a.date < b.date ? -1 : 1))[0];
+    list.push({ id: e.id, fromEntry: e, damId: e.animalId, sireId: e.boarId || e.buckId || null, externalSireName: e[sp.sireNameField] || null,
+      breedDate: e.date, expectedBirthDate: e[sp.dueField] || null, birthedDate: birth ? birth.date : null, offspringBorn: birth ? youngOf(sp, birth) : null });
+  }
+  return list;
+}
 
 // Milk as people log it: ounces under a gallon, then gallons (metric: L/mL).
 export function milkText(o) {
@@ -62,7 +92,8 @@ export function milkers(sp, hobby) {
   const females = pool.filter((a) => isFemale(sp, a));
   return females.length ? females : pool.filter((a) => !sp.male.includes(a.sex) && !sp.notBreeding.includes(a.sex));
 }
-export function showsMilk(hobby) {
+export function showsMilk(hobby, sp) {
+  if (sp && sp.milk === false) return false;
   const live = liveAnimals(hobby);
   return !live.some((a) => a.purpose) || live.some(isDairy);
 }
@@ -83,21 +114,21 @@ export function milkOz(sp, entries, { animalId, from, to } = {}) {
 export function lastBirth(sp, hobby, entries, id) {
   const marks = [];
   for (const b of (hobby.breedings || [])) if (b && b.damId === id && b.birthedDate) marks.push({ date: b.birthedDate, count: Number(b.offspringBorn) || null });
-  for (const e of entries || []) if (e && e.action === sp.birthAction && e.animalId === id && e.date) marks.push({ date: e.date, count: Number(e.count) || 1 });
+  for (const e of entries || []) if (e && e.action === sp.birthAction && e.animalId === id && e.date) marks.push({ date: e.date, count: youngOf(sp, e) });
   marks.sort((a, b) => (a.date < b.date ? 1 : -1));
   return marks[0] || null;
 }
 
 // The female's open breeding (no birth recorded yet), if any.
-export function openBreeding(hobby, id, today = isoDay()) {
-  return (hobby.breedings || [])
+export function openBreeding(hobby, id, today = isoDay(), sp = null, entries = null) {
+  return allBreedings(sp, hobby, entries)
     .filter((b) => b && b.damId === id && !b.birthedDate && b.expectedBirthDate && b.expectedBirthDate >= addDays(today, -21))
     .sort((a, b) => (a.expectedBirthDate < b.expectedBirthDate ? -1 : 1))[0] || null;
 }
 
 // One status badge per animal: due, in milk (day N of lactation), dry, open.
 export function animalStatus(sp, hobby, entries, a, today = isoDay()) {
-  const due = openBreeding(hobby, a.id, today);
+  const due = openBreeding(hobby, a.id, today, sp, entries);
   if (due) {
     const left = daysFrom(today, due.expectedBirthDate);
     return { tone: "ready", text: left < 0 ? `Overdue · was ${prettyDay(due.expectedBirthDate)}` : left <= 14 ? `Due in ${plural(left, "day", "days")}` : `Due ${prettyDay(due.expectedBirthDate)}` };
@@ -129,9 +160,9 @@ export function ageText(dob, today = isoDay()) {
 }
 
 // Births coming up across the herd: [{ breeding, dam, day, of, left }].
-export function upcomingBirths(sp, hobby, today = isoDay(), limit = 3) {
+export function upcomingBirths(sp, hobby, today = isoDay(), limit = 3, entries = null) {
   const animals = (hobby.animals || []);
-  return (hobby.breedings || [])
+  return allBreedings(sp, hobby, entries)
     .filter((b) => b && !b.birthedDate && b.expectedBirthDate && b.expectedBirthDate >= addDays(today, -21))
     .sort((a, b) => (a.expectedBirthDate < b.expectedBirthDate ? -1 : 1))
     .slice(0, limit)
@@ -157,7 +188,7 @@ export function birthHistory(sp, hobby, entries) {
   }
   for (const e of entries || []) {
     if (!e || e.action !== sp.birthAction || seen.has(`${e.animalId}|${e.date}`)) continue;
-    const n = Number(e.count) || 1;
+    const n = youngOf(sp, e);
     rows.push({ id: e.id, damId: e.animalId, count: n, date: e.date, dam: e.animalName || name(e.animalId) || sp.she, sub: `${plural(n, sp.young, sp.youngPlural)}${e.notes ? ` · ${e.notes}` : ""}` });
   }
   return rows.sort((a, b) => (a.date < b.date ? 1 : -1));
@@ -195,11 +226,13 @@ export function herdSummary(sp, data, hobby, r) {
   const inR = (e) => e && e.date && (!r.start || e.date >= r.start) && e.date <= r.end;
   const milk = milkOz(sp, entries.filter(inR));
   const priorMilk = r.prior ? milkOz(sp, entries, { from: r.prior.start, to: r.prior.end }) : null;
-  const young = entries.filter((e) => inR(e) && e.action === sp.birthAction).reduce((s, e) => s + (Number(e.count) || 1), 0);
+  const young = entries.filter((e) => inR(e) && e.action === sp.birthAction).reduce((s, e) => s + youngOf(sp, e), 0);
+  const butcher = entries.filter((e) => inR(e) && e.action === "butcher");
+  const meatLbs = butcher.reduce((s, e) => s + (e.count != null && e.avgWeight != null ? (Number(e.count) || 0) * (Number(e.avgWeight) || 0) : Number(e.weight) || 0), 0);
   // Same cost rows the egg page uses: feed/bedding costs on logs + expenses.
   const cost = costRows(data, hobby, r.end).filter(inR).reduce((s, c) => s + c.amount, 0);
   const gal = milk / 128;
-  return { milkOz: milk, gal, young, cost, delta: priorMilk ? (milk - priorMilk) / priorMilk : null, perGal: gal >= 1 && cost > 0 ? cost / gal : null };
+  return { milkOz: milk, gal, young, meatLbs, butchered: butcher.length, cost, delta: priorMilk ? (milk - priorMilk) / priorMilk : null, perGal: gal >= 1 && cost > 0 ? cost / gal : null };
 }
 
 export function milkByAnimal(sp, entries, hobby, r) {
@@ -241,8 +274,12 @@ export function herdFunFacts(sp, { data, hobby, range, milkPrice = 0 }) {
     facts.push({ key: "bestday", icon: "calendar", big: `${(v / 128).toFixed(1)} gal`, line: `our best milking day, ${prettyDay(d)}`,
       title: `Best day: ${(v / 128).toFixed(1)} gal on ${prettyDay(d)}`, sub: `Your biggest milking day${range.start ? " in this range" : ""}.` });
   }
-  const young = entries.filter((e) => inR(e) && e.action === sp.birthAction).reduce((s, e) => s + (Number(e.count) || 1), 0);
+  const young = entries.filter((e) => inR(e) && e.action === sp.birthAction).reduce((s, e) => s + youngOf(sp, e), 0);
   if (young >= 2) facts.push({ key: "young", icon: "kid", big: String(young), line: `${sp.youngPlural} born on our homestead`,
-    title: `${young} ${sp.youngPlural} born`, sub: `Welcome to the ${sp.key === "cows" ? "herd" : "herd"}.` });
+    title: `${young} ${sp.youngPlural} born`, sub: "Welcome to the herd." });
+  const butchered = entries.filter((e) => inR(e) && e.action === "butcher");
+  const lbs = butchered.reduce((s, e) => s + (Number(e.weight) || 0), 0);
+  if (lbs >= 50) facts.push({ key: "meals", icon: "meals", big: Math.round(lbs * 2).toLocaleString("en-US"), line: `family dinners from our ${sp.plural}`,
+    title: `About ${Math.round(lbs * 2).toLocaleString("en-US")} family dinners`, sub: `${Math.round(lbs)} lbs at roughly half a pound a plate.` });
   return facts;
 }

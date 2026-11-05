@@ -17,7 +17,7 @@ import React, { useMemo, useState } from "react";
 import {
   Milk, Wheat, Stethoscope, Scale, MoreHorizontal, Heart, Baby, NotebookPen, Receipt, Snowflake, Plus,
   Users, BookOpen, ChevronLeft, GitBranch, History, Trophy, CalendarCheck, DollarSign, Archive, Pencil,
-  Flame, Syringe, ClipboardCheck, MapPin, Fence,
+  Flame, Syringe, ClipboardCheck, MapPin, Fence, Utensils,
 } from "lucide-react";
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, Badge, Button, Chip, Sheet } from "../ui.jsx";
@@ -29,7 +29,7 @@ import { fmtWeight, fmtMoney } from "../../units.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
 import {
   liveAnimals, milkers, showsMilk, milkOz, animalStatus, ageText, upcomingBirths, birthHistory, latest,
-  lastBirth, openBreeding, milkByMonth, statsRange, herdSummary, milkByAnimal, herdFunFacts, isDairy, isFemale, milkText,
+  lastBirth, openBreeding, allBreedings, milkByMonth, statsRange, herdSummary, milkByAnimal, herdFunFacts, isDairy, isFemale, milkText,
 } from "./livestockData.js";
 
 const ic = (I) => <I size={20} strokeWidth={1.8} />;
@@ -77,12 +77,12 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
     );
   }
 
-  const ms = showsMilk(hobby) ? milkers(sp, hobby) : [];
+  const ms = showsMilk(hobby, sp) ? milkers(sp, hobby) : [];
   const todayOz = milkOz(sp, entries, { from: today, to: today });
   const weekStart = isoDay(new Date(parseDay(today).getTime() - 6 * DAY));
   const weekOz = milkOz(sp, entries, { from: weekStart, to: today });
   const inMilk = ms.filter((a) => { const s = animalStatus(sp, hobby, entries, a, today); return s && s.tone === "good"; }).length;
-  const coming = upcomingBirths(sp, hobby, today, 3);
+  const coming = upcomingBirths(sp, hobby, today, 3, entries);
   const recent = latest(entries, null).slice(0, 4);
   const anyFemale = live.some((a) => isFemale(sp, a));
 
@@ -119,6 +119,17 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
             })}
           </div>
           <Button icon={ic(Milk)} onClick={() => act.milk()}>Log a milking</Button>
+        </Card>
+      )}
+
+      {!ms.length && (
+        <Card padded>
+          <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
+            <span style={{ fontFamily: font.display, fontSize: 40, lineHeight: 1 }}>{live.length + tallyTotal}</span>
+            <span style={{ fontSize: 14, color: nl.soft }}>
+              {[live.length + tallyTotal === 1 ? sp.noun : sp.plural, sp.groups.map((g) => ({ g, n: live.filter((a) => a.sex === g.key).length })).filter((x) => x.n).map((x) => `${x.n} ${(x.n === 1 ? (sp.sexWord[x.g.key] || x.g.label) : x.g.label).toLowerCase()}`).join(", "), tallyTotal ? `${tallyTotal} counted` : null].filter(Boolean).join(" · ")}
+            </span>
+          </div>
         </Card>
       )}
 
@@ -291,14 +302,14 @@ export function LivestockProfile({ sp, hobby, data, animal: g, act, onBack }) {
   const st = animalStatus(sp, hobby, entries, g, today);
   const female = isFemale(sp, g);
   const sireSex = sp.male.includes(g.sex);
-  const milker = female && (isDairy(g) || !liveAnimals(hobby).some((a) => a.purpose));
+  const milker = sp.milk !== false && female && (isDairy(g) || !liveAnimals(hobby).some((a) => a.purpose));
   const born = lastBirth(sp, hobby, entries, g.id);
-  const due = openBreeding(hobby, g.id, today);
+  const due = openBreeding(hobby, g.id, today, sp, entries);
   const weights = latest(entries, "weight", g.id);
   const health = latest(entries, "health", g.id).slice(0, 3);
   const births = birthHistory(sp, hobby, entries).filter((h) => h.damId === g.id);
   const youngTotal = births.reduce((s, h) => s + (h.count || 0), 0);
-  const sired = (hobby.breedings || []).filter((b) => b && b.sireId === g.id);
+  const sired = allBreedings(sp, hobby, entries).filter((b) => b && b.sireId === g.id);
   const extra = (sp.extraLogs || []).map((x) => ({ ...x, last: latest(entries, x.key, g.id)[0] })).filter((x) => x.last);
   const animals = hobby.animals || [];
   const nameOf = (id) => (animals.find((a) => a.id === id) || {}).name;
@@ -383,7 +394,7 @@ export function LivestockProfile({ sp, hobby, data, animal: g, act, onBack }) {
 }
 
 // ── Stats ───────────────────────────────────────────────────────────────────
-const FACT_ICONS = { milk: Milk, money: DollarSign, trophy: Trophy, calendar: CalendarCheck, kid: Baby };
+const FACT_ICONS = { milk: Milk, money: DollarSign, trophy: Trophy, calendar: CalendarCheck, kid: Baby, meals: Utensils };
 
 export function LivestockStats({ sp, hobby, data, setModal, allNumbers }) {
   const today = isoDay();
@@ -421,13 +432,21 @@ export function LivestockStats({ sp, hobby, data, setModal, allNumbers }) {
             <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{s.young}</div>
           </Card>
         )}
-        <Card padded>
-          <div style={{ fontSize: type.small, color: nl.soft }}>{anyMilk ? "Cost per gallon" : "Spent"}</div>
-          <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{anyMilk ? (s.perGal != null ? fmtMoney(s.perGal) : "—") : fmtMoney(s.cost)}</div>
-          <div style={{ fontSize: 12, color: nl.soft }}>
-            {anyMilk ? (s.cost > 0 ? `${fmtMoney(s.cost)} on feed and supplies` : "Log feed costs to see this") : "Feed, supplies and expenses"}
-          </div>
-        </Card>
+        {!anyMilk && s.meatLbs > 0 ? (
+          <Card padded>
+            <div style={{ fontSize: type.small, color: nl.soft }}>Meat</div>
+            <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{fmtWeight(s.meatLbs)}</div>
+            <div style={{ fontSize: 12, color: nl.soft }}>{s.cost > 0 ? `${fmtMoney(s.cost / s.meatLbs)} a pound, all costs in` : `${s.butchered} butchered`}</div>
+          </Card>
+        ) : (
+          <Card padded>
+            <div style={{ fontSize: type.small, color: nl.soft }}>{anyMilk ? "Cost per gallon" : "Spent"}</div>
+            <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{anyMilk ? (s.perGal != null ? fmtMoney(s.perGal) : "—") : fmtMoney(s.cost)}</div>
+            <div style={{ fontSize: 12, color: nl.soft }}>
+              {anyMilk ? (s.cost > 0 ? `${fmtMoney(s.cost)} on feed and supplies` : "Log feed costs to see this") : "Feed, supplies and expenses"}
+            </div>
+          </Card>
+        )}
       </div>
 
       <FactCarousel facts={facts} icons={FACT_ICONS} label={`${sp.Noun} fun facts, swipe for more`}
@@ -453,7 +472,7 @@ export function LivestockStats({ sp, hobby, data, setModal, allNumbers }) {
         </Card>
       )}
 
-      <AllNumbers label={`All the numbers: milk trend, best month, ${sp.youngPlural}, feed`}>{allNumbers}</AllNumbers>
+      <AllNumbers label={sp.milk === false ? `All the numbers: ${sp.youngPlural}, growth, meat, feed` : `All the numbers: milk trend, best month, ${sp.youngPlural}, feed`}>{allNumbers}</AllNumbers>
     </div>
   );
 }

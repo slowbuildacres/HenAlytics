@@ -6,6 +6,12 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the shared livestock screens reuse this file's log forms.
+import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES } from "./newlook/livestock/livestockData.js";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -541,16 +547,17 @@ function FedPigModal({ hobby, hobbyId, update, onClose }) {
 
 // --- ⚖️ 💊 📝 LogPigEntryModal (shared for weight / health / note) ---------
 
-function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
+function LogPigEntryModal({ hobby, hobbyId, action, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
 
   // Weight is single-select (one number per pig). Health & note are multi.
   const isMulti = action === "health" || action === "note";
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
-  const [mode, setMode] = useState(live.length ? "all" : "custom");
-  const [customIds, setCustomIds] = useState([]);
+  // initialAnimalId (3.0 animal page): start on that pig.
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
+  const [mode, setMode] = useState(initialAnimalId ? "custom" : live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState(initialAnimalId ? [initialAnimalId] : []);
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -654,14 +661,14 @@ function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
 
 // --- 🐖 BredPigModal --------------------------------------------------------
 
-function BredPigModal({ hobby, hobbyId, update, onClose }) {
+function BredPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Sows AND gilts are breedable (a gilt becomes a sow after first farrow).
   const females = live.filter(a => a.sex === "Sow" || a.sex === "Gilt");
   const boars = live.filter(a => a.sex === "Boar");
 
   const [date, setDate] = useState(todayStr());
-  const [femaleId, setFemaleId] = useState(females[0]?.id || "");
+  const [femaleId, setFemaleId] = useState((initialAnimalId && females.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || females[0]?.id || "");
   const [boarId, setBoarId] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -734,7 +741,7 @@ function BredPigModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 🐽 FarrowPigModal ------------------------------------------------------
 
-function FarrowPigModal({ hobby, hobbyId, update, onClose }) {
+function FarrowPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Spec says "Farrow is for sows only" — gilts are still on the Bred picker
   // (a gilt with her first litter is conventionally reclassified to Sow by
@@ -744,7 +751,7 @@ function FarrowPigModal({ hobby, hobbyId, update, onClose }) {
   const boars = live.filter(a => a.sex === "Boar");
 
   const [date, setDate] = useState(todayStr());
-  const [sowId, setSowId] = useState(sows[0]?.id || "");
+  const [sowId, setSowId] = useState((initialAnimalId && sows.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || sows[0]?.id || "");
   const [sireId, setSireId] = useState("");
   const [pigletsAlive, setPigletsAlive] = useState("");
   const [pigletsStillborn, setPigletsStillborn] = useState("");
@@ -1498,6 +1505,102 @@ export default function PigsPage({hobby,data,update,user,setModal:setAppModal}){
             ))}
           </div>
         </details>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Herd / one pig on the shared livestock screens
+// (src/newlook/livestock/) with this file's own forms: fed, bred (with the
+// 114-day farrow date), farrow, weight, health, note, remove, add/edit pig.
+// Saves that add log entries show "Saved · Undo".
+// ============================================================================
+const PIG_UNDO = { fed: "feeding", bred: "breeding", litter: "farrowing", weight: "weight", health: "health log", note: "note" };
+const PIG_TALLY = ["Sow", "Boar", "Barrow", "Gilt", "Piglet", "Unsexed"];
+
+export function PigsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
+  const sp = SPECIES.pigs;
+  const entries = data.entries[hobby.id] || [];
+  const [local, setLocal] = useState(null);
+  const [form, setForm] = useState(null);
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    setUndoCheck(null);
+    if (!added.length || !PIG_UNDO[added[0].action]) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const msg = e.action === "litter" ? `Saved ${Number(e.pigletsAlive) || 0} piglets${e.animalName ? ` for ${e.animalName}` : ""}`
+      : `Saved ${PIG_UNDO[e.action]}${e.animalName && added.length === 1 ? ` for ${e.animalName}` : added.length > 1 ? ` for ${added.length} pigs` : ""}`;
+    showUndo(msg, () => update((d) => {
+      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id));
+      if (e.action === "bred" && Array.isArray(d.calendarEvents)) {
+        d.calendarEvents = d.calendarEvents.filter((c) => !(c.date === e.farrowDate && String(c.title || "").includes("farrow expected")));
+      }
+      return d;
+    }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openProfile = (id) => { setProfileId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} };
+  const act = {
+    milk: () => {},
+    fed: () => open("fed"),
+    weight: (id) => open("weight", id || null),
+    health: (id) => open("health", id || null),
+    note: (id) => open("note", id || null),
+    birth: (id) => open("litter", id || null),
+    log: (key, id) => open(key, id || null),
+    // Breedings are "bred" logs here; an existing one opens the sow's page.
+    breeding: (b, damId) => { if (b && b.damId) openProfile(b.damId); else open("bred", damId || null); },
+    remove: () => setForm({ kind: "remove" }),
+    addAnimal: () => setLocal({ type: "addAnimal" }),
+    editAnimal: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    herdCount: () => setTallyOpen(true),
+    openProfile,
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "add") act.addAnimal(); else if (["fed", "bred", "litter", "weight", "health", "note"].includes(a)) open(a);
+  });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = PIG_TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = PIG_TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? (hobby.animals || []).find((a) => a.id === profileId) : null;
+  const f = form || {};
+  const props = { hobby, hobbyId: hobby.id, update, onClose: closeForm, initialAnimalId: f.animalId };
+
+  return (
+    <div>
+      <PigModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
+      {f.kind === "fed" && <FedPigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
+      {f.kind === "bred" && <BredPigModal {...props} />}
+      {f.kind === "litter" && <FarrowPigModal {...props} />}
+      {["weight", "health", "note"].includes(f.kind) && <LogPigEntryModal {...props} action={f.kind} />}
+      {f.kind === "remove" && <RemovePigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={PIG_TALLY} noun="pigs" />
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="pig" onClose={() => setView(null)} />
+      )}
+      {tab === "animals" ? (
+        profile ? <LivestockProfile sp={sp} hobby={hobby} data={data} animal={profile} act={act} onBack={() => setProfileId(null)} />
+          : <LivestockHerd sp={sp} hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <LivestockToday sp={sp} hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
       )}
     </div>
   );
