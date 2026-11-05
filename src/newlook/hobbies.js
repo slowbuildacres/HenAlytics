@@ -127,6 +127,15 @@ export const LOG_ACTIONS = {
     { key: "health", label: "Health", icon: "health", onPage: true },
     { key: "note", label: "Note", icon: "note", onPage: true },
   ],
+  sheep: [
+    { key: "fed", label: "Fed", icon: "feed", primary: true, onPage: true },
+    { key: "milk", label: "Milk", icon: "milk", onPage: true },
+    { key: "breeding", label: "Breeding", icon: "heart", onPage: true },
+    { key: "shear", label: "Shearing", icon: "shear", onPage: true },
+    { key: "weight", label: "Weight", icon: "weight", onPage: true },
+    { key: "health", label: "Health", icon: "health", onPage: true },
+    { key: "note", label: "Note", icon: "note", onPage: true },
+  ],
   rabbits: [
     { key: "fed", label: "Fed", icon: "feed", primary: true, onPage: true },
     { key: "bred", label: "Bred", icon: "heart", onPage: true },

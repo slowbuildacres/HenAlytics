@@ -51,14 +51,39 @@ export const SPECIES = {
     youngCount: (e) => Number(e.pigletsAlive != null ? e.pigletsAlive : e.count) || 0,
     tally: ["Sow", "Boar", "Barrow", "Gilt", "Piglet", "Unsexed"],
   },
+  sheep: {
+    key: "sheep", noun: "sheep", plural: "sheep", Noun: "Sheep", emoji: "🐑",
+    // Sheep use `role` (ewe / ram / lamb / wether) and `birthdate`.
+    sexOf: (a) => a.role || (a.sex === "female" ? "ewe" : a.sex === "male" ? "ram" : ""),
+    dobOf: (a) => a.birthdate || a.dob,
+    female: ["ewe"], male: ["ram"], notBreeding: ["wether"],
+    groups: [{ key: "ewe", label: "Ewes" }, { key: "ram", label: "Rams" }, { key: "lamb", label: "Lambs" }, { key: "wether", label: "Wethers" }],
+    sexWord: { ewe: "ewe", ram: "ram", lamb: "lamb", wether: "wether" },
+    she: "ewe", shePlural: "ewes", sire: "ram",
+    birthAction: "lambing", young: "lamb", youngPlural: "lambs", birthNoun: "lambing", birthLabel: "Lambing", born: "lambed", dueVerb: "due to lamb",
+    gestation: 147, milkOz: (e) => Number(e.oz) || 0,
+    // Milk only for milk or mixed flocks (hobby.subType).
+    milkFor: (hobby) => !hobby.subType || hobby.subType === "milk" || hobby.subType === "mixed",
+    // Breedings use ewe/ram and lamb field names.
+    normBreeding: (b) => ({ ...b, damId: b.eweId || b.damId, sireId: b.ramId || b.sireId, expectedBirthDate: b.expectedLambDate || b.expectedBirthDate,
+      birthedDate: b.lambedDate || b.birthedDate, offspringBorn: b.lambsBorn != null ? b.lambsBorn : b.offspringBorn }),
+    groupBy: "pasture", groupField: "paddockId", groupList: "paddocks", groupWord: "paddock",
+    extraLogs: [{ key: "shear", label: "Shearing" }],
+    tally: ["Ewe", "Ram", "Lamb", "Wether", "Unsexed"],
+  },
 };
+
+export const sexOf = (sp, a) => (a ? (sp && sp.sexOf ? sp.sexOf(a) : a.sex) : "");
+export const dobOf = (sp, a) => (a ? (sp && sp.dobOf ? sp.dobOf(a) : a.dob) : "");
+export const groupFieldOf = (sp) => (sp && sp.groupField) || "pastureId";
+export const groupListOf = (sp, hobby) => ((hobby && hobby[(sp && sp.groupList) || "pastures"]) || []);
 
 const youngOf = (sp, e) => (sp.youngCount ? sp.youngCount(e) : Number(e.count) || 1);
 
 // Every breeding: hobby.breedings, plus (pigs) "bred" entries turned into
 // the same shape { id, damId, breedDate, expectedBirthDate, birthedDate }.
 export function allBreedings(sp, hobby, entries) {
-  const list = (hobby.breedings || []).filter(Boolean);
+  const list = (hobby.breedings || []).filter(Boolean).map((b) => (sp && sp.normBreeding ? sp.normBreeding(b) : b));
   if (!sp || !sp.bredAction) return list;
   const births = (entries || []).filter((e) => e && e.action === sp.birthAction);
   for (const e of entries || []) {
@@ -82,7 +107,7 @@ const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 export const liveAnimals = (hobby) => ((hobby && hobby.animals) || []).filter((a) => a && !a.archived);
 export const isDairy = (a) => a && (a.purpose === "Dairy" || a.purpose === "Both");
-export const isFemale = (sp, a) => !!a && sp.female.includes(a.sex);
+export const isFemale = (sp, a) => !!a && sp.female.includes(sexOf(sp, a));
 
 // Animals that can be milked: dairy-purpose females (every live animal when
 // no purposes are set yet — the same rule as the old Milk tile).
@@ -90,10 +115,11 @@ export function milkers(sp, hobby) {
   const live = liveAnimals(hobby);
   const pool = live.some((a) => a.purpose) ? live.filter(isDairy) : live;
   const females = pool.filter((a) => isFemale(sp, a));
-  return females.length ? females : pool.filter((a) => !sp.male.includes(a.sex) && !sp.notBreeding.includes(a.sex));
+  return females.length ? females : pool.filter((a) => !sp.male.includes(sexOf(sp, a)) && !sp.notBreeding.includes(sexOf(sp, a)));
 }
 export function showsMilk(hobby, sp) {
   if (sp && sp.milk === false) return false;
+  if (sp && sp.milkFor) return sp.milkFor(hobby);
   const live = liveAnimals(hobby);
   return !live.some((a) => a.purpose) || live.some(isDairy);
 }
@@ -113,7 +139,7 @@ export function milkOz(sp, entries, { animalId, from, to } = {}) {
 // Last birth for a female from breedings (birthedDate) and birth entries.
 export function lastBirth(sp, hobby, entries, id) {
   const marks = [];
-  for (const b of (hobby.breedings || [])) if (b && b.damId === id && b.birthedDate) marks.push({ date: b.birthedDate, count: Number(b.offspringBorn) || null });
+  for (const b of allBreedings(sp, hobby, entries)) if (b && b.damId === id && b.birthedDate) marks.push({ date: b.birthedDate, count: Number(b.offspringBorn) || null });
   for (const e of entries || []) if (e && e.action === sp.birthAction && e.animalId === id && e.date) marks.push({ date: e.date, count: youngOf(sp, e) });
   marks.sort((a, b) => (a.date < b.date ? 1 : -1));
   return marks[0] || null;
@@ -179,8 +205,8 @@ export function birthHistory(sp, hobby, entries) {
   const name = (id) => (animals.find((a) => a.id === id) || {}).name;
   const rows = [];
   const seen = new Set();
-  for (const b of (hobby.breedings || [])) {
-    if (!b || !b.birthedDate) continue;
+  for (const b of allBreedings(sp, hobby, entries)) {
+    if (!b || !b.birthedDate || b.fromEntry) continue;
     seen.add(`${b.damId}|${b.birthedDate}`);
     const sire = name(b.sireId) || b.externalSireName || null;
     const n = Number(b.offspringBorn) || 0;

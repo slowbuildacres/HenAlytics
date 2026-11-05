@@ -167,7 +167,7 @@ import { batchAlive, restorePastBatch as restorePastBatchIn } from "./meatBatche
 import { requestHobbyAction } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics, CowsNewLook } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
-import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
+import SheepPage, { SheepAnalytics, SheepNewLook } from "./Sheep.jsx";
 import HorsesPage, { HorsesAnalytics } from "./Horses.jsx";
 import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
@@ -5169,6 +5169,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlRabbits = !!(newLook && hobby && hobby.type === "rabbits");
   const nlCows = !!(newLook && hobby && hobby.type === "cows");
   const nlPigs = !!(newLook && hobby && hobby.type === "pigs");
+  const nlSheep = !!(newLook && hobby && hobby.type === "sheep");
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -6183,7 +6184,7 @@ useNativeBackButton(React.useCallback(() => {
             <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "sheep" && (
+        {page === "analytics" && activeHobby === "sheep" && !nlSheep && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SheepAnalytics hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} />
           </AnalyticsShareWrapper>
@@ -6419,7 +6420,24 @@ useNativeBackButton(React.useCallback(() => {
         {page === "tea" && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tea" />
         )}
-        {page === "sheep" && (
+        {newLook && nlSheep && (page === "sheep" || page === "analytics") && (
+          <HobbyTabs label="Sheep sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Flock" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("sheep"); } }} />
+        )}
+        {page === "sheep" && nlSheep && (
+          <SheepNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlSheep && (
+          <LivestockStats sp={SPECIES.sheep} hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <SheepAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "sheep" && !nlSheep && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
             <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} user={user} />

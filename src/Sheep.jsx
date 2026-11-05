@@ -23,6 +23,13 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the shared livestock screens reuse this file's log forms.
+import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { Sheet as NlSheet, Card as NlCard, Row as NlRow, Chip as NlChip, CardHeader as NlCardHeader } from "./newlook/ui.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -521,11 +528,11 @@ function AnimalModal({ animal, animals, paddocks, onSave, onDelete, onClose, upd
 }
 
 // ============ BREEDING / LAMBING MODAL ============
-function BreedingModal({ animals, breeding, onSave, onDelete, onClose, calendarEvents, addCalendarEvent }) {
+function BreedingModal({ animals, breeding, onSave, onDelete, onClose, calendarEvents, addCalendarEvent, initialDamId = null }) {
   const ewes = animals.filter(a => !a.archived && (a.role === "ewe" || a.sex === "female"));
   const rams = animals.filter(a => !a.archived && (a.role === "ram" || a.sex === "male"));
 
-  const [eweId, setEweId] = useState(breeding?.eweId || breeding?.damId || ewes[0]?.id || "");
+  const [eweId, setEweId] = useState(breeding?.eweId || breeding?.damId || initialDamId || ewes[0]?.id || "");
   // Sire can be a tracked ram OR an unknown/external sire entered as free text.
   // useUnknownSire=true switches to a text input. Defaults to "use a tracked ram"
   // if any rams exist.
@@ -798,10 +805,10 @@ function ShearingModal({ animals, shearing, onSave, onDelete, onClose }) {
 }
 
 // ============ MILK / BUTCHER LOG (write to entries) ============
-function MilkLogModal({ animals, onSave, onClose }) {
+function MilkLogModal({ animals, onSave, onClose, initialAnimalId = null }) {
   const milkers = animals.filter(a => !a.archived && (a.sex === "female" || a.role === "ewe"));
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState("");
+  const [animalId, setAnimalId] = useState(initialAnimalId || "");
   const [oz, setOz] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -920,10 +927,10 @@ function FedLogModal({ onSave, onClose }) {
 // Animal selection is required for weight/health/death; optional for note.
 // Death also archives the animal (same pattern as butcher).
 // ============================================================================
-function LogEntryModal({ animals, action, onSave, onClose, customers = [] }) {
+function LogEntryModal({ animals, action, onSave, onClose, customers = [], initialAnimalId = null }) {
   const live = animals.filter(a => !a.archived);
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
   // Sale-only fields
@@ -1993,6 +2000,140 @@ export function SheepAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ allEnt
           </LockedStatOverlay>
         );
       })()}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Flock / one sheep on the shared livestock screens
+// (src/newlook/livestock/) with this file's own forms: milk, fed, breeding
+// (lambing dates), shearing, weight, health, note, butcher / sold / died,
+// add/edit sheep, paddocks and moving between them, the operation type.
+// Saves that add log entries show "Saved · Undo".
+// ============================================================================
+const SHEEP_UNDO = { milk: "milk", fed: "feeding", weight: "weight", health: "health log", note: "note" };
+const SHEEP_TALLY = ["Ewe", "Ram", "Lamb", "Wether", "Unsexed"];
+
+export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJournal, onOpenCalendar }) {
+  const sp = SPECIES.sheep;
+  const entries = (data.entries && data.entries[hobby.id]) || [];
+  const animals = hobby.animals || [];
+  const [form, setForm] = useState(null);
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: new Set(entries.map((e) => e.id)) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    setUndoCheck(null);
+    if (!added.length || !SHEEP_UNDO[added[0].action]) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const who = e.animalName || (animals.find((a) => a.id === e.animalId) || {}).name;
+    const msg = e.action === "milk" ? `Saved ${milkText(e.oz)}${who ? ` from ${who}` : ""}` : `Saved ${SHEEP_UNDO[e.action]}${who ? ` for ${who}` : ""}`;
+    showUndo(msg, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = (fn) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) fn(h, d); return d; });
+  const upsert = (key) => (rec) => save((h) => { if (!Array.isArray(h[key])) h[key] = []; const i = h[key].findIndex((x) => x.id === rec.id); if (i >= 0) h[key][i] = rec; else h[key].push(rec); });
+  const remove = (key) => (id) => save((h) => { h[key] = (h[key] || []).filter((x) => x.id !== id); });
+  const addEntry = (entry) => update((d) => { if (!d.entries) d.entries = {}; if (!Array.isArray(d.entries[hobby.id])) d.entries[hobby.id] = []; d.entries[hobby.id].push(entry); return d; });
+  const archive = (id, reason) => save((h) => { const a = (h.animals || []).find((x) => x.id === id); if (a) { a.archived = true; a.archivedReason = reason; a.archivedDate = todayStr(); } });
+  const addCalendarEvent = (event) => update((d) => { if (!Array.isArray(d.calendarEvents)) d.calendarEvents = []; d.calendarEvents.push(event); return d; });
+  const raw = (b) => (b ? (hobby.breedings || []).find((x) => x.id === b.id) || null : null);
+
+  const act = {
+    milk: (id) => open("milk", { animalId: id || null }),
+    fed: () => open("fed"),
+    weight: (id) => open("weight", { animalId: id || null }),
+    health: (id) => open("health", { animalId: id || null }),
+    note: (id) => open("note", { animalId: id || null }),
+    breeding: (b, damId) => setForm({ kind: "breeding", breeding: raw(b), animalId: damId || null }),
+    // Lambing is recorded on the ewe's breeding: open it (or a new one).
+    birth: (id) => { const b = (hobby.breedings || []).filter((x) => x && (x.eweId || x.damId) === id && !(x.lambedDate || x.birthedDate)).sort((x, y) => ((x.breedDate || "") < (y.breedDate || "") ? 1 : -1))[0]; setForm({ kind: "breeding", breeding: b || null, animalId: id || null }); },
+    log: (key) => { if (key === "shear") setForm({ kind: "shear" }); },
+    remove: () => setRemoveOpen(true),
+    addAnimal: () => setForm({ kind: "animal", animal: null }),
+    editAnimal: (id) => setForm({ kind: "animal", animal: animals.find((a) => a.id === id) || null }),
+    addPasture: () => setForm({ kind: "paddock", paddock: null }),
+    editPasture: (id) => setForm({ kind: "paddock", paddock: (hobby.paddocks || []).find((p) => p.id === id) || null }),
+    move: (id) => setForm({ kind: "move", animal: animals.find((a) => a.id === id) || null }),
+    herdCount: () => setTallyOpen(true),
+    openProfile: (id) => { setProfileId(id); try { window.scrollTo(0, 0); } catch (_) {} },
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "breeding") act.breeding(null); else if (a === "shear") act.log("shear"); else if (a === "add") act.addAnimal();
+    else if (["milk", "fed", "weight", "health", "note"].includes(a)) open(a);
+  });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = SHEEP_TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = SHEEP_TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? animals.find((a) => a.id === profileId) : null;
+  const f = form || {};
+  const subType = hobby.subType || "mixed";
+  const opType = (
+    <NlCard>
+      <NlCardHeader title="What you keep them for" />
+      <div role="group" aria-label="Operation type" style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "0 14px 14px" }}>
+        {[{ k: "mixed", l: "A bit of everything" }, { k: "milk", l: "Dairy" }, { k: "meat", l: "Meat" }, { k: "wool", l: "Wool" }].map((o) => (
+          <NlChip key={o.k} selected={subType === o.k} onClick={() => save((h) => { h.subType = o.k; })}>{o.l}</NlChip>
+        ))}
+      </div>
+    </NlCard>
+  );
+
+  return (
+    <div>
+      {f.kind === "animal" && <AnimalModal animal={f.animal} animals={animals} paddocks={hobby.paddocks || []} onClose={() => setForm(null)} onSave={upsert("animals")} onDelete={remove("animals")} update={update} user={user} hobbyId={hobby.id} />}
+      {f.kind === "paddock" && <PaddockModal paddock={f.paddock} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      {f.kind === "move" && f.animal && <MoveSheepModal animal={f.animal} paddocks={hobby.paddocks || []} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      {f.kind === "breeding" && <BreedingModal animals={animals} breeding={f.breeding} initialDamId={f.animalId} onClose={() => setForm(null)} onSave={upsert("breedings")} onDelete={remove("breedings")} calendarEvents={data.calendarEvents} addCalendarEvent={addCalendarEvent} />}
+      {f.kind === "shear" && <ShearingModal animals={animals} shearing={null} onClose={() => setForm(null)} onSave={upsert("shearings")} onDelete={remove("shearings")} />}
+      {f.kind === "milk" && <MilkLogModal animals={animals} initialAnimalId={f.animalId} onSave={addEntry} onClose={closeForm} />}
+      {f.kind === "fed" && <FedLogModal onSave={addEntry} onClose={closeForm} />}
+      {f.kind === "butcher" && <ButcherLogModal animals={animals} onSave={({ entry, animalId }) => { addEntry(entry); archive(animalId, "butchered"); }} onClose={() => setForm(null)} />}
+      {["weight", "health", "note", "death", "sale"].includes(f.kind) && (
+        <LogEntryModal animals={animals} customers={data.customers || []} action={f.kind} initialAnimalId={f.animalId}
+          onSave={(payload) => {
+            if (payload && payload.entry) {
+              addEntry(payload.entry);
+              if (payload.archiveReason && payload.animalId) archive(payload.animalId, payload.archiveReason);
+              if (payload.saleData) update((d) => { d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData); return d; });
+            } else addEntry(payload);
+          }}
+          onClose={closeForm} />
+      )}
+      <NlSheet open={removeOpen} onClose={() => setRemoveOpen(false)} label="Remove sheep" showClose>
+        <h2 style={{ margin: "0 4px 10px", fontFamily: FONT_DISPLAY, fontWeight: 400, fontSize: 24 }}>What happened?</h2>
+        <NlCard>
+          <NlRow first title="Butchered" sub="Logs the weight and moves them to past sheep" chevron onClick={() => { setRemoveOpen(false); setForm({ kind: "butcher" }); }} />
+          <NlRow title="Sold" sub="Adds the sale to Sales & costs" chevron onClick={() => { setRemoveOpen(false); open("sale"); }} />
+          <NlRow title="Died" chevron onClick={() => { setRemoveOpen(false); open("death"); }} />
+        </NlCard>
+      </NlSheet>
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={SHEEP_TALLY} noun="sheep" />
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={animals} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="sheep" onClose={() => setView(null)} />
+      )}
+      {tab === "animals" ? (
+        profile ? <LivestockProfile sp={sp} hobby={hobby} data={data} animal={profile} act={act} onBack={() => setProfileId(null)} />
+          : <LivestockHerd sp={sp} hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} extra={opType} />
+      ) : (
+        <LivestockToday sp={sp} hobby={hobby} data={data} update={update} setModal={setModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
+      )}
     </div>
   );
 }

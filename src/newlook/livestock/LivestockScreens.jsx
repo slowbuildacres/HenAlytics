@@ -17,7 +17,7 @@ import React, { useMemo, useState } from "react";
 import {
   Milk, Wheat, Stethoscope, Scale, MoreHorizontal, Heart, Baby, NotebookPen, Receipt, Snowflake, Plus,
   Users, BookOpen, ChevronLeft, GitBranch, History, Trophy, CalendarCheck, DollarSign, Archive, Pencil,
-  Flame, Syringe, ClipboardCheck, MapPin, Fence, Utensils,
+  Flame, Syringe, ClipboardCheck, MapPin, Fence, Utensils, Scissors,
 } from "lucide-react";
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, Badge, Button, Chip, Sheet } from "../ui.jsx";
@@ -29,13 +29,13 @@ import { fmtWeight, fmtMoney } from "../../units.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
 import {
   liveAnimals, milkers, showsMilk, milkOz, animalStatus, ageText, upcomingBirths, birthHistory, latest,
-  lastBirth, openBreeding, allBreedings, milkByMonth, statsRange, herdSummary, milkByAnimal, herdFunFacts, isDairy, isFemale, milkText,
+  lastBirth, openBreeding, allBreedings, sexOf, dobOf, groupFieldOf, groupListOf, milkByMonth, statsRange, herdSummary, milkByAnimal, herdFunFacts, isDairy, isFemale, milkText,
 } from "./livestockData.js";
 
 const ic = (I) => <I size={20} strokeWidth={1.8} />;
 const gal = milkText;
 const dayYear = (s) => (s ? `${prettyDay(s)}, ${s.slice(0, 4)}` : "");
-const EXTRA_ICONS = { heat: Flame, ai: Syringe, preg_test: ClipboardCheck };
+const EXTRA_ICONS = { heat: Flame, ai: Syringe, preg_test: ClipboardCheck, shear: Scissors };
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 
 function entryLine(sp, e) {
@@ -127,7 +127,7 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
             <span style={{ fontFamily: font.display, fontSize: 40, lineHeight: 1 }}>{live.length + tallyTotal}</span>
             <span style={{ fontSize: 14, color: nl.soft }}>
-              {[live.length + tallyTotal === 1 ? sp.noun : sp.plural, sp.groups.map((g) => ({ g, n: live.filter((a) => a.sex === g.key).length })).filter((x) => x.n).map((x) => `${x.n} ${(x.n === 1 ? (sp.sexWord[x.g.key] || x.g.label) : x.g.label).toLowerCase()}`).join(", "), tallyTotal ? `${tallyTotal} counted` : null].filter(Boolean).join(" · ")}
+              {[live.length + tallyTotal === 1 ? sp.noun : sp.plural, sp.groups.map((g) => ({ g, n: live.filter((a) => sexOf(sp, a) === g.key).length })).filter((x) => x.n).map((x) => `${x.n} ${(x.n === 1 ? (sp.sexWord[x.g.key] || x.g.label) : x.g.label).toLowerCase()}`).join(", "), tallyTotal ? `${tallyTotal} counted` : null].filter(Boolean).join(" · ")}
             </span>
           </div>
         </Card>
@@ -179,7 +179,7 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
       <Card>
         {recent.length > 0 && <CardHeader title="Latest" />}
         {recent.map((e) => {
-          const l = entryLine(sp, e);
+          const l = entryLine(sp, e.animalName || !e.animalId ? e : { ...e, animalName: (live.find((x) => x.id === e.animalId) || {}).name });
           return <Row key={e.id} icon={ic(l.icon)} title={l.title} sub={e.date === today ? "Today" : prettyDay(e.date)} />;
         })}
         <Row first={!recent.length} icon={ic(BookOpen)} title="Everything you've logged" sub="Edit or delete past entries in the Journal" onClick={onOpenJournal} chevron />
@@ -210,15 +210,17 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
 }
 
 // ── Herd ────────────────────────────────────────────────────────────────────
-export function LivestockHerd({ sp, hobby, data, act, tallyTotal = 0, tallyLine = "" }) {
+export function LivestockHerd({ sp, hobby, data, act, tallyTotal = 0, tallyLine = "", extra = null }) {
   const today = isoDay();
   const entries = (data.entries && data.entries[hobby.id]) || [];
   const live = liveAnimals(hobby).slice().sort((a, b) => String(a.name).localeCompare(String(b.name)));
   const archived = (hobby.animals || []).filter((a) => a && a.archived);
-  const groups = sp.groups.map((g) => ({ ...g, n: live.filter((a) => a.sex === g.key).length })).filter((g) => g.n);
-  const pastures = sp.groupBy === "pasture" ? (hobby.pastures || []) : [];
+  const groups = sp.groups.map((g) => ({ ...g, n: live.filter((a) => sexOf(sp, a) === g.key).length })).filter((g) => g.n);
+  const pastures = sp.groupBy === "pasture" ? groupListOf(sp, hobby) : [];
+  const gf = groupFieldOf(sp);
+  const penWord = sp.groupWord || "pasture";
   const [sel, setSel] = useState("all");
-  const shown = live.filter((a) => sel === "all" || sel === "pasture" || a.sex === sel);
+  const shown = live.filter((a) => sel === "all" || sel === "pasture" || sexOf(sp, a) === sel);
   const history = birthHistory(sp, hobby, entries);
   const [allBirths, setAllBirths] = useState(false);
   const [showPast, setShowPast] = useState(false);
@@ -228,7 +230,7 @@ export function LivestockHerd({ sp, hobby, data, act, tallyTotal = 0, tallyLine 
     const st = animalStatus(sp, hobby, entries, a, today);
     return (
       <Row key={a.id} first={i === 0} icon={<Avatar bird={a} />} iconBg="transparent" title={a.name}
-        sub={[a.breed, a.tagId ? `#${a.tagId}` : null, ageText(a.dob, today)].filter(Boolean).join(" · ") || sp.sexWord[a.sex] || sp.noun}
+        sub={[a.breed, a.tagId ? `#${a.tagId}` : null, ageText(dobOf(sp, a), today)].filter(Boolean).join(" · ") || sp.sexWord[sexOf(sp, a)] || sp.noun}
         trailing={st ? <Badge tone={st.tone}>{st.text}</Badge> : null} onClick={() => act.openProfile(a.id)} chevron />
     );
   };
@@ -237,33 +239,33 @@ export function LivestockHerd({ sp, hobby, data, act, tallyTotal = 0, tallyLine 
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {(groups.length > 1 || pastures.length > 0) && (
         <div role="group" aria-label="Show" style={{ display: "flex", gap: 8, overflowX: "auto", margin: "0 -20px", padding: "0 20px", scrollbarWidth: "none" }}>
-          <Chip selected={sel === "all" || sel === "pasture"} onClick={() => setSel("all")}>{pastures.length ? "By pasture" : "All"} · {live.length}</Chip>
+          <Chip selected={sel === "all" || sel === "pasture"} onClick={() => setSel("all")}>{pastures.length ? `By ${penWord}` : "All"} · {live.length}</Chip>
           {groups.map((g) => <Chip key={g.key} selected={sel === g.key} onClick={() => setSel(g.key)}>{g.label} · {g.n}</Chip>)}
         </div>
       )}
 
       {byPasture ? (
         <>
-          {[...pastures, { id: null, name: "Not in a pasture" }].map((p) => {
-            const list = live.filter((a) => (a.pastureId || null) === p.id || (p.id === null && a.pastureId && !pastures.some((x) => x.id === a.pastureId)));
+          {[...pastures, { id: null, name: `Not in a ${penWord}` }].map((p) => {
+            const list = live.filter((a) => (a[gf] || null) === p.id || (p.id === null && a[gf] && !pastures.some((x) => x.id === a[gf])));
             if (!list.length && p.id === null) return null;
             return (
               <Card key={p.id || "_none"}>
-                <CardHeader title={p.name || "Pasture"} right={p.id ? <Button kind="link" onClick={() => act.editPasture(p.id)}>Edit</Button> : `${list.length}`} />
+                <CardHeader title={p.name || penWord} right={p.id ? <Button kind="link" onClick={() => act.editPasture(p.id)}>Edit</Button> : `${list.length}`} />
                 {list.length ? list.map((a) => row(a, 1)) : <div style={{ padding: "2px 14px 14px", fontSize: 14, color: nl.soft }}>Nobody here right now.</div>}
               </Card>
             );
           })}
           <Card>
             <Row first icon={<Plus size={20} strokeWidth={2} />} title={`Add a ${sp.noun}`} onClick={act.addAnimal} chevron />
-            <Row icon={ic(Fence)} title="Add a pasture" onClick={act.addPasture} chevron />
+            <Row icon={ic(Fence)} title={`Add a ${penWord}`} onClick={act.addPasture} chevron />
           </Card>
         </>
       ) : (
         <Card>
           {shown.map((a, i) => row(a, i))}
           <Row first={!shown.length} icon={<Plus size={20} strokeWidth={2} />} title={`Add a ${sp.noun}`} onClick={act.addAnimal} chevron />
-          {sp.groupBy === "pasture" && !pastures.length && live.length > 0 && <Row icon={ic(Fence)} title="Group by pasture" sub="Add a pasture or herd to sort your cattle" onClick={act.addPasture} chevron />}
+          {sp.groupBy === "pasture" && !pastures.length && live.length > 0 && <Row icon={ic(Fence)} title={`Group by ${penWord}`} sub={`Add a ${penWord} to sort your ${sp.plural}`} onClick={act.addPasture} chevron />}
         </Card>
       )}
 
@@ -281,6 +283,8 @@ export function LivestockHerd({ sp, hobby, data, act, tallyTotal = 0, tallyLine 
           ))}
         </Card>
       )}
+
+      {extra}
 
       {archived.length > 0 && (
         <Card>
@@ -301,8 +305,8 @@ export function LivestockProfile({ sp, hobby, data, animal: g, act, onBack }) {
   const entries = (data.entries && data.entries[hobby.id]) || [];
   const st = animalStatus(sp, hobby, entries, g, today);
   const female = isFemale(sp, g);
-  const sireSex = sp.male.includes(g.sex);
-  const milker = sp.milk !== false && female && (isDairy(g) || !liveAnimals(hobby).some((a) => a.purpose));
+  const sireSex = sp.male.includes(sexOf(sp, g));
+  const milker = showsMilk(hobby, sp) && female && (sp.milkFor ? true : (isDairy(g) || !liveAnimals(hobby).some((a) => a.purpose)));
   const born = lastBirth(sp, hobby, entries, g.id);
   const due = openBreeding(hobby, g.id, today, sp, entries);
   const weights = latest(entries, "weight", g.id);
@@ -316,14 +320,16 @@ export function LivestockProfile({ sp, hobby, data, animal: g, act, onBack }) {
   const sire = nameOf(g.sireId) || g.sireName || null;
   const dam = nameOf(g.damId) || g.damName || null;
   const kids = animals.filter((a) => a && (a.damId === g.id || a.sireId === g.id)).length;
-  const pasture = (hobby.pastures || []).find((p) => p.id === g.pastureId);
+  const pasture = groupListOf(sp, hobby).find((p) => p.id === g[groupFieldOf(sp)]);
+  const penWord = sp.groupWord || "pasture";
 
   const stats = [];
-  if (milker) {
+  // Milk numbers only once she has been milked; before that, age and young.
+  if (milker && milkOz(sp, entries, { animalId: g.id }) > 0) {
     stats.push(["Today", gal(milkOz(sp, entries, { animalId: g.id, from: today, to: today }))]);
     stats.push(born ? ["This lactation", gal(milkOz(sp, entries, { animalId: g.id, from: born.date }))] : ["All milk", gal(milkOz(sp, entries, { animalId: g.id }))]);
   } else {
-    stats.push(["Age", ageText(g.dob, today) || "—"]);
+    stats.push(["Age", ageText(dobOf(sp, g), today) || "—"]);
     stats.push([sireSex ? "Breedings" : sp.youngPlural[0].toUpperCase() + sp.youngPlural.slice(1), String(sireSex ? sired.length : youngTotal)]);
   }
   stats.push(["Weight", weights[0] ? fmtWeight(Number(weights[0].weight) || 0) : "—"]);
@@ -343,7 +349,7 @@ export function LivestockProfile({ sp, hobby, data, animal: g, act, onBack }) {
         <div style={{ flex: 1, minWidth: 0 }}>
           <h1 style={{ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: type.title, lineHeight: 1.1 }}>{g.name}</h1>
           <div style={{ fontSize: type.small, color: nl.soft, marginTop: 2 }}>
-            {[[g.breed, sp.sexWord[g.sex]].filter(Boolean).join(" "), g.tagId ? `tag ${g.tagId}` : null, g.dob ? `born ${dayYear(g.dob)}` : null, ageText(g.dob, today)].filter(Boolean).join(" · ")}
+            {[[g.breed, sp.sexWord[sexOf(sp, g)]].filter(Boolean).join(" "), g.tagId ? `tag ${g.tagId}` : null, dobOf(sp, g) ? `born ${dayYear(dobOf(sp, g))}` : null, ageText(dobOf(sp, g), today)].filter(Boolean).join(" · ")}
           </div>
           <div style={{ display: "flex", gap: 6, marginTop: 6, flexWrap: "wrap" }}>
             {st && <Badge tone={st.tone}>{st.text}</Badge>}
@@ -382,7 +388,7 @@ export function LivestockProfile({ sp, hobby, data, animal: g, act, onBack }) {
       </Card>
 
       <Card>
-        {sp.groupBy === "pasture" && <Row first icon={ic(MapPin)} title={pasture ? `Pasture: ${pasture.name}` : "Not in a pasture"} sub="Move to another pasture" onClick={() => act.move(g.id)} chevron />}
+        {sp.groupBy === "pasture" && <Row first icon={ic(MapPin)} title={pasture ? `${penWord[0].toUpperCase() + penWord.slice(1)}: ${pasture.name}` : `Not in a ${penWord}`} sub={`Move to another ${penWord}`} onClick={() => act.move(g.id)} chevron />}
         <Row first={sp.groupBy !== "pasture"} icon={ic(GitBranch)} title="Family tree" sub={[sire ? `Sire ${sire}` : null, dam ? `dam ${dam}` : null, kids ? `${plural(kids, sp.young, sp.youngPlural)} in the herd` : null].filter(Boolean).join(" · ") || "Add parents when you edit"} onClick={() => act.pedigree(g)} chevron />
         <Row icon={ic(History)} title="Full history" sub={`Every log, photo and sale for this ${sp.noun}`} onClick={() => act.history(g)} chevron />
         <Row icon={ic(NotebookPen)} title="Add a note" onClick={() => act.note(g.id)} chevron />
