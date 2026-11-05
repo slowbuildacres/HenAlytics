@@ -245,7 +245,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
             {mode === "signup" ? "Create account" : mode === "reset" ? "Reset password" : mode === "setNewPassword" ? "Set new password" : "Sign in"}
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>

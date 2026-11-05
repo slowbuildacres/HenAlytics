@@ -171,7 +171,7 @@ function Modal({ open, onClose, title, children }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -478,6 +478,10 @@ function UseJarsModal({ batch, onUse, onClose }) {
 // ============================================================================
 // PAGE
 // ============================================================================
+
+// Local calendar day (YYYY-MM-DD). This modal used todayStr() without a
+// definition here, so "Build or repair" crashed on a new entry.
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 
 function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   const [date, setDate] = useState(entry?.date || todayStr());

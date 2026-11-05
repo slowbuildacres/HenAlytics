@@ -714,7 +714,7 @@ function PendingSeedlingsBanner({ pending, update }) {
             border: `1px solid ${palette.line}`, fontSize: 12, color: palette.ink,
           }}>
             {p.plant}
-            <button onClick={() => dismiss(p.id)} title="Remove from queue" style={{
+            <button aria-label="Close" onClick={() => dismiss(p.id)} title="Remove from queue" style={{
               background: "none", border: "none", cursor: "pointer",
               color: palette.inkSoft, padding: 0, lineHeight: 1, display: "flex",
             }}>
@@ -1306,7 +1306,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
           <span style={{ fontSize: 22 }}>{display.emoji}</span>
           <span style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink }}>{display.name}</span>
         </div>
-        <button
+        <button aria-label="Close"
           onClick={onClose}
           style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
         >
@@ -1489,7 +1489,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
         <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink }}>
           {customMode ? "Name your plant" : "Pick a plant"}
         </div>
-        <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
+        <button aria-label="Close" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
           <X size={16} />
         </button>
       </div>
@@ -1821,7 +1821,7 @@ function ReadOnlyAreaView({ area }) {
                     <span style={{ fontSize: 18 }}>{display.emoji}</span>
                     <strong style={{ fontSize: 14 }}>{display.name}</strong>
                   </div>
-                  <button onClick={() => setActivePin(null)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
+                  <button aria-label="Close" onClick={() => setActivePin(null)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
                     <X size={14} />
                   </button>
                 </div>

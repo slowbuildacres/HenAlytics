@@ -149,7 +149,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
             Farmhands
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -339,7 +339,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
                         Expires {new Date(inv.expires_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <button
+                    <button aria-label="Close"
                       onClick={() => cancelPending(inv)}
                       disabled={busy}
                       title="Cancel invite"

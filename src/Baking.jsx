@@ -147,7 +147,7 @@ function Modal({ open, onClose, title, children }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -985,7 +985,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 <Btn small variant="leaf" onClick={() => setSellingBake(b)}>Sell</Btn>
-                <button
+                <button aria-label="Close"
                   onClick={() => { if (window.confirm("Delete this bake entry?")) deleteBake(b.id); }}
                   style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4 }}
                   title="Delete entry"

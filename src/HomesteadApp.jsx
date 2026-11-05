@@ -2928,11 +2928,22 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
   );
 }
 
+// Escape closes the topmost open popup (keyboards, iPad and desktop).
+function EscToClose({ onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && onClose) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return null;
+}
+
 function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div
       onClick={onClose}
+      role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -2953,10 +2964,11 @@ function Modal({ open, onClose, title, children }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4, minWidth: 40, minHeight: 40 }}>
             <X size={22} />
           </button>
         </div>
+        <EscToClose onClose={onClose} />
         <div style={{ padding: 20 }}>{children}</div>
       </div>
     </div>
@@ -11782,7 +11794,7 @@ function EntryPhotoThumb({ path, size = 40 }) {
             <div>Photo unavailable</div>
             <div style={{ fontSize: 11, opacity: 0.7 }}>Try refreshing the page</div>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={() => setOpen(false)}
             style={{
               position: "absolute", top: 16, right: 16,
@@ -13582,7 +13594,7 @@ function PhotoTile({ photo }) {
           }}>
             {fmtDate(photo.date)}{caption ? " · " + caption : ""}
           </div>
-          <button
+          <button aria-label="Close"
             onClick={() => setOpen(false)}
             style={{
               position: "absolute", top: 16, right: 16,
@@ -22499,7 +22511,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {f.name} <span style={{ color: palette.inkSoft }}>({Math.round(f.size / 1024)} KB)</span>
                   </div>
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setPhotoFiles((files) => files.filter((_, j) => j !== i))}
                     style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
