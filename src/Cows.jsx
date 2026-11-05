@@ -6,6 +6,12 @@ import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the shared livestock screens reuse this file's log forms.
+import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -816,7 +822,7 @@ function FedCowModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 🥛 MilkCowModal --------------------------------------------------------
 
-function MilkCowModal({ hobby, hobbyId, update, onClose }) {
+function MilkCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const dairy = live.filter(a => a.purpose === "Dairy" || a.purpose === "Both");
   // Surface dairy/both cows first; fall back to all live cows if no
@@ -824,7 +830,7 @@ function MilkCowModal({ hobby, hobbyId, update, onClose }) {
   const choosable = dairy.length > 0 ? dairy : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [gallons, setGallons] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -883,16 +889,17 @@ function MilkCowModal({ hobby, hobbyId, update, onClose }) {
 
 // --- ⚖️ 💊 📝 LogCowEntryModal (shared for weight / health / note) ---------
 
-function LogCowEntryModal({ hobby, hobbyId, action, update, onClose }) {
+function LogCowEntryModal({ hobby, hobbyId, action, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const pastures = hobby.pastures || [];
 
   const isMulti = action === "health" || action === "note";
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
-  const [mode, setMode] = useState(live.length ? "all" : "custom");
-  const [customIds, setCustomIds] = useState([]);
+  // initialAnimalId (3.0 animal page): start on that animal.
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
+  const [mode, setMode] = useState(initialAnimalId ? "custom" : live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState(initialAnimalId ? [initialAnimalId] : []);
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -1003,7 +1010,7 @@ function LogCowEntryModal({ hobby, hobbyId, action, update, onClose }) {
 // For full breed-through-calving lifecycle records use the 💕 Breeding
 // tile, which opens the existing rich BreedingModal.
 
-function CalfCowModal({ hobby, hobbyId, update, onClose }) {
+function CalfCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Calving picker = Cows (cows that have already calved at least once).
   // We include Heifers too because a heifer's first calving makes her
@@ -1012,7 +1019,7 @@ function CalfCowModal({ hobby, hobbyId, update, onClose }) {
   const choosable = dams.length > 0 ? dams : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [count, setCount] = useState("");
   const [calfName, setCalfName] = useState("");
   const [calfSex, setCalfSex] = useState("Calf");
@@ -1115,13 +1122,13 @@ function CalfCowModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 🔥 HeatCowModal --------------------------------------------------------
 
-function HeatCowModal({ hobby, hobbyId, update, onClose }) {
+function HeatCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const dams = live.filter(a => a.sex === "Cow" || a.sex === "Heifer");
   const choosable = dams.length > 0 ? dams : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [heatIntensity, setHeatIntensity] = useState("standing");
   const [notes, setNotes] = useState("");
 
@@ -1209,7 +1216,7 @@ function HeatCowModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 💉 AICowModal (artificial insemination / breeding) --------------------
 
-function AICowModal({ hobby, hobbyId, update, onClose }) {
+function AICowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const dams = live.filter(a => a.sex === "Cow" || a.sex === "Heifer");
   const choosableDams = dams.length > 0 ? dams : live;
@@ -1217,7 +1224,7 @@ function AICowModal({ hobby, hobbyId, update, onClose }) {
   const noInternalSires = sires.length === 0;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosableDams[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosableDams.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosableDams[0]?.id || "");
   const [aiMethod, setAiMethod] = useState("AI (cervical)");
   const [aiUseExternal, setAiUseExternal] = useState(noInternalSires);
   const [aiSireId, setAiSireId] = useState("");
@@ -1346,13 +1353,13 @@ function AICowModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 🤰 PregTestCowModal ---------------------------------------------------
 
-function PregTestCowModal({ hobby, hobbyId, update, onClose }) {
+function PregTestCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const dams = live.filter(a => a.sex === "Cow" || a.sex === "Heifer");
   const choosable = dams.length > 0 ? dams : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [pregResult, setPregResult] = useState("pregnant");
   const [pregMethod, setPregMethod] = useState("palpation");
   const [pregExpectedCalving, setPregExpectedCalving] = useState("");
@@ -2295,11 +2302,11 @@ const addDays = (dateStr, days) => {
 };
 
 // ============ BREEDING / CALVING MODAL ============
-function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent }) {
+function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent, initialDamId = null }) {
   const dams = animals.filter(a => !a.archived && (a.sex === "Cow" || a.sex === "Heifer"));
   const sires = animals.filter(a => !a.archived && a.sex === "Bull");
 
-  const [damId, setDamId] = useState(breeding?.damId || dams[0]?.id || "");
+  const [damId, setDamId] = useState(breeding?.damId || initialDamId || dams[0]?.id || "");
   const [sireId, setSireId] = useState(breeding?.sireId || "");
   const [externalSireName, setExternalSireName] = useState(breeding?.externalSireName || "");
   const [useUnknownSire, setUseUnknownSire] = useState(
@@ -2857,6 +2864,119 @@ export default function CowsPage({hobby,data,update,user,setModal:setAppModal}){
             ))}
           </div>
         </details>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Herd / one animal for cattle, on the shared
+// livestock screens (src/newlook/livestock/) with this file's own forms:
+// milk (gallons), calf, heat, AI, preg check, breeding, weight, health,
+// note, remove, add/edit animal, pastures and moving between them.
+// Saves that add log entries show "Saved · Undo".
+// ============================================================================
+const COW_UNDO = { milk: "milk", fed: "feeding", weight: "weight", health: "health log", note: "note", calf: "calving", heat: "heat", ai: "AI breeding", preg_test: "preg check" };
+const COW_TALLY = ["Cow", "Bull", "Steer", "Heifer", "Calf", "Unsexed"];
+
+export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onOpenJournal, onOpenCalendar }) {
+  const sp = SPECIES.cows;
+  const entries = data.entries[hobby.id] || [];
+  const [local, setLocal] = useState(null);
+  const [form, setForm] = useState(null);
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    setUndoCheck(null);
+    if (!added.length || !COW_UNDO[added[0].action]) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const msg = e.action === "milk" ? `Saved ${milkText(sp.milkOz(e))}${e.animalName ? ` from ${e.animalName}` : ""}`
+      : e.action === "calf" ? `Saved ${Number(e.count) || 1} ${Number(e.count) === 1 ? "calf" : "calves"}${e.animalName ? ` for ${e.animalName}` : ""}`
+      : `Saved ${COW_UNDO[e.action]}${e.animalName && added.length === 1 ? ` for ${e.animalName}` : added.length > 1 ? ` for ${added.length} head` : ""}`;
+    showUndo(msg, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = {
+    milk: (id) => open("milk", id || null),
+    fed: () => open("fed"),
+    weight: (id) => open("weight", id || null),
+    health: (id) => open("health", id || null),
+    note: (id) => open("note", id || null),
+    birth: (id) => open("calf", id || null),
+    log: (key, id) => open(key, id || null),
+    breeding: (b, damId) => setForm({ kind: "breeding", breeding: b || null, animalId: damId || null }),
+    remove: () => setForm({ kind: "remove" }),
+    addAnimal: () => setLocal({ type: "addAnimal" }),
+    editAnimal: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    addPasture: () => setLocal({ type: "addPasture" }),
+    editPasture: (id) => setLocal({ type: "editPasture", pastureId: id }),
+    move: (id) => setLocal({ type: "moveAnimal", animalId: id }),
+    herdCount: () => setTallyOpen(true),
+    openProfile: (id) => { setProfileId(id); try { window.scrollTo(0, 0); } catch (_) {} },
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "breeding") act.breeding(null); else if (a === "add") act.addAnimal();
+    else if (["milk", "fed", "weight", "health", "note", "calf", "heat", "ai", "preg_test"].includes(a)) open(a);
+  });
+
+  const saveBreeding = (breeding) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;
+    if (!Array.isArray(h.breedings)) h.breedings = [];
+    const i = h.breedings.findIndex((x) => x.id === breeding.id);
+    if (i >= 0) h.breedings[i] = breeding; else h.breedings.push(breeding);
+    return d;
+  });
+  const deleteBreeding = (id) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobby.id);
+    if (h) h.breedings = (h.breedings || []).filter((b) => b.id !== id);
+    if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter((e) => e.relatedId !== id);
+    return d;
+  });
+  const addCalendarEvent = (event) => update((d) => { if (!Array.isArray(d.calendarEvents)) d.calendarEvents = []; d.calendarEvents.push(event); return d; });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = COW_TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = COW_TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? (hobby.animals || []).find((a) => a.id === profileId) : null;
+  const f = form || {};
+  const props = { hobby, hobbyId: hobby.id, update, onClose: closeForm, initialAnimalId: f.animalId };
+
+  return (
+    <div>
+      <CowModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
+      {f.kind === "milk" && <MilkCowModal {...props} />}
+      {f.kind === "fed" && <FedCowModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
+      {f.kind === "calf" && <CalfCowModal {...props} />}
+      {f.kind === "heat" && <HeatCowModal {...props} />}
+      {f.kind === "ai" && <AICowModal {...props} />}
+      {f.kind === "preg_test" && <PregTestCowModal {...props} />}
+      {["weight", "health", "note"].includes(f.kind) && <LogCowEntryModal {...props} action={f.kind} />}
+      {f.kind === "remove" && <RemoveCowModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      {f.kind === "breeding" && <BreedingModal animals={hobby.animals || []} breeding={f.breeding} initialDamId={f.animalId} onClose={() => setForm(null)} onSave={saveBreeding} onDelete={deleteBreeding} addCalendarEvent={addCalendarEvent} />}
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={COW_TALLY} noun="cattle" />
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="cow" onClose={() => setView(null)} />
+      )}
+      {tab === "animals" ? (
+        profile ? <LivestockProfile sp={sp} hobby={hobby} data={data} animal={profile} act={act} onBack={() => setProfileId(null)} />
+          : <LivestockHerd sp={sp} hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <LivestockToday sp={sp} hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
       )}
     </div>
   );

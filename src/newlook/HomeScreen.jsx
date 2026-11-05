@@ -15,7 +15,7 @@ import HobbyGlyph from "./HobbyGlyph.jsx";
 import { computeHarvestValue } from "../gardenValue.js";
 import { collectGardenHarvests } from "../analytics.js";
 import { fmtMoney } from "../units.js";
-import { milkOz, upcomingKiddings, milkText } from "./goats/goatData.js";
+import { SPECIES, milkOz, upcomingBirths, milkText } from "./livestock/livestockData.js";
 import { batchAlive, batchAgeDays } from "../meatBatches.js";
 import { upcomingKindles } from "./rabbits/rabbitData.js";
 
@@ -68,12 +68,13 @@ export function tileStat(entry, data, today) {
     const next = upcomingKindles(entry.hobby, ents, today)[0];
     if (next && next.left >= 0 && next.left <= 14) return { big: null, small: `${next.doe.name} kindles ${next.left === 0 ? "today" : `in ${next.left} day${next.left === 1 ? "" : "s"}`}` };
   }
-  if (entry.type === "goats") {
-    // Milk today (same oz / 128 as the goat page), else the next kidding.
-    const oz = milkOz(ents, { from: today, to: today });
+  if (entry.type === "goats" || entry.type === "cows") {
+    // Milk today (oz, same as the herd page), else the next birth.
+    const sp = SPECIES[entry.type];
+    const oz = milkOz(sp, ents, { from: today, to: today });
     if (oz > 0) return { big: milkText(oz), small: "milk today" };
-    const next = upcomingKiddings(entry.hobby, today, 1)[0];
-    if (next && next.left >= 0 && next.left <= 30) return { big: null, small: `${(next.dam && next.dam.name) || "A doe"} due ${next.left === 0 ? "today" : `in ${next.left} day${next.left === 1 ? "" : "s"}`}` };
+    const next = upcomingBirths(sp, entry.hobby, today, 1)[0];
+    if (next && next.left >= 0 && next.left <= 30) return { big: null, small: `${(next.dam && next.dam.name) || `A ${sp.she}`} due ${next.left === 0 ? "today" : `in ${next.left} day${next.left === 1 ? "" : "s"}`}` };
   }
   return { big: null, small: lastLogLine(ents, today) };
 }

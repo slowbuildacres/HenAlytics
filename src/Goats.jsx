@@ -7,8 +7,8 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 // NEW_LOOK (3.0): the rebuilt goat screens reuse this file's log forms.
-import { GoatToday, GoatHerd, GoatProfile } from "./newlook/goats/GoatScreens.jsx";
-import { milkText } from "./newlook/goats/goatData.js";
+import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
 import { showUndo } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
@@ -1848,11 +1848,11 @@ export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal,
     weight: (id) => open("weight", { animalId: id || null }),
     health: (id) => open("health", { animalId: id || null }),
     note: (id) => open("note", { animalId: id || null }),
-    kidding: (id) => open("kid", { animalId: id || null }),
+    birth: (id) => open("kid", { animalId: id || null }),
     breeding: (b, damId) => setForm({ kind: "breeding", breeding: b || null, animalId: damId || null }),
     remove: () => setForm({ kind: "remove" }),
-    addGoat: () => setLocal({ type: "addAnimal" }),
-    editGoat: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    addAnimal: () => setLocal({ type: "addAnimal" }),
+    editAnimal: (id) => setLocal({ type: "editAnimal", animalId: id }),
     herdCount: () => setLocal({ type: "herdTally" }),
     openProfile: (id) => { setProfileId(id); try { window.scrollTo(0, 0); } catch (_) {} },
     pedigree: (a) => setView({ kind: "pedigree", animal: a }),
@@ -1860,8 +1860,8 @@ export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal,
   };
   useHobbyRequest(hobby.id, (action) => {
     if (action === "milk") act.milk(); else if (action === "fed") act.fed(); else if (action === "weight") act.weight();
-    else if (action === "health") act.health(); else if (action === "note") act.note(); else if (action === "kid") act.kidding();
-    else if (action === "breeding") act.breeding(null); else if (action === "add") act.addGoat();
+    else if (action === "health") act.health(); else if (action === "note") act.note(); else if (action === "kid") act.birth();
+    else if (action === "breeding") act.breeding(null); else if (action === "add") act.addAnimal();
   });
 
   const saveBreeding = (breeding) => update((d) => {
@@ -1903,10 +1903,10 @@ export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal,
       )}
 
       {tab === "animals" ? (
-        profile ? <GoatProfile hobby={hobby} data={data} goat={profile} act={act} onBack={() => setProfileId(null)} />
-          : <GoatHerd hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+        profile ? <LivestockProfile sp={SPECIES.goats} hobby={hobby} data={data} animal={profile} act={act} onBack={() => setProfileId(null)} />
+          : <LivestockHerd sp={SPECIES.goats} hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
       ) : (
-        <GoatToday hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+        <LivestockToday sp={SPECIES.goats} hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
           onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
       )}
     </div>
