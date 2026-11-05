@@ -24,9 +24,8 @@
             android:layout_weight="1"
             android:text="Today"
             android:textSize="16sp"
-            android:textStyle="bold"
             android:fontFamily="serif"
-            android:textColor="#2C1810"
+            android:textColor="@color/hen_ink"
             android:maxLines="1"
             android:ellipsize="end" />
         <TextView
@@ -34,14 +33,14 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="12sp"
-            android:textColor="#5C4530" />
+            android:textColor="@color/hen_soft" />
     </LinearLayout>
 
-    <TextView android:id="@+id/row_frost" style="@style/HenWidgetRow" android:textColor="#C84B31" android:textStyle="bold" android:visibility="gone" />
-    <TextView android:id="@+id/row_eggs" style="@style/HenWidgetRow" android:visibility="gone" />
-    <TextView android:id="@+id/row_task1" style="@style/HenWidgetRow" android:visibility="gone" />
-    <TextView android:id="@+id/row_task2" style="@style/HenWidgetRow" android:visibility="gone" />
-    <TextView android:id="@+id/row_task3" style="@style/HenWidgetRow" android:visibility="gone" />
+    <TextView android:id="@+id/row_frost" style="@style/HenWidgetRow" android:textColor="@color/hen_alert" android:drawableStart="@drawable/hen_ic_snow" android:textStyle="bold" android:visibility="gone" />
+    <TextView android:id="@+id/row_eggs" style="@style/HenWidgetRow" android:drawableStart="@drawable/hen_ic_egg_ink" android:visibility="gone" />
+    <TextView android:id="@+id/row_task1" style="@style/HenWidgetRow" android:drawableStart="@drawable/hen_ic_calendar" android:visibility="gone" />
+    <TextView android:id="@+id/row_task2" style="@style/HenWidgetRow" android:drawableStart="@drawable/hen_ic_calendar" android:visibility="gone" />
+    <TextView android:id="@+id/row_task3" style="@style/HenWidgetRow" android:drawableStart="@drawable/hen_ic_calendar" android:visibility="gone" />
 
     <View
         android:layout_width="match_parent"
@@ -53,14 +52,14 @@
         android:layout_height="wrap_content"
         android:orientation="horizontal"
         android:layout_marginTop="6dp">
-        <LinearLayout android:id="@+id/tbtn_eggs" style="@style/HenWidgetSmallButton" android:layout_marginEnd="6dp">
-            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:text="🥚 Eggs" />
+        <LinearLayout android:id="@+id/tbtn_eggs" style="@style/HenWidgetSmallButton" android:background="@drawable/widget_btn_yolk_bg" android:layout_marginEnd="6dp">
+            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:textColor="@color/hen_on_yolk" android:drawableStart="@drawable/hen_ic_egg" android:drawablePadding="4dp" android:gravity="center_vertical" android:text="Eggs" />
         </LinearLayout>
         <LinearLayout android:id="@+id/tbtn_harvest" style="@style/HenWidgetSmallButton" android:layout_marginEnd="6dp">
-            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:text="🧺 Harvest" />
+            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:drawableStart="@drawable/hen_ic_basket" android:drawablePadding="4dp" android:gravity="center_vertical" android:text="Harvest" />
         </LinearLayout>
         <LinearLayout android:id="@+id/tbtn_note" style="@style/HenWidgetSmallButton">
-            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:text="📝 Note" />
+            <TextView style="@style/HenWidgetLabel" android:layout_marginTop="0dp" android:drawableStart="@drawable/hen_ic_note" android:drawablePadding="4dp" android:gravity="center_vertical" android:text="Note" />
         </LinearLayout>
     </LinearLayout>
 </LinearLayout>

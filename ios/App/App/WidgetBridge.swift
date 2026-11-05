@@ -21,7 +21,8 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
     public let jsName = "WidgetBridge"
     public let pluginMethods: [CAPPluginMethod] = [
         CAPPluginMethod(name: "setToday", returnType: CAPPluginReturnPromise),
-        CAPPluginMethod(name: "takeTally", returnType: CAPPluginReturnPromise)
+        CAPPluginMethod(name: "takeTally", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "takeVoiceLogs", returnType: CAPPluginReturnPromise)
     ]
 
     static let appGroup = "group.com.henalytics.app"
@@ -69,6 +70,22 @@ public class WidgetBridgePlugin: CAPPlugin, CAPBridgedPlugin {
         let json = defaults.string(forKey: "eggTally") ?? ""
         if !json.isEmpty {
             defaults.removeObject(forKey: "eggTally")
+        }
+        call.resolve(["json": json])
+    }
+}
+
+extension WidgetBridgePlugin {
+    /// Siri feedings, milk and harvests (VoiceIntents.swift) as a JSON array;
+    /// cleared once handed over. The web app saves them (applyVoiceLogs).
+    @objc func takeVoiceLogs(_ call: CAPPluginCall) {
+        guard let defaults = UserDefaults(suiteName: WidgetBridgePlugin.appGroup) else {
+            call.resolve(["json": ""])
+            return
+        }
+        let json = defaults.string(forKey: "voiceLogs") ?? ""
+        if !json.isEmpty {
+            defaults.removeObject(forKey: "voiceLogs")
         }
         call.resolve(["json": json])
     }

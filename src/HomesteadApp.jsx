@@ -87,7 +87,7 @@ import {
   reconcileNudges, reconcileFrostAlerts, reconcileWrappedAlert,
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
-import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged } from "./widgetBridge.js";
+import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged, takeVoiceLogs, applyVoiceLogs } from "./widgetBridge.js";
 // NEW_LOOK (3.0): the redesign, built behind a per-device switch (src/newlook/flag.js).
 import { useNewLook, NEW_LOOK_LAUNCHED } from "./newlook/flag.js";
 import { nl, LOOKS } from "./newlook/theme.js";
@@ -4183,6 +4183,12 @@ useEffect(() => {
         if (tally && Object.keys(tally).length) {
           const today = todayStr();
           update((d) => applyWidgetTally(d, tally, today).d);
+        }
+        // Siri feedings, milk and harvests (3.0).
+        const voice = await takeVoiceLogs();
+        if (voice.length) {
+          const today = todayStr();
+          update((d) => applyVoiceLogs(d, voice, today).d);
         }
       } catch (_) {
         // a lost tally is better than a crash; the widget keeps nothing else

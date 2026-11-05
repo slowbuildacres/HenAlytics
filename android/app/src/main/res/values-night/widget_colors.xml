@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <color name="hen_paper">#1A130F</color>
+    <color name="hen_card">#241B16</color>
+    <color name="hen_line">#3A2D24</color>
+    <color name="hen_ink">#F3EADB</color>
+    <color name="hen_soft">#BCAA94</color>
+    <color name="hen_yolk">#E8B04A</color>
+    <color name="hen_on_yolk">#1A130F</color>
+    <color name="hen_alert">#E0795E</color>
+    <color name="hen_alert_tint">#3A1F18</color>
+</resources>

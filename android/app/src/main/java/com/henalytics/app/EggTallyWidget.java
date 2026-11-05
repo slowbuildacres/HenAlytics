@@ -173,12 +173,12 @@ public class EggTallyWidget extends AppWidgetProvider {
         RemoteViews v = new RemoteViews(ctx.getPackageName(), R.layout.widget_egg_tally);
         Flock flock = flockFor(ctx, widgetId);
         if (flock == null) {
-            v.setTextViewText(R.id.tally_name, "🥚 Egg Counter");
+            v.setTextViewText(R.id.tally_name, "Egg Counter");
             v.setTextViewText(R.id.tally_count, "–");
             v.setTextViewText(R.id.tally_sub, "Open Henalytics to add your flock");
         } else {
             int count = Math.max(0, flock.basket + pending(ctx, flock.id, localDay(new Date())));
-            v.setTextViewText(R.id.tally_name, flock.emoji + " " + flock.name);
+            v.setTextViewText(R.id.tally_name, flock.name);
             v.setTextViewText(R.id.tally_count, String.valueOf(count));
             v.setTextViewText(R.id.tally_sub, flock.logged > 0 ? flock.logged + " more saved today" : "eggs today");
             v.setOnClickPendingIntent(R.id.tally_minus, tapIntent(ctx, widgetId, -1, 0));

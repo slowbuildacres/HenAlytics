@@ -19,19 +19,31 @@
 // ============================================================================
 
 import WidgetKit
+import UIKit
 import SwiftUI
 import AppIntents
 
-// MARK: - Brand colors (match the app's palette)
+// MARK: - Brand colors (3.0 Farmhouse palette, src/newlook/theme.js)
+// Each color has a light and a dark value; widgets follow the phone's
+// light/dark setting.
 
 private extension Color {
-    static let henBg = Color(red: 0xF4 / 255, green: 0xED / 255, blue: 0xE0 / 255)
-    static let henCard = Color(red: 0xFA / 255, green: 0xF5 / 255, blue: 0xEA / 255)
-    static let henInk = Color(red: 0x2C / 255, green: 0x18 / 255, blue: 0x10 / 255)
-    static let henInkSoft = Color(red: 0x5C / 255, green: 0x45 / 255, blue: 0x30 / 255)
-    static let henYolk = Color(red: 0xE8 / 255, green: 0xB5 / 255, blue: 0x47 / 255)
-    static let henAccent = Color(red: 0xC8 / 255, green: 0x4B / 255, blue: 0x31 / 255)
-    static let henFrostBg = Color(red: 0xFB / 255, green: 0xE5 / 255, blue: 0xDE / 255)
+    static func hen(_ light: UInt32, _ dark: UInt32) -> Color {
+        Color(UIColor { traits in
+            let v = traits.userInterfaceStyle == .dark ? dark : light
+            return UIColor(red: CGFloat((v >> 16) & 0xFF) / 255, green: CGFloat((v >> 8) & 0xFF) / 255, blue: CGFloat(v & 0xFF) / 255, alpha: 1)
+        })
+    }
+    static let henBg = hen(0xF6F1E7, 0x1A130F)       // paper
+    static let henCard = hen(0xFFFDF8, 0x241B16)     // card
+    static let henLine = hen(0xE3D8C6, 0x3A2D24)     // card border
+    static let henInk = hen(0x2A1A12, 0xF3EADB)      // text
+    static let henInkSoft = hen(0x6B5646, 0xBCAA94)  // secondary text
+    static let henYolk = hen(0xE3A92B, 0xE8B04A)     // the one primary color
+    static let henOnYolk = hen(0x2A1A12, 0x1A130F)   // text on yolk
+    static let henAccent = hen(0xB4472E, 0xE0795E)   // frost, warnings
+    static let henFrostBg = hen(0xFBEDE8, 0x3A1F18)
+    static let henChip = hen(0xF3ECDF, 0x33271F)     // icon wells
 }
 
 // MARK: - Actions
@@ -59,6 +71,17 @@ enum LogAction: String, AppEnum, CaseIterable {
         case .water: return "💧"
         case .note: return "📝"
         case .harvest: return "🧺"
+        }
+    }
+
+    /// Line icon (SF Symbol) used on the widgets since 3.0.
+    var symbol: String {
+        switch self {
+        case .eggs: return "oval.portrait"
+        case .fed: return "leaf"
+        case .water: return "drop"
+        case .note: return "square.and.pencil"
+        case .harvest: return "basket"
         }
     }
 
@@ -110,25 +133,27 @@ struct QuickLogView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Log it now")
-                .font(.system(size: 13, weight: .semibold, design: .serif))
+                .font(.system(size: 15, weight: .regular, design: .serif))
                 .foregroundStyle(Color.henInkSoft)
             HStack(spacing: 8) {
                 ForEach(LogAction.quickLog, id: \.self) { action in
                     Link(destination: action.url) {
-                        VStack(spacing: 4) {
-                            Text(action.emoji).font(.system(size: 26))
+                        VStack(spacing: 5) {
+                            Image(systemName: action.symbol)
+                                .font(.system(size: 21, weight: .regular))
+                                .foregroundStyle(action == .eggs ? Color.henOnYolk : Color.henInk)
                             Text(action.shortLabel)
                                 .font(.system(size: 12, weight: .semibold))
-                                .foregroundStyle(Color.henInk)
+                                .foregroundStyle(action == .eggs ? Color.henOnYolk : Color.henInk)
                         }
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                         .background(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .fill(Color.henCard)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .fill(action == .eggs ? Color.henYolk : Color.henCard)
                         )
                         .overlay(
-                            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                                .stroke(Color.henInk.opacity(0.18), lineWidth: 1)
+                            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                                .stroke(action == .eggs ? Color.clear : Color.henLine, lineWidth: 1)
                         )
                     }
                 }
@@ -252,7 +277,7 @@ struct TodayView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline) {
                 Text(entry.snapshot?.name?.isEmpty == false ? entry.snapshot!.name! : "Today")
-                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .font(.system(size: 17, weight: .regular, design: .serif))
                     .foregroundStyle(Color.henInk)
                     .lineLimit(1)
                 Spacer(minLength: 4)
@@ -261,7 +286,7 @@ struct TodayView: View {
                     .foregroundStyle(Color.henInkSoft)
             }
             if let frost = frostLine {
-                Text("❄️ \(frost)")
+                Label(frost, systemImage: "snowflake")
                     .font(.system(size: 12, weight: .semibold))
                     .foregroundStyle(Color.henAccent)
                     .lineLimit(2)
@@ -270,17 +295,17 @@ struct TodayView: View {
                     .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.henFrostBg))
             }
             if let eggs = eggsLine {
-                Text("🥚 \(eggs)").font(.system(size: 12)).foregroundStyle(Color.henInk).lineLimit(1)
+                Label(eggs, systemImage: "oval.portrait").font(.system(size: 12)).foregroundStyle(Color.henInk).lineLimit(1)
             }
             if entry.snapshot == nil {
                 Text("Open Henalytics once to fill this in.")
                     .font(.system(size: 12)).foregroundStyle(Color.henInkSoft)
             } else if tasks.isEmpty {
-                Text("📅 Nothing on the calendar this week")
+                Label("Nothing on the calendar this week", systemImage: "calendar")
                     .font(.system(size: 12)).foregroundStyle(Color.henInkSoft).lineLimit(1)
             } else {
                 ForEach(Array(tasks.prefix(maxTasks).enumerated()), id: \.offset) { _, t in
-                    Text("📅 \(dayLabel(t.date)) · \(t.title)")
+                    Label("\(dayLabel(t.date)) · \(t.title)", systemImage: "calendar")
                         .font(.system(size: 12)).foregroundStyle(Color.henInk).lineLimit(1)
                 }
             }
@@ -288,13 +313,13 @@ struct TodayView: View {
             HStack(spacing: 6) {
                 ForEach([LogAction.eggs, .harvest, .note], id: \.self) { action in
                     Link(destination: action.url) {
-                        Text("\(action.emoji) \(action.shortLabel)")
+                        Label(action.shortLabel, systemImage: action.symbol)
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundStyle(Color.henInk)
+                            .foregroundStyle(action == .eggs ? Color.henOnYolk : Color.henInk)
                             .frame(maxWidth: .infinity)
                             .padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.henCard))
-                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.henInk.opacity(0.18), lineWidth: 1))
+                            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(action == .eggs ? Color.henYolk : Color.henCard))
+                            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(action == .eggs ? Color.clear : Color.henLine, lineWidth: 1))
                     }
                 }
             }
@@ -356,12 +381,12 @@ struct OneTapView: View {
         case .accessoryCircular:
             ZStack {
                 AccessoryWidgetBackground()
-                Text(entry.action.emoji).font(.system(size: 24))
+                Image(systemName: entry.action.symbol).font(.system(size: 22, weight: .medium))
             }
             .containerBackground(for: .widget) { Color.clear }
         case .accessoryRectangular:
             HStack(spacing: 6) {
-                Text(entry.action.emoji).font(.system(size: 22))
+                Image(systemName: entry.action.symbol).font(.system(size: 20, weight: .medium))
                 VStack(alignment: .leading, spacing: 0) {
                     Text("Henalytics").font(.caption2).opacity(0.7)
                     Text("Log \(entry.action.shortLabel.lowercased())").font(.headline)
@@ -370,9 +395,14 @@ struct OneTapView: View {
             .containerBackground(for: .widget) { Color.clear }
         default:
             VStack(spacing: 6) {
-                Text(entry.action.emoji).font(.system(size: 46))
+                ZStack {
+                    Circle().fill(Color.henYolk).frame(width: 64, height: 64)
+                    Image(systemName: entry.action.symbol)
+                        .font(.system(size: 28, weight: .regular))
+                        .foregroundStyle(Color.henOnYolk)
+                }
                 Text("Log \(entry.action.shortLabel.lowercased())")
-                    .font(.system(size: 15, weight: .semibold, design: .serif))
+                    .font(.system(size: 16, weight: .regular, design: .serif))
                     .foregroundStyle(Color.henInk)
                 Text("tap to open")
                     .font(.system(size: 11))
@@ -560,7 +590,7 @@ struct EggTallyView: View {
                 tally(flock)
             } else {
                 VStack(spacing: 6) {
-                    Text("🥚").font(.system(size: 34))
+                    Image(systemName: "oval.portrait").font(.system(size: 30)).foregroundStyle(Color.henInk)
                     Text("Open Henalytics to add your flock")
                         .font(.system(size: 12, weight: .semibold))
                         .foregroundStyle(Color.henInk)
@@ -575,7 +605,6 @@ struct EggTallyView: View {
     private func tally(_ flock: TodayFlock) -> some View {
         VStack(spacing: family == .systemSmall ? 2 : 4) {
             HStack(spacing: 4) {
-                Text(flock.emoji ?? "🐔").font(.system(size: 13))
                 Text(flock.name)
                     .font(.system(size: 13, weight: .semibold, design: .serif))
                     .foregroundStyle(Color.henInk)
@@ -583,7 +612,7 @@ struct EggTallyView: View {
                 Spacer(minLength: 0)
             }
             Text("\(entry.count)")
-                .font(.system(size: family == .systemSmall ? 38 : 42, weight: .bold, design: .serif))
+                .font(.system(size: family == .systemSmall ? 40 : 44, weight: .regular, design: .serif))
                 .foregroundStyle(Color.henInk)
                 .contentTransition(.numericText())
             Text(entry.logged > 0 ? "\(entry.logged) more saved today" : "eggs today")
@@ -606,10 +635,10 @@ struct EggTallyView: View {
         Button(intent: TallyEggsIntent(flockId: flockId, delta: delta)) {
             Text(label)
                 .font(.system(size: 18, weight: .bold))
-                .foregroundStyle(Color.henInk)
+                .foregroundStyle(prominent ? Color.henOnYolk : Color.henInk)
                 .frame(maxWidth: .infinity, minHeight: 34)
-                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(prominent ? Color.henYolk : Color.henCard))
-                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.henInk.opacity(0.18), lineWidth: 1))
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(prominent ? Color.henYolk : Color.henCard))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(prominent ? Color.clear : Color.henLine, lineWidth: 1))
         }
         .buttonStyle(.plain)
     }

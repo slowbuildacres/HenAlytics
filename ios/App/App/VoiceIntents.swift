@@ -4,6 +4,10 @@
 //   • LogEggsIntent   — "How many?" → "Which flock?" (only when there's more
 //                       than one) → adds the eggs to that flock's tally.
 //   • EggsTodayIntent — reads back today's count, per flock.
+//   • LogFeedingIntent, LogMilkIntent, LogHarvestIntent (3.0) — "log a
+//     feeding", "log milk", "log a harvest". These queue a small record in
+//     the App Group (key "voiceLogs") that the web app turns into the same
+//     entry its forms save (src/widgetBridge.js → applyVoiceLogs).
 //
 // Voice logs go through the same App Group store as the Egg Counter widget
 // (group.com.henalytics.app, key "eggTally": { flockId: { "yyyy-MM-dd": n } }).
@@ -38,8 +42,16 @@ private struct VoiceSnapshot: Decodable {
         let basket: Int?
         let logged: Int?
     }
+    struct Animal: Decodable {
+        let id: String
+        let name: String
+        let type: String
+        let milk: Bool?
+    }
     let day: String
     let flocks: [Flock]?
+    let animals: [Animal]?
+    let garden: Bool?
 
     static func load() -> VoiceSnapshot? {
         guard let defaults = UserDefaults(suiteName: voiceAppGroup),
@@ -81,6 +93,29 @@ private enum VoiceTally {
         days[day] = (days[day] ?? 0) + count
         all[flockId] = days
         if let data = try? JSONEncoder().encode(all), let json = String(data: data, encoding: .utf8) {
+            defaults.set(json, forKey: key)
+        }
+    }
+}
+
+/// Feedings, milk and harvests from Siri wait here until the app takes them
+/// (WidgetBridge.takeVoiceLogs): [{ id, kind, date, hobbyId?, lbs?, crop?, oz? }].
+private enum VoiceLogQueue {
+    static let key = "voiceLogs"
+
+    static func append(_ item: [String: Any]) {
+        guard let defaults = UserDefaults(suiteName: voiceAppGroup) else { return }
+        var list: [[String: Any]] = []
+        if let json = defaults.string(forKey: key), let data = json.data(using: .utf8),
+           let existing = try? JSONSerialization.jsonObject(with: data) as? [[String: Any]] {
+            list = existing
+        }
+        var rec = item
+        rec["id"] = UUID().uuidString
+        rec["date"] = voiceLocalDay()
+        list.append(rec)
+        if list.count > 200 { list.removeFirst(list.count - 200) }
+        if let data = try? JSONSerialization.data(withJSONObject: list), let json = String(data: data, encoding: .utf8) {
             defaults.set(json, forKey: key)
         }
     }
@@ -131,6 +166,79 @@ struct VoiceFlockQuery: EntityStringQuery {
 
     func suggestedEntities() async throws -> [VoiceFlockEntity] {
         VoiceFlockEntity.all()
+    }
+}
+
+// MARK: - Animals entity (feeding and milk)
+
+@available(iOS 17.0, *)
+struct VoiceAnimalsEntity: AppEntity {
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Animals" }
+    static var defaultQuery = VoiceAnimalsQuery()
+
+    var id: String
+    var name: String
+    var milk: Bool
+
+    var displayRepresentation: DisplayRepresentation { DisplayRepresentation(title: "\(name)") }
+
+    static func all(milkOnly: Bool = false) -> [VoiceAnimalsEntity] {
+        (VoiceSnapshot.load()?.animals ?? [])
+            .map { VoiceAnimalsEntity(id: $0.id, name: $0.name, milk: $0.milk ?? false) }
+            .filter { !milkOnly || $0.milk }
+    }
+}
+
+@available(iOS 17.0, *)
+struct VoiceAnimalsQuery: EntityStringQuery {
+    func entities(for identifiers: [VoiceAnimalsEntity.ID]) async throws -> [VoiceAnimalsEntity] {
+        VoiceAnimalsEntity.all().filter { identifiers.contains($0.id) }
+    }
+
+    func entities(matching string: String) async throws -> [VoiceAnimalsEntity] {
+        let needle = string.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        guard !needle.isEmpty else { return VoiceAnimalsEntity.all() }
+        return VoiceAnimalsEntity.all().filter {
+            let name = $0.name.lowercased()
+            // "the goats" / "goat" both find "Goats".
+            let stem = name.hasSuffix("s") ? String(name.dropLast()) : name
+            return name.contains(needle) || needle.contains(stem)
+        }
+    }
+
+    func suggestedEntities() async throws -> [VoiceAnimalsEntity] {
+        VoiceAnimalsEntity.all()
+    }
+}
+
+@available(iOS 17.0, *)
+enum VoiceMilkUnit: String, AppEnum {
+    case gallons, quarts, pints, cups, ounces
+
+    static var typeDisplayRepresentation: TypeDisplayRepresentation { "Unit" }
+    static var caseDisplayRepresentations: [VoiceMilkUnit: DisplayRepresentation] {
+        [.gallons: "gallons", .quarts: "quarts", .pints: "pints", .cups: "cups", .ounces: "ounces"]
+    }
+
+    var ounces: Double {
+        switch self {
+        case .gallons: return 128
+        case .quarts: return 32
+        case .pints: return 16
+        case .cups: return 8
+        case .ounces: return 1
+        }
+    }
+}
+
+private func amountText(_ v: Double) -> String {
+    v == v.rounded() ? String(Int(v)) : String(format: "%.1f", v)
+}
+
+@available(iOS 17.0, *)
+private func notifyApp() async {
+    await MainActor.run {
+        NotificationCenter.default.post(name: .henTallyChanged, object: nil)
     }
 }
 
@@ -216,6 +324,117 @@ struct EggsTodayIntent: AppIntent {
     }
 }
 
+@available(iOS 17.0, *)
+struct LogFeedingIntent: AppIntent {
+    static var title: LocalizedStringResource { "Log a feeding" }
+    static var description: IntentDescription { "Log that you fed your animals." }
+
+    @Parameter(title: "Animals")
+    var animals: VoiceAnimalsEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Log a feeding for \(\.$animals)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let all = VoiceAnimalsEntity.all()
+        guard !all.isEmpty else {
+            return .result(dialog: "Open Henalytics once so I can see your animals, then try again.")
+        }
+        var chosen = animals
+        if chosen == nil {
+            if all.count == 1 {
+                chosen = all[0]
+            } else {
+                chosen = try await $animals.requestDisambiguation(among: all, dialog: "Which animals?")
+            }
+        }
+        guard let target = chosen, all.contains(where: { $0.id == target.id }) else {
+            return .result(dialog: "I couldn't find those animals in Henalytics.")
+        }
+        VoiceLogQueue.append(["kind": "feed", "hobbyId": target.id])
+        await notifyApp()
+        return .result(dialog: "Logged a feeding for \(target.name).")
+    }
+}
+
+@available(iOS 17.0, *)
+struct LogMilkIntent: AppIntent {
+    static var title: LocalizedStringResource { "Log milk" }
+    static var description: IntentDescription { "Log how much milk you got." }
+
+    @Parameter(title: "Amount", requestValueDialog: "How much milk?")
+    var amount: Double
+
+    @Parameter(title: "Unit", requestValueDialog: "Gallons, quarts, cups or ounces?")
+    var unit: VoiceMilkUnit
+
+    @Parameter(title: "Animals")
+    var animals: VoiceAnimalsEntity?
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Log \(\.$amount) \(\.$unit) of milk from \(\.$animals)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        let dairy = VoiceAnimalsEntity.all(milkOnly: true)
+        guard !dairy.isEmpty else {
+            return .result(dialog: "Turn on goats, cows or dairy sheep in Henalytics first.")
+        }
+        guard amount > 0 else { throw $amount.needsValueError("How much milk?") }
+        let oz = amount * unit.ounces
+        guard oz <= 4000 else {
+            return .result(dialog: "That's more than I can log at once. Open Henalytics to add it.")
+        }
+        var chosen = animals
+        if chosen == nil {
+            if dairy.count == 1 {
+                chosen = dairy[0]
+            } else {
+                chosen = try await $animals.requestDisambiguation(among: dairy, dialog: "From which animals?")
+            }
+        }
+        guard let target = chosen, dairy.contains(where: { $0.id == target.id }) else {
+            return .result(dialog: "I couldn't find those animals in Henalytics.")
+        }
+        VoiceLogQueue.append(["kind": "milk", "hobbyId": target.id, "oz": oz])
+        await notifyApp()
+        return .result(dialog: "Logged \(amountText(amount)) \(unit.rawValue) of milk from \(target.name).")
+    }
+}
+
+@available(iOS 17.0, *)
+struct LogHarvestIntent: AppIntent {
+    static var title: LocalizedStringResource { "Log a harvest" }
+    static var description: IntentDescription { "Log what you picked from the garden." }
+
+    @Parameter(title: "Crop", requestValueDialog: "What did you pick?")
+    var crop: String
+
+    @Parameter(title: "Pounds", requestValueDialog: "How many pounds?")
+    var pounds: Double
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Log \(\.$pounds) pounds of \(\.$crop)")
+    }
+
+    func perform() async throws -> some IntentResult & ProvidesDialog {
+        guard VoiceSnapshot.load()?.garden == true else {
+            return .result(dialog: "Turn on the garden in Henalytics first.")
+        }
+        let name = crop.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !name.isEmpty else { throw $crop.needsValueError("What did you pick?") }
+        guard pounds > 0 else { throw $pounds.needsValueError("How many pounds?") }
+        guard pounds <= 2000 else {
+            return .result(dialog: "That's more than I can log at once. Open Henalytics to add it.")
+        }
+        VoiceLogQueue.append(["kind": "harvest", "crop": String(name.prefix(60)), "lbs": pounds])
+        await notifyApp()
+        let word = pounds == 1 ? "pound" : "pounds"
+        return .result(dialog: "Logged \(amountText(pounds)) \(word) of \(name).")
+    }
+}
+
 // MARK: - Phrases Siri listens for
 
 @available(iOS 17.0, *)
@@ -241,6 +460,37 @@ struct HenalyticsShortcuts: AppShortcutsProvider {
             ],
             shortTitle: "Eggs today",
             systemImageName: "number"
+        )
+        AppShortcut(
+            intent: LogFeedingIntent(),
+            phrases: [
+                "Log a feeding in \(.applicationName)",
+                "Log feeding in \(.applicationName)",
+                "I fed the \(\.$animals) in \(.applicationName)",
+                "Log a feeding for the \(\.$animals) in \(.applicationName)",
+            ],
+            shortTitle: "Log a feeding",
+            systemImageName: "fork.knife"
+        )
+        AppShortcut(
+            intent: LogMilkIntent(),
+            phrases: [
+                "Log milk in \(.applicationName)",
+                "Log milking in \(.applicationName)",
+                "Log milk from the \(\.$animals) in \(.applicationName)",
+            ],
+            shortTitle: "Log milk",
+            systemImageName: "drop"
+        )
+        AppShortcut(
+            intent: LogHarvestIntent(),
+            phrases: [
+                "Log a harvest in \(.applicationName)",
+                "Log harvest in \(.applicationName)",
+                "Log what I picked in \(.applicationName)",
+            ],
+            shortTitle: "Log a harvest",
+            systemImageName: "leaf"
         )
     }
 }

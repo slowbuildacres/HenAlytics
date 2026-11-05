@@ -23,19 +23,18 @@
             android:layout_height="wrap_content"
             android:textSize="13sp"
             android:textStyle="bold"
-            android:textColor="#2C1810"
+            android:textColor="@color/hen_ink"
             android:maxLines="1"
             android:ellipsize="end"
-            android:text="🐔 Flock" />
+            android:text="Flock" />
 
         <TextView
             android:id="@+id/tally_count"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:textSize="36sp"
-            android:textStyle="bold"
+            android:textSize="38sp"
             android:fontFamily="serif"
-            android:textColor="#2C1810"
+            android:textColor="@color/hen_ink"
             android:text="0" />
 
         <TextView
@@ -43,7 +42,7 @@
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:textSize="11sp"
-            android:textColor="#5C4530"
+            android:textColor="@color/hen_soft"
             android:maxLines="1"
             android:ellipsize="end"
             android:text="eggs today" />
@@ -66,6 +65,7 @@
             style="@style/HenTallyButton"
             android:layout_marginEnd="6dp"
             android:background="@drawable/widget_btn_yolk_bg"
+            android:textColor="@color/hen_on_yolk"
             android:text="+" />
 
         <TextView
