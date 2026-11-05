@@ -6,7 +6,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle, Check,
-  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck, Trophy
+  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck, Trophy, ChevronLeft
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 // ADV_ANALYTICS: shared advanced-analytics layer (leaf module — see analytics.js).
@@ -88,6 +88,19 @@ import {
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
 import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged } from "./widgetBridge.js";
+// NEW_LOOK (3.0): the redesign, built behind a per-device switch (src/newlook/flag.js).
+import { useNewLook } from "./newlook/flag.js";
+import { nl } from "./newlook/theme.js";
+import NavBar from "./newlook/NavBar.jsx";
+import LogPicker from "./newlook/LogPicker.jsx";
+import HomeScreen from "./newlook/HomeScreen.jsx";
+import MoreScreen from "./newlook/MoreScreen.jsx";
+import AnnouncementCard from "./newlook/Announcements.jsx";
+import { UndoHost, showUndo } from "./newlook/UndoBar.jsx";
+import SetupFlow from "./newlook/SetupFlow.jsx";
+import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
+import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
+import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -3298,6 +3311,13 @@ function ManageHomesteadsModal({ user, homesteads, onToggle, onClose }) {
 export default function HomesteadApp() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState("home");
+  // NEW_LOOK (3.0) state. "dash" = the new all-homestead Home, "more" = More.
+  const [newLook, setNewLook] = useNewLook();
+  const [logPickerOpen, setLogPickerOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [frostTonight, setFrostTonight] = useState(null);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [nlNotice, setNlNotice] = useState(null); // announcement opened from the Home card
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -4003,7 +4023,9 @@ useEffect(() => {
     .flatMap((h) => (h.flocks || []).filter((f) => f && !f.archived).map((f) => `${f.id}:${f.name}:${f.birdType}:${f.eggBasket ? `${f.eggBasket.date}=${f.eggBasket.count}` : ""}`))
     .join("|");
   useEffect(() => {
-    if (!isNativeApp() || !data?.hobbies) return;
+    // NEW_LOOK: the new Home shows tonight's frost too, so this also runs on
+    // the web (only the native widget push is native-only).
+    if ((!isNativeApp() && !newLook) || !data?.hobbies) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       let frost = null;
@@ -4015,10 +4037,12 @@ useEffect(() => {
           if (low != null && low <= 34) frost = { lowText: fmtTemp(low), crops: crops.tender.slice(0, 3) };
         }
       } catch (_) {}
-      if (!cancelled) pushWidgetSnapshot(buildWidgetSnapshot(data, { frost }));
+      if (cancelled) return;
+      setFrostTonight(frost);
+      if (isNativeApp()) pushWidgetSnapshot(buildWidgetSnapshot(data, { frost }));
     }, 800);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [calendarEventsKey, widgetEggKey, widgetFlockKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [calendarEventsKey, widgetEggKey, widgetFlockKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey, newLook]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---- Egg tally widget → flock baskets --------------------------------------
   // Taps on the widget's + / − build a per-flock, per-day tally in the native
@@ -4211,6 +4235,33 @@ useEffect(() => {
   // "fix" it later by adding it to deps and breaking the intent.
 
   const [syncStatus, setSyncStatus] = useState("idle");
+
+  // ---- NEW_LOOK (3.0) helpers ----------------------------------------------
+  // "Saved · synced 2 min ago" on More.
+  useEffect(() => { if (syncStatus === "saved" || syncStatus === "idle") setLastSyncAt(Date.now()); }, [syncStatus]);
+  // Turning the new look on/off lands on the matching home.
+  const newLookFirstRef = useRef(true);
+  useEffect(() => {
+    if (newLookFirstRef.current) {
+      newLookFirstRef.current = false;
+      if (newLook && page === "home") setPage("dash");
+      return;
+    }
+    setLogPickerOpen(false);
+    setSwitcherOpen(false);
+    setPage(newLook ? "dash" : "home");
+  }, [newLook]); // eslint-disable-line react-hooks/exhaustive-deps
+  // A notice opened from the Home card closes like its popup did; forget it then.
+  useEffect(() => {
+    const still = { whatsNew: showWhatsNew, appStoreLaunch: showAppStoreLaunch, giveaway: showGiveaway, supporterThanks: showSupporterThanks, milestone: showMilestone };
+    if (nlNotice && !still[nlNotice]) setNlNotice(null);
+  }, [nlNotice, showWhatsNew, showAppStoreLaunch, showGiveaway, showSupporterThanks, showMilestone]);
+  // The old Settings screen offers "Try the new look" via this event.
+  useEffect(() => {
+    const on = (e) => setNewLook(!!(e && e.detail));
+    window.addEventListener("henalytics-newlook", on);
+    return () => window.removeEventListener("henalytics-newlook", on);
+  }, [setNewLook]);
   // Tracks the device's online status. Used to short-circuit cloud writes
   // when the device is offline (sync.js handles cloudReady=false as a
   // benign skip) and to trigger an automatic save when the device comes
@@ -4571,11 +4622,13 @@ useNativeBackButton(React.useCallback(() => {
   if (showTutorialPrompt) { setShowTutorialPrompt(false); return true; }
   // Don't auto-dismiss showTutorial — has its own exit UI.
   if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
-  // Sub-page → home.
-  if (page !== "home") { setPage("home"); return true; }
+  if (logPickerOpen) { setLogPickerOpen(false); return true; }
+  if (switcherOpen) { setSwitcherOpen(false); return true; }
+  // Sub-page → home (new look: the all-homestead Home).
+  if (newLook ? page !== "dash" : page !== "home") { setPage(newLook ? "dash" : "home"); return true; }
   // Home, nothing open — exit the app.
   return false;
-}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page]));
+}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page, newLook, logPickerOpen, switcherOpen]));
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
@@ -5077,11 +5130,107 @@ useNativeBackButton(React.useCallback(() => {
   // Swap palette when spouse mode is on
   const sp = data.spouseMode ? paletteDark : palette;
 
+  // ---- NEW_LOOK (3.0) navigation -------------------------------------------
+  const isHobbyPage = HOBBY_PAGES.includes(page);
+  const nlTab = page === "dash" ? "home"
+    : page === "analytics" ? "stats"
+    : page === "calendar" ? "calendar"
+    : ["more", "sales", "year", "journal", "games", "photos"].includes(page) ? "more"
+    : "home";
+  const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
+  // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
+  const nlOpenEntry = (entry, { stayOnStats = false } = {}) => {
+    if (!entry || !entry.hobby) return;
+    setActiveHobby(entry.hobby.id);
+    setSeasonFilter("all");
+    setSwitcherOpen(false);
+    setLogPickerOpen(false);
+    if (stayOnStats && page === "analytics") return;
+    setPage(hobbyPage(entry.hobby));
+  };
+  // A Log picker action → the same log forms the hobby page opens.
+  const nlLogAction = (entry, a) => {
+    const h = entry.hobby;
+    setLogPickerOpen(false);
+    setActiveHobby(h.id);
+    if (isHobbyPage) setPage(hobbyPage(h));
+    if (a.modal === "gardenMore") setModal({ type: "gardenMore", hobbyId: h.id });
+    else if (a.key === "used_eggs" && !(h.eggInventory && h.eggInventory.enabled)) setModal({ type: "eggInventorySetup", hobbyId: h.id });
+    else setModal({ type: "log", action: a.key, hobbyIdOverride: h.id });
+  };
+  const nlFeedAlerts = newLook ? data.hobbies
+    .filter((h) => h && !h.hidden && h.feedTracker && h.feedTracker.enabled)
+    .map((h) => ({ h, st: computeFeedStatus(h, data.entries[h.id] || []) }))
+    .filter(({ st }) => st && (st.state === "low" || st.state === "out"))
+    .map(({ h, st }) => ({ hobbyId: h.id, hobbyName: h.name, daysLeft: st.daysLeft || 0, state: st.state, entry: entryForHobby(data.hobbies, h.id) })) : [];
+  // One-time tips, one screen at a time, after the welcome.
+  const nlSeenTips = data.newLookTips || {};
+  const nlTipKey = (newLook && data.newLookWelcomeSeen && !modal && !logPickerOpen && !switcherOpen && !shouldShowWizard)
+    ? (page === "dash" && !nlSeenTips.log ? "log"
+      : isHobbyPage && activeEntry && !nlSeenTips["hobby-title"] ? "hobby-title"
+      : page === "analytics" && activeEntry && !nlSeenTips.yir ? "yir" : null)
+    : null;
+  // One announcement card on Home instead of popups stacked at launch.
+  const nlMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const nlNotices = newLook ? [
+    showGiveaway && {
+      key: "giveaway", icon: "gift", title: GIVEAWAY.headline,
+      sub: `Win ${GIVEAWAY.prizes.length > 1 ? "one of " + GIVEAWAY.prizes.length + " prizes" : "a prize"} · free to enter`,
+      action: "See how to enter", onAction: () => setNlNotice("giveaway"),
+      onDismiss: () => { setShowGiveaway(false); update(d => { d.lastGiveawayPopupMonday = giveawayWeekKey(); return d; }); },
+    },
+    showWhatsNew && {
+      key: "whatsNew", icon: "sparkles", title: "What's new in Henalytics",
+      sub: String(WHATS_NEW[0] || "").replace(/[\p{Extended_Pictographic}\u{FE0F}]/gu, "").split(/ — |\. /)[0].trim().slice(0, 70),
+      action: "See what's new", onAction: () => setNlNotice("whatsNew"),
+      onDismiss: () => { whatsNewDismissedRef.current = true; setShowWhatsNew(false); update(d => { d.lastSeenVersion = CURRENT_VERSION; return d; }); },
+    },
+    showAccountNudge && {
+      key: "accountNudge", icon: "shield", title: "Back up your homestead",
+      sub: "A free account keeps your logs safe if you lose your phone.",
+      action: "Create a free account",
+      onAction: () => { setShowAccountNudge(false); update(d => { d.accountNudgeDismissed = true; return d; }); setModal({ type: "signup" }); },
+      onDismiss: () => { setShowAccountNudge(false); update(d => { d.accountNudgeDismissed = true; return d; }); },
+    },
+    showSupporterThanks && {
+      key: "supporterThanks", icon: "heart", title: "Thank you, supporters",
+      sub: "See who's keeping Henalytics free this month.",
+      action: "See the list", onAction: () => setNlNotice("supporterThanks"),
+      onDismiss: () => { setShowSupporterThanks(false); update(d => { d.supportersDismissedMonth = nlMonthKey; return d; }); },
+    },
+    showMilestone && milestoneConfig && currentMilestone != null && {
+      key: "milestone", icon: "party", title: `Henalytics passed ${Number(currentMilestone).toLocaleString("en-US")} homesteads`,
+      sub: "Thanks for being one of them.",
+      action: "See more", onAction: () => setNlNotice("milestone"),
+      onDismiss: () => {
+        setShowMilestone(false);
+        const key = `milestone_${currentMilestone}`;
+        update(d => { if (!Array.isArray(d.seenMilestones)) d.seenMilestones = []; if (!d.seenMilestones.includes(key)) d.seenMilestones.push(key); return d; });
+      },
+    },
+    showAppStoreLaunch && {
+      key: "appStoreLaunch", icon: "phone", title: "Henalytics is on the App Store and Google Play",
+      sub: "Get the phone app for widgets and reminders.",
+      action: "Get the app", onAction: () => setNlNotice("appStoreLaunch"),
+      onDismiss: () => {
+        setShowAppStoreLaunch(false);
+        const webOS = getWebMobileOS();
+        update(d => { if (webOS === "android") d.playStoreLaunchDismissed = true; else d.appStoreLaunchDismissed = true; return d; });
+      },
+    },
+  ].filter(Boolean) : [];
+  const nlBack = (label = "More", to = "more") => (
+    <button type="button" onClick={() => setPage(to)} style={{
+      display: "inline-flex", alignItems: "center", gap: 2, minHeight: 40, marginLeft: -6, marginBottom: 6,
+      background: "none", border: "none", cursor: "pointer", color: nl.ink, font: `600 15px ${FONT_BODY}`,
+    }}><ChevronLeft size={22} strokeWidth={2} aria-hidden="true" />{label}</button>
+  );
+
   return (
     <div style={{
       minHeight: "100vh",
-      background: sp.bg,
-      backgroundImage: `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
+      background: newLook ? nl.paper : sp.bg,
+      backgroundImage: newLook ? "none" : `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
       color: sp.ink,
@@ -5279,7 +5428,37 @@ useNativeBackButton(React.useCallback(() => {
       <ToastHost />
 
       {/* Onboarding wizard: shown only on first-ever load with no data */}
-      {shouldShowWizard && (
+      {/* NEW_LOOK: first-time setup (new users) and the welcome (existing users) */}
+      {shouldShowWizard && newLook && (
+        <SetupFlow
+          hobbies={data.hobbies}
+          onSignIn={() => setModal({ type: "signin" })}
+          onFinish={({ name, showIds, location }) => {
+            update((d) => {
+              if (name) d.homesteadName = name;
+              if (location) {
+                d.homesteadLocation = { lat: location.lat, lon: location.lon, label: location.label };
+                if (!d.userZoneSystem && location.zone) { d.userZoneSystem = location.zone.system; d.userZone = location.zone.zone; }
+              }
+              d.hobbies = (d.hobbies || []).map((h) => { h.hidden = !showIds.includes(h.id); return h; });
+              d.onboardedAt = Date.now();
+              d.lastSeenVersion = CURRENT_VERSION;
+              const now = new Date();
+              const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+              d.supportersDismissedMonth = monthKey;
+              d.appStoreFundDismissedMonth = monthKey;
+              d.newLookWelcomeSeen = true; // new users never saw the old look
+              return d;
+            });
+            setPage("dash");
+          }}
+        />
+      )}
+      {newLook && !shouldShowWizard && !data.newLookWelcomeSeen && (data.onboardedAt || hasAnyEntries) && role !== "member" && (
+        <WelcomeNewLook onDone={() => { update((d) => { d.newLookWelcomeSeen = true; return d; }); setPage("dash"); }} />
+      )}
+      {newLook && nlTipKey && <TipSpotlight tipKey={nlTipKey} onDone={() => update((d) => { d.newLookTips = { ...(d.newLookTips || {}), [nlTipKey]: true }; return d; })} />}
+      {shouldShowWizard && !newLook && (
         <OnboardingWizard
           update={update}
           setModal={setModal}
@@ -5307,7 +5486,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* What's New popup */}
-      {showWhatsNew && (
+      {showWhatsNew && (!newLook || nlNotice === "whatsNew") && (
         <WhatsNewModal onClose={() => {
           whatsNewDismissedRef.current = true;
           setShowWhatsNew(false);
@@ -5318,7 +5497,7 @@ useNativeBackButton(React.useCallback(() => {
       {/* App launch popup — "we're on the App Store / Google Play". Web users
           only, one-time per platform. Always shows both store badges; the
           detected OS just leads the copy and picks which dismiss flag to set. */}
-      {showAppStoreLaunch && !showWhatsNew && (
+      {showAppStoreLaunch && (newLook ? nlNotice === "appStoreLaunch" : !showWhatsNew) && (
         <AppStoreLaunchModal
           webOS={getWebMobileOS()}
           onClose={() => {
@@ -5334,7 +5513,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* Weekly community giveaway popup (no purchase necessary) */}
-      {showGiveaway && !showWhatsNew && (
+      {showGiveaway && (newLook ? nlNotice === "giveaway" : !showWhatsNew) && (
         <GiveawayModal
           user={user}
           followedKey={data?.giveawayFollowedKey}
@@ -5357,7 +5536,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* "Create an account" nudge — signed-out users, one-time, ~10 entries */}
-      {showAccountNudge && !showWhatsNew && !showAppStoreLaunch && (
+      {showAccountNudge && !newLook && !showWhatsNew && !showAppStoreLaunch && (
         <AccountNudgeModal
           onCreateAccount={() => {
             setShowAccountNudge(false);
@@ -5372,7 +5551,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* Monthly supporter thank-you popup (9th-11th of each month) */}
-      {showSupporterThanks && !showWhatsNew && (
+      {showSupporterThanks && (newLook ? nlNotice === "supporterThanks" : !showWhatsNew) && (
         <SupporterThanksModal
           onClose={() => {
             setShowSupporterThanks(false);
@@ -5399,7 +5578,7 @@ useNativeBackButton(React.useCallback(() => {
           a milestone threshold they haven't seen yet. Marks seen on either
           button so each milestone shows exactly once per user. Tapping
           Support opens the existing SupportModal flow. */}
-      {showMilestone && !showWhatsNew && !showSupporterThanks && milestoneConfig && currentMilestone != null && (
+      {showMilestone && (newLook ? nlNotice === "milestone" : (!showWhatsNew && !showSupporterThanks)) && milestoneConfig && currentMilestone != null && (
         <MilestoneModal
           config={milestoneConfig}
           userCount={userCount}
@@ -5488,7 +5667,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* Tutorial prompt — shown once after onboarding */}
-      {showTutorialPrompt && !showTutorial && (
+      {showTutorialPrompt && !showTutorial && !newLook && (
         <TutorialPrompt
           onStart={() => { setShowTutorialPrompt(false); setShowTutorial(true); }}
           onSkip={() => {
@@ -5513,7 +5692,8 @@ useNativeBackButton(React.useCallback(() => {
           });
         }} />
       )}
-      {/* HEADER */}
+      {/* HEADER (old look; the new look puts these in More and the hobby title) */}
+      {!newLook && (<>
       <header style={{
         padding: "20px 20px 12px",
         borderBottom: `2px solid ${palette.ink}`,
@@ -5816,10 +5996,57 @@ useNativeBackButton(React.useCallback(() => {
         </div>
         )}
       </header>
+      </>)}
 
       {/* MAIN */}
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "20px 20px 40px" }}>
         <ErrorBoundary resetKey={`${page}|${activeHobby}`} label={`${page}/${activeHobby}`}>
+        {/* NEW_LOOK (3.0) screens and headers */}
+        {newLook && page === "dash" && (
+          <HomeScreen
+            data={data} today={todayKey} frost={frostTonight} feedAlerts={nlFeedAlerts}
+            announcement={<AnnouncementCard notices={nlNotices} />}
+            onOpenCalendar={() => setPage("calendar")}
+            onOpenHobby={(e) => nlOpenEntry(e)}
+            onOpenSwitcher={() => setSwitcherOpen(true)}
+            onManage={() => setModal({ type: "manageHobbies" })}
+            onOpenMore={() => setPage("more")}
+            HobbyIcon={HobbyIcon}
+          />
+        )}
+        {newLook && page === "more" && (
+          <MoreScreen
+            data={data} user={user} isSupporter={isSupporter} syncStatus={syncStatus} online={online} lastSyncAt={lastSyncAt}
+            homesteadSwitcher={user ? (
+              <HomesteadSwitcher user={user} currentName={data.homesteadName} role={role}
+                onSwitch={switchHomestead} onManageFarmhands={() => setModal({ type: "farmhand" })} />
+            ) : null}
+            onAccount={() => setModal({ type: isSupabaseConfigured && !user ? "signin" : "renameHomestead" })}
+            onSales={() => setPage("sales")} onYear={() => setPage("year")} onJournal={() => setPage("journal")}
+            onGames={() => setPage("games")} onPhotos={() => setPage("photos")}
+            onSupport={() => setModal({ type: "support" })}
+            onHobbies={() => setModal({ type: "manageHobbies" })}
+            onBarn={() => setModal({ type: "barn" })}
+            onSettings={() => setModal({ type: "settings" })}
+            newLook={newLook} onToggleNewLook={setNewLook}
+          />
+        )}
+        {newLook && isHobbyPage && activeEntry && (
+          <div style={{ marginBottom: 12 }}>
+            <HobbyTitle name={activeEntry.name} onOpen={() => setSwitcherOpen(true)} />
+          </div>
+        )}
+        {newLook && page === "analytics" && activeEntry && (
+          <div style={{ marginBottom: 12 }}>
+            <HobbyTitle name={activeEntry.name} onOpen={() => setSwitcherOpen(true)} right={
+              <button type="button" data-tip="yir" onClick={() => setPage("year")} style={{
+                display: "flex", alignItems: "center", gap: 4, minHeight: 36, padding: "0 12px", borderRadius: 999,
+                background: nl.ink, color: nl.paper, border: "none", font: `600 13px ${FONT_BODY}`, cursor: "pointer", whiteSpace: "nowrap",
+              }}>Year in review<ChevronDown size={15} strokeWidth={2.2} style={{ transform: "rotate(-90deg)" }} aria-hidden="true" /></button>
+            } />
+          </div>
+        )}
+        {newLook && ["sales", "year", "journal", "games", "photos"].includes(page) && nlBack()}
         {/* Celebration card (Suggestions.jsx) — shows ONLY on the tab the
             celebration belongs to. "One hundred jars" appears on canning, not
             on garden or egg-layers. activeHobby is the match key. */}
@@ -6063,8 +6290,8 @@ useNativeBackButton(React.useCallback(() => {
         </ErrorBoundary>
       </main>
 
-      {/* COPYRIGHT FOOTER */}
-      <div style={{
+      {/* COPYRIGHT FOOTER (old look only) */}
+      {!newLook && <div style={{
         textAlign: "center",
         padding: "12px 20px",
         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
@@ -6076,7 +6303,32 @@ useNativeBackButton(React.useCallback(() => {
         margin: "0 auto",
       }}>
         © {new Date().getFullYear()} Henalytics · Built by a homesteader, for homesteaders. Not a company — just someone who wanted to better understand their chickens, garden, and land. Free forever, by intention. Unauthorized commercial use is prohibited.
-      </div>
+      </div>}
+      {newLook ? (
+        <>
+          <NavBar
+            tab={nlTab} logOpen={logPickerOpen}
+            onHome={() => { setLogPickerOpen(false); setPage("dash"); }}
+            onStats={() => { setLogPickerOpen(false); setPage("analytics"); }}
+            onLog={() => setLogPickerOpen((o) => !o)}
+            onCalendar={() => { setLogPickerOpen(false); setPage("calendar"); }}
+            onMore={() => { setLogPickerOpen(false); setPage("more"); }}
+          />
+          <LogPicker
+            open={logPickerOpen} onClose={() => setLogPickerOpen(false)}
+            hobbies={data.hobbies} activeHobbyId={activeHobby}
+            onAction={nlLogAction} onOpenHobby={(e) => nlOpenEntry(e)} HobbyIcon={HobbyIcon}
+          />
+          <UndoHost />
+          <HobbySwitcherSheet
+            open={switcherOpen} onClose={() => setSwitcherOpen(false)}
+            hobbies={data.hobbies} activeKey={activeEntry ? activeEntry.key : null}
+            onPick={(e) => nlOpenEntry(e, { stayOnStats: true })}
+            onManage={() => { setSwitcherOpen(false); setModal({ type: "manageHobbies" }); }}
+            HobbyIcon={HobbyIcon}
+          />
+        </>
+      ) : (<>
       {/* BOTTOM NAV — 5 tabs, compact layout */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
@@ -6090,6 +6342,7 @@ useNativeBackButton(React.useCallback(() => {
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
       </nav>
+      </>)}
 
       {/* MODALS */}
       <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} onFreshStart={() => setData(defaultData())} /* GARDEN_GRID_SCOPE_FIX */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
@@ -14092,6 +14345,22 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         }}
       />
 
+      {/* NEW_LOOK (3.0) preview switch — on this device only. */}
+      <SectionBtn
+        icon={Sparkles}
+        label="Try the new look (preview)"
+        sub="See the redesign we're building. Switch back anytime from More."
+        accent={palette.yolk}
+        onClick={() => { onClose(); setTimeout(() => window.dispatchEvent(new CustomEvent("henalytics-newlook", { detail: true })), 0); }}
+      />
+      <SectionBtn
+        icon={Sparkles}
+        label="Show the new look tour again"
+        sub="The welcome screens and the three tips"
+        accent={palette.leaf}
+        onClick={() => { update((d) => { d.newLookWelcomeSeen = false; d.newLookTips = {}; return d; }); onClose(); }}
+      />
+
       <SectionBtn
         icon={Lightbulb}
         label="What's new 🌾"
@@ -20610,6 +20879,18 @@ function CloseOutCropsModal({ hobbyId, data, update, setModal, onClose }) {
 }
 
 // ============ LOG MODAL (DIFFERENT BY ACTION) ============
+// NEW_LOOK: the Undo bar's words after a log is saved.
+function undoMessage(action, f, hobby) {
+  const n = Number(f && f.count) || 0;
+  const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  if ((action === "eggs" || action === "eggs_laid") && n) return `Saved ${plural(n, "egg", "eggs")}`;
+  if (action === "sold_eggs" && n) return `Saved: sold ${plural(n, "egg", "eggs")}`;
+  if (action === "used_eggs" && n) return `Saved: used ${plural(n, "egg", "eggs")}`;
+  if (action === "harvested" && f && f.plant) return `Saved: ${String(f.plant).toLowerCase()} harvest`;
+  const words = { fed: "feeding", watered: "watering", note: "note", bedding: "bedding", broody: "broody hen", death: "loss", move_tractor: "tractor move", planted: "planting" };
+  return `Saved ${words[action] ? "the " + words[action] : "it"}`;
+}
+
 function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry, onPlanted }) {
   const isEdit = !!existingEntry;
 
@@ -20831,7 +21112,20 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       }
     }
 
+    // NEW_LOOK undo: what this hobby looked like before the save, so "Undo"
+    // can put back the entry AND its side effects (flock size, broody flags,
+    // egg counts on hand, garden annuals) exactly.
+    let undoSnap = null;
     update((d) => {
+      if (!isEdit) {
+        const hb = d.hobbies.find((x) => x.id === hobby.id);
+        undoSnap = {
+          hobby: hb ? JSON.parse(JSON.stringify(hb)) : null,
+          entries: JSON.parse(JSON.stringify(d.entries[hobby.id] || [])),
+          sales: new Set((d.sales || []).map((x) => x && x.id)),
+          expenses: new Set((d.expenses || []).map((x) => x && x.id)),
+        };
+      }
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const entry = {
         id: entryId,
@@ -21138,6 +21432,17 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       return d;
     });
     onClose();
+    if (!isEdit && undoSnap) {
+      const snap = undoSnap;
+      showUndo(undoMessage(action, cleanFields, hobby), () => update((d) => {
+        const i = d.hobbies.findIndex((x) => x.id === hobby.id);
+        if (i !== -1 && snap.hobby) d.hobbies[i] = snap.hobby;
+        d.entries[hobby.id] = snap.entries;
+        if (Array.isArray(d.sales)) d.sales = d.sales.filter((x) => !x || snap.sales.has(x.id));
+        if (Array.isArray(d.expenses)) d.expenses = d.expenses.filter((x) => !x || snap.expenses.has(x.id));
+        return d;
+      }));
+    }
     // Seed box follow-up for new garden plantings (see SeedUseModal).
     if (!isEdit && action === "planted" && cleanFields.plant && onPlanted) onPlanted(String(cleanFields.plant));
   };
