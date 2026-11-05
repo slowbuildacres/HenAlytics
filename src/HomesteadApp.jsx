@@ -5386,7 +5386,24 @@ useNativeBackButton(React.useCallback(() => {
   const nlRecap = newLook && ["dash", "more", "supporter"].includes(page) ? recapInfo(data, nlRecapKey, page === "supporter") : { ready: false, teaser: null };
   const nlRecapState = (data.monthlyRecaps && data.monthlyRecaps[nlRecapKey]) || {};
   const nlRecapFresh = isSupporter && nlRecap.ready && !nlRecapState.seenAt;
+  // The December Wrapped, first in line on Home from Dec 1 to Jan 15 (the
+  // old look showed a Christmas banner on every page instead).
+  const nlWrapped = newLook && wrappedYearNow && page === "dash" ? (() => {
+    const w = (data.wrapped && data.wrapped[wrappedYearNow]) || {};
+    if (w.bannerDismissed) return null;
+    const y = String(wrappedYearNow);
+    const logs = Object.values(data.entries || {}).reduce((n, arr) => n + (Array.isArray(arr) ? arr.filter((e) => e && String(e.date || "").startsWith(y)).length : 0), 0);
+    return logs >= 5 ? { seen: !!w.seenAt } : null;
+  })() : null;
   const nlNotices = newLook ? [
+    nlWrapped && {
+      key: "wrapped", icon: "gift",
+      title: nlWrapped.seen ? `Share your ${wrappedYearNow} Wrapped` : `Your ${wrappedYearNow} Homestead Wrapped is here`,
+      sub: nlWrapped.seen ? "Post it to your story or send it to family. It makes a sweet Christmas card." : "Your year in eggs, harvests and more, wrapped up with a bow.",
+      action: nlWrapped.seen ? "Open my Wrapped" : "Unwrap it",
+      onAction: () => setModal({ type: "wrapped", year: wrappedYearNow }),
+      onDismiss: () => update((d) => { d.wrapped = { ...(d.wrapped || {}) }; d.wrapped[wrappedYearNow] = { ...(d.wrapped[wrappedYearNow] || {}), bannerDismissed: true }; return d; }),
+    },
     nlRecapFresh && !nlRecapState.dismissed && new Date().getDate() <= 10 && {
       key: "monthlyRecap", icon: "gift", title: `Your ${monthName(nlRecapKey)} Wrapped is ready`,
       sub: "Your month on the homestead as a story, ready to share.",
@@ -6352,7 +6369,7 @@ useNativeBackButton(React.useCallback(() => {
             })}
           />
         )}
-        {wrappedYearNow && WRAPPED_BANNER_PAGES.includes(page) && (
+        {wrappedYearNow && !newLook && WRAPPED_BANNER_PAGES.includes(page) && (
           <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
         {page === "home" && !(newLook && (nlRebuilt || nlGarden || nlMeat)) && (
