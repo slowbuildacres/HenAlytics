@@ -22,6 +22,9 @@
 // ============================================================================
 
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -779,7 +782,7 @@ function TinctureModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function TincturePage({ hobby, data, update, setModal }) {
+export default function TincturePage({ hobby, data, update, setModal, nl = null }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
@@ -791,6 +794,45 @@ export default function TincturePage({ hobby, data, update, setModal }) {
   const infusing = active.filter(b => b.status === "infusing");
   const ready = active.filter(b => b.status === "ready");
   const bottled = active.filter(b => b.status === "bottled");
+
+  if (nl) {
+    const minDays = (b) => b.menstruum && (b.menstruum.includes("vinegar") || b.menstruum.includes("glycerin") || b.menstruum.includes("Glycerite")) ? 14 : 28;
+    const going = active.filter((b) => b.status === "infusing" || b.status === "ready").map((b) => {
+      const day = daysSince(b.startDate);
+      const min = minDays(b);
+      if (b.status === "ready") return { id: b.id, title: b.name || "Tincture", onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: `Strained ${fmtDate(b.readyDate)}${b.totalYieldOz ? ` · ${b.totalYieldOz} oz` : ""}`, badge: { tone: "ready", text: "Ready to bottle" },
+        actions: [{ label: "Bottle it", primary: true, run: () => setLocalModal({ type: "bottle", batchId: b.id }) }] };
+      return { id: b.id, title: b.name || "Tincture", onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [`Day ${day} of about ${min}`, `ready around ${fmtDate(addDaysIso(b.startDate, min))}`].join(" · "), pct: (day / min) * 100,
+        badge: day >= min ? { tone: "ready", text: "Ready to strain" } : null,
+        actions: [{ label: "Strain", primary: day >= min, run: () => setLocalModal({ type: "strain", batchId: b.id }) }] };
+    });
+    const bottled = active.filter((b) => b.status === "bottled");
+    const left = bottled.reduce((s, b) => s + (Number(b.bottlesRemaining) || 0), 0);
+    const ctx = {
+      key: "tincture", tabs: nl.tabs,
+      summary: { big: left, small: `bottle${left === 1 ? "" : "s"} on the shelf`, line: going.length ? `${going.length} infusing` : "" },
+      newLabel: "Start a batch", onNew: () => setLocalModal({ type: "addBatch" }),
+      goingTitle: "Infusing", going,
+      shelfTitle: "Bottled", shelfEmpty: "Nothing bottled yet. Strain and bottle a batch and it shows up here.",
+      shelf: bottled.map((b) => ({ id: b.id, title: b.name || "Tincture", left: Number(b.bottlesRemaining) || 0, unit: "bottles", onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [`${Number(b.bottlesRemaining) || 0} of ${b.bottlesMade || 0} × ${b.bottleSize || "1oz"}`, b.bottledDate ? `bottled ${fmtDate(b.bottledDate)}` : null].filter(Boolean).join(" · "),
+        actions: [...((Number(b.bottlesRemaining) || 0) > 0 ? [{ label: "Sell or use", run: () => setLocalModal({ type: "sell", batchId: b.id }) }] : []), { label: "Edit bottling", run: () => setLocalModal({ type: "bottle", batchId: b.id }) }] })),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Tincture", sub: [b.bottledDate ? `bottled ${fmtDate(b.bottledDate)}` : `started ${fmtDate(b.startDate)}`, b.bottlesMade ? `${b.bottlesMade} bottles` : null].filter(Boolean).join(" · "), onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }) })),
+      extras: [
+        { key: "expense", label: "Expense", sub: "Herbs, bottles, labels", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        <TinctureModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -864,6 +906,31 @@ export default function TincturePage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: batches started, bottles made and sold, favorite herbs.
+export function tinctureStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.startDate));
+  const made = bs.reduce((s, b) => s + (Number(b.bottlesMade) || 0), 0);
+  const sold = bs.reduce((s, b) => s + Math.max(0, (Number(b.bottlesMade) || 0) - (Number(b.bottlesRemaining) || 0)), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "tincture" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const by = new Map(); for (const b of bs) { const k = String(b.herb || b.name || "Tincture").trim(); by.set(k, (by.get(k) || 0) + (Number(b.bottlesMade) || 1)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} bottle${v === 1 ? "" : "s"}` }));
+  const facts = [];
+  if (made >= 4) facts.push({ key: "made", icon: "drop", big: String(made), line: "bottles made by hand", title: `${made} bottles made by hand`, sub: `From ${bs.length} batch${bs.length === 1 ? "" : "es"}.` });
+  if (rows.length > 1 && rows[0].value >= 2) facts.push({ key: "top", icon: "leaf", big: rows[0].name, line: "our most-used herb", title: `Most made: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Batches", value: bs.length, sub: `${made} bottles made` },
+      { label: revenue ? "Sold" : "Gone", value: revenue ? `$${revenue.toFixed(2)}` : sold, sub: revenue ? `${sold} bottles` : "Sold or used" },
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: made ? `$${(cost / made).toFixed(2)} a bottle` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By herb", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🌿", kicker: "Our apothecary",
+  };
+}
+
 export function TinctureAnalytics({ hobby, entries, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const sales = []; // sales data lives on data.sales; analytics aggregates from hobby.batches.events

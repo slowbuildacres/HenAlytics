@@ -23,6 +23,9 @@
 // ============================================================================
 
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -503,7 +506,7 @@ function TeaModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function TeaPage({ hobby, data, update, setModal }) {
+export default function TeaPage({ hobby, data, update, setModal, nl = null }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
@@ -523,6 +526,36 @@ export default function TeaPage({ hobby, data, update, setModal }) {
     const made = b.packaging === "bulk" ? (b.totalWeightOz || 0) : (b.sachetsMade || 0);
     return remaining <= 0 && made > 0;
   });
+
+  if (nl) {
+    const archived = batches.filter((b) => b.archived);
+    const bulk = (b) => b.packaging === "bulk";
+    const leftOf = (b) => (bulk(b) ? Number(b.bulkRemainingOz) || 0 : Number(b.sachetsRemaining) || 0);
+    const sachets = active.filter((b) => !bulk(b)).reduce((s, b) => s + leftOf(b), 0);
+    const oz = active.filter(bulk).reduce((s, b) => s + leftOf(b), 0);
+    const ctx = {
+      key: "tea", tabs: nl.tabs,
+      summary: { big: sachets || `${Math.round(oz)} oz`, small: sachets ? `sachet${sachets === 1 ? "" : "s"} on the shelf` : "of loose tea on the shelf", line: sachets && oz ? `plus ${Math.round(oz)} oz loose` : active.length ? `${active.length} blend${active.length === 1 ? "" : "s"}` : "" },
+      newLabel: "Make a blend", onNew: () => setLocalModal({ type: "addBatch" }),
+      shelfTitle: "Blends", shelfEmpty: "No blends yet. Make one and it shows up here.",
+      shelf: active.map((b) => ({ id: b.id, title: b.name || "Tea blend", left: Math.round(leftOf(b)), unit: bulk(b) ? "oz" : "sachets",
+        onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [bulk(b) ? `${Math.round(leftOf(b))} of ${b.totalWeightOz || 0} oz loose` : `${leftOf(b)} of ${b.sachetsMade || 0} × ${b.sachetSize || "sachet"}`, b.madeDate ? `made ${fmtDate(b.madeDate)}` : null, b.ingredients ? String(b.ingredients).slice(0, 50) : null].filter(Boolean).join(" · "),
+        actions: leftOf(b) > 0 ? [{ label: "Sell or use", run: () => setLocalModal({ type: "sell", batchId: b.id }) }] : [] })),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Tea blend", sub: `made ${fmtDate(b.madeDate)}`, onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }) })),
+      extras: [
+        { key: "expense", label: "Expense", sub: "Herbs, tins, labels", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        <TeaModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -588,6 +621,30 @@ export default function TeaPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: blends made, sachets and loose tea, sold.
+export function teaStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.madeDate));
+  const sachets = bs.reduce((s, b) => s + (Number(b.sachetsMade) || 0), 0);
+  const oz = bs.reduce((s, b) => s + (Number(b.totalWeightOz) || 0), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "tea" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const rows = bs.map((b) => ({ key: b.id, name: b.name || "Blend", value: Number(b.totalWeightOz) || Number(b.sachetsMade) || 0, label: b.packaging === "bulk" ? `${b.totalWeightOz || 0} oz` : `${b.sachetsMade || 0} sachets` })).sort((a, b) => b.value - a.value).slice(0, 8);
+  const facts = [];
+  if (sachets >= 10) facts.push({ key: "cups", icon: "drop", big: String(sachets), line: "cups of tea from our blends", title: `${sachets} cups of tea`, sub: "One sachet, one cup." });
+  if (oz >= 4) facts.push({ key: "oz", icon: "leaf", big: `${Math.round(oz)} oz`, line: "of loose tea blended", title: `${Math.round(oz)} oz of tea blended`, sub: `About ${Math.round(oz * 14)} cups at 2 g a cup.` });
+  return {
+    cards: [
+      { label: "Blends", value: bs.length, sub: [sachets ? `${sachets} sachets` : null, oz ? `${Math.round(oz)} oz` : null].filter(Boolean).join(" · ") || "" },
+      ...(revenue ? [{ label: "Sold", value: `$${revenue.toFixed(2)}`, sub: "Tea sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: "Herbs and packaging" }] : []),
+    ],
+    bars: rows.length ? { title: "Your blends", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🍵", kicker: "Our apothecary",
+  };
+}
+
 export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;

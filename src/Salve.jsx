@@ -21,6 +21,9 @@
 // ============================================================================
 
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -480,7 +483,7 @@ function SalveModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function SalvePage({ hobby, data, update, setModal }) {
+export default function SalvePage({ hobby, data, update, setModal, nl = null }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
@@ -490,6 +493,34 @@ export default function SalvePage({ hobby, data, update, setModal }) {
   const available = active.filter(b => (b.tinsRemaining || 0) > 0);
   const soldOut = active.filter(b => (b.tinsRemaining || 0) <= 0 && (b.tinsMade || 0) > 0);
   const noInventory = active.filter(b => (b.tinsMade || 0) === 0);
+
+  if (nl) {
+    const archived = batches.filter((b) => b.archived);
+    const left = active.reduce((s, b) => s + (Number(b.tinsRemaining) || 0), 0);
+    const ctx = {
+      key: "salve", tabs: nl.tabs,
+      summary: { big: left, small: `tin${left === 1 ? "" : "s"} on the shelf`, line: active.length ? `${active.length} batch${active.length === 1 ? "" : "es"}` : "" },
+      newLabel: "Pour a batch", onNew: () => setLocalModal({ type: "addBatch" }),
+      shelfTitle: "On the shelf", shelfEmpty: "No salves yet. Pour a batch and the tins show up here.",
+      shelf: active.slice().sort((a, b) => (Number(b.tinsRemaining) || 0) - (Number(a.tinsRemaining) || 0)).map((b) => ({ id: b.id, title: b.name || "Salve", left: Number(b.tinsRemaining) || 0, unit: "tins",
+        onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [`${Number(b.tinsRemaining) || 0} of ${b.tinsMade || 0} × ${b.tinSize || "tin"}`, b.pouredDate ? `poured ${fmtDate(b.pouredDate)}` : null, b.infusedOilUsed || null].filter(Boolean).join(" · "),
+        badge: (Number(b.tinsRemaining) || 0) <= 0 && (b.tinsMade || 0) > 0 ? { tone: "quiet", text: "Sold out" } : null,
+        actions: (Number(b.tinsRemaining) || 0) > 0 ? [{ label: "Sell or use", run: () => setLocalModal({ type: "sell", batchId: b.id }) }] : [] })),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Salve", sub: `${b.tinsMade || 0} tins · poured ${fmtDate(b.pouredDate)}`, onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }) })),
+      extras: [
+        { key: "expense", label: "Expense", sub: "Herbs, tins, labels", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        <SalveModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -561,6 +592,30 @@ export default function SalvePage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: batches poured, tins made and sold.
+export function salveStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.pouredDate));
+  const made = bs.reduce((s, b) => s + (Number(b.tinsMade) || 0), 0);
+  const gone = bs.reduce((s, b) => s + Math.max(0, (Number(b.tinsMade) || 0) - (Number(b.tinsRemaining) || 0)), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "salve" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const by = new Map(); for (const b of bs) { const k = String(b.recipe || b.name || "Salve").trim(); by.set(k, (by.get(k) || 0) + (Number(b.tinsMade) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} tins` }));
+  const facts = [];
+  if (made >= 6) facts.push({ key: "made", icon: "jar", big: String(made), line: "tins of salve made by hand", title: `${made} tins of salve`, sub: `From ${bs.length} batch${bs.length === 1 ? "" : "es"}.` });
+  return {
+    cards: [
+      { label: "Tins made", value: made, sub: `${bs.length} batch${bs.length === 1 ? "" : "es"}` },
+      { label: revenue ? "Sold" : "Gone", value: revenue ? `$${revenue.toFixed(2)}` : gone, sub: revenue ? `${gone} tins` : "Sold or used" },
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: made ? `$${(cost / made).toFixed(2)} a tin` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🌿", kicker: "Our apothecary",
+  };
+}
+
 export function SalveAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;

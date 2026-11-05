@@ -184,16 +184,16 @@ import { PantryStatsPage } from "./newlook/pantry/PantryScreens.jsx";
 import FreezeDryingPage, { FreezeDryingAnalytics, freezeDryingStats } from "./FreezeDrying.jsx";
 import DehydratingPage, { DehydratingAnalytics, dehydratingStats } from "./Dehydrating.jsx";
 import FermentationPage, { FermentationAnalytics, fermentationStats } from "./Fermentation.jsx";
-import TincturePage, { TinctureAnalytics } from "./Tincture.jsx";
+import TincturePage, { TinctureAnalytics, tinctureStats } from "./Tincture.jsx";
 import CelebrationCard, {
   defaultCelebrationState, migrateCelebrationState,
   detectCelebrations, getCelebrationById, isReviewWorthy, celebrationHobby,
   ObservationCard, defaultObservationState, migrateObservationState,
   detectObservations, snoozeObservationUntil, observationHobby,
 } from "./Suggestions.jsx";
-import OilInfusionPage, { OilInfusionAnalytics } from "./OilInfusion.jsx";
-import SalvePage, { SalveAnalytics } from "./Salve.jsx";
-import TeaPage, { TeaAnalytics } from "./Tea.jsx";
+import OilInfusionPage, { OilInfusionAnalytics, oilInfusionStats } from "./OilInfusion.jsx";
+import SalvePage, { SalveAnalytics, salveStats } from "./Salve.jsx";
+import TeaPage, { TeaAnalytics, teaStats } from "./Tea.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
 import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
@@ -5184,6 +5184,10 @@ useNativeBackButton(React.useCallback(() => {
     freeze_drying: { Page: FreezeDryingPage, stats: freezeDryingStats, shelf: "Stored", all: "All the numbers: runs, output, costs" },
     dehydrating: { Page: DehydratingPage, stats: dehydratingStats, shelf: "Stored", all: "All the numbers: batches, output, costs" },
     fermentation: { Page: FermentationPage, stats: fermentationStats, shelf: "Ferments", all: "All the numbers: ferments, recipes, costs" },
+    tincture: { Page: TincturePage, stats: tinctureStats, shelf: "Shelf", all: "All the numbers: batches, bottles, sales" },
+    oil_infusion: { Page: OilInfusionPage, stats: oilInfusionStats, shelf: "Shelf", all: "All the numbers: batches, bottles, sales" },
+    salve: { Page: SalvePage, stats: salveStats, shelf: "Shelf", all: "All the numbers: batches, tins, sales" },
+    tea: { Page: TeaPage, stats: teaStats, shelf: "Blends", all: "All the numbers: blends, sales" },
   };
   const nlPantryCfg = newLook && hobby ? NL_PANTRY[hobby.type] : null;
   const nlPantryGroup = hobby && PRESERVING_TYPES.includes(hobby.type) ? PRESERVING_TYPES : hobby && HERBAL_TYPES.includes(hobby.type) ? HERBAL_TYPES : null;
@@ -6268,12 +6272,13 @@ useNativeBackButton(React.useCallback(() => {
           <PantryStatsPage hobby={hobby} data={data} setModal={setModal} statsFn={nlPantryCfg.stats} tabs={nlPantryTabs} allLabel={nlPantryCfg.all}
             allNumbers={nlPantryGroup === PRESERVING_TYPES
               ? <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+              : nlPantryGroup === HERBAL_TYPES ? <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
               : nlPantryCfg.analytics ? nlPantryCfg.analytics() : null} />
         )}
         {page === "analytics" && !nlPantryCfg && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
           <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
+        {page === "analytics" && !nlPantryCfg && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "analytics" && !(newLook && (nlRebuilt || nlGarden || nlMeat)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
@@ -6476,16 +6481,16 @@ useNativeBackButton(React.useCallback(() => {
         {page === "fermentation" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="fermentation" />
         )}
-        {page === "tincture" && (
+        {page === "tincture" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tincture" />
         )}
-        {page === "oil_infusion" && (
+        {page === "oil_infusion" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="oil_infusion" />
         )}
-        {page === "salve" && (
+        {page === "salve" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="salve" />
         )}
-        {page === "tea" && (
+        {page === "tea" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tea" />
         )}
         {newLook && nlSheep && (page === "sheep" || page === "analytics") && (
