@@ -30,19 +30,19 @@ function Dots({ step }) {
   );
 }
 
-const cta = {
-  width: "100%", minHeight: 54, borderRadius: 16, border: "none", background: nl.yolk, color: nl.ink,
+const cta = () => ({
+  width: "100%", minHeight: 54, borderRadius: 16, border: "none", background: nl.yolk, color: nl.onYolk,
   font: `700 16px ${font.body}`, cursor: "pointer",
-};
-const linkBtn = {
+});
+const linkBtn = () => ({
   background: "none", border: "none", minHeight: 40, cursor: "pointer", color: nl.good, font: `600 15px ${font.body}`,
-};
-const field = {
+});
+const field = () => ({
   width: "100%", minHeight: 54, boxSizing: "border-box", borderRadius: 14, border: `1.5px solid ${nl.ink}`,
   background: nl.card, padding: "0 16px", font: `500 17px ${font.body}`, color: nl.ink,
-};
-const h1 = { margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: 32, lineHeight: 1.1, color: nl.ink };
-const lead = { fontSize: 15, lineHeight: 1.45, color: nl.soft, margin: 0 };
+});
+const h1 = () => ({ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: 32, lineHeight: 1.1, color: nl.ink });
+const lead = () => ({ fontSize: 15, lineHeight: 1.45, color: nl.soft, margin: 0 });
 
 function zoneFor(loc) {
   try {
@@ -108,18 +108,18 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
             <div style={{ width: 88, height: 88, borderRadius: 26, background: nl.yolkTint, display: "flex", alignItems: "center", justifyContent: "center", marginTop: 40 }}>
               <Sprout size={48} strokeWidth={1.6} aria-hidden="true" />
             </div>
-            <h1 style={{ ...h1, fontSize: 36, marginTop: 10 }}>Welcome to Henalytics</h1>
-            <p style={{ ...lead, fontSize: 16 }}>Your animals, garden and kitchen, all in one place. Free for every homestead.</p>
+            <h1 style={{ ...h1(), fontSize: 36, marginTop: 10 }}>Welcome to Henalytics</h1>
+            <p style={{ ...lead(), fontSize: 16 }}>Your animals, garden and kitchen, all in one place. Free for every homestead.</p>
             <label htmlFor="nl-hs-name" style={{ marginTop: 18, fontSize: 14, fontWeight: 600 }}>What do you call your place?</label>
-            <input id="nl-hs-name" style={field} value={name} onChange={(e) => setName(e.target.value)} placeholder="Slow Build Acres" autoComplete="off" />
-            <p style={{ ...lead, fontSize: 13, marginTop: -6 }}>Shows on your home screen. Change it anytime.</p>
+            <input id="nl-hs-name" style={field()} value={name} onChange={(e) => setName(e.target.value)} placeholder="Slow Build Acres" autoComplete="off" />
+            <p style={{ ...lead(), fontSize: 13, marginTop: -6 }}>Shows on your home screen. Change it anytime.</p>
           </>
         )}
 
         {step === 1 && (
           <>
-            <h1 style={h1}>What do you keep?</h1>
-            <p style={lead}>Pick as many as you like. You can add more later.</p>
+            <h1 style={h1()}>What do you keep?</h1>
+            <p style={lead()}>Pick as many as you like. You can add more later.</p>
             {all.map((g) => (
               <div key={g.key}>
                 <div style={{ fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase", color: nl.soft, fontWeight: 600, margin: "4px 2px 8px" }}>{g.label}</div>
@@ -146,20 +146,20 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
 
         {step === 2 && (
           <>
-            <h1 style={h1}>Where's your homestead?</h1>
-            <p style={lead}>For frost alerts, planting dates and your growing zone. Only your town is saved.</p>
-            <button type="button" onClick={useMine} disabled={busy} style={{ ...cta, background: "transparent", border: `1.5px solid ${nl.ink}`, font: `600 16px ${font.body}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8 }}>
+            <h1 style={h1()}>Where's your homestead?</h1>
+            <p style={lead()}>For frost alerts, planting dates and your growing zone. Only your town is saved.</p>
+            <button type="button" onClick={useMine} disabled={busy} style={{ ...cta(), background: "transparent", border: `1.5px solid ${nl.ink}`, font: `600 16px ${font.body}`, display: "flex", alignItems: "center", justifyContent: "center", gap: 8, marginTop: 8 }}>
               <MapPin size={20} strokeWidth={2} aria-hidden="true" />Use my location
             </button>
             <div style={{ display: "flex", alignItems: "center", gap: 10, color: nl.soft, fontSize: 13 }}>
               <span style={{ flex: 1, height: 1, background: nl.line }} />or<span style={{ flex: 1, height: 1, background: nl.line }} />
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input aria-label="Town or ZIP code" style={{ ...field, flex: 1 }} value={place} placeholder="Town or ZIP code"
+              <input aria-label="Town or ZIP code" style={{ ...field(), flex: 1 }} value={place} placeholder="Town or ZIP code"
                 onChange={(e) => { setPlace(e.target.value); setLoc(null); }} onKeyDown={(e) => { if (e.key === "Enter") lookUp(); }} />
               <button type="button" onClick={lookUp} disabled={busy || !place.trim()} style={{ minHeight: 54, padding: "0 16px", borderRadius: 14, border: "none", background: nl.ink, color: nl.paper, font: `600 15px ${font.body}`, cursor: "pointer", opacity: place.trim() ? 1 : 0.5 }}>Find</button>
             </div>
-            {err && <p role="alert" style={{ ...lead, color: "#8E3420" }}>{err}</p>}
+            {err && <p role="alert" style={{ ...lead(), color: nl.alertInk }}>{err}</p>}
             {loc && (
               <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 20, padding: "14px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
                 <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -179,11 +179,11 @@ export default function SetupFlow({ hobbies, onSignIn, onFinish }) {
 
         <div style={{ marginTop: "auto", paddingTop: 20, display: "flex", flexDirection: "column", gap: 12, paddingBottom: "env(safe-area-inset-bottom)" }}>
           <Dots step={step} />
-          {step === 0 && <button type="button" style={cta} onClick={() => setStep(1)}>Continue</button>}
-          {step === 1 && <button type="button" style={{ ...cta, opacity: picked.size ? 1 : 0.5 }} disabled={!picked.size} onClick={() => setStep(2)}>{picked.size ? `Continue with ${picked.size}` : "Pick at least one"}</button>}
-          {step === 2 && <button type="button" style={cta} onClick={() => finish(true)}>Start my homestead</button>}
-          {step === 0 && <button type="button" style={linkBtn} onClick={onSignIn}>I already have an account</button>}
-          {step === 2 && <button type="button" style={{ ...linkBtn, color: nl.soft }} onClick={() => finish(false)}>Skip for now</button>}
+          {step === 0 && <button type="button" style={cta()} onClick={() => setStep(1)}>Continue</button>}
+          {step === 1 && <button type="button" style={{ ...cta(), opacity: picked.size ? 1 : 0.5 }} disabled={!picked.size} onClick={() => setStep(2)}>{picked.size ? `Continue with ${picked.size}` : "Pick at least one"}</button>}
+          {step === 2 && <button type="button" style={cta()} onClick={() => finish(true)}>Start my homestead</button>}
+          {step === 0 && <button type="button" style={linkBtn()} onClick={onSignIn}>I already have an account</button>}
+          {step === 2 && <button type="button" style={{ ...linkBtn(), color: nl.soft }} onClick={() => finish(false)}>Skip for now</button>}
         </div>
       </div>
     </div>

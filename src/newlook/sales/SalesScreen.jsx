@@ -12,7 +12,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import { DollarSign, Users, Mail, ListOrdered, History, FileText, ChevronLeft, Lightbulb } from "lucide-react";
 import { nl, font, type } from "../theme.js";
-import { Card, CardHeader, Row, Button, ScreenTitle } from "../ui.jsx";
+import { Card, CardHeader, Row, Button, ScreenTitle, Legacy } from "../ui.jsx";
 import HobbyGlyph from "../HobbyGlyph.jsx";
 import { RangeChips } from "../StatsParts.jsx";
 import { showUndo } from "../UndoBar.jsx";
@@ -105,7 +105,7 @@ export default function SalesScreen({ data, update, setModal, onEmailCustomers, 
             {detail === "log" ? "Every sale and expense" : detail === "customers" ? "Customers" : "Sales charts"}
           </h1>
         </div>
-        <SalesPage data={data} update={update} embedded focus={detail} />
+        <Legacy><SalesPage data={data} update={update} embedded focus={detail} /></Legacy>
       </div>
     );
   }

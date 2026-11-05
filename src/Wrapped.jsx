@@ -87,7 +87,7 @@ export function wrappedNumbers(data, year) {
 }
 
 // The "and that's not all" list: whatever else the homestead made this year.
-function moreFacts(s) {
+export function moreFacts(s) {
   const f = [];
   const add = (cond, emoji, big, label) => { if (cond) f.push({ emoji, big, label }); };
   add(s.incubatorEggsHatched > 0, "🐣", int(s.incubatorEggsHatched), plural(s.incubatorEggsHatched, "chick") + " hatched");
@@ -405,7 +405,7 @@ function Snowfall() {
 }
 
 // ---- viewer ------------------------------------------------------------------------
-async function shareFiles(files, { title, text }) {
+export async function shareFiles(files, { title, text }) {
   if (canShareFiles()) {
     try {
       if (!navigator.canShare || navigator.canShare({ files })) {

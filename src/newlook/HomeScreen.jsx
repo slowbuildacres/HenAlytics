@@ -186,11 +186,11 @@ export default function HomeScreen({
           );
         })}
         <button type="button" onClick={onManage} style={{
-          border: `1.5px dashed #B9A88F`, borderRadius: 18, padding: 14, background: "transparent", cursor: "pointer",
+          border: `1.5px dashed ${nl.faint}`, borderRadius: 18, padding: 14, background: "transparent", cursor: "pointer",
           display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
           color: nl.ink, font: "inherit", minHeight: 112,
         }}>
-          <span style={{ width: 36, height: 36, borderRadius: 18, background: nl.yolk, display: "flex", alignItems: "center", justifyContent: "center" }}>
+          <span style={{ width: 36, height: 36, borderRadius: 18, background: nl.yolk, color: nl.onYolk, display: "flex", alignItems: "center", justifyContent: "center" }}>
             <Plus size={20} strokeWidth={2.4} aria-hidden="true" />
           </span>
           <span style={{ fontSize: type.body, fontWeight: 600 }}>Manage hobbies</span>

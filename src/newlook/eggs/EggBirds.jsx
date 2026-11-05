@@ -37,8 +37,8 @@ export function Avatar({ bird, size = 40 }) {
   const initials = String(bird.name || "?").slice(0, 2).toUpperCase();
   return (
     <span style={{
-      width: size, height: size, borderRadius: size / 2, flexShrink: 0, background: url ? `center / cover url(${url})` : "#EADFCB",
-      display: "flex", alignItems: "center", justifyContent: "center", font: `700 ${Math.round(size * 0.35)}px ${font.body}`, color: "#5A4433",
+      width: size, height: size, borderRadius: size / 2, flexShrink: 0, background: url ? `center / cover url(${url})` : nl.avatar,
+      display: "flex", alignItems: "center", justifyContent: "center", font: `700 ${Math.round(size * 0.35)}px ${font.body}`, color: nl.quietInk,
     }}>{url ? null : initials}</span>
   );
 }
@@ -76,7 +76,7 @@ export default function EggBirds({ hobby, data, update, setModal }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {flocks.length > 1 && (
-        <div role="tablist" aria-label="Flocks" style={{ display: "flex", gap: 6, padding: 4, background: "#EDE4D4", borderRadius: 15, overflowX: "auto" }}>
+        <div role="tablist" aria-label="Flocks" style={{ display: "flex", gap: 6, padding: 4, background: nl.well, borderRadius: 15, overflowX: "auto" }}>
           {flocks.map((f) => {
             const on = f.id === flock.id;
             return (

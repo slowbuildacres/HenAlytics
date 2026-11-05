@@ -20,9 +20,9 @@ const MOVES = [
   { icon: BookOpen, what: "Journal and Games", now: "in More", was: "icons at the top" },
 ];
 
-const h1 = { margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: 34, lineHeight: 1.08, color: nl.ink };
-const body = { fontSize: 16, lineHeight: 1.5, color: "#4A3628", margin: 0 };
-const cta = { width: "100%", minHeight: 54, borderRadius: 16, border: "none", background: nl.yolk, color: nl.ink, font: `700 16px ${font.body}`, cursor: "pointer" };
+const h1 = () => ({ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: 34, lineHeight: 1.08, color: nl.ink });
+const body = () => ({ fontSize: 16, lineHeight: 1.5, color: nl.ink, margin: 0 });
+const cta = () => ({ width: "100%", minHeight: 54, borderRadius: 16, border: "none", background: nl.yolk, color: nl.onYolk, font: `700 16px ${font.body}`, cursor: "pointer" });
 
 export function WelcomeNewLook({ onDone }) {
   const [step, setStep] = useState(0);
@@ -40,9 +40,9 @@ export function WelcomeNewLook({ onDone }) {
         {step === 0 && (
           <>
             <span style={{ alignSelf: "flex-start", marginTop: 36, fontSize: 12, fontWeight: 700, letterSpacing: 1, padding: "5px 10px", borderRadius: 999, background: nl.yolkTint, color: nl.yolkInk }}>THE NEW HENALYTICS</span>
-            <h1 style={h1}>Things look a little different</h1>
-            <p style={body}>Henalytics has grown a lot this year. With every new feature it got harder to find things, so I rebuilt the screens to make everything easier to get to.</p>
-            <p style={body}>Your animals, logs and numbers are all exactly where you left them.</p>
+            <h1 style={h1()}>Things look a little different</h1>
+            <p style={body()}>Henalytics has grown a lot this year. With every new feature it got harder to find things, so I rebuilt the screens to make everything easier to get to.</p>
+            <p style={body()}>Your animals, logs and numbers are all exactly where you left them.</p>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
               <span style={{ width: 40, height: 40, borderRadius: 20, background: nl.ink, color: nl.paper, display: "flex", alignItems: "center", justifyContent: "center", font: `700 14px ${font.body}` }}>RL</span>
               <div><div style={{ fontWeight: 600 }}>Riley</div><div style={{ fontSize: 13, color: nl.soft }}>Made in Kansas, one feature at a time</div></div>
@@ -59,8 +59,8 @@ export function WelcomeNewLook({ onDone }) {
         )}
         {step === 1 && (
           <>
-            <h1 style={h1}>Where things moved</h1>
-            <p style={{ ...body, fontSize: 15, color: nl.soft }}>Nothing was removed. A few things just have a new home.</p>
+            <h1 style={h1()}>Where things moved</h1>
+            <p style={{ ...body(), fontSize: 15, color: nl.soft }}>Nothing was removed. A few things just have a new home.</p>
             <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 20, overflow: "hidden" }}>
               {MOVES.map((m, i) => (
                 <div key={m.what} style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderTop: i ? `1px solid ${nl.rule}` : "none" }}>
@@ -76,8 +76,8 @@ export function WelcomeNewLook({ onDone }) {
         )}
         {step === 2 && (
           <>
-            <h1 style={h1}>Logging is two taps</h1>
-            <p style={{ ...body, fontSize: 15, color: nl.soft }}>Tap the yellow Log button, pick a hobby, then pick what you did. Your widgets and the egg counter work just like before.</p>
+            <h1 style={h1()}>Logging is two taps</h1>
+            <p style={{ ...body(), fontSize: 15, color: nl.soft }}>Tap the yellow Log button, pick a hobby, then pick what you did. Your widgets and the egg counter work just like before.</p>
             <div style={{ display: "flex", gap: 12, alignItems: "flex-start", padding: 14, borderRadius: 18, background: nl.goodTint, marginTop: 8 }}>
               <Check size={22} color={nl.goodInk} strokeWidth={2.4} aria-hidden="true" />
               <div><div style={{ fontWeight: 600, color: nl.goodInk }}>Your data didn't change</div><div style={{ fontSize: 14, lineHeight: 1.4, color: nl.goodInk }}>Every egg, harvest and sale you've logged is still here, and syncing works the same.</div></div>
@@ -89,8 +89,8 @@ export function WelcomeNewLook({ onDone }) {
             {[0, 1, 2].map((i) => <span key={i} style={{ width: i === step ? 22 : 8, height: 8, borderRadius: 4, background: i === step ? nl.ink : nl.field }} />)}
           </div>
           {step < 2
-            ? <button type="button" style={cta} onClick={() => setStep(step + 1)}>{step === 0 ? "Show me what moved" : "Next"}</button>
-            : <button type="button" style={cta} onClick={onDone}>Start exploring</button>}
+            ? <button type="button" style={cta()} onClick={() => setStep(step + 1)}>{step === 0 ? "Show me what moved" : "Next"}</button>
+            : <button type="button" style={cta()} onClick={onDone}>Start exploring</button>}
           {step === 0 && <button type="button" onClick={onDone} style={{ background: "none", border: "none", minHeight: 40, cursor: "pointer", color: nl.soft, font: `600 15px ${font.body}` }}>Skip</button>}
           {step === 2 && <span style={{ textAlign: "center", fontSize: 13, color: nl.soft }}>See this again anytime in More › All settings</span>}
         </div>

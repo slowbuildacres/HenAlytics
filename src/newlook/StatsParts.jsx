@@ -9,6 +9,7 @@
 import React, { useState } from "react";
 import { Share2, ChevronDown, Lightbulb } from "lucide-react";
 import { nl, font } from "./theme.js";
+import { Legacy } from "./ui.jsx";
 
 export function RangeChips({ options, value, onPick, label = "Time range" }) {
   return (
@@ -49,7 +50,7 @@ export function FactCarousel({ facts, icons = {}, onShare, label = "Fun facts, s
               )}
             </div>
             <div style={{ fontFamily: font.display, fontSize: 20, lineHeight: 1.15, color: nl.ink }}>{f.title}</div>
-            <div style={{ fontSize: 12, lineHeight: 1.35, color: "#5A4433" }}>{f.sub}</div>
+            <div style={{ fontSize: 12, lineHeight: 1.35, color: nl.quietInk }}>{f.sub}</div>
           </div>
         );
       })}
@@ -84,7 +85,7 @@ export function AllNumbers({ label, children }) {
         {open ? "Hide the detailed numbers" : label}
         <ChevronDown size={16} style={{ transform: open ? "rotate(180deg)" : "none", flexShrink: 0 }} aria-hidden="true" />
       </button>
-      {open && <div>{children}</div>}
+      {open && <Legacy>{children}</Legacy>}
     </>
   );
 }

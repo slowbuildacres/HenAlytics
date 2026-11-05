@@ -111,7 +111,7 @@ export default function EggStats({ hobby, data, setModal, allNumbers }) {
                   }}><Share2 size={16} strokeWidth={2} /></button>
                 </div>
                 <div style={{ fontFamily: font.display, fontSize: 20, lineHeight: 1.15, color: nl.ink }}>{f.title}</div>
-                <div style={{ fontSize: 12, lineHeight: 1.35, color: "#5A4433" }}>{f.sub}</div>
+                <div style={{ fontSize: 12, lineHeight: 1.35, color: nl.quietInk }}>{f.sub}</div>
               </div>
             );
           })}

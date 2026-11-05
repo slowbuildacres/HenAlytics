@@ -66,14 +66,14 @@ export default function YearScreen({ data, year, years, onYear, onBack, wrappedO
 
       <button type="button" onClick={wrappedOpen ? onOpenWrapped : undefined} disabled={!wrappedOpen} style={{
         display: "flex", alignItems: "center", gap: 14, padding: 16, borderRadius: 20, border: "none", textAlign: "left",
-        background: nl.ink, color: nl.paper, cursor: wrappedOpen ? "pointer" : "default", font: "inherit",
+        background: nl.deep, color: nl.onDeep, cursor: wrappedOpen ? "pointer" : "default", font: "inherit",
       }}>
         <span style={{ flex: 1 }}>
-          <span style={{ display: "block", fontSize: 12, letterSpacing: 1.4, textTransform: "uppercase", color: nl.yolk, fontWeight: 600 }}>{wrappedOpen ? "Ready now" : "Opens December 1"}</span>
+          <span style={{ display: "block", fontSize: 12, letterSpacing: 1.4, textTransform: "uppercase", color: nl.accentOnDeep, fontWeight: 600 }}>{wrappedOpen ? "Ready now" : "Opens December 1"}</span>
           <span style={{ display: "block", fontFamily: font.display, fontSize: 22, marginTop: 4 }}>Your Homestead Wrapped</span>
-          <span style={{ display: "block", fontSize: 13, color: "#D8CBB8", marginTop: 2 }}>{wrappedOpen ? `Watch your ${wrappedYear} as a story, then share it` : "Your year as a story to share with family"}</span>
+          <span style={{ display: "block", fontSize: 13, color: nl.onDeepSoft, marginTop: 2 }}>{wrappedOpen ? `Watch your ${wrappedYear} as a story, then share it` : "Your year as a story to share with family"}</span>
         </span>
-        <Gift size={40} color={nl.yolk} strokeWidth={1.6} aria-hidden="true" />
+        <Gift size={40} color={nl.accentOnDeep} strokeWidth={1.6} aria-hidden="true" />
       </button>
 
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>

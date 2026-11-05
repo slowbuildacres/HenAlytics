@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from "react";
 import {
   DollarSign, Sparkles, BookOpen, Trophy, Heart, Home as HomeIcon, MapPin, Settings,
-  Cloud, CloudOff, Image as ImageIcon,
+  Cloud, CloudOff, Image as ImageIcon, Palette,
 } from "lucide-react";
 import { nl, font, type } from "./theme.js";
 import { Card, Row, Badge } from "./ui.jsx";
@@ -40,8 +40,8 @@ export function syncLine({ signedIn, online, status, lastSyncAt, now = Date.now(
 
 export default function MoreScreen({
   data, user, isSupporter, syncStatus, online, lastSyncAt, homesteadSwitcher,
-  onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport,
-  onHobbies, onBarn, onSettings,
+  onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport, supportLine,
+  onHobbies, onBarn, onSettings, onLook, lookName,
 }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const t = setInterval(() => setNow(Date.now()), 30000); return () => clearInterval(t); }, []);
@@ -60,7 +60,7 @@ export default function MoreScreen({
           iconBg="transparent"
           title={name}
           sub={
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: sync.ok ? nl.soft : "#8E3420" }}>
+            <span style={{ display: "inline-flex", alignItems: "center", gap: 5, color: sync.ok ? nl.soft : nl.alertInk }}>
               {sync.ok ? <Cloud size={13} strokeWidth={2} aria-hidden="true" /> : <CloudOff size={13} strokeWidth={2} aria-hidden="true" />}
               {sync.text}
             </span>
@@ -80,14 +80,14 @@ export default function MoreScreen({
 
       <button type="button" onClick={onSupport} style={{
         marginTop: 14, display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", borderRadius: 18,
-        background: nl.ink, color: nl.paper, border: "none", cursor: "pointer", textAlign: "left", font: "inherit",
+        background: nl.deep, color: nl.onDeep, border: "none", cursor: "pointer", textAlign: "left", font: "inherit",
       }}>
         <span style={{ width: 40, height: 40, borderRadius: 20, background: nl.yolk, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
-          <Heart size={20} color={nl.ink} strokeWidth={2} aria-hidden="true" />
+          <Heart size={20} color={nl.onYolk} strokeWidth={2} aria-hidden="true" />
         </span>
         <span style={{ flex: 1 }}>
           <span style={{ display: "block", fontWeight: 600, fontSize: 15 }}>{isSupporter ? "You're a Supporter" : "Support Henalytics"}</span>
-          <span style={{ display: "block", fontSize: 13, color: "#D8CBB8" }}>{isSupporter ? "Thank you for keeping it free" : "Free for every homestead, kept that way by supporters"}</span>
+          <span style={{ display: "block", fontSize: 13, color: nl.onDeepSoft }}>{supportLine || (isSupporter ? "Thank you for keeping it free" : "Free for every homestead, kept that way by supporters")}</span>
         </span>
       </button>
 
@@ -95,6 +95,7 @@ export default function MoreScreen({
       <Card>
         <Row first icon={ic(HomeIcon)} title="Hobbies" sub="Add, hide or customize" onClick={onHobbies} chevron />
         <Row icon={ic(MapPin)} title="Homestead details" sub="Location, zone, farmhands" onClick={onBarn} chevron />
+        {onLook && <Row icon={ic(Palette)} title="Look & app icon" sub={lookName || "Farmhouse"} onClick={onLook} chevron />}
         <Row icon={ic(Settings)} title="All settings" sub="Reminders, units, export, help" onClick={onSettings} chevron />
       </Card>
     </div>

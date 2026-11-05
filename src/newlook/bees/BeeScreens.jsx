@@ -248,7 +248,7 @@ export function BeeHive({ hobby, data, hive, act, onBack }) {
           {[...BEE_ACTIONS.slice(0, 3), { action: "more", label: "More", icon: MoreHorizontal }].map((q) => (
             <button key={q.action} type="button" onClick={() => (q.action === "more" ? setMoreOpen(true) : act.log(q.action, hive.id))} style={{
               flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 0", minHeight: 68,
-              borderRadius: 16, background: q.action === "inspect" ? nl.yolk : nl.card, border: `1px solid ${q.action === "inspect" ? nl.yolk : nl.line}`, cursor: "pointer", color: nl.ink, font: `600 12px ${font.body}`,
+              borderRadius: 16, background: q.action === "inspect" ? nl.yolk : nl.card, border: `1px solid ${q.action === "inspect" ? nl.yolk : nl.line}`, cursor: "pointer", color: q.action === "inspect" ? nl.onYolk : nl.ink, font: `600 12px ${font.body}`,
             }}><q.icon size={22} strokeWidth={1.8} aria-hidden="true" />{q.label}</button>
           ))}
         </div>

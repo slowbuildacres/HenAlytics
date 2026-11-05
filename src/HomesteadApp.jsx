@@ -90,7 +90,11 @@ import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
 import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged } from "./widgetBridge.js";
 // NEW_LOOK (3.0): the redesign, built behind a per-device switch (src/newlook/flag.js).
 import { useNewLook, NEW_LOOK_LAUNCHED } from "./newlook/flag.js";
-import { nl } from "./newlook/theme.js";
+import { nl, LOOKS } from "./newlook/theme.js";
+import { useAppearance } from "./newlook/appearance.js";
+import SupporterScreen from "./newlook/SupporterScreen.jsx";
+import LookScreen from "./newlook/LookScreen.jsx";
+import { MonthlyRecapViewer, recapMonthKey, monthTeaser, monthHasStory, monthName } from "./newlook/MonthlyRecap.jsx";
 import NavBar from "./newlook/NavBar.jsx";
 import LogPicker from "./newlook/LogPicker.jsx";
 import HomeScreen from "./newlook/HomeScreen.jsx";
@@ -99,7 +103,7 @@ import AnnouncementCard from "./newlook/Announcements.jsx";
 import { UndoHost, showUndo } from "./newlook/UndoBar.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
 import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
-import { HobbyTabs } from "./newlook/ui.jsx";
+import { HobbyTabs, Legacy } from "./newlook/ui.jsx";
 import EggToday from "./newlook/eggs/EggToday.jsx";
 import EggBirds from "./newlook/eggs/EggBirds.jsx";
 import EggStats from "./newlook/eggs/EggStats.jsx";
@@ -2394,6 +2398,67 @@ function ToastHost() {
 // message and can try again. The backend is the source of truth for which
 // price they actually get; client-side tier is just a route key.
 // ============================================================================
+// Monthly Wrapped numbers are worth caching: they run Year in Review's math
+// for a month. Keyed by the data object, which changes on every save.
+const _recapCache = { data: null, key: null, ready: false, teaser: null, teaserDone: false };
+function recapInfo(data, key, withTeaser) {
+  if (_recapCache.data !== data || _recapCache.key !== key) {
+    Object.assign(_recapCache, { data, key, ready: monthHasStory(data, key), teaser: null, teaserDone: false });
+  }
+  if (withTeaser && _recapCache.ready && !_recapCache.teaserDone) {
+    try { _recapCache.teaser = monthTeaser(data, key); } catch (_) { _recapCache.teaser = null; }
+    _recapCache.teaserDone = true;
+  }
+  return _recapCache;
+}
+
+// ---- New-look Supporter screen: restore + link a web membership ----------
+// Same steps as SupportModal's buttons, returned as results instead of UI.
+async function supporterStatusNow() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
+    const r = await fetch(apiUrl("/api/supporter-status"), { headers: { "Authorization": `Bearer ${session.access_token}` } });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return j.isSupporter === true;
+  } catch (_) { return false; }
+}
+// "restored" | "none"
+async function restoreSupporter() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    await initIap(session?.user?.id || null);
+  } catch (_) {}
+  let r;
+  try { r = await restorePurchases(); } catch (_) { r = { success: false }; }
+  if (await supporterStatusNow()) {
+    toast("Purchases restored. Your membership is active.");
+    try { window.dispatchEvent(new CustomEvent("henalytics-supporter-claimed")); } catch (_) {}
+    return "restored";
+  }
+  if (r && !r.success && r.error && r.error !== "IAP not initialized") toast(r.error, { kind: "error" });
+  else toast("No App Store or Play purchase found on this device.");
+  return "none";
+}
+// { ok } | { error }
+async function claimWebSupporter(email) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { error: "Please sign in first." };
+    const r = await fetch(apiUrl("/api/claim-supporter"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+      body: JSON.stringify({ email }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { error: j.error || "We couldn't find a membership for that email." };
+    toast("Membership linked. Thank you for supporting Henalytics!");
+    try { window.dispatchEvent(new CustomEvent("henalytics-supporter-claimed")); } catch (_) {}
+    return { ok: true };
+  } catch (_) { return { error: "Something went wrong. Try again in a moment." }; }
+}
+
 const startCheckout = async (tier) => {
   // ---- IAP branch (native iOS/Android) ----
   // Apple's rules require IAP for digital goods sold to iOS users. Even though
@@ -3388,6 +3453,16 @@ useEffect(() => {
   // the safe default (never grants early access it cannot confirm).
   const [earlyAccessConfig, setEarlyAccessConfig] = useState(null);
   const [isSupporter, setIsSupporter] = useState(false);
+  // "unknown" until the server gives a definite answer — the new look keeps a
+  // supporter's chosen colors meanwhile instead of flashing Farmhouse.
+  const [supporterStatus, setSupporterStatus] = useState("unknown");
+  const appearance = useAppearance({ data, enabled: newLook, isSupporter, supporterStatus });
+  // In the new look, every "Support Henalytics" button (announcements, Year
+  // in review, Games, old screens) opens the Supporter screen instead of the
+  // old popup.
+  useEffect(() => {
+    if (newLook && modal && modal.type === "support") { setModal(null); setPage("supporter"); }
+  }, [newLook, modal]);
   const lastEntryCountRef = React.useRef(0);
   // Whether the current user has any supporter row created in the current
   // calendar month. Drives the Tip button visual: outlined heart by default,
@@ -3643,6 +3718,11 @@ useEffect(() => {
   // Re-runs when the signed-in user changes.
   useEffect(() => {
     let cancelled = false;
+    // ?supporter=1 on the dev server previews the Supporter perks.
+    if (import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("supporter") === "1") {
+      setIsSupporter(true); setSupporterStatus("yes");
+      return () => { cancelled = true; };
+    }
     (async () => {
       if (!isSupabaseConfigured) return;
       // Early-access config row.
@@ -3656,7 +3736,7 @@ useEffect(() => {
         if (!cancelled) console.warn("[early-access] config fetch failed:", e);
       }
       // Current supporter status — requires a signed-in user.
-      if (!user) { if (!cancelled) setIsSupporter(false); return; }
+      if (!user) { if (!cancelled) { setIsSupporter(false); if (authReady) setSupporterStatus("no"); } return; }
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) { if (!cancelled) setIsSupporter(false); return; }
@@ -3665,13 +3745,13 @@ useEffect(() => {
         });
         if (!r.ok) { if (!cancelled) setIsSupporter(false); return; }
         const j = await r.json();
-        if (!cancelled) setIsSupporter(j.isSupporter === true);
+        if (!cancelled) { setIsSupporter(j.isSupporter === true); setSupporterStatus(j.isSupporter === true ? "yes" : "no"); }
       } catch (e) {
         if (!cancelled) { console.warn("[early-access] status fetch failed:", e); setIsSupporter(false); }
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, authReady]);
   // ---- Tip button heart ----
   // The nav heart fills red when the user is currently supporting. Two ways
   // to qualify:
@@ -4427,6 +4507,8 @@ useEffect(() => {
       try { sessionStorage.setItem(marker, "1"); } catch (_) {}
       setTimeout(() => {
         setModal({ type: "supporterName" });
+        // Turn the perks (colors, icons, monthly Wrapped) on right away.
+        supporterStatusNow().then((yes) => { if (yes) { setIsSupporter(true); setSupporterStatus("yes"); } });
       }, 2500);
     };
     window.addEventListener("henalytics-iap-success", onIapSuccess);
@@ -4446,7 +4528,7 @@ useEffect(() => {
           const r = await fetch(apiUrl("/api/supporter-status"), {
             headers: { "Authorization": `Bearer ${session.access_token}` },
           });
-          if (r.ok) { const j = await r.json(); setIsSupporter(j.isSupporter === true); }
+          if (r.ok) { const j = await r.json(); setIsSupporter(j.isSupporter === true); setSupporterStatus(j.isSupporter === true ? "yes" : "no"); }
         }
       } catch (_) {}
       setModal({ type: "supporterName" });
@@ -5209,7 +5291,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlTab = page === "dash" ? "home"
     : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
-    : ["more", "sales", "journal", "games", "photos"].includes(page) ? "more"
+    : ["more", "sales", "journal", "games", "photos", "supporter", "look"].includes(page) ? "more"
     : "home";
   const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
   // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
@@ -5247,7 +5329,17 @@ useNativeBackButton(React.useCallback(() => {
     : null;
   // One announcement card on Home instead of popups stacked at launch.
   const nlMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const nlRecapKey = recapMonthKey();
+  const nlRecap = newLook && ["dash", "more", "supporter"].includes(page) ? recapInfo(data, nlRecapKey, page === "supporter") : { ready: false, teaser: null };
+  const nlRecapState = (data.monthlyRecaps && data.monthlyRecaps[nlRecapKey]) || {};
+  const nlRecapFresh = isSupporter && nlRecap.ready && !nlRecapState.seenAt;
   const nlNotices = newLook ? [
+    nlRecapFresh && !nlRecapState.dismissed && new Date().getDate() <= 10 && {
+      key: "monthlyRecap", icon: "gift", title: `Your ${monthName(nlRecapKey)} Wrapped is ready`,
+      sub: "Your month on the homestead as a story, ready to share.",
+      action: "Watch it", onAction: () => setModal({ type: "monthlyRecap", month: nlRecapKey }),
+      onDismiss: () => update((d) => { d.monthlyRecaps = { ...(d.monthlyRecaps || {}) }; d.monthlyRecaps[nlRecapKey] = { ...(d.monthlyRecaps[nlRecapKey] || {}), dismissed: true }; return d; }),
+    },
     showGiveaway && {
       key: "giveaway", icon: "gift", title: GIVEAWAY.headline,
       sub: `Win ${GIVEAWAY.prizes.length > 1 ? "one of " + GIVEAWAY.prizes.length + " prizes" : "a prize"} · free to enter`,
@@ -5308,7 +5400,7 @@ useNativeBackButton(React.useCallback(() => {
       backgroundImage: newLook ? "none" : `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
-      color: sp.ink,
+      color: newLook ? nl.ink : sp.ink,
       paddingBottom: 100,
       paddingTop: (signedOutRemotely || !online) ? "calc(env(safe-area-inset-top) + 56px)" : "env(safe-area-inset-top)",
     }}>
@@ -6099,11 +6191,31 @@ useNativeBackButton(React.useCallback(() => {
             onAccount={() => setModal({ type: isSupabaseConfigured && !user ? "signin" : "renameHomestead" })}
             onSales={() => setPage("sales")} onYear={() => setPage("year")} onJournal={() => setPage("journal")}
             onGames={() => setPage("games")} onPhotos={() => setPage("photos")}
-            onSupport={() => setModal({ type: "support" })}
+            onSupport={() => setPage("supporter")}
+            supportLine={nlRecapFresh ? `${monthName(nlRecapKey)} recap is ready · thank you` : null}
+            lookName={LOOKS[appearance.effectiveLook] ? LOOKS[appearance.effectiveLook].name + (appearance.dark ? ", dark" : "") : "Farmhouse"}
+            onLook={() => setPage("look")}
             onHobbies={() => setModal({ type: "manageHobbies" })}
             onBarn={() => setModal({ type: "barn" })}
             onSettings={() => setModal({ type: "settings" })}
           />
+        )}
+        {newLook && page === "supporter" && (
+          <SupporterScreen
+            isSupporter={isSupporter} recapKey={nlRecapKey} recapReady={nlRecap.ready} recapTeaser={nlRecap.teaser}
+            onBack={() => setPage("more")}
+            onOpenRecap={() => setModal({ type: "monthlyRecap", month: nlRecapKey })}
+            onLook={() => setPage("look")}
+            onCheckout={(tier) => startCheckout(tier)}
+            isIap={isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true}
+            onRestore={restoreSupporter} onManage={() => openManageSubscriptions()} onClaim={claimWebSupporter}
+            onContact={() => openExternalUrl("mailto:slowbuildacres@gmail.com")} onOpenUrl={openExternalUrl}
+          />
+        )}
+        {newLook && page === "look" && (
+          <LookScreen appearance={appearance} isSupporter={appearance.supporterOk} toast={toast}
+            onBack={() => setPage("more")} onSupport={() => setPage("supporter")}
+            onChange={(patch) => update((d) => { d.appearance = { ...(d.appearance || {}), ...patch }; return d; })} />
         )}
         {newLook && isHobbyPage && activeEntry && (
           <div style={{ marginBottom: 12 }}>
@@ -6325,7 +6437,7 @@ useNativeBackButton(React.useCallback(() => {
           } />
         )}
         {page === "photos" && (
-          <PhotoLibraryPage data={data} user={user} />
+          <Legacy><PhotoLibraryPage data={data} user={user} /></Legacy>
         )}
         {page === "year" && !newLook && (
           <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /* STEP3_REVIEW_PROMPT */ />
@@ -6339,12 +6451,12 @@ useNativeBackButton(React.useCallback(() => {
             onOpenHobby={(e) => { setActiveHobby(e.hobby.id); setPage("analytics"); }}
             onYearEndReport={() => setModal({ type: "yearEndReport" })}
           >
-            <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} />
+            <Legacy><YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /></Legacy>
           </YearScreen>
         )}
         {/* HOMESTEAD_GAMES — regional standings hub (trophy icon in header) */}
         {page === "games" && (
-          <GamesHubPage data={data} user={user} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
+          <Legacy><GamesHubPage data={data} user={user} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} /></Legacy>
         )}
         {newLook && nlBees && (page === "bees" || page === "analytics") && (
           <HobbyTabs label="Bee sections"
@@ -6577,10 +6689,10 @@ useNativeBackButton(React.useCallback(() => {
           <SourdoughPage hobby={data.hobbies.find(h=>h.id==="sourdough")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (
-          <CalendarPage data={data} update={update} setModal={setModal} />
+          <Legacy><CalendarPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "journal" && (
-          <JournalPage data={data} update={update} setModal={setModal} />
+          <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "sales" && newLook && (
           <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
@@ -13414,6 +13526,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
   if (modal.type === "support") return <SupportModal onClose={close} />;
+  if (modal.type === "monthlyRecap") return <MonthlyRecapViewer data={data} update={update} monthKey={modal.month} isSupporter={isSupporter} onClose={close} onBecomeSupporter={() => { close(); setPage("supporter"); }} toast={toast} />;
   if (modal.type === "plantScanner") return <PlantScannerModal onClose={close} />;
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
   if (modal.type === "customizeQuickLogs") return <CustomizeQuickLogsModal data={data} update={update} hobbyId={modal.hobbyId} onClose={close} />;
@@ -25631,7 +25744,7 @@ function PhotosModal({ data, user, onClose }) {
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
-          <PhotoLibraryPage data={data} user={user} />
+          <Legacy><PhotoLibraryPage data={data} user={user} /></Legacy>
         </div>
       </div>
     </div>

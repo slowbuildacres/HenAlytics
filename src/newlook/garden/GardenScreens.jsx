@@ -92,7 +92,7 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
         {quick.map((q) => (
           <button key={q.k} type="button" onClick={q.run} style={{
             flex: 1, display: "flex", flexDirection: "column", alignItems: "center", gap: 6, padding: "12px 0", minHeight: 68, borderRadius: 16, cursor: "pointer",
-            background: q.primary ? nl.yolk : nl.card, border: `1px solid ${q.primary ? nl.yolk : nl.line}`, color: nl.ink, font: `600 12px ${font.body}`,
+            background: q.primary ? nl.yolk : nl.card, border: `1px solid ${q.primary ? nl.yolk : nl.line}`, color: q.primary ? nl.onYolk : nl.ink, font: `600 12px ${font.body}`,
           }}><q.I size={22} strokeWidth={1.8} aria-hidden="true" />{q.label}</button>
         ))}
       </div>
@@ -126,14 +126,14 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
         </Card>
       )}
 
-      <div style={{ background: nl.ink, color: nl.paper, borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
-        <button type="button" onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", color: nl.paper, font: "inherit" }}>
-          <span style={{ display: "block", fontFamily: font.display, fontSize: 22, lineHeight: 1.1 }}><span style={{ color: nl.yolk }}>{money0(value)}</span> of food grown</span>
-          <span style={{ display: "block", fontSize: 13, color: "#D8CBB8", marginTop: 2 }}>
+      <div style={{ background: nl.deep, color: nl.onDeep, borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
+        <button type="button" onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", color: nl.onDeep, font: "inherit" }}>
+          <span style={{ display: "block", fontFamily: font.display, fontSize: 22, lineHeight: 1.1 }}><span style={{ color: nl.accentOnDeep }}>{money0(value)}</span> of food grown</span>
+          <span style={{ display: "block", fontSize: 13, color: nl.onDeepSoft, marginTop: 2 }}>
             {hobby.currentSeason ? hobby.currentSeason.name : "This season"}{spent > 0 ? ` · ${value >= spent ? `${money0(value - spent)} ahead of costs` : `${money0(spent - value)} to break even`}` : ""}
           </span>
         </button>
-        <button type="button" aria-label="Share what your garden grew" onClick={() => setModal({ type: "gardenShare", hobbyId: hobby.id })} style={{ width: 44, height: 44, borderRadius: 22, border: "1.5px solid #6B5646", background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.paper }}>
+        <button type="button" aria-label="Share what your garden grew" onClick={() => setModal({ type: "gardenShare", hobbyId: hobby.id })} style={{ width: 44, height: 44, borderRadius: 22, border: `1.5px solid ${nl.onDeepSoft}`, background: "transparent", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.onDeep }}>
           <Share2 size={20} strokeWidth={2} />
         </button>
       </div>
@@ -162,7 +162,7 @@ export function GardenPlants({ hobby, data, setModal, onPlanAnnualConfirm }) {
   };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div role="tablist" aria-label="Plant lists" style={{ display: "flex", gap: 6, padding: 4, background: "#EDE4D4", borderRadius: 15 }}>
+      <div role="tablist" aria-label="Plant lists" style={{ display: "flex", gap: 6, padding: 4, background: nl.well, borderRadius: 15 }}>
         {segs.map(([k, label]) => (
           <button key={k} type="button" role="tab" aria-selected={seg === k} onClick={() => setSeg(k)} style={{
             flex: 1, minHeight: 40, borderRadius: 12, border: "none", cursor: "pointer", padding: "0 6px",
@@ -271,7 +271,7 @@ export function GardenStats({ hobby, data, setModal, spent, allNumbers }) {
                     style={{ width: 32, height: 32, marginLeft: 2, border: "none", borderRadius: 16, background: "rgba(255,253,248,0.6)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.yolkInk }}><Share2 size={16} strokeWidth={2} /></button>
                 </div>
                 <div style={{ fontFamily: font.display, fontSize: 20, lineHeight: 1.15 }}>{f.title}</div>
-                <div style={{ fontSize: 12, lineHeight: 1.35, color: "#5A4433" }}>{f.sub}</div>
+                <div style={{ fontSize: 12, lineHeight: 1.35, color: nl.quietInk }}>{f.sub}</div>
               </div>
             );
           })}

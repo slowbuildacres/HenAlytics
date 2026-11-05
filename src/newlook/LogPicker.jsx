@@ -56,7 +56,7 @@ export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAct
                 display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 6,
                 minHeight: 68, padding: "8px 4px", borderRadius: 16, cursor: "pointer",
                 background: a.primary ? nl.yolk : nl.card, border: `1px solid ${a.primary ? nl.yolk : nl.line}`,
-                color: nl.ink, font: `600 12px ${font.body}`, textAlign: "center",
+                color: a.primary ? nl.onYolk : nl.ink, font: `600 12px ${font.body}`, textAlign: "center",
               }}>
                 <Icon size={22} strokeWidth={1.9} aria-hidden="true" />
                 {a.label}
@@ -68,7 +68,7 @@ export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAct
       {entry && !actions && (
         <button type="button" onClick={() => onOpenHobby(entry)} style={{
           display: "flex", alignItems: "center", gap: 12, width: "100%", marginTop: 12, padding: "14px 16px",
-          borderRadius: 16, background: nl.yolk, border: "none", cursor: "pointer", color: nl.ink, textAlign: "left",
+          borderRadius: 16, background: nl.yolk, border: "none", cursor: "pointer", color: nl.onYolk, textAlign: "left",
           font: `700 15px ${font.body}`,
         }}>
           <span style={{ flex: 1 }}>Open {entry.name} to log</span>

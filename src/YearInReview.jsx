@@ -2396,9 +2396,14 @@ function standingFor(value, band) {
 
 // Exported for games.js (Homestead Games) — single source of truth for the
 // per-year stats both surfaces report.
+// `year` can also be a month ("2026-10") — the supporter monthly recap uses
+// the same numbers as Year in Review, just for one month.
 export function computeStats(data, year) {
   const yearStr = String(year);
   const inYear = (e) => e.date && e.date.startsWith(yearStr);
+  const isMonth = yearStr.length > 4;
+  const periodStart = isMonth ? `${yearStr}-01` : `${yearStr}-01-01`;
+  const periodEnd = isMonth ? `${yearStr}-31` : `${yearStr}-12-31`;
 
   const allEntries = [];
   (data.hobbies || []).forEach((h) => {
@@ -2538,7 +2543,7 @@ export function computeStats(data, year) {
   // only lbs-unit records. topPlants likewise only counts lbs (other units
   // can't be ranked against each other meaningfully).
   const allGardenHarvests = collectGardenHarvests(data, {
-    range: { start: `${yearStr}-01-01`, end: `${yearStr}-12-31` },
+    range: { start: periodStart, end: periodEnd },
   });
   const harvestEntries = allGardenHarvests; // kept name for legacy downstream refs
   const totalHarvestLbs = sumHarvestLbs(allGardenHarvests);
@@ -2638,8 +2643,8 @@ export function computeStats(data, year) {
   const pigCount = (pigsHobby?.animals||[]).length;
 
   // Farmstand — sales for this year tagged as farmstand
-  const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
+  const yearStart = periodStart;
+  const yearEnd = periodEnd;
   const farmstandSales = (data.sales || []).filter(s =>
     s.hobbyType === "farmstand" && s.date >= yearStart && s.date <= yearEnd
   );

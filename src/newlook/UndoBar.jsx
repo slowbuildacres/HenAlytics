@@ -39,14 +39,14 @@ export function UndoHost() {
       position: "fixed", left: 16, right: 16, zIndex: 90, maxWidth: 688, margin: "0 auto",
       bottom: `calc(${NAV_HEIGHT + 12}px + env(safe-area-inset-bottom))`,
       display: "flex", alignItems: "center", gap: 10, padding: "10px 10px 10px 14px", borderRadius: 16,
-      background: nl.ink, color: nl.paper, boxShadow: "0 8px 24px rgba(42,26,18,0.25)", font: `500 15px ${font.body}`,
+      background: nl.deep, color: nl.onDeep, boxShadow: `0 8px 24px ${nl.shadow}`, font: `500 15px ${font.body}`,
     }}>
-      <Check size={18} color={nl.yolk} strokeWidth={2.6} aria-hidden="true" />
+      <Check size={18} color={nl.accentOnDeep} strokeWidth={2.6} aria-hidden="true" />
       <span style={{ flex: 1, minWidth: 0 }}>{item.message}</span>
       {typeof item.onUndo === "function" && (
         <button type="button" onClick={() => { clearTimeout(timer.current); setItem(null); item.onUndo(); }} style={{
           minHeight: 36, padding: "0 14px", borderRadius: 999, border: "none", cursor: "pointer",
-          background: nl.yolk, color: nl.ink, font: `700 14px ${font.body}`,
+          background: nl.yolk, color: nl.onYolk, font: `700 14px ${font.body}`,
         }}>Undo</button>
       )}
     </div>

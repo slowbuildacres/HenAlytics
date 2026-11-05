@@ -8,7 +8,7 @@
 
 import React, { useEffect } from "react";
 import { ChevronRight, X } from "lucide-react";
-import { nl, font, type, radius } from "./theme.js";
+import { nl, font, type, radius, currentLook } from "./theme.js";
 
 export function Card({ children, style, padded = false, onClick, as = "div", ...rest }) {
   const Tag = onClick ? "button" : as;
@@ -80,7 +80,7 @@ export function Button({ kind = "primary", children, onClick, icon, style, small
     opacity: disabled ? 0.5 : 1, boxSizing: "border-box", textDecoration: "none",
   };
   const kinds = {
-    primary: { background: nl.yolk, color: nl.ink, border: "none" },
+    primary: { background: nl.yolk, color: nl.onYolk, border: "none" },
     dark: { background: nl.ink, color: nl.paper, border: "none" },
     outline: { background: "transparent", color: nl.ink, border: `1.5px solid ${nl.ink}` },
     quiet: { background: "transparent", color: nl.ink, border: `1.5px solid ${nl.field}` },
@@ -112,7 +112,7 @@ export function Sheet({ open, onClose, children, label, above = 0, maxHeight = "
       <section role="dialog" aria-modal="true" aria-label={label} style={{
         position: "absolute", left: 0, right: 0, bottom: above, maxHeight, overflowY: "auto",
         background: nl.paper, borderRadius: "26px 26px 0 0", padding: "10px 16px 18px",
-        boxSizing: "border-box", boxShadow: "0 -10px 30px rgba(42,26,18,0.18)",
+        boxSizing: "border-box", boxShadow: `0 -10px 30px ${nl.shadow}`,
         maxWidth: 720, margin: "0 auto", color: nl.ink, fontFamily: font.body,
         paddingBottom: above ? 18 : "max(18px, env(safe-area-inset-bottom))",
       }}>
@@ -145,10 +145,10 @@ export function Chip({ selected, children, onClick, icon }) {
 
 export function Badge({ tone = "quiet", children }) {
   const tones = {
-    quiet: { background: nl.chip, color: "#5A4433" },
+    quiet: { background: nl.chip, color: nl.quietInk },
     ready: { background: nl.yolkTint, color: nl.yolkInk },
     good: { background: nl.goodTint, color: nl.goodInk },
-    alert: { background: nl.alertTint, color: "#8E3420" },
+    alert: { background: nl.alertTint, color: nl.alertInk },
   };
   return (
     <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: radius.pill, whiteSpace: "nowrap", ...tones[tone] }}>
@@ -182,12 +182,24 @@ export function RoundButton({ kind = "plus", size = 52, onClick, label, disabled
     <button type="button" onClick={onClick} aria-label={label} disabled={disabled} style={{
       width: size, height: size, borderRadius: size / 2, flexShrink: 0, cursor: disabled ? "default" : "pointer",
       border: plus ? "none" : `1.5px solid ${nl.field}`, background: plus ? nl.yolk : nl.card, opacity: disabled ? 0.4 : 1,
-      display: "flex", alignItems: "center", justifyContent: "center", color: nl.ink,
+      display: "flex", alignItems: "center", justifyContent: "center", color: plus ? nl.onYolk : nl.ink,
     }}>
       <svg width={size * 0.44} height={size * 0.44} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={plus ? 2.4 : 2.2} strokeLinecap="round" aria-hidden="true">
         {plus ? <path d="M12 5v14M5 12h14" /> : <path d="M5 12h14" />}
       </svg>
     </button>
+  );
+}
+
+// Screens and sections still drawn in the old design (Calendar, Journal,
+// Games, the detailed numbers…) only know light colors. In dark mode they sit
+// on a light panel so their text stays readable; in light mode this is a no-op.
+export function Legacy({ children }) {
+  if (!currentLook().dark) return children;
+  return (
+    <div style={{ background: "#F6F1E7", color: "#2A1A12", borderRadius: radius.card, padding: "12px 10px", colorScheme: "light" }}>
+      {children}
+    </div>
   );
 }
 
