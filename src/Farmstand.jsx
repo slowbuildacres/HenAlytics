@@ -13,6 +13,9 @@
 // ============================================================================
 
 import React, { useState, useMemo, useEffect } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -615,7 +618,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function FarmstandPage({ hobby, data, update, setModal }) {
+export default function FarmstandPage({ hobby, data, update, setModal, nl = null }) {
   const [editingItem, setEditingItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [sellingItem, setSellingItem] = useState(null);
@@ -782,6 +785,54 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
       return d;
     });
   };
+
+  if (nl) {
+    const archivedItems = (hobby?.items || []).filter((i) => i.archived);
+    const itemRow = (it) => {
+      const st = computeStockState(it);
+      const stock = Number(it.stock) || 0;
+      return {
+        id: it.id, title: it.name, left: st !== "untracked" ? stock : null, unit: it.unit || "",
+        onOpen: () => { setEditingItem(it); setShowItemModal(true); },
+        sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null].filter(Boolean).join(" · "),
+        badge: st === "out" ? { tone: "alert", text: "Out of stock" } : st === "low" ? { tone: "ready", text: `Low · ${stock} left` } : null,
+        actions: [{ label: "Sell", primary: st !== "out", run: () => setSellingItem(it) }, { label: "Restock", primary: st === "out", run: () => setRestockingItem(it) }],
+      };
+    };
+    const ctx = {
+      key: "farmstand",
+      summary: { big: fmtMoney(monthRevenue).replace(/\.00$/, ""), small: "sold this month", line: [`${fmtMoney(yearRevenue).replace(/\.00$/, "")} this year`, stockWarnings.length ? `${stockWarnings.length} item${stockWarnings.length === 1 ? "" : "s"} to restock` : null].filter(Boolean).join(" · ") },
+      newLabel: items.length ? "Email customers what's fresh" : "Add your first item", onNew: () => (items.length ? emailCustomers() : (setEditingItem(null), setShowItemModal(true))),
+      goingTitle: justRestocked ? "Just restocked" : "Needs restocking",
+      going: justRestocked
+        ? [{ id: "restocked", title: `${justRestocked.item.name} restocked`, sub: "Let your customers know it's back?", actions: [
+            { label: "Email customers", primary: true, run: () => { const it = justRestocked.item; const price = Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? `/${it.unit}` : ""}` : ""; emailCustomers({ item: it.name, qty: String(justRestocked.stock), unit: it.unit || "", price }); setJustRestocked(null); } },
+            { label: "Not now", run: () => setJustRestocked(null) }] }]
+        : stockWarnings.map(itemRow),
+      shelfTitle: "At the stand", shelfEmpty: "Add what you sell (eggs, honey, produce) with a price, and log sales in a tap.",
+      shelf: items.map(itemRow),
+      past: archivedItems.map((it) => ({ id: it.id, title: it.name, sub: "Archived · tap to put it back at the stand", onOpen: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.items || []).find((x) => x.id === it.id); if (t) t.archived = false; return d; }) })),
+      pastTitle: "Archived items",
+      extras: [
+        { key: "item", label: "Add an item", icon: NlPlus, run: () => { setEditingItem(null); setShowItemModal(true); } },
+        ...(setModal ? [{ key: "email", label: "Email your customers", sub: emailContacts ? `${emailContacts} customer${emailContacts === 1 ? "" : "s"} with an email` : "Add their emails to send what's fresh", icon: NlMail, run: () => emailCustomers() },
+          { key: "how", label: "How customer emails work", icon: NlHelp, run: () => setModal({ type: "stockEmailTutorial" }) }] : []),
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Signs, coolers, the stand itself", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {showItemModal && <ItemModal item={editingItem} onClose={() => { setShowItemModal(false); setEditingItem(null); }} onSave={saveItem} onDelete={deleteItem} />}
+        {sellingItem && <QuickSellModal item={sellingItem} onClose={() => setSellingItem(null)} onSell={(saleData) => recordSale(sellingItem, saleData)} />}
+        {restockingItem && <RestockModal item={restockingItem} onClose={() => setRestockingItem(null)} onRestock={(restockData) => recordRestock(restockingItem, restockData)} />}
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -1073,6 +1124,28 @@ function ArchivedItemsList({ hobby, update }) {
 // ============================================================================
 // FARMSTAND ANALYTICS — rendered under the Stats tab when farmstand is active
 // ============================================================================
+// 3.0 Stats: stand sales, best sellers.
+export function farmstandStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const sales = (data.sales || []).filter((x) => x && x.hobbyType === "farmstand" && inR(x.date));
+  const revenue = sales.reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const cost = sales.reduce((t, x) => t + (Number(x.totalCost) || 0), 0);
+  const by = new Map(); for (const x of sales) { const k = String(x.crop || x.item || "Other").trim(); by.set(k, (by.get(k) || 0) + (Number(x.totalRevenue) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: fmtMoney(v) }));
+  const facts = [];
+  if (sales.length >= 5) facts.push({ key: "sales", icon: "money", big: String(sales.length), line: "sales at our farm stand", title: `${sales.length} sales at the stand`, sub: `${fmtMoney(revenue / sales.length)} on average.` });
+  if (rows.length > 1) facts.push({ key: "best", icon: "trophy", big: rows[0].name, line: "our best seller", title: `Best seller: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Sold", value: fmtMoney(revenue), sub: `${sales.length} sale${sales.length === 1 ? "" : "s"}` },
+      ...(cost ? [{ label: "Profit", value: fmtMoney(revenue - cost), sub: `after ${fmtMoney(cost)} in costs` }] : []),
+    ],
+    bars: rows.length ? { title: "Best sellers", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🧺", kicker: "Our farm stand",
+  };
+}
+
 export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   // Defensive: hobby may be undefined if data is mid-load or migration hasn't
   // applied yet. Treat that as an empty state rather than crashing.

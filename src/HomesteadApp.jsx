@@ -173,7 +173,7 @@ import SheepPage, { SheepAnalytics, SheepNewLook } from "./Sheep.jsx";
 import HorsesPage, { HorsesAnalytics, HorsesNewLook } from "./Horses.jsx";
 import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
 import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
-import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
+import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
@@ -5192,6 +5192,7 @@ useNativeBackButton(React.useCallback(() => {
     baking: { Page: BakingPage, stats: bakingStats, shelf: "Bakes", all: "All the numbers: bakes, recipes, sales", analytics: () => <BakingAnalytics hobby={hobby} entries={data.entries.baking || []} sales={data.sales || []} spouseMode={data.spouseMode} /> },
     maple_syrup: { Page: MapleSyrupPage, stats: mapleStats, shelf: "Logs", all: "All the numbers: seasons, sap, boils, costs", analytics: () => <MapleSyrupAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} /> },
     hunting: { Page: HuntingPage, stats: huntingStats, shelf: "Harvests", all: "All the numbers: harvests, tags, gear", analytics: () => <HuntingAnalytics hobby={hobby} /> },
+    farmstand: { Page: FarmstandPage, stats: farmstandStats, shelf: "Items", all: "All the numbers: sales, items, costs", analytics: () => <FarmstandAnalytics hobby={hobby} sales={data.sales || []} entries={data.entries.farmstand || []} spouseMode={data.spouseMode} /> },
     soap: { Page: SoapMakingPage, stats: soapStats, shelf: "Bars", all: "All the numbers: batches, sales, costs", analytics: () => <SoapMakingAnalytics hobby={hobby} sales={data.sales || []} /> },
   };
   const nlPantryCfg = newLook && hobby ? NL_PANTRY[hobby.type] : null;
@@ -6253,7 +6254,7 @@ useNativeBackButton(React.useCallback(() => {
             <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} entries={data.entries?.["sourdough"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "farmstand" && (
+        {page === "analytics" && activeHobby === "farmstand" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
@@ -6468,7 +6469,7 @@ useNativeBackButton(React.useCallback(() => {
             <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "farmstand" && (
+        {page === "farmstand" && !nlPantryCfg && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
         )}
         {page === "baking" && !nlPantryCfg && (
