@@ -11,7 +11,7 @@
 import React, { useEffect, useState } from "react";
 import {
   Egg, Wheat, DollarSign, Utensils, Bird, Archive, NotebookPen, ShoppingBasket,
-  Droplet, MoreHorizontal, Truck, ArrowRight, Milk, Stethoscope, Scale, Baby, Heart, Flame, Scissors,
+  Droplet, MoreHorizontal, Truck, ArrowRight, Milk, Stethoscope, Scale, Baby, Heart, Flame, Scissors, Mountain, Hammer, Pill,
 } from "lucide-react";
 import { nl, font } from "./theme.js";
 import { Sheet, Chip } from "./ui.jsx";
@@ -22,7 +22,7 @@ import HobbyGlyph from "./HobbyGlyph.jsx";
 const ICONS = {
   egg: Egg, feed: Wheat, sold: DollarSign, used: Utensils, nest: Bird, bedding: Archive,
   note: NotebookPen, harvest: ShoppingBasket, water: Droplet, more: MoreHorizontal, move: Truck,
-  milk: Milk, health: Stethoscope, weight: Scale, kid: Baby, heart: Heart, heat: Flame, shear: Scissors,
+  milk: Milk, health: Stethoscope, weight: Scale, kid: Baby, heart: Heart, heat: Flame, shear: Scissors, ride: Mountain, farrier: Hammer, pill: Pill,
 };
 
 export default function LogPicker({ open, onClose, hobbies, activeHobbyId, onAction, onOpenHobby, HobbyIcon }) {

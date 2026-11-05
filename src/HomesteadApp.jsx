@@ -168,7 +168,8 @@ import { requestHobbyAction } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics, CowsNewLook } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
 import SheepPage, { SheepAnalytics, SheepNewLook } from "./Sheep.jsx";
-import HorsesPage, { HorsesAnalytics } from "./Horses.jsx";
+import HorsesPage, { HorsesAnalytics, HorsesNewLook } from "./Horses.jsx";
+import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
 import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
@@ -5170,6 +5171,7 @@ useNativeBackButton(React.useCallback(() => {
   const nlCows = !!(newLook && hobby && hobby.type === "cows");
   const nlPigs = !!(newLook && hobby && hobby.type === "pigs");
   const nlSheep = !!(newLook && hobby && hobby.type === "sheep");
+  const nlHorses = !!(newLook && hobby && hobby.type === "horses");
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -6214,7 +6216,7 @@ useNativeBackButton(React.useCallback(() => {
             <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "horses" && (
+        {page === "analytics" && activeHobby === "horses" && !nlHorses && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <HorsesAnalytics hobby={data.hobbies.find(h=>h.id==="horses")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
@@ -6464,7 +6466,24 @@ useNativeBackButton(React.useCallback(() => {
         {page === "maple_syrup" && (
           <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "horses" && (
+        {newLook && nlHorses && (page === "horses" || page === "analytics") && (
+          <HobbyTabs label="Horse sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Horses" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("horses"); } }} />
+        )}
+        {page === "horses" && nlHorses && (
+          <HorsesNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab} onTab={setNlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlHorses && (
+          <HorseStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <HorsesAnalytics hobby={hobby} sales={data.sales || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "horses" && !nlHorses && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} />
             <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />

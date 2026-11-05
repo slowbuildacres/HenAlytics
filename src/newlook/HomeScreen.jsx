@@ -18,6 +18,8 @@ import { fmtMoney } from "../units.js";
 import { SPECIES, milkOz, upcomingBirths, milkText } from "./livestock/livestockData.js";
 import { batchAlive, batchAgeDays } from "../meatBatches.js";
 import { upcomingKindles } from "./rabbits/rabbitData.js";
+import { farrierDue, rideTotals } from "./horses/horseData.js";
+import { isoDay } from "./eggs/eggFacts.js";
 
 const DAY = 86400000;
 const parseDay = (s) => { const p = String(s || "").split("-").map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); };
@@ -63,6 +65,13 @@ export function tileStat(entry, data, today) {
       const weeks = Math.floor(Math.max(...active.map((b) => batchAgeDays(b))) / 7) + 1;
       return { big: String(alive), small: `birds · week ${weeks}` };
     }
+  }
+  if (entry.type === "horses") {
+    // Farrier overdue first, then rides this week.
+    const due = farrierDue(entry.hobby, today).filter((x) => x.left != null && x.left <= 7).sort((a, b) => a.left - b.left)[0];
+    if (due) return { big: null, small: `${due.horse.name}'s feet ${due.left < 0 ? "are overdue" : "are due this week"}` };
+    const n = rideTotals(entry.hobby, isoDay(new Date(parseDay(today).getTime() - 6 * 86400000)), today).count;
+    if (n) return { big: String(n), small: n === 1 ? "ride this week" : "rides this week" };
   }
   if (entry.type === "rabbits") {
     const next = upcomingKindles(entry.hobby, ents, today)[0];

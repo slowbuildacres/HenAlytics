@@ -23,6 +23,11 @@ import { X, Edit3 } from "lucide-react";
 import { fmtMoney } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the rebuilt horse screens reuse this file's forms.
+import { HorseToday, HorseHerd, HorseProfile } from "./newlook/horses/HorseScreens.jsx";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -517,11 +522,11 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
 }
 
 // ============ BREEDING MODAL ============
-function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEvents, addCalendarEvent }) {
+function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEvents, addCalendarEvent, initialMareId = null }) {
   const mares = horses.filter(h => !h.archived && (h.role === "breeding" || h.sex === "mare"));
   const stallions = horses.filter(h => !h.archived && (h.role === "breeding" || h.sex === "stallion"));
 
-  const [mareId, setMareId] = useState(breeding?.mareId || mares[0]?.id || "");
+  const [mareId, setMareId] = useState(breeding?.mareId || initialMareId || mares[0]?.id || "");
   const [stallionId, setStallionId] = useState(breeding?.stallionId || stallions[0]?.id || "");
   const [bredDate, setBredDate] = useState(breeding?.bredDate || todayStr());
   const [foaledDate, setFoaledDate] = useState(breeding?.foaledDate || "");
@@ -672,7 +677,7 @@ function HorseFeedModal({ onSave, onClose }) {
   );
 }
 
-function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
+function CareLogModal({ kind, horses, log, onSave, onDelete, onClose, initialHorseId = null }) {
   const liveHorses = horses.filter(h => !h.archived);
   // Multi-select: a single visit can apply to one horse or many.
   // - When editing an old log, prefer log.horseIds (new shape); fall back to
@@ -681,7 +686,7 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
   const initialIds = log
     ? (Array.isArray(log.horseIds) && log.horseIds.length ? log.horseIds
        : log.horseId ? [log.horseId] : [])
-    : (liveHorses[0] ? [liveHorses[0].id] : []);
+    : initialHorseId ? [initialHorseId] : (liveHorses[0] ? [liveHorses[0].id] : []);
   const [selectedIds, setSelectedIds] = useState(initialIds);
   const [date, setDate] = useState(log?.date || todayStr());
   const [type, setType] = useState(log?.type || (kind === "farrier" ? "Trim" : kind === "vet" ? "Routine checkup" : ""));
@@ -813,9 +818,9 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
 }
 
 // ============ RIDE LOG MODAL ============
-function RideModal({ horses, ride, onSave, onDelete, onClose }) {
+function RideModal({ horses, ride, onSave, onDelete, onClose, initialHorseId = null }) {
   const liveHorses = horses.filter(h => !h.archived);
-  const [horseId, setHorseId] = useState(ride?.horseId || liveHorses[0]?.id || "");
+  const [horseId, setHorseId] = useState(ride?.horseId || initialHorseId || liveHorses[0]?.id || "");
   const [date, setDate] = useState(ride?.date || todayStr());
   const [durationMinutes, setDurationMinutes] = useState(ride?.durationMinutes ? String(ride.durationMinutes) : "30");
   const [type, setType] = useState(ride?.type || "Training");
@@ -1838,6 +1843,104 @@ export function HorsesAnalytics({ hobby, sales = [], /* ADV_ANALYTICS */ dateRan
           </LockedStatOverlay>
         );
       })()}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Horses / one horse, with this file's own forms:
+// ride, farrier / vet / dewormer, feed, breeding (foaling date), sale, death,
+// add/edit horse, family tree, history. A new ride, care visit or feed log
+// shows "Saved · Undo".
+// ============================================================================
+const HORSE_TALLY = ["Mare", "Stallion", "Gelding", "Foal", "Unsexed"];
+const HORSE_LISTS = ["rides", "farrier", "vet", "deworming"];
+
+export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
+  const horses = hobby.animals || [];
+  const entries = (data.entries && data.entries[hobby.id]) || [];
+  const [form, setForm] = useState(null);
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const snap = () => ({ entries: new Set(entries.map((e) => e.id)), ...Object.fromEntries(HORSE_LISTS.map((k) => [k, new Set((hobby[k] || []).map((r) => r.id))])) });
+  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: snap() }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const b = undoCheck; setUndoCheck(null);
+    const name = (id) => (horses.find((h) => h.id === id) || {}).name;
+    for (const k of HORSE_LISTS) {
+      const added = (hobby[k] || []).filter((r) => r && !b[k].has(r.id));
+      if (!added.length) continue;
+      const ids = new Set(added.map((r) => r.id));
+      const r = added[0];
+      const who = k === "rides" ? name(r.horseId) : (Array.isArray(r.horseIds) && r.horseIds.length > 1 ? `${r.horseIds.length} horses` : name((r.horseIds || [])[0] || r.horseId));
+      const what = k === "rides" ? `${Number(r.durationMinutes) || 0} min ride` : k === "deworming" ? "dewormer" : `${k} visit`;
+      showUndo(`Saved ${what}${who ? ` for ${who}` : ""}`, () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h[k] = (h[k] || []).filter((x) => !ids.has(x.id)); return d; }));
+      return;
+    }
+    const added = entries.filter((e) => e && !b.entries.has(e.id) && e.action === "fed");
+    if (added.length) {
+      const ids = new Set(added.map((e) => e.id));
+      showUndo("Saved feeding", () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+    }
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = (key) => (rec) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; if (!Array.isArray(h[key])) h[key] = []; const i = h[key].findIndex((x) => x.id === rec.id); if (i >= 0) h[key][i] = rec; else h[key].push(rec); return d; });
+  const del = (key) => (id) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h[key] = (h[key] || []).filter((x) => x.id !== id); return d; });
+  const addCalendarEvent = (event) => update((d) => { if (!Array.isArray(d.calendarEvents)) d.calendarEvents = []; d.calendarEvents.push(event); return d; });
+  const openProfile = (id) => { setProfileId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} };
+  const act = {
+    ride: (id) => open("ride", { horseId: id || null }),
+    editRide: (r) => open("ride", { ride: r }),
+    care: (kind, id) => open("care", { careKind: kind, horseId: id || null }),
+    fed: () => open("fed"),
+    breeding: (b, mareId) => setForm({ kind: "breeding", breeding: b || null, horseId: mareId || null }),
+    sale: () => setForm({ kind: "sale" }),
+    death: () => setForm({ kind: "death" }),
+    addHorse: () => setForm({ kind: "horse", horse: null }),
+    editHorse: (id) => setForm({ kind: "horse", horse: horses.find((h) => h.id === id) || null }),
+    herdCount: () => setTallyOpen(true),
+    openProfile,
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "ride") act.ride(); else if (a === "fed") act.fed(); else if (a === "breeding") act.breeding(null);
+    else if (["farrier", "vet", "deworming"].includes(a)) act.care(a); else if (a === "add") act.addHorse();
+  });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = HORSE_TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = HORSE_TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? horses.find((h) => h.id === profileId) : null;
+  const f = form || {};
+  const archive = (d, payload) => { const h = d.hobbies.find((x) => x.id === hobby.id); const a = h && (h.animals || []).find((x) => x.id === payload.horseId); if (a) { a.archived = true; a.archivedReason = payload.archiveReason; a.archivedDate = payload.date; if (payload.saleId) a.saleId = payload.saleId; } };
+
+  return (
+    <div>
+      {f.kind === "horse" && <HorseModal horse={f.horse} horses={horses} onClose={() => setForm(null)} onSave={save("animals")} onDelete={del("animals")} update={update} user={user} hobbyId={hobby.id} />}
+      {f.kind === "ride" && <RideModal horses={horses} ride={f.ride || null} initialHorseId={f.horseId} onSave={save("rides")} onDelete={del("rides")} onClose={closeForm} />}
+      {f.kind === "care" && <CareLogModal kind={f.careKind} horses={horses} log={null} initialHorseId={f.horseId} onSave={(k, rec) => save(k)(rec)} onDelete={(k, id) => del(k)(id)} onClose={closeForm} />}
+      {f.kind === "fed" && <HorseFeedModal onClose={closeForm} onSave={(payload) => update((d) => { d.entries = d.entries || {}; d.entries[hobby.id] = d.entries[hobby.id] || []; d.entries[hobby.id].push(payload.entry); return d; })} />}
+      {f.kind === "breeding" && <BreedingModal horses={horses} breeding={f.breeding} initialMareId={f.horseId} onClose={() => setForm(null)} onSave={save("breedings")} onDelete={del("breedings")} calendarEvents={data.calendarEvents || []} addCalendarEvent={addCalendarEvent} />}
+      {f.kind === "sale" && <HorseSaleModal horse={null} horses={horses} customers={data.customers || []} onClose={() => setForm(null)}
+        onSave={(payload) => { update((d) => { archive(d, payload); d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData); return d; }); setForm(null); }} />}
+      {f.kind === "death" && <HorseDeathModal horse={null} horses={horses} onClose={() => setForm(null)}
+        onSave={(payload) => { update((d) => { d.entries = d.entries || {}; d.entries[hobby.id] = d.entries[hobby.id] || []; d.entries[hobby.id].push(payload.entry); archive(d, payload); return d; }); setForm(null); }} />}
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={HORSE_TALLY} noun="horses" />
+      {view && view.kind === "pedigree" && <PedigreeView animal={view.animal} animals={horses} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />}
+      {view && view.kind === "history" && <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="horse" onClose={() => setView(null)} />}
+      {tab === "animals" ? (
+        profile ? <HorseProfile hobby={hobby} horse={profile} act={act} onBack={() => setProfileId(null)} />
+          : <HorseHerd hobby={hobby} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <HorseToday hobby={hobby} data={data} update={update} setModal={setModal} act={act} tallyTotal={tallyTotal} onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
+      )}
     </div>
   );
 }
