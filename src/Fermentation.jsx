@@ -24,6 +24,9 @@
 // ============================================================================
 
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Plus, Trash2 } from "lucide-react";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
@@ -488,7 +491,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function FermentationPage({ hobby, data, update, setModal }) {
+export default function FermentationPage({ hobby, data, update, setModal, nl = null }) {
   const [fermentModal, setFermentModal] = useState({ open: false, ferment: null });
   const [stageModal, setStageModal] = useState({ open: false, ferment: null });
   const [finishModal, setFinishModal] = useState({ open: false, ferment: null });
@@ -624,6 +627,51 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
       return d;
     });
   };
+
+  if (nl) {
+    const shortDate = (x) => { if (!x) return ""; const d = new Date(x + "T12:00"); return isNaN(d) ? x : d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
+    const going = active.slice().sort((a, b) => ((a.expectedFinishDate || "") < (b.expectedFinishDate || "") ? -1 : 1)).map((f) => {
+      const day = daysBetween(f.startDate, todayIso()) + 1;
+      const total = f.expectedFinishDate ? Math.max(1, daysBetween(f.startDate, f.expectedFinishDate)) : null;
+      const over = total != null && day > total;
+      const lastStage = (f.stages || []).slice().sort((a, b) => (b.dayNumber || 0) - (a.dayNumber || 0))[0];
+      return {
+        id: f.id, title: f.name || "Ferment", onOpen: () => setFermentModal({ open: true, ferment: f }),
+        sub: [total ? `Day ${day} of ${total}` : `Day ${day}`, f.location || null, lastStage ? `last check: ${lastStage.stageLabel || lastStage.observation || `day ${lastStage.dayNumber}`}` : null].filter(Boolean).join(" · "),
+        pct: total ? (day / total) * 100 : null,
+        badge: over ? { tone: "ready", text: "Ready to taste" } : null,
+        actions: [{ label: "Log a check", run: () => setStageModal({ open: true, ferment: f }) }, { label: "It's done", primary: over, run: () => setFinishModal({ open: true, ferment: f }) }],
+      };
+    });
+    const ctx = {
+      key: "fermentation", tabs: nl.tabs,
+      summary: { big: active.length, small: `ferment${active.length === 1 ? "" : "s"} going`, line: going.filter((g) => g.badge).length ? `${going.filter((g) => g.badge).length} ready to taste` : archived.length ? `${archived.length} finished so far` : "" },
+      newLabel: "Start a ferment", onNew: () => setFermentModal({ open: true, ferment: null }),
+      goingTitle: "Fermenting", going,
+      shelfTitle: "Recipes", shelfEmpty: "Save a recipe to start ferments from it next time.",
+      shelf: recipes.map((r) => ({ id: r.id, title: r.name || "Recipe", sub: [r.expectedDays ? `${r.expectedDays} days` : null, r.notes ? String(r.notes).slice(0, 60) : null].filter(Boolean).join(" · "), onOpen: () => setRecipeModal({ open: true, recipe: r }) })),
+      past: archived.slice().sort((a, b) => ((b.finishDate || "") < (a.finishDate || "") ? -1 : 1)).map((f) => ({ id: f.id, title: f.name || "Ferment", sub: [`Started ${shortDate(f.startDate)}`, f.finishDate ? `done ${shortDate(f.finishDate)}` : null, f.finalNotes || null].filter(Boolean).join(" · "), onOpen: () => setFermentModal({ open: true, ferment: f }) })),
+      pastTitle: "Finished ferments", pastSub: "Tap one to see its notes.",
+      extras: [
+        { key: "recipe", label: "New recipe", icon: NlPlus, run: () => setRecipeModal({ open: true, recipe: null }) },
+        { key: "pantry", label: "Pantry supplies", sub: "Salt, crocks and what's left", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: "Crocks, weights and airlocks", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        {fermentModal.open && <FermentModal ferment={fermentModal.ferment} recipes={recipes} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveFerment} onDelete={fermentModal.ferment ? deleteFerment : null} onClose={() => setFermentModal({ open: false, ferment: null })} />}
+        {stageModal.open && stageModal.ferment && <LogStageModal ferment={stageModal.ferment} onSave={(stage) => addStage(stageModal.ferment.id, stage)} onClose={() => setStageModal({ open: false, ferment: null })} />}
+        {finishModal.open && finishModal.ferment && <FinishFermentModal ferment={finishModal.ferment} onFinish={(notes) => finishFerment(finishModal.ferment.id, notes)} onClose={() => setFinishModal({ open: false, ferment: null })} />}
+        {recipeModal.open && <RecipeModal recipe={recipeModal.recipe} onSave={saveRecipe} onDelete={recipeModal.recipe ? deleteRecipe : null} onClose={() => setRecipeModal({ open: false, recipe: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -838,6 +886,31 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: ferments started and finished, average days, favorites.
+export function fermentationStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const fs = (hobby && Array.isArray(hobby.ferments) ? hobby.ferments : []).filter((f) => inR(f.startDate));
+  const done = fs.filter((f) => f.archived && f.finishDate);
+  const days = done.map((f) => daysBetween(f.startDate, f.finishDate)).filter((n) => n > 0);
+  const cost = fs.reduce((s, f) => s + (Number(f.ingredientsCost) || 0), 0);
+  const by = new Map(); for (const f of fs) { const k = String(f.name || "Ferment").trim(); by.set(k, (by.get(k) || 0) + 1); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} batch${v === 1 ? "" : "es"}` }));
+  const facts = [];
+  if (fs.length >= 3) facts.push({ key: "count", icon: "jar", big: String(fs.length), line: "ferments started", title: `${fs.length} ferments started`, sub: `${done.length} finished.` });
+  if (days.length >= 2) facts.push({ key: "days", icon: "clock", big: `${Math.round(days.reduce((a, b) => a + b, 0))} days`, line: "of patient fermenting", title: `${Math.round(days.reduce((a, b) => a + b, 0))} days of patience`, sub: `About ${Math.round(days.reduce((a, b) => a + b, 0) / days.length)} days a batch.` });
+  if (rows.length > 1 && rows[0].value >= 2) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "our favorite ferment", title: `Favorite: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Started", value: fs.length, sub: `${done.length} finished` },
+      { label: "Average time", value: days.length ? `${Math.round(days.reduce((a, b) => a + b, 0) / days.length)} days` : "—", sub: "From start to done" },
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: fs.length ? `$${(cost / fs.length).toFixed(2)} a batch` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "What you fermented", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🫙", kicker: "Our kitchen",
+  };
+}
+
 export function FermentationAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const ferments = hobby?.ferments || [];
   const recipes = hobby?.recipes || [];

@@ -106,7 +106,7 @@ import EggStats from "./newlook/eggs/EggStats.jsx";
 import YearScreen from "./newlook/YearScreen.jsx";
 import { GardenToday, GardenPlants, GardenPlan, GardenStats } from "./newlook/garden/GardenScreens.jsx";
 import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
-import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES } from "./newlook/hobbies.js";
+import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES, cleanName } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -179,10 +179,11 @@ import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequeste
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
 import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
 import BakingPage, { BakingAnalytics } from "./Baking.jsx";
-import CanningPage, { CanningAnalytics } from "./Canning.jsx";
-import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
-import DehydratingPage, { DehydratingAnalytics } from "./Dehydrating.jsx";
-import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
+import CanningPage, { CanningAnalytics, canningStats } from "./Canning.jsx";
+import { PantryStatsPage } from "./newlook/pantry/PantryScreens.jsx";
+import FreezeDryingPage, { FreezeDryingAnalytics, freezeDryingStats } from "./FreezeDrying.jsx";
+import DehydratingPage, { DehydratingAnalytics, dehydratingStats } from "./Dehydrating.jsx";
+import FermentationPage, { FermentationAnalytics, fermentationStats } from "./Fermentation.jsx";
 import TincturePage, { TinctureAnalytics } from "./Tincture.jsx";
 import CelebrationCard, {
   defaultCelebrationState, migrateCelebrationState,
@@ -5176,6 +5177,19 @@ useNativeBackButton(React.useCallback(() => {
   const nlHorses = !!(newLook && hobby && hobby.type === "horses");
   const nlBees = !!(newLook && hobby && hobby.type === "bees");
   const nlIncubator = !!(newLook && hobby && hobby.type === "incubator");
+  // NEW_LOOK (3.0) kitchen & craft hobbies: each page renders the shared
+  // Today / Shelf screens with its own forms when given `nl`.
+  const NL_PANTRY = {
+    canning: { Page: CanningPage, stats: canningStats, shelf: "Pantry", all: "All the numbers: by item, used vs sold, costs" },
+    freeze_drying: { Page: FreezeDryingPage, stats: freezeDryingStats, shelf: "Stored", all: "All the numbers: runs, output, costs" },
+    dehydrating: { Page: DehydratingPage, stats: dehydratingStats, shelf: "Stored", all: "All the numbers: batches, output, costs" },
+    fermentation: { Page: FermentationPage, stats: fermentationStats, shelf: "Ferments", all: "All the numbers: ferments, recipes, costs" },
+  };
+  const nlPantryCfg = newLook && hobby ? NL_PANTRY[hobby.type] : null;
+  const nlPantryGroup = hobby && PRESERVING_TYPES.includes(hobby.type) ? PRESERVING_TYPES : hobby && HERBAL_TYPES.includes(hobby.type) ? HERBAL_TYPES : null;
+  const nlPantryTabs = nlPantryCfg && nlPantryGroup ? nlPantryGroup
+    .map((t) => data.hobbies.find((h) => h && h.type === t && !h.hidden)).filter(Boolean)
+    .map((h) => ({ key: h.type, label: cleanName(h.name) || h.type, selected: h.id === hobby.id, onPick: () => { setActiveHobby(h.id); if (page !== "analytics") setPage(h.type); } })) : null;
   const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
   const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
   const nlTab = page === "dash" ? "home"
@@ -6240,7 +6254,23 @@ useNativeBackButton(React.useCallback(() => {
             <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
+        {nlPantryCfg && (page === hobby.type || page === "analytics") && (
+          <HobbyTabs label={`${activeEntry ? activeEntry.name : "Hobby"} sections`}
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: nlPantryCfg.shelf || "Shelf" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage(hobby.type); } }} />
+        )}
+        {nlPantryCfg && page === hobby.type && (
+          <nlPantryCfg.Page hobby={hobby} data={data} update={update} setModal={setModal}
+            nl={{ tab: nlHobbyTab, tabs: nlPantryTabs, onOpenJournal: () => setPage("journal"), onSeeAll: () => setNlHobbyTab("animals") }} />
+        )}
+        {nlPantryCfg && page === "analytics" && (
+          <PantryStatsPage hobby={hobby} data={data} setModal={setModal} statsFn={nlPantryCfg.stats} tabs={nlPantryTabs} allLabel={nlPantryCfg.all}
+            allNumbers={nlPantryGroup === PRESERVING_TYPES
+              ? <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+              : nlPantryCfg.analytics ? nlPantryCfg.analytics() : null} />
+        )}
+        {page === "analytics" && !nlPantryCfg && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
           <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
@@ -6434,16 +6464,16 @@ useNativeBackButton(React.useCallback(() => {
         {page === "baking" && (
           <BakingPage hobby={data.hobbies.find(h=>h.id==="baking")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "canning" && (
+        {page === "canning" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="canning" />
         )}
-        {page === "freeze_drying" && (
+        {page === "freeze_drying" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="freeze_drying" />
         )}
-        {page === "dehydrating" && (
+        {page === "dehydrating" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="dehydrating" />
         )}
-        {page === "fermentation" && (
+        {page === "fermentation" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="fermentation" />
         )}
         {page === "tincture" && (

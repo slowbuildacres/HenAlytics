@@ -18,6 +18,10 @@
 // ============================================================================
 
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney } from "./units.js";
@@ -255,7 +259,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
 // ============================================================================
 // FREEZE DRYING PAGE
 // ============================================================================
-export default function FreezeDryingPage({ hobby, data, update, setModal }) {
+export default function FreezeDryingPage({ hobby, data, update, setModal, nl = null }) {
   const [batchModal, setBatchModal] = useState({ open: false, batch: null });
   const batches = (hobby?.batches || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const active = batches.filter(b => !b.archived);
@@ -322,6 +326,35 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
   const totalOz = active.reduce((s, b) => s + (b.outputOz || 0), 0);
   const totalCost = active.reduce((s, b) => s + (b.ingredientsCost || 0), 0);
   const avgRun = active.length > 0 ? active.reduce((s, b) => s + (b.runHours || 0), 0) / active.length : 0;
+
+  if (nl) {
+    const nlOz = (oz) => (Number(oz) >= 16 ? `${(Number(oz) / 16).toFixed(1)} lb` : `${Math.round(Number(oz) || 0)} oz`);
+    const shortDate = (s) => { if (!s) return ""; const d = new Date(s + "T12:00"); return isNaN(d) ? s : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+    const archiveWithUndo = (b) => { archiveBatch(b.id); showUndo(`Archived ${b.item || "batch"}`, () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.batches || []).find((x) => x.id === b.id); if (t) t.archived = false; return d; })); };
+    const ctx = {
+      key: "freeze_drying", tabs: nl.tabs,
+      summary: { big: nlOz(totalOz), small: "freeze dried and stored", line: active.length ? `${active.length} batch${active.length === 1 ? "" : "es"}${avgRun ? ` · about ${avgRun.toFixed(0)} hr a run` : ""}` : "" },
+      newLabel: "Log a freeze-dryer run", onNew: () => setBatchModal({ open: true, batch: null }),
+      shelfTitle: "Stored", shelfEmpty: "No runs yet. Log your next freeze-dryer run and it shows up here.",
+      shelf: active.map((b) => ({ id: b.id, title: b.item || "Batch", onOpen: () => setBatchModal({ open: true, batch: b }),
+        sub: [shortDate(b.date), b.outputOz ? nlOz(b.outputOz) : null, b.trays ? `${b.trays} trays` : null, b.runHours ? `${b.runHours} hr` : null, b.containerType || null].filter(Boolean).join(" · "),
+        actions: [{ label: "Archive", run: () => archiveWithUndo(b) }] })),
+      past: archived.map((b) => ({ id: b.id, title: b.item || "Batch", sub: `${shortDate(b.date)} · ${nlOz(b.outputOz)}`, onOpen: () => setBatchModal({ open: true, batch: b }) })),
+      extras: [
+        { key: "pantry", label: "Pantry supplies", sub: "What's left and what it cost", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {batchModal.open && <BatchModal batch={batchModal.batch} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveBatch} onDelete={batchModal.batch ? deleteBatch : null} onClose={() => setBatchModal({ open: false, batch: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -412,6 +445,30 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS — basic counts and trend chart
 // ============================================================================
+// 3.0 Stats: runs, ounces stored, hours, top foods.
+export function freezeDryingStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.date));
+  const oz = bs.reduce((s, b) => s + (Number(b.outputOz) || 0), 0);
+  const hours = bs.reduce((s, b) => s + (Number(b.runHours) || 0), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const by = new Map(); for (const b of bs) { const k = String(b.item || "Other").trim(); by.set(k, (by.get(k) || 0) + (Number(b.outputOz) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: v >= 16 ? `${(v / 16).toFixed(1)} lb` : `${Math.round(v)} oz` }));
+  const facts = [];
+  if (hours >= 24) facts.push({ key: "hours", icon: "clock", big: `${Math.round(hours)} hr`, line: "our freeze dryer has run", title: `${Math.round(hours)} hours of freeze drying`, sub: `That's ${(hours / 24).toFixed(1)} days of humming.` });
+  if (rows.length > 1) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "what we freeze dry the most", title: `Most freeze dried: ${rows[0].name.toLowerCase()}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Stored", value: oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${Math.round(oz)} oz`, sub: `${bs.length} run${bs.length === 1 ? "" : "s"}` },
+      { label: "Run time", value: `${Math.round(hours)} hr`, sub: bs.length ? `${(hours / bs.length).toFixed(0)} hr a run` : "" },
+      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: oz ? `$${(cost / oz).toFixed(2)} an ounce` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "What you freeze dried", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "❄️", kicker: "Our pantry",
+  };
+}
+
 export function FreezeDryingAnalytics({ hobby, spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = (hobby?.batches || []).filter(b => !b.archived);
   const totalOz = batches.reduce((s, b) => s + (b.outputOz || 0), 0);

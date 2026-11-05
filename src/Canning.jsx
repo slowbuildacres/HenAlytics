@@ -21,6 +21,9 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 import { fmtMoney } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer, Receipt, Archive as ArchiveIcon, NotebookPen, Plus as PlusIcon, ShoppingBasket } from "lucide-react";
 
 // SHARED_PANTRY helper: sum cost across pantry-picker lines.
 function computePantryLinesTotal(lines, pantry) {
@@ -522,7 +525,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function CanningPage({ hobby, data, update, setModal }) {
+// `nl` (3.0): { tab, tabs, onOpenJournal, onSeeAll } renders the new look with these same forms.
+export default function CanningPage({ hobby, data, update, setModal, nl = null }) {
   const [editBatch, setEditBatch] = useState(null); // batch obj | "new" | null
   const [usingBatch, setUsingBatch] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -702,6 +706,49 @@ export default function CanningPage({ hobby, data, update, setModal }) {
       return d;
     });
   };
+
+  if (nl) {
+    const shortDate = (s) => { if (!s) return ""; const d = new Date(s + "T12:00"); return isNaN(d) ? s : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+    const badgeFor = (b) => {
+      const days = b.eatByDate ? daysUntil(b.eatByDate) : null;
+      if (days == null) return null;
+      if (days < 0) return { tone: "alert", text: "Past eat-by" };
+      if (days <= 30) return { tone: "ready", text: `Eat within ${days}d` };
+      return null;
+    };
+    const custom = Array.isArray(hobby.customLogs) ? hobby.customLogs : [];
+    const ctx = {
+      key: "canning", tabs: nl.tabs,
+      summary: { big: totalJarsInPantry, small: `jar${totalJarsInPantry === 1 ? "" : "s"} on the shelf`, line: [expiringSoon ? `${expiringSoon} to eat within a month` : null, expired ? `${expired} past eat-by` : null].filter(Boolean).join(" · ") || (activeBatches.length ? `${activeBatches.length} batch${activeBatches.length === 1 ? "" : "es"}` : "") },
+      newLabel: "Log a canning batch", onNew: () => setEditBatch("new"),
+      shelfTitle: "Pantry", shelfEmpty: "Nothing canned yet. Log your next canning day and the jars show up here.",
+      shelf: sortedActive.map((b) => {
+        const left = Number(b.jarsRemaining) || 0;
+        return {
+          id: b.id, title: b.item, left, unit: "jars", badge: badgeFor(b), onOpen: () => setEditBatch(b),
+          sub: [`${left} of ${Number(b.jarsMade) || 0} ${String(b.jarType || "").toLowerCase()} jars`, `canned ${shortDate(b.date)}`, b.ingredientsCost > 0 ? `${fmtMoney(b.ingredientsCost / Math.max(1, Number(b.jarsMade) || 1))} a jar` : null].filter(Boolean).join(" · "),
+          actions: left > 0 ? [{ label: "Use or sell jars", run: () => setUsingBatch(b) }] : [{ label: "Archive", run: () => archiveBatch(b.id) }],
+        };
+      }),
+      past: archivedBatches.map((b) => ({ id: b.id, title: b.item, sub: `${b.jarsMade} ${String(b.jarType || "").toLowerCase()} jars · ${shortDate(b.date)} · tap to restore`, onOpen: () => unarchiveBatch(b.id) })),
+      pastTitle: "Archived batches",
+      extras: [
+        { key: "pantry", label: "Pantry supplies", sub: "Lids, jars, sugar and what's left", icon: ShoppingBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Canners, racks and tools", icon: Hammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: Receipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...custom.map((c) => ({ key: c.id, label: c.label, icon: NotebookPen, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: PlusIcon, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        {editBatch && <BatchModal batch={editBatch === "new" ? null : editBatch} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveBatch} onDelete={deleteBatch} onClose={() => setEditBatch(null)} />}
+        {usingBatch && <UseJarsModal batch={usingBatch} onUse={useJars} onClose={() => setUsingBatch(null)} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -889,6 +936,38 @@ export default function CanningPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+
+// 3.0 Stats: jars canned, on the shelf, used and sold, top items.
+export function canningStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const batches = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []);
+  const made = batches.filter((b) => inR(b.date));
+  const jars = made.reduce((s, b) => s + (Number(b.jarsMade) || 0), 0);
+  const shelf = batches.filter((b) => !b.archived).reduce((s, b) => s + (Number(b.jarsRemaining) || 0), 0);
+  const ents = ((data.entries && data.entries.canning) || []).filter((e) => inR(e.date));
+  const sold = ents.filter((e) => e.action === "sale").reduce((s, e) => s + (Number(e.qty) || 0), 0);
+  const revenue = ents.filter((e) => e.action === "sale").reduce((s, e) => s + (Number(e.revenue) || 0), 0);
+  const used = ents.filter((e) => e.action === "use").reduce((s, e) => s + (Number(e.qty) || 0), 0);
+  const cost = made.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0) + ents.filter((e) => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const byItem = new Map();
+  for (const b of made) { const k = String(b.item || "Other").trim(); byItem.set(k, (byItem.get(k) || 0) + (Number(b.jarsMade) || 0)); }
+  const rows = [...byItem.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} jars` }));
+  const facts = [];
+  if (jars >= 6) facts.push({ key: "jars", icon: "jar", big: String(jars), line: "jars canned on our homestead", title: `${jars} jars canned`, sub: `${made.length} canning day${made.length === 1 ? "" : "s"}.` });
+  if (rows.length > 1) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "what we canned the most", title: `Most canned: ${rows[0].name.toLowerCase()}`, sub: `${rows[0].value} jars.` });
+  if (jars >= 12) facts.push({ key: "weeks", icon: "calendar", big: `${Math.round(jars / 7)} weeks`, line: "of a jar a day", title: `That's ${Math.round(jars / 7)} weeks of a jar a day`, sub: "Summer on the shelf." });
+  return {
+    cards: [
+      { label: "Jars canned", value: jars, sub: `${made.length} batch${made.length === 1 ? "" : "es"}` },
+      { label: "On the shelf", value: shelf, sub: used || sold ? `${used} used · ${sold} sold` : "Jars left right now" },
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: `${sold} jars` }] : []),
+      ...(cost ? [{ label: "Spent", value: fmtMoney(cost), sub: jars ? `${fmtMoney(cost / jars)} a jar` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "What you canned", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🫙", kicker: "Our pantry",
+  };
+}
 
 export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = Array.isArray(hobby?.batches) ? hobby.batches : [];
