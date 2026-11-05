@@ -99,6 +99,10 @@ import AnnouncementCard from "./newlook/Announcements.jsx";
 import { UndoHost, showUndo } from "./newlook/UndoBar.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
 import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
+import { HobbyTabs } from "./newlook/ui.jsx";
+import EggToday from "./newlook/eggs/EggToday.jsx";
+import EggBirds from "./newlook/eggs/EggBirds.jsx";
+import EggStats from "./newlook/eggs/EggStats.jsx";
 import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
 import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
@@ -119,6 +123,10 @@ import { computeHarvestValue, plantKey } from "./gardenValue.js";
 import SeedInventory, { needsBuying as seedNeedsBuying, SeedUseModal, matchingPackets, useSeedShop } from "./SeedInventory.jsx";
 import { seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
 import { eggInsight } from "./eggInsights.js";
+// 3.0: helpers shared with the new-look screens live in their own files.
+import { computeFeedStatus, feedEntryLbs, FEED_BURN_WINDOW_DAYS } from "./feedSupply.js";
+import { computeEggsOnHand } from "./eggInventory.js";
+import { winterSeason, WINTER_ITEMS } from "./winterChecklist.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
 import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
@@ -3318,6 +3326,7 @@ export default function HomesteadApp() {
   const [frostTonight, setFrostTonight] = useState(null);
   const [lastSyncAt, setLastSyncAt] = useState(null);
   const [nlNotice, setNlNotice] = useState(null); // announcement opened from the Home card
+  const [nlHobbyTab, setNlHobbyTab] = useState("today"); // rebuilt hobbies: "today" | "animals"
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -5132,6 +5141,8 @@ useNativeBackButton(React.useCallback(() => {
 
   // ---- NEW_LOOK (3.0) navigation -------------------------------------------
   const isHobbyPage = HOBBY_PAGES.includes(page);
+  // Hobbies already rebuilt for 3.0 (more join phase by phase).
+  const nlRebuilt = !!(newLook && hobby && hobby.type === "egg_layers");
   const nlTab = page === "dash" ? "home"
     : page === "analytics" ? "stats"
     : page === "calendar" ? "calendar"
@@ -6079,8 +6090,21 @@ useNativeBackButton(React.useCallback(() => {
         {wrappedYearNow && WRAPPED_BANNER_PAGES.includes(page) && (
           <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
-        {page === "home" && (
+        {page === "home" && !(newLook && nlRebuilt) && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
+        )}
+        {/* NEW_LOOK (3.0) rebuilt hobbies: Today · animals · Stats */}
+        {newLook && nlRebuilt && (page === "home" || page === "analytics") && (
+          <HobbyTabs label={`${activeEntry ? activeEntry.name : "Hobby"} sections`}
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Birds" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
+        )}
+        {newLook && nlRebuilt && page === "home" && nlHobbyTab === "today" && (
+          <EggToday hobby={hobby} data={data} update={update} setModal={setModal} onOpenJournal={() => setPage("journal")} />
+        )}
+        {newLook && nlRebuilt && page === "home" && nlHobbyTab === "animals" && (
+          <EggBirds hobby={hobby} data={data} update={update} setModal={setModal} />
         )}
         {page === "analytics" && activeHobby === "rabbits" && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
@@ -6168,8 +6192,13 @@ useNativeBackButton(React.useCallback(() => {
         {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
+        {page === "analytics" && !(newLook && nlRebuilt) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+        )}
+        {page === "analytics" && newLook && nlRebuilt && (
+          <EggStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
         )}
         {page === "photos" && (
           <PhotoLibraryPage data={data} user={user} />
@@ -10262,31 +10291,6 @@ function EggInsightCard({ data, entries }) {
 // A seasonal checklist (Nov–Feb north, May–Aug south) for the slow months, so
 // the app stays useful when the garden is asleep. Ticks are saved per winter:
 // data.winterChecklist = { "<season key>": { done: { id: true }, hidden } }.
-function winterSeason(now = new Date()) {
-  const south = getCurrentHemisphere() === "south";
-  const m = now.getMonth(), y = now.getFullYear();
-  if (south) return m >= 4 && m <= 7 ? `S${y}` : null;
-  if (m >= 10) return `${y}-${y + 1}`;
-  if (m <= 1) return `${y - 1}-${y}`;
-  return null;
-}
-
-const WINTER_ITEMS = {
-  egg_layers: [
-    { id: "water", icon: "💧", text: "Keep water from freezing", sub: "A heated base, or swap waterers morning and evening. Hens lay less when they can't drink." },
-    { id: "lamp", icon: "🔥", text: "Heat lamp? Secure it twice, or skip it", sub: "Heat lamps start many coop fires. Most cold-hardy breeds are fine without heat." },
-    { id: "vent", icon: "🌬️", text: "Check coop ventilation", sub: "Frostbite comes from damp air, not cold. Vents above the roost, no drafts at roost height." },
-    { id: "bedding", icon: "🌾", text: "Add deep bedding", sub: "Fresh straw or shavings for warmth. Deep litter composts in place over winter." },
-    { id: "collect", icon: "🥚", text: "Collect eggs twice a day", sub: "Eggs can freeze and crack in the nest on cold days." },
-  ],
-  garden: [
-    { id: "seedbox", icon: "🌾", text: "Take stock of your seed box", sub: "Mark what's low or getting old before you order.", action: "seeds" },
-    { id: "order", icon: "🛒", text: "Order seeds", sub: "Popular varieties sell out by February.", action: "shop" },
-    { id: "plan", icon: "🗺️", text: "Plan next year's beds", sub: "On the garden map, Henalytics flags crops from the same family in the same spot.", action: "map" },
-    { id: "tools", icon: "🧰", text: "Clean, sharpen and oil tools", sub: "Saves rust and blisters come spring." },
-    { id: "onions", icon: "🧅", text: "Start onions and leeks indoors", sub: "Usually 10 to 12 weeks before your last frost." },
-  ],
-};
 
 function WinterChecklistCard({ data, update, types, onOpenSeeds, onOpenMap }) {
   const season = winterSeason();
@@ -10527,59 +10531,6 @@ function HarvestBreakdownSection({ harvests }) {
 // convert via cupsPerLb (default 4 cups/lb ≈ ¼ lb per cup). Needs at least
 // 3 amount-bearing feed logs before it starts estimating, so brand-new
 // users see a "still learning" state instead of a garbage date.
-const FEED_BURN_WINDOW_DAYS = 21;
-const feedEntryLbs = (e, cupsPerLb) => {
-  if (!e || e.action !== "fed") return 0;
-  if (e.feedUnit === "cups") {
-    const cups = Number(e.feedAmount) || 0;
-    return cups / (cupsPerLb > 0 ? cupsPerLb : 4);
-  }
-  return Number(e.lbs ?? e.feedAmount) || 0;
-};
-function computeFeedStatus(hobby, entries) {
-  const ft = hobby && hobby.feedTracker;
-  if (!ft || !ft.enabled) return null;
-  const cupsPerLb = Number(ft.cupsPerLb) > 0 ? Number(ft.cupsPerLb) : 4;
-  const warnDays = Number(ft.warnDays) > 0 ? Number(ft.warnDays) : 5;
-  const since = Number(ft.startTs) || 0;
-  const today = todayStr();
-  const toLocalDate = (s) => {
-    const p = String(s || "").split("-").map(Number);
-    return new Date(p[0], (p[1] || 1) - 1, p[2] || 1);
-  };
-  const todayDate = toLocalDate(today);
-  const windowStart = new Date(todayDate.getTime() - (FEED_BURN_WINDOW_DAYS - 1) * 86400000);
-
-  let consumedLbs = 0;   // since the last count — drains the on-hand pile
-  let windowLbs = 0;     // burn-rate window
-  let windowCount = 0;
-  let earliestWindowDate = null;
-  (entries || []).forEach((e) => {
-    if (!e || e.action !== "fed") return;
-    const lbs = feedEntryLbs(e, cupsPerLb);
-    if (lbs <= 0) return;
-    if ((Number(e.created) || 0) >= since) consumedLbs += lbs;
-    const d = e.date ? toLocalDate(e.date) : null;
-    if (d && d >= windowStart && d <= todayDate) {
-      windowLbs += lbs;
-      windowCount += 1;
-      if (!earliestWindowDate || d < earliestWindowDate) earliestWindowDate = d;
-    }
-  });
-
-  const remainingLbs = (Number(ft.onHandLbs) || 0) - consumedLbs;
-  if (windowCount < 3 || windowLbs <= 0) {
-    return { state: "learning", remainingLbs, dailyBurnLbs: 0, daysLeft: null, runOutDate: null, warnDays, cupsPerLb, windowCount };
-  }
-  const spanDays = Math.max(1, Math.min(FEED_BURN_WINDOW_DAYS, Math.round((todayDate - earliestWindowDate) / 86400000) + 1));
-  const dailyBurnLbs = windowLbs / spanDays;
-  const daysLeft = remainingLbs > 0 ? remainingLbs / dailyBurnLbs : 0;
-  const runOut = new Date(todayDate.getTime() + Math.floor(daysLeft) * 86400000);
-  const pad = (n) => String(n).padStart(2, "0");
-  const runOutDate = `${runOut.getFullYear()}-${pad(runOut.getMonth() + 1)}-${pad(runOut.getDate())}`;
-  const state = remainingLbs <= 0 ? "out" : (daysLeft <= warnDays ? "low" : "ok");
-  return { state, remainingLbs, dailyBurnLbs, daysLeft, runOutDate, warnDays, cupsPerLb, windowCount };
-}
 
 // Feed supply card. Mounted on every animal hobby page (inline chicken pages
 // via HomePage, external pages via the page shell) so goats/cows/dogs/etc.
@@ -10697,34 +10648,6 @@ const usedEggsTypeLabel = (v) => {
   const t = USED_EGGS_TYPES.find((x) => x.value === v);
   return t ? t.label : "Used";
 };
-function computeEggsOnHand(hobby, entries, sales) {
-  const inv = hobby && hobby.eggInventory;
-  if (!inv || !inv.enabled) return null;
-  const since = Number(inv.startTs) || 0;
-  let n = Number(inv.startCount) || 0;
-  const entryIds = new Set();
-  (entries || []).forEach((e) => {
-    if (!e) return;
-    if (e.action === "sold_eggs") entryIds.add(e.id);
-    if ((Number(e.created) || 0) < since) return;
-    const c = Number(e.count) || 0;
-    if (e.action === "eggs" || e.action === "eggs_laid") n += c;
-    else if (e.action === "sold_eggs" || e.action === "used_eggs") n -= c;
-  });
-  // Egg sales logged directly on the Sales tab also leave the basket.
-  // Skip anything that mirrors a sold_eggs entry (the entries→sales
-  // migration copies those over with the same id, plus a flag) so a
-  // tile-logged sale is never subtracted twice.
-  (sales || []).forEach((s) => {
-    if (!s || s.hobbyType !== "eggs") return;
-    if (s.migratedFromEntries || entryIds.has(s.id)) return;
-    if ((Number(s.created) || 0) < since) return;
-    const qty = Number(s.qty) || 0;
-    const perUnit = { eggs: 1, egg: 1, dozen: 12, dozens: 12 };
-    n -= qty * (perUnit[String(s.unit || "eggs").toLowerCase()] || 1);
-  });
-  return n;
-}
 
 // Card on the egg-layer home page showing live eggs-on-hand once the user
 // turns inventory tracking on. Sits under the flock baskets. Tapping
@@ -13561,6 +13484,9 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     const gh = data.hobbies.find((h) => h.type === "garden");
     if (!gh) return null;
     return <SeedUseModal hobby={gh} plantName={modal.plantName} update={update} onClose={close} />;
+  }
+  if (modal.type === "shareCard" && modal.card) {
+    return <BragShareModal card={modal.card} user={user} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
   }
   if (modal.type === "eggShare") {
     const eh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;

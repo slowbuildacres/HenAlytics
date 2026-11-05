@@ -104,7 +104,8 @@ export function Sheet({ open, onClose, children, label, above = 0, maxHeight = "
   }, [open, onClose]);
   if (!open) return null;
   return (
-    <div style={{ position: "fixed", inset: 0, zIndex: 70 }}>
+    // Sheets cover the nav bar, except the Log picker, which sits on top of it.
+    <div style={{ position: "fixed", inset: 0, zIndex: above ? 70 : 95 }}>
       <button type="button" aria-label="Close" onClick={onClose} style={{
         position: "absolute", inset: 0, bottom: above, border: "none", background: nl.scrim, cursor: "default",
       }} />
@@ -153,6 +154,40 @@ export function Badge({ tone = "quiet", children }) {
     <span style={{ fontSize: 12, fontWeight: 600, padding: "4px 9px", borderRadius: radius.pill, whiteSpace: "nowrap", ...tones[tone] }}>
       {children}
     </span>
+  );
+}
+
+// The tab row under a hobby's name: Today · Birds/Herd/Plants · Stats.
+export function HobbyTabs({ tabs, active, onPick, label = "Sections" }) {
+  return (
+    <nav aria-label={label} style={{ display: "flex", borderBottom: `1px solid ${nl.line}`, margin: "-4px 0 14px" }}>
+      {tabs.map((t) => {
+        const on = t.key === active;
+        return (
+          <button key={t.key} type="button" onClick={() => onPick(t.key)} aria-current={on ? "page" : undefined} style={{
+            flex: 1, minHeight: 44, background: "none", border: "none", cursor: "pointer",
+            borderBottom: `2px solid ${on ? nl.ink : "transparent"}`, marginBottom: -1,
+            color: on ? nl.ink : nl.soft, font: `600 14px ${font.body}`,
+          }}>{t.label}</button>
+        );
+      })}
+    </nav>
+  );
+}
+
+// A circular +/− button (the egg counter).
+export function RoundButton({ kind = "plus", size = 52, onClick, label, disabled }) {
+  const plus = kind === "plus";
+  return (
+    <button type="button" onClick={onClick} aria-label={label} disabled={disabled} style={{
+      width: size, height: size, borderRadius: size / 2, flexShrink: 0, cursor: disabled ? "default" : "pointer",
+      border: plus ? "none" : `1.5px solid ${nl.field}`, background: plus ? nl.yolk : nl.card, opacity: disabled ? 0.4 : 1,
+      display: "flex", alignItems: "center", justifyContent: "center", color: nl.ink,
+    }}>
+      <svg width={size * 0.44} height={size * 0.44} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth={plus ? 2.4 : 2.2} strokeLinecap="round" aria-hidden="true">
+        {plus ? <path d="M12 5v14M5 12h14" /> : <path d="M5 12h14" />}
+      </svg>
+    </button>
   );
 }
 
