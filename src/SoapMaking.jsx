@@ -15,7 +15,7 @@
 // Sold bars are derived from data.sales where batchId === batch.id.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -32,11 +32,11 @@ const palette = legacyPalette({
 });
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -161,9 +161,9 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
 
   return (
     <ModalShell title={batch ? "Edit batch" : "🧼 New soap batch"} onClose={onClose}>
-      <Field label="Batch / recipe name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Oatmeal honey, Lavender goat milk" autoFocus /></Field>
+      <Field label="Batch / recipe name"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Oatmeal honey, Lavender goat milk" autoFocus /></Field>
       <Field label="Method">
-        <select style={inputStyle} value={method} onChange={e => {
+        <select style={inputStyle()} value={method} onChange={e => {
           setMethod(e.target.value);
           const m = METHODS.find(x => x.id === e.target.value);
           if (m && !batch) setCureWeeks(String(m.cureWeeks));
@@ -172,24 +172,24 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
         </select>
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Made on"><input type="date" style={inputStyle} value={madeDate} onChange={e => setMadeDate(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cure (weeks)"><input type="number" inputMode="decimal" min={0} step="0.5" style={inputStyle} value={cureWeeks} onChange={e => setCureWeeks(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Made on"><input type="date" style={inputStyle()} value={madeDate} onChange={e => setMadeDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Cure (weeks)"><input type="number" inputMode="decimal" min={0} step="0.5" style={inputStyle()} value={cureWeeks} onChange={e => setCureWeeks(e.target.value)} /></Field></div>
       </div>
       {cureDate && (
         <div style={{ padding: "8px 12px", background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, marginBottom: 12 }}>
           📅 Ready on <strong style={{ color: palette.ink }}>{fmtDate(cureDate)}</strong>{!batch ? " — we'll put a reminder on your calendar." : ""}
         </div>
       )}
-      <Field label="Bars made"><input type="number" inputMode="numeric" min={0} style={inputStyle} value={bars} onChange={e => setBars(e.target.value)} placeholder="e.g. 12" /></Field>
+      <Field label="Bars made"><input type="number" inputMode="numeric" min={0} style={inputStyle()} value={bars} onChange={e => setBars(e.target.value)} placeholder="e.g. 12" /></Field>
 
       <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600 }}>Ingredients</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
         {ingredients.map(i => (
           <div key={i.id} style={{ display: "grid", gridTemplateColumns: "1fr 64px 72px 72px 28px", gap: 4, alignItems: "center" }}>
-            <input style={{ ...inputStyle, padding: "8px", fontSize: 13 }} value={i.name} onChange={e => setIng(i.id, "name", e.target.value)} placeholder="Olive oil" />
-            <input style={{ ...inputStyle, padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} value={i.amount} onChange={e => setIng(i.id, "amount", e.target.value)} placeholder="Amt" />
-            <select style={{ ...inputStyle, padding: "8px 4px", fontSize: 13 }} value={i.unit} onChange={e => setIng(i.id, "unit", e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
-            <input style={{ ...inputStyle, padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder="$" />
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} value={i.name} onChange={e => setIng(i.id, "name", e.target.value)} placeholder="Olive oil" />
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} value={i.amount} onChange={e => setIng(i.id, "amount", e.target.value)} placeholder="Amt" />
+            <select style={{ ...inputStyle(), padding: "8px 4px", fontSize: 13 }} value={i.unit} onChange={e => setIng(i.id, "unit", e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder="$" />
             <button onClick={() => setIngredients(arr => arr.filter(x => x.id !== i.id))} aria-label="Remove ingredient" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 2 }}><Trash2 size={15} /></button>
           </div>
         ))}
@@ -201,7 +201,7 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
           {parseInt(bars, 10) > 0 ? ` · ${fmtMoney(totalCost / parseInt(bars, 10))}/bar` : ""}
         </span>
       </div>
-      <Field label="Notes (optional)"><textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Superfat %, fragrance, how it traced…" /></Field>
+      <Field label="Notes (optional)"><textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Superfat %, fragrance, how it traced…" /></Field>
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {batch && (!confirm
@@ -260,7 +260,7 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
   return (
     <ModalShell title={mode === "sell" ? "💵 Sell bars" : "🧺 Use / give bars"} onClose={onClose}>
       <Field label="Batch">
-        <select style={inputStyle} value={batchId} onChange={e => setBatchId(e.target.value)}>
+        <select style={inputStyle()} value={batchId} onChange={e => setBatchId(e.target.value)}>
           {(presetBatchId ? batches.filter(b => b.id === presetBatchId) : avail).map(b => (
             <option key={b.id} value={b.id}>{b.name} — {soapBatchStats(b, sales).remaining} left</option>
           ))}
@@ -268,30 +268,30 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
         {st && !st.cured && <div style={{ fontSize: 11, color: palette.accent, marginTop: 4 }}>Heads up: still curing — {st.daysLeft} day{st.daysLeft === 1 ? "" : "s"} to go.</div>}
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Bars"><input type="number" inputMode="numeric" min={1} max={st?.remaining || undefined} style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Bars"><input type="number" inputMode="numeric" min={1} max={st?.remaining || undefined} style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} /></Field></div>
       </div>
       {mode === "sell" ? (
         <>
-          <Field label="Price per bar ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 7.00" /></Field>
+          <Field label="Price per bar ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 7.00" /></Field>
           <Field label="Customer (optional)">
-            <select style={inputStyle} value={buyerId} onChange={e => { setBuyerId(e.target.value); setBuyer(""); }}>
+            <select style={inputStyle()} value={buyerId} onChange={e => { setBuyerId(e.target.value); setBuyer(""); }}>
               <option value="">— No customer / new below —</option>
               {(customers || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            {!buyerId && <input style={{ ...inputStyle, marginTop: 6 }} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="New customer name (optional)" />}
+            {!buyerId && <input style={{ ...inputStyle(), marginTop: 6 }} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="New customer name (optional)" />}
           </Field>
           {n > 0 && <div style={{ padding: 10, background: palette.yolkSoft, borderRadius: 6, fontSize: 13, textAlign: "center", marginBottom: 12 }}>Revenue <strong>{fmtMoney((parseFloat(price) || 0) * n)}</strong>{st?.costPerBar > 0 ? ` · cost ${fmtMoney(st.costPerBar * n)}` : ""}</div>}
         </>
       ) : (
         <Field label="What happened to them?">
-          <select style={inputStyle} value={kind} onChange={e => setKind(e.target.value)}>
+          <select style={inputStyle()} value={kind} onChange={e => setKind(e.target.value)}>
             <option value="used">Used at home</option>
             <option value="gifted">Gave away / gifted</option>
           </select>
         </Field>
       )}
-      <Field label="Note (optional)"><input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} /></Field>
+      <Field label="Note (optional)"><input style={inputStyle()} value={note} onChange={e => setNote(e.target.value)} /></Field>
       {batch && n > (st?.remaining || 0) && <div style={{ fontSize: 12, color: palette.accent, marginBottom: 8 }}>Only {st.remaining} left in this batch.</div>}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>

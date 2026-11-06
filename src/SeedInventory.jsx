@@ -13,7 +13,7 @@
 // hobby, so it syncs and survives season close-outs.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { loadSeedAffiliate, seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
 
@@ -25,11 +25,11 @@ const palette = legacyPalette({
 });
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 const newId = () => Math.random().toString(36).slice(2, 10);
 
 // Typical years seed stays reliably viable when stored cool and dry
@@ -75,11 +75,11 @@ const AMOUNTS = [
   { key: "low", label: "Low" },
   { key: "out", label: "Out" },
 ];
-const STATUS_STYLE = legacyStyle(() => ({
+const STATUS_STYLE = () => ({
   good: { bg: "#A8C07840", fg: palette.leaf },
   use: { bg: "#F2D58A80", fg: "#8A6200" },
   test: { bg: "#E8A07A55", fg: palette.accent },
-}));
+});
 
 function Chip({ active, onClick, children, tone }) {
   return (
@@ -107,13 +107,13 @@ function PacketForm({ initial, cropOptions, onSave, onCancel, onDelete }) {
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, marginBottom: 8 }}>
         <label style={{ fontSize: 12, color: palette.inkSoft }}>Crop
           <input list="seed-crop-options" value={f.crop} onChange={set("crop")} placeholder="Tomato" autoFocus={!initial}
-            style={{ ...inputStyle, marginTop: 4 }} />
+            style={{ ...inputStyle(), marginTop: 4 }} />
         </label>
         <label style={{ fontSize: 12, color: palette.inkSoft }}>Variety
-          <input value={f.variety} onChange={set("variety")} placeholder="Cherokee Purple" style={{ ...inputStyle, marginTop: 4 }} />
+          <input value={f.variety} onChange={set("variety")} placeholder="Cherokee Purple" style={{ ...inputStyle(), marginTop: 4 }} />
         </label>
         <label style={{ fontSize: 12, color: palette.inkSoft }}>Packed for
-          <select value={f.year || ""} onChange={(e) => setF((x) => ({ ...x, year: Number(e.target.value) || null }))} style={{ ...inputStyle, marginTop: 4 }}>
+          <select value={f.year || ""} onChange={(e) => setF((x) => ({ ...x, year: Number(e.target.value) || null }))} style={{ ...inputStyle(), marginTop: 4 }}>
             {years.map((y) => <option key={y} value={y}>{y}</option>)}
             <option value="">Not sure</option>
           </select>
@@ -121,7 +121,7 @@ function PacketForm({ initial, cropOptions, onSave, onCancel, onDelete }) {
         <label style={{ fontSize: 12, color: palette.inkSoft }}>Packets
           <input type="number" min="0" inputMode="numeric" value={f.packets}
             onChange={(e) => setF((x) => ({ ...x, packets: e.target.value === "" ? "" : Math.max(0, Number(e.target.value)) }))}
-            style={{ ...inputStyle, marginTop: 4 }} />
+            style={{ ...inputStyle(), marginTop: 4 }} />
         </label>
       </div>
       <datalist id="seed-crop-options">
@@ -132,10 +132,10 @@ function PacketForm({ initial, cropOptions, onSave, onCancel, onDelete }) {
         {AMOUNTS.map((a) => <Chip key={a.key} active={f.amount === a.key} onClick={() => setF((x) => ({ ...x, amount: a.key }))}>{a.label}</Chip>)}
       </div>
       <label style={{ fontSize: 12, color: palette.inkSoft, display: "block", marginBottom: 8 }}>Where from (optional)
-        <input value={f.source} onChange={set("source")} placeholder="Baker Creek, saved seed, swap…" style={{ ...inputStyle, marginTop: 4 }} />
+        <input value={f.source} onChange={set("source")} placeholder="Baker Creek, saved seed, swap…" style={{ ...inputStyle(), marginTop: 4 }} />
       </label>
       <label style={{ fontSize: 12, color: palette.inkSoft, display: "block", marginBottom: 12 }}>Notes (optional)
-        <input value={f.notes} onChange={set("notes")} placeholder="Germinated great, save more" style={{ ...inputStyle, marginTop: 4 }} />
+        <input value={f.notes} onChange={set("notes")} placeholder="Germinated great, save more" style={{ ...inputStyle(), marginTop: 4 }} />
       </label>
       <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
         <button type="button" disabled={!valid} onClick={() => onSave({ ...f, crop: f.crop.trim(), variety: f.variety.trim() })} style={{
@@ -349,7 +349,7 @@ export default function SeedInventory({ hobby, update, cropOptions = [], toast, 
         <Chip active={filter === "buy"} onClick={() => setFilter("buy")} tone={palette.accent}>To buy ({toBuy.length})</Chip>
         {seeds.length > 6 && (
           <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Search"
-            style={{ ...inputStyle, width: "auto", flex: "1 1 120px", padding: "6px 10px", fontSize: 13 }} />
+            style={{ ...inputStyle(), width: "auto", flex: "1 1 120px", padding: "6px 10px", fontSize: 13 }} />
         )}
       </div>
 
@@ -381,7 +381,7 @@ export default function SeedInventory({ hobby, update, cropOptions = [], toast, 
             return <PacketForm key={p.id} initial={p} cropOptions={options} onSave={save} onCancel={() => setEditingId(null)} onDelete={() => remove(p.id)} />;
           }
           const v = seedViability(p, now);
-          const st = STATUS_STYLE[v.status];
+          const st = STATUS_STYLE()[v.status];
           return (
             <div key={p.id} style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10, padding: "10px 12px" }}>
               <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>

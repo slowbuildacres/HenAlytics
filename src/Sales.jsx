@@ -13,7 +13,7 @@
 // read alongside data.sales for egg revenue stats (never deleted).
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
@@ -30,11 +30,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -57,7 +57,7 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 const thisMonthStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 
 // Hobby type colors and labels
-const HOBBY_META = legacyStyle(() => ({
+const HOBBY_META = () => ({
   eggs:          { label: "Eggs",          emoji: "🥚", color: palette.yolk },
   honey:         { label: "Honey",         emoji: "🍯", color: palette.honey },
   meat_chickens: { label: "Meat Birds", emoji: "🍗", color: palette.feather },
@@ -82,7 +82,7 @@ const HOBBY_META = legacyStyle(() => ({
   cat:           { label: "Cats",          emoji: "🐈", color: palette.feather },
   maple_syrup:   { label: "Maple Syrup",   emoji: "🍁", color: palette.honey },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
-}));
+});
 
 const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Peafowl", "Other"];
 
@@ -506,7 +506,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
             <>
               <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:14 }}>What did you sell?</div>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:8,marginBottom:20 }}>
-                {Object.entries(HOBBY_META).filter(([k]) => availableHobbyTypes.includes(k)).map(([key, meta]) => (
+                {Object.entries(HOBBY_META()).filter(([k]) => availableHobbyTypes.includes(k)).map(([key, meta]) => (
                   <button key={key} onClick={() => { setHobbyType(key); setStep(2); }} style={{
                     padding:"14px 10px",background:palette.card,border:`1.5px solid ${palette.line}`,
                     borderRadius:10,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
@@ -526,12 +526,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
             <>
               {!isEdit && (
                 <button onClick={() => setStep(1)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY,fontSize:13,padding:"0 0 14px",display:"flex",alignItems:"center",gap:4 }}>
-                  ← {HOBBY_META[hobbyType]?.emoji} {HOBBY_META[hobbyType]?.label}
+                  ← {HOBBY_META()[hobbyType]?.emoji} {HOBBY_META()[hobbyType]?.label}
                 </button>
               )}
 
               <Field label="Date">
-                <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+                <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
               </Field>
 
               {/* Eggs */}
@@ -539,14 +539,14 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Bird type">
-                      <select style={inputStyle} value={eggType} onChange={e=>setEggType(e.target.value)}>
+                      <select style={inputStyle()} value={eggType} onChange={e=>setEggType(e.target.value)}>
                         {EGG_TYPES.map(t=><option key={t}>{t}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Purpose">
-                      <select style={inputStyle} value={eggPurpose} onChange={e=>setEggPurpose(e.target.value)}>
+                      <select style={inputStyle()} value={eggPurpose} onChange={e=>setEggPurpose(e.target.value)}>
                         {EGG_PURPOSES.map(p=><option key={p}>{p}</option>)}
                       </select>
                     </Field>
@@ -554,18 +554,18 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 </div>
                 {eggType === "Other" && (
                   <Field label="What kind?">
-                    <input style={inputStyle} value={eggTypeCustom} onChange={e=>setEggTypeCustom(e.target.value)} placeholder="e.g. emu, ostrich, partridge" />
+                    <input style={inputStyle()} value={eggTypeCustom} onChange={e=>setEggTypeCustom(e.target.value)} placeholder="e.g. emu, ostrich, partridge" />
                   </Field>
                 )}
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Qty">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Unit">
-                      <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
+                      <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
                         <option value="dozen">Dozen</option>
                         <option value="eggs">Individual eggs</option>
                       </select>
@@ -573,7 +573,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1,minWidth:120 }}>
                     <Field label={unit === "dozen" ? "Price / dozen" : "Price / dozen (equiv)"}>
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -584,14 +584,14 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Form">
-                      <select style={inputStyle} value={honeyForm} onChange={e=>setHoneyForm(e.target.value)}>
+                      <select style={inputStyle()} value={honeyForm} onChange={e=>setHoneyForm(e.target.value)}>
                         {HONEY_FORMS.map(f=><option key={f}>{f}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Container / unit">
-                      <select style={inputStyle} value={honeyContainer} onChange={e=>setHoneyContainer(e.target.value)}>
+                      <select style={inputStyle()} value={honeyContainer} onChange={e=>setHoneyContainer(e.target.value)}>
                         {HONEY_CONTAINERS.map(c=><option key={c}>{c}</option>)}
                       </select>
                     </Field>
@@ -600,12 +600,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12 }}>
                   <div style={{ flex:1 }}>
                     <Field label="Qty (units sold)">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Price per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -614,15 +614,15 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Meat chickens */}
               {hobbyType === "meat_chickens" && <>
                 <Field label="Form">
-                  <select style={inputStyle} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
+                  <select style={inputStyle()} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
                     {MEAT_FORMS.map(f=><option key={f}>{f}</option>)}
                   </select>
                 </Field>
                 <Field label="Number of birds / units">
-                  <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                  <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                 </Field>
                 <Field label="Pricing method">
-                  <select style={inputStyle} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
+                  <select style={inputStyle()} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
                     <option value="per_bird">Per bird / unit</option>
                     <option value="per_lb">Per lb</option>
                     <option value="flat">Flat price (total)</option>
@@ -632,24 +632,24 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   <div style={{ display:"flex",gap:12 }}>
                     <div style={{ flex:1 }}>
                       <Field label="Avg weight (lbs)">
-                        <input type="number" min={0} step="0.1" style={inputStyle} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
+                        <input type="number" min={0} step="0.1" style={inputStyle()} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
                       </Field>
                     </div>
                     <div style={{ flex:1 }}>
                       <Field label="Price / lb">
-                        <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
                       </Field>
                     </div>
                   </div>
                 </>}
                 {pricingMethod === "per_bird" && (
                   <Field label="Price / bird">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                   </Field>
                 )}
                 {pricingMethod === "flat" && (
                   <Field label="Total price ($)">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
                   </Field>
                 )}
               </>}
@@ -657,15 +657,15 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Rabbits */}
               {hobbyType === "rabbits" && <>
                 <Field label="Form">
-                  <select style={inputStyle} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
+                  <select style={inputStyle()} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
                     {RABBIT_FORMS.map(f=><option key={f}>{f}</option>)}
                   </select>
                 </Field>
                 <Field label="Quantity">
-                  <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                  <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                 </Field>
                 <Field label="Pricing method">
-                  <select style={inputStyle} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
+                  <select style={inputStyle()} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
                     <option value="per_bird">Per rabbit</option>
                     <option value="per_lb">Per lb</option>
                     <option value="flat">Flat price (total)</option>
@@ -675,24 +675,24 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   <div style={{ display:"flex",gap:12 }}>
                     <div style={{ flex:1 }}>
                       <Field label="Avg weight (lbs)">
-                        <input type="number" min={0} step="0.1" style={inputStyle} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
+                        <input type="number" min={0} step="0.1" style={inputStyle()} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
                       </Field>
                     </div>
                     <div style={{ flex:1 }}>
                       <Field label="Price / lb">
-                        <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
                       </Field>
                     </div>
                   </div>
                 )}
                 {pricingMethod === "per_bird" && (
                   <Field label="Price / rabbit">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                   </Field>
                 )}
                 {pricingMethod === "flat" && (
                   <Field label="Total price ($)">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
                   </Field>
                 )}
               </>}
@@ -700,24 +700,24 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Garden */}
               {hobbyType === "garden" && <>
                 <Field label="Crop / product">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, corn, cut flowers..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, corn, cut flowers..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Qty">
-                      <input type="number" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="0.1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Unit">
-                      <select style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
+                      <select style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
                         {["lbs","oz","count","bunch","quart","pint","bag","basket"].map(u=><option key={u}>{u}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:110 }}>
                     <Field label={`Price / ${gardenUnit}`}>
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -726,17 +726,17 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Farm Stand */}
               {hobbyType === "farmstand" && <>
                 <Field label="Item name">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, eggs, honey, baked goods..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, eggs, honey, baked goods..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Qty sold">
-                      <input type="number" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="0.1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Unit">
-                      <select style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
+                      <select style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
                         {["each","lbs","dozen","quart","pint","bunch","bag","jar","loaf"].map(u=><option key={u}>{u}</option>)}
                       </select>
                     </Field>
@@ -745,12 +745,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1 }}>
                     <Field label="Your cost per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -759,7 +759,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Sourdough */}
               {hobbyType === "sourdough" && <>
                 <Field label="Recipe / loaf type">
-                  <input style={inputStyle} list="sourdough-recipes" value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Country Loaf, Boule, Cinnamon Raisin..." />
+                  <input style={inputStyle()} list="sourdough-recipes" value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Country Loaf, Boule, Cinnamon Raisin..." />
                   <datalist id="sourdough-recipes">
                     {["Country Loaf","Boule","Batard","Whole Wheat","Rye","Multigrain","Sandwich Loaf","Focaccia","Baguette","Cinnamon Raisin","Jalapeño Cheddar","Pizza Dough","Discard Crackers"].map(r => <option key={r} value={r} />)}
                   </datalist>
@@ -767,17 +767,17 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Loaves sold">
-                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per loaf (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per loaf">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -786,25 +786,25 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Baking */}
               {hobbyType === "baking" && <>
                 <Field label="Recipe / item">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Apple Pie, Banana Bread, Croissants..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Apple Pie, Banana Bread, Croissants..." />
                 </Field>
                 <Field label="Unit (optional)">
-                  <input style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="loaves, pies, dozen cookies..." />
+                  <input style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="loaves, pies, dozen cookies..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Quantity sold">
-                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per item (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per item">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -813,25 +813,25 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Canning */}
               {hobbyType === "canning" && <>
                 <Field label="Item">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Strawberry Jam, Dill Pickles, Tomato Sauce..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Strawberry Jam, Dill Pickles, Tomato Sauce..." />
                 </Field>
                 <Field label="Jar type">
-                  <input style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="pint jars, quart jars, half-pints..." />
+                  <input style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="pint jars, quart jars, half-pints..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Jars sold">
-                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per jar (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per jar">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -843,14 +843,14 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                     pick one. Picking pre-fills the name AND archives the animal
                     on save so the Sales tab can retire it in one tap. */}
                 {(() => {
-                  const speciesLabel = (HOBBY_META[hobbyType]?.label || "Animal");
+                  const speciesLabel = (HOBBY_META()[hobbyType]?.label || "Animal");
                   const lsHobby = (data.hobbies || []).find(h => h.id === LIVESTOCK_HOBBY_ID[hobbyType]);
                   const liveAnimals = (lsHobby?.animals || []).filter(a => !a.archived);
                   if (liveAnimals.length === 0) return null;
                   return (
                     <Field label={`Sell an existing animal? (optional)`}>
                       <select
-                        style={inputStyle}
+                        style={inputStyle()}
                         value={selectedAnimalId}
                         onChange={e => {
                           const id = e.target.value;
@@ -870,16 +870,16 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   );
                 })()}
                 <Field label="Animal name">
-                  <input style={inputStyle} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Bessie, Thunder" />
+                  <input style={inputStyle()} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Bessie, Thunder" />
                 </Field>
                 <Field label="Type of transaction">
-                  <select style={inputStyle} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
+                  <select style={inputStyle()} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
                     <option value="sold">Sold</option>
                     <option value="leased">Leased</option>
                   </select>
                 </Field>
                 <Field label="Sale / lease price">
-                  <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                  <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                 </Field>
                 {selectedAnimalId && (
                   <div style={{ fontSize:12, color:palette.inkSoft, marginBottom:10, padding:"8px 10px", background:palette.bgAlt, borderRadius:6, lineHeight:1.5 }}>
@@ -891,20 +891,20 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Incubator / chicks */}
               {hobbyType === "incubator" && <>
                 <Field label="Bird type">
-                  <input style={inputStyle} value={chickBirdType} onChange={e=>setChickBirdType(e.target.value)} placeholder="e.g. Chicken, Duck, Quail" />
+                  <input style={inputStyle()} value={chickBirdType} onChange={e=>setChickBirdType(e.target.value)} placeholder="e.g. Chicken, Duck, Quail" />
                 </Field>
                 <Field label="Brooder batch (optional)">
-                  <input style={inputStyle} value={chickBrooderName} onChange={e=>setChickBrooderName(e.target.value)} placeholder="e.g. Spring batch #1" />
+                  <input style={inputStyle()} value={chickBrooderName} onChange={e=>setChickBrooderName(e.target.value)} placeholder="e.g. Spring batch #1" />
                 </Field>
                 <div style={{ display:"flex",gap:12 }}>
                   <div style={{ flex:1 }}>
                     <Field label="Chicks sold">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Price per chick">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -918,17 +918,17 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Other */}
               {hobbyType === "other" && <>
                 <Field label="What was sold?">
-                  <input style={inputStyle} value={otherItem} onChange={e=>setOtherItem(e.target.value)} placeholder="e.g. Quail eggs, seedlings, crafts..." />
+                  <input style={inputStyle()} value={otherItem} onChange={e=>setOtherItem(e.target.value)} placeholder="e.g. Quail eggs, seedlings, crafts..." />
                 </Field>
                 <div style={{ display:"flex",gap:12 }}>
                   <div style={{ flex:1 }}>
                     <Field label="Qty">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Total price ($)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
                     </Field>
                   </div>
                 </div>
@@ -945,7 +945,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
               <Field label="Customer (optional)">
                 {!showNewBuyer ? (
                   <div style={{ display:"flex",gap:8 }}>
-                    <select style={{ ...inputStyle,flex:1 }} value={buyerId} onChange={e=>setBuyerId(e.target.value)}>
+                    <select style={{ ...inputStyle(),flex:1 }} value={buyerId} onChange={e=>setBuyerId(e.target.value)}>
                       <option value="">— No customer —</option>
                       {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
@@ -955,18 +955,18 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                 ) : (
                   <div style={{ display:"flex",gap:8 }}>
-                    <input style={{ ...inputStyle,flex:1 }} value={newBuyerName} onChange={e=>setNewBuyerName(e.target.value)} placeholder="Customer name" autoFocus />
+                    <input style={{ ...inputStyle(),flex:1 }} value={newBuyerName} onChange={e=>setNewBuyerName(e.target.value)} placeholder="Customer name" autoFocus />
                     <button onClick={()=>setShowNewBuyer(false)} style={{ padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",fontFamily:FONT_BODY,fontSize:13,color:palette.inkSoft }}>Cancel</button>
                   </div>
                 )}
               </Field>
 
               <Field label="Notes (optional)">
-                <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Farmers market, neighbor, online..." />
+                <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Farmers market, neighbor, online..." />
               </Field>
 
               <Field label="Tip (optional)">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
               </Field>
 
               <Btn variant="primary" onClick={save} style={{ width:"100%" }}>
@@ -995,10 +995,10 @@ function CustomerModal({ customer, onSave, onClose }) {
         </div>
         <div style={{ padding:20 }}>
           <Field label="Name">
-            <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Smith" autoFocus />
+            <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Smith" autoFocus />
           </Field>
           <Field label="Notes (optional)">
-            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
+            <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
           </Field>
           <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
         </div>
@@ -1043,7 +1043,7 @@ function ExpenseRow({ expense, hobbies, onEdit, onDelete, readOnly }) {
 }
 
 function SaleRow({ sale, customers, onEdit, onDelete }) {
-  const meta = HOBBY_META[sale.hobbyType] || HOBBY_META.other;
+  const meta = HOBBY_META()[sale.hobbyType] || HOBBY_META().other;
   const customer = customers.find(c => c.id === sale.buyerId);
   const revenue = computeRevenue(sale);
 
@@ -1340,7 +1340,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
         </div>
         <div style={{ padding:20 }}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       <Field label="Amount ($)">
@@ -1348,7 +1348,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={amount}
           onChange={(e) => { setAmount(e.target.value); setError(""); }}
           placeholder="0.00"
@@ -1359,7 +1359,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       <Field label="Category">
         <input
           list="expense-categories"
-          style={inputStyle}
+          style={inputStyle()}
           value={category}
           onChange={(e) => { setCategory(e.target.value); setError(""); }}
           placeholder="Feed, Bedding, etc."
@@ -1370,7 +1370,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       </Field>
 
       <Field label="For which hobby? (optional)">
-        <select style={inputStyle} value={hobbyId} onChange={(e) => { setHobbyId(e.target.value); setFlockId(""); }}>
+        <select style={inputStyle()} value={hobbyId} onChange={(e) => { setHobbyId(e.target.value); setFlockId(""); }}>
           <option value="">— All / unspecified —</option>
           {visibleHobbies.map(h => (
             <option key={h.id} value={h.id}>{h.name}</option>
@@ -1387,7 +1387,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
         if (flocks.length === 0) return null;
         return (
           <Field label="Which flock? (optional)">
-            <select style={inputStyle} value={flockId} onChange={(e) => setFlockId(e.target.value)}>
+            <select style={inputStyle()} value={flockId} onChange={(e) => setFlockId(e.target.value)}>
               <option value="">— All flocks / general —</option>
               {flocks.map(f => (
                 <option key={f.id} value={f.id}>{f.name}</option>
@@ -1399,7 +1399,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
 
       <Field label="Note (optional)">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="20lb layer pellets at TSC"
@@ -1407,14 +1407,14 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       </Field>
 
       <Field label="Repeats">
-        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+        <select style={inputStyle()} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
           {RECUR_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </Field>
 
       {recurrence !== "none" && (
         <Field label="End date (optional)">
-          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+          <input type="date" style={inputStyle()} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
         </Field>
       )}
 
@@ -1456,7 +1456,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
 
 // What a sale was, in a few words ("Eggs", "Honey"), for one-line summaries.
 export function saleKind(sale) {
-  const meta = HOBBY_META[sale && sale.hobbyType] || HOBBY_META.other || { label: "Sale" };
+  const meta = HOBBY_META()[sale && sale.hobbyType] || HOBBY_META().other || { label: "Sale" };
   if (sale && sale.hobbyType === "eggs" && sale.qty) return `${sale.qty} ${sale.unit === "dozen" ? "dozen eggs" : "eggs"}`;
   if (sale && sale.crop) return sale.crop;
   return meta.label;
@@ -1556,9 +1556,9 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
       acc[t] = (acc[t] || 0) + computeRevenue(sale);
     });
     return Object.entries(acc).map(([type, revenue]) => ({
-      name: HOBBY_META[type]?.label || type,
+      name: HOBBY_META()[type]?.label || type,
       revenue: parseFloat(revenue.toFixed(2)),
-      emoji: HOBBY_META[type]?.emoji || "💰",
+      emoji: HOBBY_META()[type]?.emoji || "💰",
     })).sort((a,b) => b.revenue - a.revenue);
   }, [allSales]);
 
@@ -1932,7 +1932,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
               color: filterType===t ? palette.bg : palette.ink,
               border:`1.5px solid ${palette.line}`,cursor:"pointer",
             }}>
-              {t === "all" ? "All" : (HOBBY_META[t]?.emoji + " " + HOBBY_META[t]?.label)}
+              {t === "all" ? "All" : (HOBBY_META()[t]?.emoji + " " + HOBBY_META()[t]?.label)}
             </button>
           ))}
         </div>
@@ -2376,8 +2376,8 @@ export function buildYearReport(data, year, now = new Date()) {
 
   const sales = collectAllSales(data).filter(s => inYear(s.date)).map(s => ({
     date: s.date,
-    hobby: (HOBBY_META[s.hobbyType] || HOBBY_META.other).label,
-    item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META[s.hobbyType] || HOBBY_META.other).label,
+    hobby: (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
+    item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
     customer: s.customerName || "",
     qty: s.qty != null ? `${s.qty}${s.unit ? ` ${s.unit}` : ""}` : "",
     amount: Math.round(computeRevenue(s) * 100) / 100,

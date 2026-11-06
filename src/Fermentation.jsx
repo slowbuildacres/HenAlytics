@@ -23,7 +23,7 @@
 //                            defaultTempHigh, ingredients, notes }]
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -163,11 +163,11 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 // ============================================================================
 // NEW / EDIT FERMENT MODAL
@@ -232,48 +232,48 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
     <Modal open onClose={onClose} title={editing ? "✏️ Edit ferment" : "🫧 New fermentation"}>
       {recipes.length > 0 && !editing && (
         <Field label="Start from recipe (optional)">
-          <select style={inputStyle} value={recipeId} onChange={(e) => onPickRecipe(e.target.value)}>
+          <select style={inputStyle()} value={recipeId} onChange={(e) => onPickRecipe(e.target.value)}>
             <option value="">— Custom (no recipe) —</option>
             {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </Field>
       )}
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sauerkraut Batch #3, Hot sauce, Kombucha SCOBY" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sauerkraut Batch #3, Hot sauce, Kombucha SCOBY" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Expected days">
-            <input type="number" min={1} style={inputStyle} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
+            <input type="number" min={1} style={inputStyle()} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
           </Field>
         </div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Starting temp (°F)">
-            <input type="number" min={0} style={inputStyle} value={startedTemperatureF} onChange={(e) => setStartedTemperatureF(e.target.value)} placeholder="e.g. 68" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={startedTemperatureF} onChange={(e) => setStartedTemperatureF(e.target.value)} placeholder="e.g. 68" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Location">
-            <input style={inputStyle} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Kitchen counter, basement…" />
+            <input style={inputStyle()} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Kitchen counter, basement…" />
           </Field>
         </div>
       </div>
       <Field label="Ingredients / recipe details">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="2 heads cabbage, 1 tbsp salt, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="2 heads cabbage, 1 tbsp salt, etc." />
       </Field>
       <Field label="Ingredients cost ($, optional)">
         <input
           type="number"
           step="0.01"
           min={0}
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -330,22 +330,22 @@ function LogStageModal({ ferment, onSave, onClose }) {
         Logging an observation for <strong>{ferment.name}</strong>. Temperature is optional but helpful for reflection later.
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Temp (°F)">
-            <input type="number" min={0} style={inputStyle} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 70" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 70" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Stage label">
-            <input style={inputStyle} value={stageLabel} onChange={(e) => setStageLabel(e.target.value)} placeholder="e.g. Primary, Bubbling, Done" />
+            <input style={inputStyle()} value={stageLabel} onChange={(e) => setStageLabel(e.target.value)} placeholder="e.g. Primary, Bubbling, Done" />
           </Field>
         </div>
       </div>
       <Field label="Observation">
-        <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: FONT_BODY }} value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="What does it look/smell/taste like today? Any changes since yesterday?" autoFocus />
+        <textarea style={{ ...inputStyle(), minHeight: 80, resize: "vertical", fontFamily: FONT_BODY }} value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="What does it look/smell/taste like today? Any changes since yesterday?" autoFocus />
       </Field>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -366,7 +366,7 @@ function FinishFermentModal({ ferment, onFinish, onClose }) {
         Wrap up <strong>{ferment.name}</strong>. This archives the ferment with its full stage history for later reference.
       </p>
       <Field label="Final notes (taste, yield, lessons learned)">
-        <textarea style={{ ...inputStyle, minHeight: 100, resize: "vertical", fontFamily: FONT_BODY }} value={finalNotes} onChange={(e) => setFinalNotes(e.target.value)} placeholder="Came out great / too salty / would let go 2 more days…" autoFocus />
+        <textarea style={{ ...inputStyle(), minHeight: 100, resize: "vertical", fontFamily: FONT_BODY }} value={finalNotes} onChange={(e) => setFinalNotes(e.target.value)} placeholder="Came out great / too salty / would let go 2 more days…" autoFocus />
       </Field>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -408,28 +408,28 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={editing ? "✏️ Edit recipe" : "📋 New recipe"}>
       <Field label="Recipe name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Classic sauerkraut, Tibicos water kefir" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Classic sauerkraut, Tibicos water kefir" autoFocus />
       </Field>
       <Field label="Expected days">
-        <input type="number" min={1} style={inputStyle} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
+        <input type="number" min={1} style={inputStyle()} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Temp low (°F)">
-            <input type="number" min={0} style={inputStyle} value={defaultTempLow} onChange={(e) => setDefaultTempLow(e.target.value)} placeholder="65" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={defaultTempLow} onChange={(e) => setDefaultTempLow(e.target.value)} placeholder="65" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Temp high (°F)">
-            <input type="number" min={0} style={inputStyle} value={defaultTempHigh} onChange={(e) => setDefaultTempHigh(e.target.value)} placeholder="72" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={defaultTempHigh} onChange={(e) => setDefaultTempHigh(e.target.value)} placeholder="72" inputMode="numeric" />
           </Field>
         </div>
       </div>
       <Field label="Ingredients">
-        <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="Cabbage, salt at 2% by weight, optional caraway seeds…" />
+        <textarea style={{ ...inputStyle(), minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="Cabbage, salt at 2% by weight, optional caraway seeds…" />
       </Field>
       <Field label="Notes / instructions">
-        <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shred cabbage, salt, massage, pack into jar…" />
+        <textarea style={{ ...inputStyle(), minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shred cabbage, salt, massage, pack into jar…" />
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
@@ -469,16 +469,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. fermentation crocks, airlocks, weights" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. fermentation crocks, airlocks, weights" autoFocus />
       </Field>
       <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (

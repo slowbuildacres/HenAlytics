@@ -27,7 +27,7 @@
 // Cat gestation = 58–68 days. Default expected birth = +63 days.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo, useEffect } from "react";
 // NEW_LOOK (3.0): shared screens.
@@ -50,11 +50,11 @@ const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
 const CAT_GESTATION_DAYS = 63;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 // Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
@@ -306,7 +306,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
                 <PhotoThumb path={p.path} size={56} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
-                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    type="date" style={{ ...inputStyle(), padding: "6px 8px", fontSize: 13 }}
                     value={p.date || ""}
                     onChange={(e) => editDate(p.path, e.target.value)}
                   />
@@ -419,13 +419,13 @@ function DogModal({ cat, cats, onSave, onDelete, onClose, update, user, hobbyId 
   return (
     <ModalShell title={cat ? "Edit cat" : "Add a cat"} onClose={onClose}>
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Beau, Maggie" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Beau, Maggie" autoFocus />
       </Field>
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Sex">
-            <select style={inputStyle} value={sex} onChange={(e) => setSex(e.target.value)}>
+            <select style={inputStyle()} value={sex} onChange={(e) => setSex(e.target.value)}>
               <option value="female">Female</option>
               <option value="male">Male</option>
             </select>
@@ -433,23 +433,23 @@ function DogModal({ cat, cats, onSave, onDelete, onClose, update, user, hobbyId 
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Birthdate">
-            <input type="date" style={inputStyle} value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={birthdate} onChange={(e) => setBirthdate(e.target.value)} />
           </Field>
         </div>
       </div>
 
       <Field label="Breed">
-        <select style={inputStyle} value={breedSelect} onChange={(e) => setBreedSelect(e.target.value)}>
+        <select style={inputStyle()} value={breedSelect} onChange={(e) => setBreedSelect(e.target.value)}>
           <option value="">— pick a breed —</option>
           {CAT_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
         {breedSelect === "Other" && (
-          <input style={{ ...inputStyle, marginTop: 8 }} value={breedCustom} onChange={(e) => setBreedCustom(e.target.value)} placeholder="Breed name" />
+          <input style={{ ...inputStyle(), marginTop: 8 }} value={breedCustom} onChange={(e) => setBreedCustom(e.target.value)} placeholder="Breed name" />
         )}
       </Field>
 
       <Field label="Color / markings">
-        <input style={inputStyle} value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. White with black mask" />
+        <input style={inputStyle()} value={color} onChange={(e) => setColor(e.target.value)} placeholder="e.g. White with black mask" />
       </Field>
 
       {/* Barn cat toggle */}
@@ -478,18 +478,18 @@ function DogModal({ cat, cats, onSave, onDelete, onClose, update, user, hobbyId 
       </div>
 
       <Field label="Microchip ID (optional)">
-        <input style={inputStyle} value={microchipId} onChange={(e) => setMicrochipId(e.target.value)} placeholder="15-digit ID" />
+        <input style={inputStyle()} value={microchipId} onChange={(e) => setMicrochipId(e.target.value)} placeholder="15-digit ID" />
       </Field>
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Purchase cost ($)">
-            <input type="number" step="0.01" min={0} style={inputStyle} value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} placeholder="0.00" />
+            <input type="number" step="0.01" min={0} style={inputStyle()} value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} placeholder="0.00" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Purchased from">
-            <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="Breeder name" />
+            <input style={inputStyle()} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="Breeder name" />
           </Field>
         </div>
       </div>
@@ -501,23 +501,23 @@ function DogModal({ cat, cats, onSave, onDelete, onClose, update, user, hobbyId 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Sire (father)">
-            <select style={inputStyle} value={sireId} onChange={(e) => { setSireId(e.target.value); const m = males.find(x => x.id === e.target.value); if (m) setSire(m.name); }}>
+            <select style={inputStyle()} value={sireId} onChange={(e) => { setSireId(e.target.value); const m = males.find(x => x.id === e.target.value); if (m) setSire(m.name); }}>
               <option value="">— pick or type —</option>
               {males.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
             {!sireId && (
-              <input style={{ ...inputStyle, marginTop: 6 }} value={sire} onChange={(e) => setSire(e.target.value)} placeholder="External sire name" />
+              <input style={{ ...inputStyle(), marginTop: 6 }} value={sire} onChange={(e) => setSire(e.target.value)} placeholder="External sire name" />
             )}
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Dam (mother)">
-            <select style={inputStyle} value={damId} onChange={(e) => { setDamId(e.target.value); const f = females.find(x => x.id === e.target.value); if (f) setDam(f.name); }}>
+            <select style={inputStyle()} value={damId} onChange={(e) => { setDamId(e.target.value); const f = females.find(x => x.id === e.target.value); if (f) setDam(f.name); }}>
               <option value="">— pick or type —</option>
               {females.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
             {!damId && (
-              <input style={{ ...inputStyle, marginTop: 6 }} value={dam} onChange={(e) => setDam(e.target.value)} placeholder="External dam name" />
+              <input style={{ ...inputStyle(), marginTop: 6 }} value={dam} onChange={(e) => setDam(e.target.value)} placeholder="External dam name" />
             )}
           </Field>
         </div>
@@ -526,12 +526,12 @@ function DogModal({ cat, cats, onSave, onDelete, onClose, update, user, hobbyId 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Registry #">
-            <input style={inputStyle} value={registryNumber} onChange={(e) => setRegistryNumber(e.target.value)} placeholder="AKC, UKC, etc." />
+            <input style={inputStyle()} value={registryNumber} onChange={(e) => setRegistryNumber(e.target.value)} placeholder="AKC, UKC, etc." />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Registered name">
-            <input style={inputStyle} value={registryName} onChange={(e) => setRegistryName(e.target.value)} placeholder="Show name" />
+            <input style={inputStyle()} value={registryName} onChange={(e) => setRegistryName(e.target.value)} placeholder="Show name" />
           </Field>
         </div>
       </div>
@@ -610,7 +610,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         </div>
       )}
       <Field label="Dam (mother)">
-        <select style={inputStyle} value={damId} onChange={(e) => setDamId(e.target.value)}>
+        <select style={inputStyle()} value={damId} onChange={(e) => setDamId(e.target.value)}>
           {dams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
@@ -618,7 +618,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
       <Field label="Sire (father)">
         {!useSireExternal ? (
           <>
-            <select style={inputStyle} value={sireId} onChange={(e) => setSireId(e.target.value)}>
+            <select style={inputStyle()} value={sireId} onChange={(e) => setSireId(e.target.value)}>
               {sires.length === 0 && <option value="">No male cats — switch to external</option>}
               {sires.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
@@ -629,7 +629,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
           </>
         ) : (
           <>
-            <input style={inputStyle} value={sireExternal} onChange={(e) => setSireExternal(e.target.value)} placeholder="External stud name" />
+            <input style={inputStyle()} value={sireExternal} onChange={(e) => setSireExternal(e.target.value)} placeholder="External stud name" />
             <button onClick={() => setUseSireExternal(false)} style={{
               marginTop: 6, background: "none", border: "none", padding: 0,
               color: palette.inkSoft, fontSize: 12, textDecoration: "underline", cursor: "pointer",
@@ -641,18 +641,18 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Breed date">
-            <input type="date" style={inputStyle} value={breedDate} onChange={(e) => setBreedDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={breedDate} onChange={(e) => setBreedDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Expected birth">
-            <input type="date" style={{ ...inputStyle, opacity: 0.7 }} value={expectedBirthDate} readOnly />
+            <input type="date" style={{ ...inputStyle(), opacity: 0.7 }} value={expectedBirthDate} readOnly />
           </Field>
         </div>
       </div>
 
       <Field label="Notes">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Heat cycle notes, conditions, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Heat cycle notes, conditions, etc." />
       </Field>
 
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 16 }}>
@@ -746,7 +746,7 @@ function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) 
       ) : (
         <>
           <Field label="From breeding">
-            <select style={inputStyle} value={breedingId} onChange={(e) => setBreedingId(e.target.value)}>
+            <select style={inputStyle()} value={breedingId} onChange={(e) => setBreedingId(e.target.value)}>
               {eligibleBreedings.map(b => {
                 const damName = animals.find(a => a.id === b.damId)?.name || "?";
                 return <option key={b.id} value={b.id}>{damName} · {fmtDate(b.breedDate)}</option>;
@@ -763,18 +763,18 @@ function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) 
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Birth date">
-                <input type="date" style={inputStyle} value={birthDate} onChange={(e) => setWhelpDate(e.target.value)} />
+                <input type="date" style={inputStyle()} value={birthDate} onChange={(e) => setWhelpDate(e.target.value)} />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Total born">
-                <input type="number" min={0} style={inputStyle} value={totalBorn} onChange={(e) => setTotalBorn(e.target.value)} placeholder="auto from kitten count" />
+                <input type="number" min={0} style={inputStyle()} value={totalBorn} onChange={(e) => setTotalBorn(e.target.value)} placeholder="auto from kitten count" />
               </Field>
             </div>
           </div>
 
           <Field label="Notes">
-            <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Complications, vet intervention, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Complications, vet intervention, etc." />
           </Field>
 
           {/* PUPPIES */}
@@ -798,7 +798,7 @@ function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) 
             }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                 <input
-                  style={{ ...inputStyle, fontWeight: 600, padding: "6px 10px", width: "60%" }}
+                  style={{ ...inputStyle(), fontWeight: 600, padding: "6px 10px", width: "60%" }}
                   value={p.name}
                   onChange={(e) => updatePuppy(idx, { name: e.target.value })}
                   placeholder="Kitten name"
@@ -808,13 +808,13 @@ function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) 
                 }}><Trash2 size={16} /></button>
               </div>
               <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                <select style={{ ...inputStyle, flex: 1 }} value={p.sex} onChange={(e) => updatePuppy(idx, { sex: e.target.value })}>
+                <select style={{ ...inputStyle(), flex: 1 }} value={p.sex} onChange={(e) => updatePuppy(idx, { sex: e.target.value })}>
                   <option value="female">Female</option>
                   <option value="male">Male</option>
                 </select>
-                <input style={{ ...inputStyle, flex: 1 }} value={p.color} onChange={(e) => updatePuppy(idx, { color: e.target.value })} placeholder="Color" />
+                <input style={{ ...inputStyle(), flex: 1 }} value={p.color} onChange={(e) => updatePuppy(idx, { color: e.target.value })} placeholder="Color" />
               </div>
-              <select style={inputStyle} value={p.status} onChange={(e) => updatePuppy(idx, { status: e.target.value })}>
+              <select style={inputStyle()} value={p.status} onChange={(e) => updatePuppy(idx, { status: e.target.value })}>
                 <option value="kept">Keeping</option>
                 <option value="sold">Sold</option>
                 <option value="gifted">Gifted</option>
@@ -823,12 +823,12 @@ function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) 
               {(p.status === "sold" || p.status === "gifted") && (
                 <div style={{ marginTop: 8 }}>
                   <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
-                    <input style={{ ...inputStyle, flex: 2 }} value={p.placedTo} onChange={(e) => updatePuppy(idx, { placedTo: e.target.value })} placeholder="Placed with" />
+                    <input style={{ ...inputStyle(), flex: 2 }} value={p.placedTo} onChange={(e) => updatePuppy(idx, { placedTo: e.target.value })} placeholder="Placed with" />
                     {p.status === "sold" && (
-                      <input type="number" step="0.01" min={0} style={{ ...inputStyle, flex: 1 }} value={p.placePrice} onChange={(e) => updatePuppy(idx, { placePrice: e.target.value })} placeholder="$" />
+                      <input type="number" step="0.01" min={0} style={{ ...inputStyle(), flex: 1 }} value={p.placePrice} onChange={(e) => updatePuppy(idx, { placePrice: e.target.value })} placeholder="$" />
                     )}
                   </div>
-                  <input type="date" style={inputStyle} value={p.placeDate} onChange={(e) => updatePuppy(idx, { placeDate: e.target.value })} />
+                  <input type="date" style={inputStyle()} value={p.placeDate} onChange={(e) => updatePuppy(idx, { placeDate: e.target.value })} />
                 </div>
               )}
             </div>
@@ -898,31 +898,31 @@ function AttackModal({ cats, attack, onSave, onDelete, onClose }) {
       ) : (
         <>
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label="Barn cat">
-            <select style={inputStyle} value={dogId} onChange={(e) => setDogId(e.target.value)}>
+            <select style={inputStyle()} value={dogId} onChange={(e) => setDogId(e.target.value)}>
               {barnCats.map(d => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>
           </Field>
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Pest / prey">
-                <select style={inputStyle} value={predatorType} onChange={(e) => setPredatorType(e.target.value)}>
+                <select style={inputStyle()} value={predatorType} onChange={(e) => setPredatorType(e.target.value)}>
                   {PREDATOR_TYPES.map(p => <option key={p} value={p}>{p}</option>)}
                 </select>
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Protecting">
-                <select style={inputStyle} value={livestockSpecies} onChange={(e) => setLivestockSpecies(e.target.value)}>
+                <select style={inputStyle()} value={livestockSpecies} onChange={(e) => setLivestockSpecies(e.target.value)}>
                   {LIVESTOCK_SPECIES.map(s => <option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
             </div>
           </div>
           <Field label="Outcome">
-            <select style={inputStyle} value={attackResult} onChange={(e) => setAttackResult(e.target.value)}>
+            <select style={inputStyle()} value={attackResult} onChange={(e) => setAttackResult(e.target.value)}>
               <option value="deterred">Spotted / chased off</option>
               <option value="partial">Got away — but cat tried</option>
               <option value="killed_predator">Cat caught and killed</option>
@@ -934,7 +934,7 @@ function AttackModal({ cats, attack, onSave, onDelete, onClose }) {
             <Field label={`${livestockSpecies} lost`}>
               <input
                 type="number" min={0} inputMode="numeric"
-                style={inputStyle}
+                style={inputStyle()}
                 value={livestockLost}
                 onChange={(e) => setLivestockLost(e.target.value)}
                 placeholder="How many were lost?"
@@ -946,7 +946,7 @@ function AttackModal({ cats, attack, onSave, onDelete, onClose }) {
             <Field label={`${predatorType === "Other" || predatorType === "Unknown" ? "Predators" : `${predatorType.toLowerCase()}${predatorType.endsWith("s") ? "" : "s"}`} killed`}>
               <input
                 type="number" min={1} inputMode="numeric"
-                style={inputStyle}
+                style={inputStyle()}
                 value={predatorsKilled}
                 onChange={(e) => setPredatorsKilled(e.target.value)}
                 placeholder="Usually 1, but track multiples"
@@ -956,7 +956,7 @@ function AttackModal({ cats, attack, onSave, onDelete, onClose }) {
           )}
 
           <Field label="Notes">
-            <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Time of day, observation, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Time of day, observation, etc." />
           </Field>
         </>
       )}
@@ -1082,7 +1082,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
     <ModalShell title={titles[action] || "Log entry"} onClose={onClose}>
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>{subtexts[action]}</div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       {animalRequired && live.length === 0 ? (
         <div style={{ padding: 12, borderRadius: 10, background: palette.bgAlt, color: palette.ink, fontSize: 14, lineHeight: 1.5, marginBottom: 14 }}>
@@ -1091,7 +1091,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
         </div>
       ) : (
       <Field label={animalRequired ? "Cat" : "Cat (optional)"}>
-        <select style={inputStyle} value={animalId} onChange={e => setAnimalId(e.target.value)}>
+        <select style={inputStyle()} value={animalId} onChange={e => setAnimalId(e.target.value)}>
           {!animalRequired && <option value="">— Whole pack —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
@@ -1102,7 +1102,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
         const shown=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
         return (
         <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
-          <input type="number" step="0.1" min={0} style={inputStyle} value={shown} onChange={e => {const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus inputMode="decimal" />
+          <input type="number" step="0.1" min={0} style={inputStyle()} value={shown} onChange={e => {const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus inputMode="decimal" />
         </Field>
         );
       })()}
@@ -1139,7 +1139,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
               const ph=isCups?"Cups of feed":(metricW?"Kilograms of feed":"Pounds of feed");
               return <input
                 type="number" inputMode="decimal" step="0.1" min={0}
-                style={inputStyle}
+                style={inputStyle()}
                 value={shown}
                 onChange={e => {
                   const r=e.target.value;
@@ -1155,7 +1155,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
           <Field label="Cost ($, optional)">
             <input
               type="number" inputMode="decimal" step="0.01" min={0}
-              style={inputStyle}
+              style={inputStyle()}
               value={feedCost}
               onChange={e => setFeedCost(e.target.value)}
               placeholder="$0.00"
@@ -1166,7 +1166,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
       {action === "sale" && (
         <>
           <Field label="Type">
-            <select style={inputStyle} value={saleType} onChange={e => setSaleType(e.target.value)}>
+            <select style={inputStyle()} value={saleType} onChange={e => setSaleType(e.target.value)}>
               <option value="sold">Sold</option>
               <option value="rehomed">Rehomed (no payment)</option>
             </select>
@@ -1174,7 +1174,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
           <Field label="Customer (optional)">
             {!showNewBuyer ? (
               <div style={{ display: "flex", gap: 8 }}>
-                <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+                <select style={{ ...inputStyle(), flex: 1 }} value={buyerId} onChange={e => {
                   const id = e.target.value;
                   setBuyerId(id);
                   const c = (customers || []).find(x => x.id === id);
@@ -1187,21 +1187,21 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
               </div>
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
-                <input style={{ ...inputStyle, flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+                <input style={{ ...inputStyle(), flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
                 <button onClick={() => { setShowNewBuyer(false); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
               </div>
             )}
           </Field>
           {saleType !== "rehomed" && (
             <Field label="Price ($)">
-              <input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder="$0.00" />
+              <input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder="$0.00" />
             </Field>
           )}
         </>
       )}
       <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
         <input
-          style={inputStyle} value={notes}
+          style={inputStyle()} value={notes}
           onChange={e => setNotes(e.target.value)}
           placeholder={
             action === "health" ? "e.g. Rabies vaccine, heartworm prevention" :
@@ -1307,7 +1307,7 @@ function HerdTallySection({ hobby, update }) {
           {HERD_TALLY_CATEGORIES.map(k => (
             <Field key={k} label={k}>
               <input
-                type="number" inputMode="numeric" min={0} style={inputStyle}
+                type="number" inputMode="numeric" min={0} style={inputStyle()}
                 value={counts[k]}
                 onChange={e => setCounts(c => ({ ...c, [k]: e.target.value }))}
                 placeholder="0"

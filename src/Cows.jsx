@@ -1,7 +1,7 @@
 // ============================================================================
 // COWS — per-animal tracking, dairy or beef, milk/calves/butcher logging
 // ============================================================================
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
@@ -30,7 +30,7 @@ const palette = legacyPalette({
 }); /* COWS_UNIFY_V1 — added leafSoft (was referenced but undefined) + yolkSoft */
 const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle=legacyStyle(() => ({width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"}));
+const inputStyle=() => ({width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"});
 const newId=()=>Math.random().toString(36).slice(2,10);
 // Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
 // If the sale already has a buyerId (picked from the dropdown) this is a
@@ -153,7 +153,7 @@ function PastureModal({pasture,hobbyId,update,onClose}){
       </Field>
       <Field label="Name">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={name}
           onChange={e=>setName(e.target.value)}
           placeholder={type==="pasture" ? "e.g. North Pasture, Barn Lot" : "e.g. Breeding herd, Yearlings"}
@@ -163,7 +163,7 @@ function PastureModal({pasture,hobbyId,update,onClose}){
       <Field label={type==="pasture" ? "Acreage (optional)" : "Approx. acreage (optional)"}>
         <input
           type="number" min={0} step="0.1"
-          style={inputStyle}
+          style={inputStyle()}
           value={acreage}
           onChange={e=>setAcreage(e.target.value)}
           placeholder="0"
@@ -172,7 +172,7 @@ function PastureModal({pasture,hobbyId,update,onClose}){
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{...inputStyle, minHeight: 60, resize: "vertical"}}
+          style={{...inputStyle(), minHeight: 60, resize: "vertical"}}
           value={notes}
           onChange={e=>setNotes(e.target.value)}
           placeholder={type==="pasture" ? "Water source, fencing notes, rotation schedule..." : "Purpose, rotation plan, etc."}
@@ -220,7 +220,7 @@ function MoveAnimalModal({animal,hobbyId,pastures,update,onClose}){
   return (
     <Modal open onClose={onClose} title={`Move ${animal?.name || "animal"}`}>
       <Field label="Pasture / herd">
-        <select style={inputStyle} value={pastureId} onChange={e=>setPastureId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={pastureId} onChange={e=>setPastureId(e.target.value)} autoFocus>
           <option value="">— Unassigned —</option>
           {groups.map(p => (
             <option key={p.id} value={p.id}>{p.name}</option>
@@ -358,7 +358,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
                 <PhotoThumb path={p.path} size={56} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
-                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    type="date" style={{ ...inputStyle(), padding: "6px 8px", fontSize: 13 }}
                     value={p.date || ""}
                     onChange={(e) => editDate(p.path, e.target.value)}
                   />
@@ -483,27 +483,27 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
   };
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit cow":"Add a cow"}>
-      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Bessie" autoFocus/></Field>
+      <Field label="Name"><input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Bessie" autoFocus/></Field>
       <Field label="Breed">
-        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{COW_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
+        <select style={inputStyle()} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{COW_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
         {breedSelect === "Other" && (
-          <input style={{...inputStyle, marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Wagyu, Belted Galloway, Devon)" autoFocus />
+          <input style={{...inputStyle(), marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Wagyu, Belted Galloway, Devon)" autoFocus />
         )}
       </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}><Field label="Purpose"><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{COW_PURPOSES.map(p=><button key={p} onClick={()=>setPurpose(p)} style={{padding:"7px 12px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",border:`1.5px solid ${purpose===p?palette.ink:palette.line}`,background:purpose===p?palette.ink:palette.card,color:purpose===p?palette.bg:palette.ink}}>{p}</button>)}</div></Field></div>
-        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{COW_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
+        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle()} value={sex} onChange={e=>setSex(e.target.value)}>{COW_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
       </div>
       <div style={{display:"flex",gap:12}}>
-        <div style={{flex:1}}><Field label="Date of birth (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field></div>
-        <div style={{flex:1}}><Field label="Ear tag / ID (optional)"><input style={inputStyle} value={tagId} onChange={e=>setTagId(e.target.value)} placeholder="e.g. #42"/></Field></div>
+        <div style={{flex:1}}><Field label="Date of birth (optional)"><input type="date" style={inputStyle()} value={dob} onChange={e=>setDob(e.target.value)}/></Field></div>
+        <div style={{flex:1}}><Field label="Ear tag / ID (optional)"><input style={inputStyle()} value={tagId} onChange={e=>setTagId(e.target.value)} placeholder="e.g. #42"/></Field></div>
       </div>
       {/* Pasture / herd assignment — only shown when at least one exists.
           Users who haven't created a pasture yet don't see this field at
           all, keeping the form short for simple setups. */}
       {pastures.length > 0 && (
         <Field label="Pasture / herd (optional)">
-          <select style={inputStyle} value={pastureId} onChange={e=>setPastureId(e.target.value)}>
+          <select style={inputStyle()} value={pastureId} onChange={e=>setPastureId(e.target.value)}>
             <option value="">— Ungrouped —</option>
             {pastures.map(p => (
               <option key={p.id} value={p.id}>
@@ -513,8 +513,8 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
           </select>
         </Field>
       )}
-      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
 
       {/* Identification — RFID tag (Canada requires this for movement) and
           branding details. Collapsed by default since not every herd needs
@@ -528,7 +528,7 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
           <Field label="RFID tag number (optional)">
             <div style={{display:"flex",gap:8}}>
               <input
-                style={{...inputStyle, flex:1}}
+                style={{...inputStyle(), flex:1}}
                 value={rfidNumber}
                 onChange={e=>setRfidNumber(e.target.value)}
                 placeholder="124 000 000 000 000"
@@ -542,12 +542,12 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
           <div style={{display:"flex",gap:12}}>
             <div style={{flex:1}}>
               <Field label="Brand date (optional)">
-                <input type="date" style={inputStyle} value={brandDate} onChange={e=>setBrandDate(e.target.value)}/>
+                <input type="date" style={inputStyle()} value={brandDate} onChange={e=>setBrandDate(e.target.value)}/>
               </Field>
             </div>
             <div style={{flex:1}}>
               <Field label="Brand location (optional)">
-                <input style={inputStyle} value={brandLocation} onChange={e=>setBrandLocation(e.target.value)} placeholder="e.g. left hip"/>
+                <input style={inputStyle()} value={brandLocation} onChange={e=>setBrandLocation(e.target.value)} placeholder="e.g. left hip"/>
               </Field>
             </div>
           </div>
@@ -582,10 +582,10 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
             placeholder="Type the sire's name"
           />
           <Field label="Registry name (optional)">
-            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Daisy"/>
+            <input style={inputStyle()} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Daisy"/>
           </Field>
           <Field label="Registry number (optional)">
-            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. AAA #12345678"/>
+            <input style={inputStyle()} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. AAA #12345678"/>
           </Field>
         </div>
       </details>
@@ -620,7 +620,7 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
             Keeps the cow's history but removes them from your active list. You can restore them later.
           </div>
           <Field label="Reason">
-            <select style={inputStyle} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
+            <select style={inputStyle()} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
               <option value="sold">Sold</option>
               <option value="butchered">Butchered</option>
               <option value="died">Died (illness/age)</option>
@@ -795,7 +795,7 @@ function FedCowModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🌾 Log feeding">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label={`Who is this for? (${targetIds.length} ${targetIds.length===1?"animal":"animals"})`}>
         {selectionButtonsC({ live, pastures, mode, setMode })}
@@ -806,14 +806,14 @@ function FedCowModal({ hobby, hobbyId, update, onClose }) {
         const shown = lbs===""||lbs==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs);
         return (
           <Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0"/>
           </Field>
         );
       })()}
-      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -861,10 +861,10 @@ function MilkCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
   return (
     <Modal open onClose={onClose} title="🥛 Log milk">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Cow">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosable.length === 0 && <option value="">— No cows available —</option>}
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.purpose?` · ${a.purpose}`:""}</option>)}
         </select>
@@ -874,13 +874,13 @@ function MilkCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
         const shown = gallons===""||gallons==null ? "" : (isMetricV ? String(Math.round(volumeFromGal(Number(gallons))*100)/100) : gallons);
         return (
           <Field label={isMetricV?"Milk (liters)":"Milk (gallons)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setGallons(r===""?"":(isMetricV?String(galFromInput(r)):r));}}
               placeholder="0" inputMode="decimal"/>
           </Field>
         );
       })()}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -961,11 +961,11 @@ function LogCowEntryModal({ hobby, hobbyId, action, update, onClose, initialAnim
     <Modal open onClose={onClose} title={titles[action]}>
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       {action === "weight" ? (
         <Field label="Cow">
-          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+          <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
             {live.length === 0 && <option value="">— No live cattle —</option>}
             {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
           </select>
@@ -981,14 +981,14 @@ function LogCowEntryModal({ hobby, hobbyId, action, update, onClose, initialAnim
         const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
         return (
           <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
-            <input type="number" min={0} step="1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0" autoFocus inputMode="decimal"/>
           </Field>
         );
       })()}
       <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}
           placeholder={
             action === "health" ? "e.g. Ivermectin — dewormer round" :
             action === "note" ? "What happened" : ""
@@ -1084,36 +1084,36 @@ function CalfCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
         For the full breed-through-calving record (sire, method, dates, alive at weaning) use the 💕 Breeding tile.
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Dam">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosable.length === 0 && <option value="">— No cows available —</option>}
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
         </select>
       </Field>
       <Field label="Calves born">
-        <input type="number" min={1} style={inputStyle} value={count}
+        <input type="number" min={1} style={inputStyle()} value={count}
           onChange={e=>setCount(e.target.value)} placeholder="1" inputMode="numeric"/>
       </Field>
       <Field label="Calf name (optional — also creates a tracked calf)">
-        <input style={inputStyle} value={calfName} onChange={e=>setCalfName(e.target.value)} placeholder="e.g. Bluebell"/>
+        <input style={inputStyle()} value={calfName} onChange={e=>setCalfName(e.target.value)} placeholder="e.g. Bluebell"/>
       </Field>
       {calfName.trim() && (
         <div style={{display:"flex",gap:12}}>
           <div style={{flex:1}}>
             <Field label="Sex">
-              <select style={inputStyle} value={calfSex} onChange={e=>setCalfSex(e.target.value)}>
+              <select style={inputStyle()} value={calfSex} onChange={e=>setCalfSex(e.target.value)}>
                 {COW_SEXES.map(s=><option key={s} value={s}>{s}</option>)}
               </select>
             </Field>
           </div>
           <div style={{flex:1}}>
-            <Field label="Tag # (optional)"><input style={inputStyle} value={calfTagId} onChange={e=>setCalfTagId(e.target.value)} placeholder="123"/></Field>
+            <Field label="Tag # (optional)"><input style={inputStyle()} value={calfTagId} onChange={e=>setCalfTagId(e.target.value)} placeholder="123"/></Field>
           </div>
         </div>
       )}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -1171,10 +1171,10 @@ function HeatCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
   return (
     <Modal open onClose={onClose} title="🔥 Log heat">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Cow / heifer">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosable.length === 0 && <option value="">— No breeding-capable cattle —</option>}
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
         </select>
@@ -1207,7 +1207,7 @@ function HeatCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
           <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>A reminder will be added to your calendar after saving.</div>
         </div>
       )}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -1277,16 +1277,16 @@ function AICowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null })
   return (
     <Modal open onClose={onClose} title="💉 Log breeding (AI)">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Cow / heifer">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosableDams.length === 0 && <option value="">— No breeding-capable cattle —</option>}
           {choosableDams.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
         </select>
       </Field>
       <Field label="Method">
-        <select style={inputStyle} value={aiMethod} onChange={e=>setAiMethod(e.target.value)}>
+        <select style={inputStyle()} value={aiMethod} onChange={e=>setAiMethod(e.target.value)}>
           <option>AI (cervical)</option>
           <option>AI (deep horn)</option>
           <option>Embryo transfer</option>
@@ -1316,11 +1316,11 @@ function AICowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null })
       )}
       {(noInternalSires || aiUseExternal) ? (
         <Field label="Sire (name / code)">
-          <input style={inputStyle} value={aiSireName} onChange={e=>setAiSireName(e.target.value)} placeholder="e.g. Select Sires #14HO12345" />
+          <input style={inputStyle()} value={aiSireName} onChange={e=>setAiSireName(e.target.value)} placeholder="e.g. Select Sires #14HO12345" />
         </Field>
       ) : (
         <Field label="Sire">
-          <select style={inputStyle} value={aiSireId} onChange={e=>setAiSireId(e.target.value)}>
+          <select style={inputStyle()} value={aiSireId} onChange={e=>setAiSireId(e.target.value)}>
             <option value="">— Select a bull —</option>
             {sires.map(s => <option key={s.id} value={s.id}>{s.name}{s.breed?` · ${s.breed}`:""}</option>)}
           </select>
@@ -1329,12 +1329,12 @@ function AICowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null })
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}>
           <Field label="Cost (optional)">
-            <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/>
+            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/>
           </Field>
         </div>
         <div style={{flex:1}}>
           <Field label="Technician (optional)">
-            <input style={inputStyle} value={aiTechnician} onChange={e=>setAiTechnician(e.target.value)} placeholder="Name or service"/>
+            <input style={inputStyle()} value={aiTechnician} onChange={e=>setAiTechnician(e.target.value)} placeholder="Name or service"/>
           </Field>
         </div>
       </div>
@@ -1344,7 +1344,7 @@ function AICowModal({ hobby, hobbyId, update, onClose, initialAnimalId = null })
           <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>A reminder will be added to your calendar after saving.</div>
         </div>
       )}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -1396,10 +1396,10 @@ function PregTestCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = n
   return (
     <Modal open onClose={onClose} title="🤰 Pregnancy check">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Cow / heifer">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosable.length === 0 && <option value="">— No breeding-capable cattle —</option>}
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
         </select>
@@ -1418,7 +1418,7 @@ function PregTestCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = n
         </div>
       </Field>
       <Field label="Method">
-        <select style={inputStyle} value={pregMethod} onChange={e=>setPregMethod(e.target.value)}>
+        <select style={inputStyle()} value={pregMethod} onChange={e=>setPregMethod(e.target.value)}>
           <option value="palpation">Rectal palpation</option>
           <option value="ultrasound">Ultrasound</option>
           <option value="blood">Blood test (BioPRYN/PAG)</option>
@@ -1429,13 +1429,13 @@ function PregTestCowModal({ hobby, hobbyId, update, onClose, initialAnimalId = n
       </Field>
       {pregResult === "pregnant" && (
         <Field label="Expected calving date (optional)">
-          <input type="date" style={inputStyle} value={pregExpectedCalving} onChange={e=>setPregExpectedCalving(e.target.value)} placeholder={defaultCalving} />
+          <input type="date" style={inputStyle()} value={pregExpectedCalving} onChange={e=>setPregExpectedCalving(e.target.value)} placeholder={defaultCalving} />
           <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>
             Leave blank to auto-set to {defaultCalving} (test date + 283 days, typical bovine gestation).
           </div>
         </Field>
       )}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -1581,7 +1581,7 @@ function RemoveCowModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="❄️ Remove cow">
       <Field label="Which cow?">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {live.length === 0 && <option value="">— No live cattle —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
@@ -1599,7 +1599,7 @@ function RemoveCowModal({ hobby, hobbyId, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
 
       {reason === "butchered" && (()=>{
         const isMetricW = getCurrentWeightUnit()==="kg";
@@ -1607,38 +1607,38 @@ function RemoveCowModal({ hobby, hobbyId, update, onClose }) {
         return (
           <>
             <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
-              <input type="number" min={0} step="1" style={inputStyle} value={shownW}
+              <input type="number" min={0} step="1" style={inputStyle()} value={shownW}
                 onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
             </Field>
-            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
           </>
         );
       })()}
 
       {reason === "sold" && (
         <>
-          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
-          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label="Buyer (optional)"><input style={inputStyle()} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
         </>
       )}
 
       {(reason === "rehomed" || reason === "given_away") && (
-        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+        <Field label="Recipient (optional)"><input style={inputStyle()} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
       )}
 
       {reason === "died" && (
         <Field label="Cause">
-          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+          <select style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)}>
             {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Calving complications","Bloat","Parasites","Old age","Other"].map(c=><option key={c}>{c}</option>)}
           </select>
         </Field>
       )}
 
       {reason === "culled" && (
-        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, low production, open after multiple breedings"/></Field>
+        <Field label="Reason (optional)"><input style={inputStyle()} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, low production, open after multiple breedings"/></Field>
       )}
 
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
 
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
         {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This cow";})()} will move to your Archived cattle list{(reason==="sold")?" and a sale record will appear in Sales & costs":""}. You can restore from there if this was a mistake.
@@ -1875,20 +1875,20 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
   const isSale=action==="sale";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
       {action==="milk"&&(()=>{
         // Milk volume input. Canonical storage is gallons. In L-mode the
         // field shows/accepts liters and converts at the boundary.
         const isMetricV=getCurrentVolumeUnit()==="L";
         const shown=gallons===""||gallons==null?"":(isMetricV?String(Math.round(volumeFromGal(Number(gallons))*100)/100):gallons);
-        return <Field label={isMetricV?"Milk (liters)":"Milk (gallons)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setGallons(r===""?"":(isMetricV?String(galFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+        return <Field label={isMetricV?"Milk (liters)":"Milk (gallons)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shown} onChange={e=>{const r=e.target.value;setGallons(r===""?"":(isMetricV?String(galFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
       })()}
       {action==="fed"&&(()=>{
         // Feed weight input. Canonical storage is pounds. In kg-mode the
         // field shows/accepts kg and converts at the boundary.
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
-        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
       })()}
           {/* FEAT6-FED: log this feeding for the whole herd instead of just
               this animal. A herd-wide feeding isn't pinned to one animal —
@@ -1905,22 +1905,22 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
             )}
           </Field>
       {action==="calf"&&<>
-        <Field label="Calves born"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>
+        <Field label="Calves born"><input type="number" min={1} style={inputStyle()} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>
         <div style={{fontSize:11,color:palette.inkSoft,marginBottom:8,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
           Optional: name the calf below to track it as its own animal. You'll be able to log milk, feed, health, and more for it, and the pedigree will link it back to {animal.name}. Leave blank to just record the birth count.
         </div>
-        <Field label="Calf name (optional)"><input style={inputStyle} value={calfName} onChange={e=>setCalfName(e.target.value)} placeholder="e.g. Bluebell"/></Field>
+        <Field label="Calf name (optional)"><input style={inputStyle()} value={calfName} onChange={e=>setCalfName(e.target.value)} placeholder="e.g. Bluebell"/></Field>
         {calfName.trim() && (
           <div style={{display:"flex",gap:12}}>
             <div style={{flex:1}}>
               <Field label="Sex (optional)">
-                <select style={inputStyle} value={calfSex} onChange={e=>setCalfSex(e.target.value)}>
+                <select style={inputStyle()} value={calfSex} onChange={e=>setCalfSex(e.target.value)}>
                   {COW_SEXES.map(s=><option key={s} value={s}>{s}</option>)}
                 </select>
               </Field>
             </div>
             <div style={{flex:1}}>
-              <Field label="Tag # (optional)"><input style={inputStyle} value={calfTagId} onChange={e=>setCalfTagId(e.target.value)} placeholder="123"/></Field>
+              <Field label="Tag # (optional)"><input style={inputStyle()} value={calfTagId} onChange={e=>setCalfTagId(e.target.value)} placeholder="123"/></Field>
             </div>
           </div>
         )}
@@ -1928,16 +1928,16 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
       {(action==="weight"||action==="butcher")&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
-        return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+        return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
       })()}
-      {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
-      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
+      {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
+      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
-        <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
+        <Field label="Type"><select style={inputStyle()} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
         <Field label="Customer (optional)">
           {!showNewBuyer ? (
             <div style={{ display: "flex", gap: 8 }}>
-              <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+              <select style={{ ...inputStyle(), flex: 1 }} value={buyerId} onChange={e => {
                 const id = e.target.value;
                 setBuyerId(id);
                 const c = (customers || []).find(x => x.id === id);
@@ -1950,12 +1950,12 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8 }}>
-              <input style={{ ...inputStyle, flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+              <input style={{ ...inputStyle(), flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
               <button onClick={() => { setShowNewBuyer(false); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
             </div>
           )}
         </Field>
-        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
       </>}
       {action==="preg_test"&&<>
         <Field label="Result">
@@ -1972,7 +1972,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
           </div>
         </Field>
         <Field label="Method">
-          <select style={inputStyle} value={pregMethod} onChange={e=>setPregMethod(e.target.value)}>
+          <select style={inputStyle()} value={pregMethod} onChange={e=>setPregMethod(e.target.value)}>
             <option value="palpation">Rectal palpation</option>
             <option value="ultrasound">Ultrasound</option>
             <option value="blood">Blood test (BioPRYN/PAG)</option>
@@ -1993,7 +1993,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
           } catch (e) {}
           return (
             <Field label="Expected calving date (optional)">
-              <input type="date" style={inputStyle} value={pregExpectedCalving} onChange={e=>setPregExpectedCalving(e.target.value)} placeholder={defaultCalving} />
+              <input type="date" style={inputStyle()} value={pregExpectedCalving} onChange={e=>setPregExpectedCalving(e.target.value)} placeholder={defaultCalving} />
               <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>
                 Leave blank to auto-set to {defaultCalving} (test date + 283 days, typical bovine gestation).
               </div>
@@ -2037,7 +2037,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
         return (
           <>
             <Field label="Method">
-              <select style={inputStyle} value={aiMethod} onChange={e=>setAiMethod(e.target.value)}>
+              <select style={inputStyle()} value={aiMethod} onChange={e=>setAiMethod(e.target.value)}>
                 <option>AI (cervical)</option>
                 <option>AI (deep horn)</option>
                 <option>Embryo transfer</option>
@@ -2067,11 +2067,11 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
             )}
             {(noInternalSires || aiUseExternal) ? (
               <Field label="Sire (name / code)">
-                <input style={inputStyle} value={aiSireName} onChange={e=>setAiSireName(e.target.value)} placeholder="e.g. Select Sires #14HO12345" />
+                <input style={inputStyle()} value={aiSireName} onChange={e=>setAiSireName(e.target.value)} placeholder="e.g. Select Sires #14HO12345" />
               </Field>
             ) : (
               <Field label="Sire">
-                <select style={inputStyle} value={aiSireId} onChange={e=>setAiSireId(e.target.value)}>
+                <select style={inputStyle()} value={aiSireId} onChange={e=>setAiSireId(e.target.value)}>
                   <option value="">— Select a bull —</option>
                   {sires.map(s => <option key={s.id} value={s.id}>{s.name}{s.breed?` · ${s.breed}`:""}</option>)}
                 </select>
@@ -2080,12 +2080,12 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
             <div style={{display:"flex",gap:12}}>
               <div style={{flex:1}}>
                 <Field label="Cost (optional)">
-                  <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/>
+                  <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/>
                 </Field>
               </div>
               <div style={{flex:1}}>
                 <Field label="Technician (optional)">
-                  <input style={inputStyle} value={aiTechnician} onChange={e=>setAiTechnician(e.target.value)} placeholder="Name or service"/>
+                  <input style={inputStyle()} value={aiTechnician} onChange={e=>setAiTechnician(e.target.value)} placeholder="Name or service"/>
                 </Field>
               </div>
             </div>
@@ -2095,7 +2095,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
           </>
         );
       })()}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived cattle list. You can restore from there if this was a mistake.</div>}
       {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived cattle list and {saleType!=="rehomed"?"a sale record will appear in Sales & costs":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
       <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
@@ -2384,7 +2384,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}>
           <Field label="Cow / heifer (dam)">
-            <select style={inputStyle} value={damId} onChange={e=>setDamId(e.target.value)}>
+            <select style={inputStyle()} value={damId} onChange={e=>setDamId(e.target.value)}>
               <option value="">— Pick one —</option>
               {dams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
@@ -2394,13 +2394,13 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
           <Field label="Bull (sire)">
             {useUnknownSire ? (
               <input
-                style={inputStyle}
+                style={inputStyle()}
                 value={externalSireName}
                 onChange={e => setExternalSireName(e.target.value)}
                 placeholder="External / unknown sire"
               />
             ) : (
-              <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+              <select style={inputStyle()} value={sireId} onChange={e=>setSireId(e.target.value)}>
                 <option value="">— Pick a bull —</option>
                 {sires.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
@@ -2416,7 +2416,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         </div>
       </div>
       <Field label="Breeding method">
-        <select style={inputStyle} value={method} onChange={e=>setMethod(e.target.value)}>
+        <select style={inputStyle()} value={method} onChange={e=>setMethod(e.target.value)}>
           <option value="Natural">Natural / live cover</option>
           <option value="AI">AI (artificial insemination)</option>
           <option value="Embryo transfer">Embryo transfer</option>
@@ -2424,13 +2424,13 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         </select>
       </Field>
       <Field label="Breed date">
-        <input type="date" style={inputStyle} value={breedDate} onChange={e=>setBreedDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={breedDate} onChange={e=>setBreedDate(e.target.value)}/>
       </Field>
       <Field label="Expected calving date">
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input
             type="date"
-            style={{...inputStyle,flex:1}}
+            style={{...inputStyle(),flex:1}}
             value={expectedBirthDate}
             onChange={e=>setExpectedBirthDate(e.target.value)}
           />
@@ -2459,22 +2459,22 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         After calving (fill in when it happens)
       </div>
       <Field label="Calved date">
-        <input type="date" style={inputStyle} value={birthedDate} onChange={e=>setBirthedDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={birthedDate} onChange={e=>setBirthedDate(e.target.value)}/>
       </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}>
           <Field label="Calves born">
-            <input type="number" min={0} style={inputStyle} value={offspringBorn} onChange={e=>setOffspringBorn(e.target.value)} placeholder="0"/>
+            <input type="number" min={0} style={inputStyle()} value={offspringBorn} onChange={e=>setOffspringBorn(e.target.value)} placeholder="0"/>
           </Field>
         </div>
         <div style={{flex:1}}>
           <Field label="Alive at weaning">
-            <input type="number" min={0} style={inputStyle} value={offspringAlive} onChange={e=>setOffspringAlive(e.target.value)} placeholder="0"/>
+            <input type="number" min={0} style={inputStyle()} value={offspringAlive} onChange={e=>setOffspringAlive(e.target.value)} placeholder="0"/>
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{...inputStyle,minHeight:60,resize:"vertical"}} value={notes} onChange={e=>setNotes(e.target.value)}/>
+        <textarea style={{...inputStyle(),minHeight:60,resize:"vertical"}} value={notes} onChange={e=>setNotes(e.target.value)}/>
       </Field>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
         {breeding && onDelete && (
@@ -2566,7 +2566,7 @@ function HerdTallySection({ hobby, update }) {
           {HERD_TALLY_CATEGORIES.map(k => (
             <Field key={k} label={k}>
               <input
-                type="number" inputMode="numeric" min={0} style={inputStyle}
+                type="number" inputMode="numeric" min={0} style={inputStyle()}
                 value={counts[k]}
                 onChange={e => setCounts(c => ({ ...c, [k]: e.target.value }))}
                 placeholder="0"

@@ -1,4 +1,4 @@
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, X, UserCircle, AlertCircle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabase.js';
@@ -27,11 +27,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 // Supabase throttles auth emails two ways: a project-wide hourly cap, and a
 // per-address cooldown (default 60s). Both come back as HTTP 429 with a raw
@@ -379,7 +379,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                   </div>
                   <input
                     type="email"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
@@ -410,7 +410,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                   </div>
                   <input
                     type="password"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"

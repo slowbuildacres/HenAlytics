@@ -22,7 +22,7 @@
 //   data.sales[] (hobbyType="tea", batchId=...)
 // ============================================================================
 
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -68,11 +68,11 @@ const SACHET_SIZES = [
   { value: "0.25oz", label: "0.25 oz" },
 ];
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
@@ -206,17 +206,17 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit tea blend" : "New tea blend"}>
       <Field label="Blend name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calm Belly, Cold & Flu Support, Sleepytime" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calm Belly, Cold & Flu Support, Sleepytime" autoFocus />
       </Field>
       <Field label="Ingredients / recipe">
         <textarea
-          style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
           value={ingredients} onChange={e => setIngredients(e.target.value)}
           placeholder="e.g. 2 parts chamomile, 1 part lemon balm, 1 part lavender, 1/2 part valerian"
         />
       </Field>
       <Field label="Made on">
-        <input type="date" style={inputStyle} value={madeDate} onChange={e => setMadeDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={madeDate} onChange={e => setMadeDate(e.target.value)} />
       </Field>
       <Field label="Packaging">
         <div style={{ display: "flex", gap: 6 }}>
@@ -240,36 +240,36 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
       </Field>
       {packaging === "bulk" ? (
         <Field label="Total weight (oz)">
-          <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
+          <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
         </Field>
       ) : (
         <>
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Sachets made">
-                <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle} value={sachetsMade} onChange={e => setSachetsMade(e.target.value)} placeholder="0" />
+                <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle()} value={sachetsMade} onChange={e => setSachetsMade(e.target.value)} placeholder="0" />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Sachet size">
-                <select style={inputStyle} value={sachetSize} onChange={e => setSachetSize(e.target.value)}>
+                <select style={inputStyle()} value={sachetSize} onChange={e => setSachetSize(e.target.value)}>
                   {SACHET_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </Field>
             </div>
           </div>
           <Field label="Total weight (oz, optional)">
-            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
+            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
             <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, lineHeight: 1.3 }}>For analytics. The grand total of all your sachets combined.</div>
           </Field>
         </>
       )}
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Brewing instructions, flavor notes, etc."
         />
@@ -365,25 +365,25 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         {max} {unitLabelPlural} remaining{!isBulk && ` (${batch.sachetSize} each)`}
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label={`${isBulk ? "Ounces" : "Sachets"} (max ${max})`}>
-            <input type="number" min={0.1} max={max} step={isBulk ? "0.1" : "1"} inputMode={isBulk ? "decimal" : "numeric"} style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} placeholder="1" autoFocus />
+            <input type="number" min={0.1} max={max} step={isBulk ? "0.1" : "1"} inputMode={isBulk ? "decimal" : "numeric"} style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} placeholder="1" autoFocus />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Price per ${unitLabel}`}>
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} placeholder="$0.00" />
           </Field>
         </div>
       </div>
       <Field label="Buyer (optional)">
-        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+        <input style={inputStyle()} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
+        <input style={inputStyle()} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
       </Field>
       {total > 0 && (
         <div style={{ background: palette.yolkSoft, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: palette.ink, marginBottom: 12 }}>

@@ -14,7 +14,7 @@
 // via dynamic import so they live in their own chunks, not the main bundle.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Trophy, MapPin, Pencil } from "lucide-react";
 import {
@@ -41,11 +41,11 @@ const RIBBON = [
   { fill: "#C98A5B", edge: "#8B5A2B", label: "3rd" },
 ];
 
-const selectStyle = legacyStyle(() => ({
+const selectStyle = () => ({
   width: "100%", padding: "11px 12px", borderRadius: 10,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 function Card({ children, accent, style }) {
   return (
@@ -205,7 +205,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
         <select
           value={country}
           onChange={(e) => { setCountry(e.target.value); setSubdivision(""); setCounty(""); }}
-          style={{ ...selectStyle, marginBottom: 13 }}
+          style={{ ...selectStyle(), marginBottom: 13 }}
         >
           {countryList.map(([cc, name]) => (
             <option key={cc} value={cc}>{countryFlag(cc)} {name}</option>
@@ -220,7 +220,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
             <select
               value={subdivision}
               onChange={(e) => { setSubdivision(e.target.value); setCounty(""); }}
-              style={{ ...selectStyle, marginBottom: 13 }}
+              style={{ ...selectStyle(), marginBottom: 13 }}
             >
               <option value="">Choose…</option>
               {subs.map(([code, name]) => (
@@ -238,7 +238,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
             <select
               value={county}
               onChange={(e) => setCounty(e.target.value)}
-              style={{ ...selectStyle, marginBottom: 13 }}
+              style={{ ...selectStyle(), marginBottom: 13 }}
             >
               <option value="">Skip for now</option>
               {countyList.map(([fips, name]) => (

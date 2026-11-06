@@ -12,7 +12,7 @@
 //   hobby.items[] = [{ id, name, costPerUnit, pricePerUnit, unit, archived }]
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -35,11 +35,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const ITEM_UNITS = ["each", "lbs", "dozen", "quart", "pint", "bunch", "bag", "jar", "loaf"];
 
@@ -162,22 +162,22 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
         </div>
         <div style={{ padding:20 }}>
           <Field label="Item name">
-            <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Chocolate chip cookie, Strawberry jam, Sourdough loaf" autoFocus />
+            <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Chocolate chip cookie, Strawberry jam, Sourdough loaf" autoFocus />
           </Field>
           <Field label="Unit">
-            <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
+            <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
               {ITEM_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </Field>
           <div style={{ display:"flex",gap:12 }}>
             <div style={{ flex:1 }}>
               <Field label="Cost to make / per unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} placeholder="$0.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} placeholder="$0.00" />
               </Field>
             </div>
             <div style={{ flex:1 }}>
               <Field label="Sale price / per unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
               </Field>
             </div>
           </div>
@@ -205,13 +205,13 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
                   <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
                     Current stock ({unit})
                   </div>
-                  <input type="number" step="0.5" min={0} style={inputStyle} value={stock} onChange={e=>setStock(e.target.value)} placeholder="0" />
+                  <input type="number" step="0.5" min={0} style={inputStyle()} value={stock} onChange={e=>setStock(e.target.value)} placeholder="0" />
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
                     Low-stock alert at
                   </div>
-                  <input type="number" step="1" min={0} style={inputStyle} value={lowStockAt} onChange={e=>setLowStockAt(e.target.value)} placeholder="3" />
+                  <input type="number" step="1" min={0} style={inputStyle()} value={lowStockAt} onChange={e=>setLowStockAt(e.target.value)} placeholder="3" />
                 </div>
               </div>
             )}
@@ -306,7 +306,7 @@ function QuickSellModal({ item, onSell, onClose }) {
           )}
 
           <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
-            <input type="number" step="0.1" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+            <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
 
           {/* Unit-aware preset buttons + clear */}
@@ -331,25 +331,25 @@ function QuickSellModal({ item, onSell, onClose }) {
           )}
 
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
           </Field>
           <div style={{ display:"flex",gap:12 }}>
             <div style={{ flex:1 }}>
               <Field label="Price / unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} />
               </Field>
             </div>
             <div style={{ flex:1 }}>
               <Field label="Cost / unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} />
               </Field>
             </div>
           </div>
           <Field label="Note (optional)">
-            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Repeat customer, payment type, etc." />
+            <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Repeat customer, payment type, etc." />
           </Field>
           <Field label="Tip (optional)">
-            <input type="number" step="0.01" min={0} style={inputStyle} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
+            <input type="number" step="0.01" min={0} style={inputStyle()} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
           </Field>
           <div style={{ background:palette.bgAlt,borderRadius:8,padding:"12px 14px",marginBottom:14 }}>
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}>
@@ -437,7 +437,7 @@ function RestockModal({ item, onRestock, onClose }) {
           </div>
 
           <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
-            <input type="number" step="0.1" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+            <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
           <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:-6,marginBottom:12 }}>
             {presets.map(p => (
@@ -453,10 +453,10 @@ function RestockModal({ item, onRestock, onClose }) {
           </div>
 
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
           </Field>
           <Field label="Batch cost (optional)">
-            <input type="number" step="0.01" min={0} style={inputStyle} value={batchCost} onChange={e=>setBatchCost(e.target.value)} placeholder="Total cost of supplies for this batch" />
+            <input type="number" step="0.01" min={0} style={inputStyle()} value={batchCost} onChange={e=>setBatchCost(e.target.value)} placeholder="Total cost of supplies for this batch" />
           </Field>
 
           {hasBatchCost && (
@@ -474,7 +474,7 @@ function RestockModal({ item, onRestock, onClose }) {
           )}
 
           <Field label="Note (optional)">
-            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Where it came from, harvest details, etc." />
+            <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Where it came from, harvest details, etc." />
           </Field>
 
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
@@ -593,16 +593,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
         </div>
         <div style={{ padding:20 }}>
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
           </Field>
           <Field label="What was built / repaired / bought?">
-            <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. roadside stand, signage, payment box" autoFocus />
+            <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. roadside stand, signage, payment box" autoFocus />
           </Field>
           <Field label="Cost ($)">
-            <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
           </Field>
           <Field label="Notes (optional)">
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
           </Field>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
             {entry && onDelete && (

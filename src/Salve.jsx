@@ -20,7 +20,7 @@
 //   data.sales[] (hobbyType="salve", batchId=...)
 // ============================================================================
 
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -67,11 +67,11 @@ const TIN_SIZES = [
   { value: "8oz",   label: "8 oz jar" },
 ];
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
@@ -207,56 +207,56 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit salve batch" : "Make a salve"}>
       <Field label="Salve name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calendula healing salve, Cuts & scrapes balm" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calendula healing salve, Cuts & scrapes balm" autoFocus />
       </Field>
       <Field label="Recipe / purpose (optional)">
-        <input style={inputStyle} value={recipe} onChange={e => setRecipe(e.target.value)} placeholder="e.g. Skin healing, sore muscles" />
+        <input style={inputStyle()} value={recipe} onChange={e => setRecipe(e.target.value)} placeholder="e.g. Skin healing, sore muscles" />
       </Field>
       <Field label="Infused oil(s) used (optional)">
-        <input style={inputStyle} value={infusedOilUsed} onChange={e => setInfusedOilUsed(e.target.value)} placeholder="e.g. Calendula in olive oil, plantain in jojoba" />
+        <input style={inputStyle()} value={infusedOilUsed} onChange={e => setInfusedOilUsed(e.target.value)} placeholder="e.g. Calendula in olive oil, plantain in jojoba" />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Beeswax (oz)">
-            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={beeswaxOz} onChange={e => setBeeswaxOz(e.target.value)} placeholder="0" />
+            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={beeswaxOz} onChange={e => setBeeswaxOz(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Butters (oz)">
-            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={butterOz} onChange={e => setButterOz(e.target.value)} placeholder="0" />
+            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={butterOz} onChange={e => setButterOz(e.target.value)} placeholder="0" />
             <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, lineHeight: 1.3 }}>Shea, cocoa, mango, etc.</div>
           </Field>
         </div>
       </div>
       <Field label="Essential oils (optional)">
-        <input style={inputStyle} value={essentialOils} onChange={e => setEssentialOils(e.target.value)} placeholder="e.g. 20 drops lavender, 10 drops tea tree" />
+        <input style={inputStyle()} value={essentialOils} onChange={e => setEssentialOils(e.target.value)} placeholder="e.g. 20 drops lavender, 10 drops tea tree" />
       </Field>
       <Field label="Poured / made on">
-        <input type="date" style={inputStyle} value={pouredDate} onChange={e => setPouredDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={pouredDate} onChange={e => setPouredDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Tins made">
-            <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle} value={tinsMade} onChange={e => setTinsMade(e.target.value)} placeholder="0" />
+            <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle()} value={tinsMade} onChange={e => setTinsMade(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Tin size">
-            <select style={inputStyle} value={tinSize} onChange={e => setTinSize(e.target.value)}>
+            <select style={inputStyle()} value={tinSize} onChange={e => setTinSize(e.target.value)}>
               {TIN_SIZES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </Field>
         </div>
       </div>
       <Field label="Total yield in fl oz (optional)">
-        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 8" />
+        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 8" />
       </Field>
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Recipe ratios, how it set up, anything to remember next time..."
         />
@@ -344,25 +344,25 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         {max} {batch.tinSize} tin{max === 1 ? "" : "s"} remaining
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Tins (max ${max})`}>
-            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
+            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle()} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per tin">
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={pricePerTin} onChange={e => setPricePerTin(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerTin} onChange={e => setPricePerTin(e.target.value)} placeholder="$0.00" />
           </Field>
         </div>
       </div>
       <Field label="Buyer (optional)">
-        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+        <input style={inputStyle()} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
+        <input style={inputStyle()} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
       </Field>
       {total > 0 && (
         <div style={{ background: palette.yolkSoft, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: palette.ink, marginBottom: 12 }}>

@@ -15,7 +15,7 @@
 // Year in Review and weekly digest read these to surface stats.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -53,11 +53,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -160,13 +160,13 @@ function StarterModal({ starter, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={starter ? "Edit starter" : "New starter"} onClose={onClose}>
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Doris, Yeasty Boys, Backup" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Doris, Yeasty Boys, Backup" autoFocus />
       </Field>
       <Field label="Hydration % (optional)">
-        <input type="number" style={inputStyle} value={hydration} onChange={e=>setHydration(e.target.value)} placeholder="100" />
+        <input type="number" style={inputStyle()} value={hydration} onChange={e=>setHydration(e.target.value)} placeholder="100" />
       </Field>
       <Field label="Notes (origin, flour type, etc.)">
-        <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Started from neighbor's culture, fed with KA bread flour" />
+        <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Started from neighbor's culture, fed with KA bread flour" />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap" }}>
         {starter && onDelete && (
@@ -231,10 +231,10 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
   return (
     <ModalShell title={bake ? "Edit bake" : "Log a bake"} onClose={onClose}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Recipe / loaf type">
-        <input style={inputStyle} list="recipe-suggestions" value={recipe} onChange={e=>setRecipe(e.target.value)} placeholder="Country Loaf" />
+        <input style={inputStyle()} list="recipe-suggestions" value={recipe} onChange={e=>setRecipe(e.target.value)} placeholder="Country Loaf" />
         <datalist id="recipe-suggestions">
           {RECIPE_SUGGESTIONS.map(r => <option key={r} value={r} />)}
         </datalist>
@@ -242,12 +242,12 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Loaves baked">
-            <input type="number" min={1} style={inputStyle} value={loafCount} onChange={e=>setLoafCount(e.target.value)} />
+            <input type="number" min={1} style={inputStyle()} value={loafCount} onChange={e=>setLoafCount(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Weight each (g, optional)">
-            <input type="number" style={inputStyle} value={weightPerLoafG} onChange={e=>setWeightPerLoafG(e.target.value)} placeholder="900" />
+            <input type="number" style={inputStyle()} value={weightPerLoafG} onChange={e=>setWeightPerLoafG(e.target.value)} placeholder="900" />
           </Field>
         </div>
       </div>
@@ -255,7 +255,7 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
         <input
           type="number"
           step="0.01"
-          style={inputStyle}
+          style={inputStyle()}
           value={costPerLoaf}
           onChange={e => { setCostPerLoaf(e.target.value); setCostTouched(true); }}
           placeholder="2.50"
@@ -274,7 +274,7 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
       </Field>
       {liveStarters.length > 1 && (
         <Field label="Which starter?">
-          <select style={inputStyle} value={starterId} onChange={e=>setStarterId(e.target.value)}>
+          <select style={inputStyle()} value={starterId} onChange={e=>setStarterId(e.target.value)}>
             {liveStarters.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
@@ -297,7 +297,7 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
         </div>
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Great oven spring, slight gummy crumb" />
+        <textarea style={{ ...inputStyle(),minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Great oven spring, slight gummy crumb" />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap" }}>
         {bake && onDelete && (
@@ -335,16 +335,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"} onClose={onClose}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. proofing cabinet, new oven, banneton set" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. proofing cabinet, new oven, banneton set" autoFocus />
       </Field>
       <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (

@@ -1,4 +1,4 @@
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle, MailCheck, MailX } from 'lucide-react';
 import {
@@ -15,11 +15,11 @@ const palette = legacyPalette({
 });
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: '100%', padding: '10px 12px', borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: 'border-box',
-}));
+});
 
 export default function FarmhandModal({ user, homesteadName, role, onClose }) {
   const [members, setMembers] = useState([]);
@@ -178,7 +178,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="email"
-                  style={inputStyle}
+                  style={inputStyle()}
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="farmhand@example.com"

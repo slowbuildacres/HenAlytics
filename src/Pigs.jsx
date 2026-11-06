@@ -1,7 +1,7 @@
 // ============================================================================
 // PIGS — per-animal tracking, growth monitoring, FCR, litters, butcher
 // ============================================================================
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
@@ -30,7 +30,7 @@ const palette = legacyPalette({
 }); /* PIGS_UNIFY_V1 — added leafSoft + yolkSoft */
 const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle=legacyStyle(() => ({width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"}));
+const inputStyle=() => ({width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"});
 const newId=()=>Math.random().toString(36).slice(2,10);
 // Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
 // If the sale already has a buyerId (picked from the dropdown) this is a
@@ -192,7 +192,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
                 <PhotoThumb path={p.path} size={56} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
-                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    type="date" style={{ ...inputStyle(), padding: "6px 8px", fontSize: 13 }}
                     value={p.date || ""}
                     onChange={(e) => editDate(p.path, e.target.value)}
                   />
@@ -306,24 +306,24 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   };
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit pig":"Add a pig"}>
-      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Wilbur" autoFocus/></Field>
+      <Field label="Name"><input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Wilbur" autoFocus/></Field>
       <Field label="Breed">
-        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{PIG_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
+        <select style={inputStyle()} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{PIG_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
         {breedSelect === "Other" && (
-          <input style={{...inputStyle, marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Ossabaw, Gloucester Old Spot, Iberian)" autoFocus />
+          <input style={{...inputStyle(), marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Ossabaw, Gloucester Old Spot, Iberian)" autoFocus />
         )}
       </Field>
       <div style={{display:"flex",gap:12}}>
-        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{PIG_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
+        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle()} value={sex} onChange={e=>setSex(e.target.value)}>{PIG_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
         <div style={{flex:1}}>{(()=>{
           const isMetricW=getCurrentWeightUnit()==="kg";
           const shown=startWeight===""||startWeight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(startWeight))*100)/100):startWeight);
-          return <Field label={isMetricW?"Start weight (kg)":"Start weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setStartWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field>;
+          return <Field label={isMetricW?"Start weight (kg)":"Start weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shown} onChange={e=>{const r=e.target.value;setStartWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field>;
         })()}</div>
       </div>
-      <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
-      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
+      <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle()} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
 
       {/* Push 7a — Pedigree. Sow/Gilt for dam, Boar for sire. */}
       <details style={{marginBottom:14}}>
@@ -352,10 +352,10 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
             placeholder="Type the sire's name"
           />
           <Field label="Registry name (optional)">
-            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Hampshire Star"/>
+            <input style={inputStyle()} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Hampshire Star"/>
           </Field>
           <Field label="Registry number (optional)">
-            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. NSR #123456"/>
+            <input style={inputStyle()} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. NSR #123456"/>
           </Field>
         </div>
       </details>
@@ -390,7 +390,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
             Keeps the pig's history but removes them from your active list.
           </div>
           <Field label="Reason">
-            <select style={inputStyle} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
+            <select style={inputStyle()} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
               <option value="butchered">Butchered</option>
               <option value="sold">Sold</option>
               <option value="died">Died</option>
@@ -520,7 +520,7 @@ function FedPigModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🌾 Log feeding">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label={`Who is this for? (${targetIds.length} pig${targetIds.length===1?"":"s"})`}>
         {selectionButtonsP({ live, mode, setMode })}
@@ -531,14 +531,14 @@ function FedPigModal({ hobby, hobbyId, update, onClose }) {
         const shown = lbs===""||lbs==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs);
         return (
           <Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0"/>
           </Field>
         );
       })()}
-      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -619,11 +619,11 @@ function LogPigEntryModal({ hobby, hobbyId, action, update, onClose, initialAnim
     <Modal open onClose={onClose} title={titles[action]}>
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       {action === "weight" ? (
         <Field label="Pig">
-          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+          <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
             {live.length === 0 && <option value="">— No live pigs —</option>}
             {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
           </select>
@@ -639,14 +639,14 @@ function LogPigEntryModal({ hobby, hobbyId, action, update, onClose, initialAnim
         const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
         return (
           <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0" autoFocus inputMode="decimal"/>
           </Field>
         );
       })()}
       <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}
           placeholder={
             action === "health" ? "e.g. Ivermectin — dewormer round" :
             action === "note" ? "What happened" : ""
@@ -712,16 +712,16 @@ function BredPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
   return (
     <Modal open onClose={onClose} title="🐖 Log breeding">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Sow / gilt">
-        <select style={inputStyle} value={femaleId} onChange={e=>setFemaleId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={femaleId} onChange={e=>setFemaleId(e.target.value)} autoFocus>
           {females.length === 0 && <option value="">— No sows or gilts available —</option>}
           {females.map(a => <option key={a.id} value={a.id}>{a.name} · {a.sex}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
       </Field>
       <Field label="Boar (optional)">
-        <select style={inputStyle} value={boarId} onChange={e=>setBoarId(e.target.value)}>
+        <select style={inputStyle()} value={boarId} onChange={e=>setBoarId(e.target.value)}>
           <option value="">— Not specified —</option>
           {boars.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
         </select>
@@ -732,7 +732,7 @@ function BredPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
           <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>A reminder will be added to your calendar after saving.</div>
         </div>
       )}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -797,25 +797,25 @@ function FarrowPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = nul
   return (
     <Modal open onClose={onClose} title="🐽 Log farrowing">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Sow">
-        <select style={inputStyle} value={sowId} onChange={e=>setSowId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={sowId} onChange={e=>setSowId(e.target.value)} autoFocus>
           {sows.length === 0 && <option value="">— No sows available —</option>}
           {sows.map(a => <option key={a.id} value={a.id}>{a.name}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
       </Field>
       <Field label="Sire / boar (optional)">
-        <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+        <select style={inputStyle()} value={sireId} onChange={e=>setSireId(e.target.value)}>
           <option value="">— Not specified —</option>
           {boars.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
         </select>
       </Field>
       <div style={{display:"flex",gap:12}}>
-        <div style={{flex:1}}><Field label="Piglets alive"><input type="number" min={0} style={inputStyle} value={pigletsAlive} onChange={e=>setPigletsAlive(e.target.value)} placeholder="0"/></Field></div>
-        <div style={{flex:1}}><Field label="Stillborn"><input type="number" min={0} style={inputStyle} value={pigletsStillborn} onChange={e=>setPigletsStillborn(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}><Field label="Piglets alive"><input type="number" min={0} style={inputStyle()} value={pigletsAlive} onChange={e=>setPigletsAlive(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}><Field label="Stillborn"><input type="number" min={0} style={inputStyle()} value={pigletsStillborn} onChange={e=>setPigletsStillborn(e.target.value)} placeholder="0"/></Field></div>
       </div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -970,7 +970,7 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="❄️ Remove pig">
       <Field label="Which pig?">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {live.length === 0 && <option value="">— No live pigs —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
@@ -988,7 +988,7 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
 
       {reason === "butchered" && (()=>{
         const isMetricW = getCurrentWeightUnit()==="kg";
@@ -996,38 +996,38 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
         return (
           <>
             <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
-              <input type="number" min={0} step="0.1" style={inputStyle} value={shownW}
+              <input type="number" min={0} step="0.1" style={inputStyle()} value={shownW}
                 onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
             </Field>
-            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
           </>
         );
       })()}
 
       {reason === "sold" && (
         <>
-          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
-          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label="Buyer (optional)"><input style={inputStyle()} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
         </>
       )}
 
       {(reason === "rehomed" || reason === "given_away") && (
-        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+        <Field label="Recipient (optional)"><input style={inputStyle()} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
       )}
 
       {reason === "died" && (
         <Field label="Cause">
-          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+          <select style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)}>
             {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Birthing complications","Other"].map(c=><option key={c}>{c}</option>)}
           </select>
         </Field>
       )}
 
       {reason === "culled" && (
-        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
+        <Field label="Reason (optional)"><input style={inputStyle()} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
       )}
 
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
 
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
         {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This pig";})()} will move to your Archived pigs list{(reason==="sold")?" and a sale record will appear in Sales & costs":""}. You can restore from there if this was a mistake.
@@ -1114,30 +1114,30 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const isSale=action==="sale";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
       {action==="fed"&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
-        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
       })()}
       {action==="weight"&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
-        return <Field label={isMetricW?"Current weight (kg)":"Current weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+        return <Field label={isMetricW?"Current weight (kg)":"Current weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
       })()}
-      {action==="litter"&&<Field label="Piglets born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
+      {action==="litter"&&<Field label="Piglets born (count)"><input type="number" min={1} style={inputStyle()} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
       {action==="butcher"&&<>{(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
-        return <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
-      })()}<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></>}
-      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
+        return <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></>}
+      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
-        <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
+        <Field label="Type"><select style={inputStyle()} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
         <Field label="Customer (optional)">
           {!showNewBuyer ? (
             <div style={{ display: "flex", gap: 8 }}>
-              <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+              <select style={{ ...inputStyle(), flex: 1 }} value={buyerId} onChange={e => {
                 const id = e.target.value;
                 setBuyerId(id);
                 const c = (customers || []).find(x => x.id === id);
@@ -1150,14 +1150,14 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8 }}>
-              <input style={{ ...inputStyle, flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+              <input style={{ ...inputStyle(), flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
               <button onClick={() => { setShowNewBuyer(false); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
             </div>
           )}
         </Field>
-        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
       </>}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list. You can restore from there if this was a mistake.</div>}
       {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list and {saleType!=="rehomed"?"a sale record will appear in Sales & costs":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
       <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
@@ -1405,7 +1405,7 @@ function HerdTallySection({ hobby, update }) {
           {HERD_TALLY_CATEGORIES.map(k => (
             <Field key={k} label={k}>
               <input
-                type="number" inputMode="numeric" min={0} style={inputStyle}
+                type="number" inputMode="numeric" min={0} style={inputStyle()}
                 value={counts[k]}
                 onChange={e => setCounts(c => ({ ...c, [k]: e.target.value }))}
                 placeholder="0"

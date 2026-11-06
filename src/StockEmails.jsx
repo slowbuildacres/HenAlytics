@@ -18,7 +18,7 @@
 //   data.tutorialsSeen.stockEmails = true once the tutorial's been shown
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { getActiveHomesteadId, compressImage } from "./sync.js";
@@ -32,11 +32,11 @@ const palette = legacyPalette({
 });
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 const newId = () => Math.random().toString(36).slice(2, 10);
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -120,7 +120,7 @@ const btn = (variant = "primary", disabled = false) => ({
   color: variant === "primary" ? palette.bg : palette.ink, textAlign: "center",
 });
 const Label = ({ children }) => <div style={{ fontSize: 12, color: palette.inkSoft, margin: "12px 0 6px", fontWeight: 700 }}>{children}</div>;
-const linkBtn = legacyStyle(() => ({ background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY, fontSize: 13 }));
+const linkBtn = () => ({ background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY, fontSize: 13 });
 
 // ---- Tutorial ---------------------------------------------------------------
 const TUTORIAL = [
@@ -149,7 +149,7 @@ export function StockEmailTutorial({ onClose, onStart }) {
           {!last && <button type="button" onClick={() => setI(i + 1)} style={{ ...btn("primary"), flex: 2 }}>Next</button>}
           {last && <button type="button" onClick={() => { onClose(); onStart && onStart(); }} style={{ ...btn("primary"), flex: 2 }}>Set up my customers</button>}
         </div>
-        <button type="button" onClick={onClose} style={{ ...linkBtn, color: palette.inkSoft, marginTop: 12, fontWeight: 400 }}>{last ? "Maybe later" : "Skip"}</button>
+        <button type="button" onClick={onClose} style={{ ...linkBtn(), color: palette.inkSoft, marginTop: 12, fontWeight: 400 }}>{last ? "Maybe later" : "Skip"}</button>
       </div>
     </div>
   );
@@ -164,9 +164,9 @@ function ContactForm({ initial, lists, onSave, onCancel, onDelete }) {
   const valid = name.trim() && okEmail;
   return (
     <div style={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ ...inputStyle, marginBottom: 8 }} autoFocus={!initial} />
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ ...inputStyle(), marginBottom: 8 }} autoFocus={!initial} />
       <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" inputMode="email" autoCapitalize="off"
-        style={{ ...inputStyle, borderColor: okEmail ? undefined : palette.accent }} />
+        style={{ ...inputStyle(), borderColor: okEmail ? undefined : palette.accent }} />
       {lists.length > 0 && (
         <>
           <Label>Lists</Label>
@@ -181,7 +181,7 @@ function ContactForm({ initial, lists, onSave, onCancel, onDelete }) {
         <button type="button" disabled={!valid} onClick={() => onSave({ ...(initial || {}), id: initial?.id || newId(), name: name.trim(), email: email.trim().toLowerCase(), groups: [...sel] })}
           style={{ ...btn("primary", !valid), flex: 1 }}>{initial ? "Save" : "Add contact"}</button>
         <button type="button" onClick={onCancel} style={btn("ghost")}>Cancel</button>
-        {onDelete && <button type="button" onClick={onDelete} style={{ ...linkBtn, color: palette.accent, fontWeight: 400 }}>Delete</button>}
+        {onDelete && <button type="button" onClick={onDelete} style={{ ...linkBtn(), color: palette.accent, fontWeight: 400 }}>Delete</button>}
       </div>
     </div>
   );
@@ -199,7 +199,7 @@ function PasteList({ lists, onAdd, onCancel }) {
   return (
     <div style={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 6 }}>One per line, like "Pat Smith pat@email.com". Pasting from a spreadsheet works too.</div>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} style={{ ...inputStyle, fontSize: 14 }} placeholder={"Pat Smith pat@email.com\nJo Miller jo@email.com"} />
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} style={{ ...inputStyle(), fontSize: 14 }} placeholder={"Pat Smith pat@email.com\nJo Miller jo@email.com"} />
       {lists.length > 0 && (
         <>
           <Label>Add them to</Label>
@@ -351,7 +351,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
               {options.map((o) => <Chip key={o.key} active={picked.some((p) => p.key === o.key)} onClick={() => togglePick(o)}>{o.fromStand ? "🧺 " : ""}{o.name}</Chip>)}
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Something else (e.g. Duck eggs)" style={{ ...inputStyle, padding: "8px 10px", fontSize: 14 }}
+              <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Something else (e.g. Duck eggs)" style={{ ...inputStyle(), padding: "8px 10px", fontSize: 14 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && customName.trim()) { togglePick({ key: `custom:${newId()}`, name: customName.trim(), unit: "", qty: "", price: "" }); setCustomName(""); } }} />
               <button type="button" disabled={!customName.trim()} onClick={() => { togglePick({ key: `custom:${newId()}`, name: customName.trim(), unit: "", qty: "", price: "" }); setCustomName(""); }} style={{ ...btn("ghost", !customName.trim()), padding: "8px 12px" }}>Add</button>
             </div>
@@ -365,8 +365,8 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
                       <button type="button" onClick={() => setPicked((x) => x.filter((y) => y.key !== p.key))} aria-label={`Remove ${p.name}`} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: palette.inkSoft }}>×</button>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                      <input value={p.qty} onChange={(e) => setPickField(p.key, "qty", e.target.value)} placeholder={p.unit ? `How many (${p.unit}s)` : "How many"} style={{ ...inputStyle, padding: "8px 10px", fontSize: 14 }} />
-                      <input value={p.price} onChange={(e) => setPickField(p.key, "price", e.target.value)} placeholder="Price (optional)" style={{ ...inputStyle, padding: "8px 10px", fontSize: 14 }} />
+                      <input value={p.qty} onChange={(e) => setPickField(p.key, "qty", e.target.value)} placeholder={p.unit ? `How many (${p.unit}s)` : "How many"} style={{ ...inputStyle(), padding: "8px 10px", fontSize: 14 }} />
+                      <input value={p.price} onChange={(e) => setPickField(p.key, "price", e.target.value)} placeholder="Price (optional)" style={{ ...inputStyle(), padding: "8px 10px", fontSize: 14 }} />
                     </div>
                   </div>
                 ))}
@@ -374,7 +374,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             )}
 
             <Label>Note (optional)</Label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, STOCK_EMAIL_LIMITS.note))} rows={3} placeholder="Porch cooler is stocked until 6 tonight. Cash or Venmo!" style={{ ...inputStyle, fontSize: 14 }} />
+            <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, STOCK_EMAIL_LIMITS.note))} rows={3} placeholder="Porch cooler is stocked until 6 tonight. Cash or Venmo!" style={{ ...inputStyle(), fontSize: 14 }} />
 
             <Label>Photos (optional, up to {STOCK_EMAIL_LIMITS.photos})</Label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -393,7 +393,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             </div>
 
             <Label>Send to</Label>
-            {lists.length === 0 && <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 6 }}>No lists yet. <button type="button" onClick={() => setTab("lists")} style={linkBtn}>Make lists</button> like Eggs or Milk, or send to all contacts.</div>}
+            {lists.length === 0 && <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 6 }}>No lists yet. <button type="button" onClick={() => setTab("lists")} style={linkBtn()}>Make lists</button> like Eggs or Milk, or send to all contacts.</div>}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <Chip active={everyone} onClick={() => setEveryone((v) => !v)}>👥 All contacts</Chip>
               {!everyone && lists.map((g) => {
@@ -403,20 +403,20 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             </div>
 
             <Label>Subject</Label>
-            <input value={subject} onChange={(e) => setSubject(e.target.value.slice(0, STOCK_EMAIL_LIMITS.subject))} placeholder={defaultSubject(fromName, draft.items)} style={{ ...inputStyle, fontSize: 14 }} />
+            <input value={subject} onChange={(e) => setSubject(e.target.value.slice(0, STOCK_EMAIL_LIMITS.subject))} placeholder={defaultSubject(fromName, draft.items)} style={{ ...inputStyle(), fontSize: 14 }} />
 
             <div style={{ marginTop: 12, padding: "10px 12px", background: palette.card, border: `1.5px solid ${needAddress ? palette.accent : palette.line}`, borderRadius: 10 }}>
-              <button type="button" onClick={() => setShowSender((v) => !v)} style={{ ...linkBtn, color: palette.ink, textDecoration: "none", width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
+              <button type="button" onClick={() => setShowSender((v) => !v)} style={{ ...linkBtn(), color: palette.ink, textDecoration: "none", width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
                 <span>Sender details{needAddress ? " (mailing address needed)" : ""}</span><span>{showSender ? "▲" : "▼"}</span>
               </button>
               {showSender && (
                 <div>
                   <Label>From name</Label>
-                  <input defaultValue={settings.fromName || data.homesteadName || ""} onBlur={(e) => setSettings({ fromName: e.target.value.trim().slice(0, 60) })} placeholder="Slow Build Acres" style={{ ...inputStyle, fontSize: 14 }} />
+                  <input defaultValue={settings.fromName || data.homesteadName || ""} onBlur={(e) => setSettings({ fromName: e.target.value.trim().slice(0, 60) })} placeholder="Slow Build Acres" style={{ ...inputStyle(), fontSize: 14 }} />
                   <Label>Replies go to</Label>
-                  <input type="email" defaultValue={settings.replyTo || (status && status.accountEmail) || (user && user.email) || ""} onBlur={(e) => { const v = e.target.value.trim(); if (!v || validEmail(v)) setSettings({ replyTo: v }); }} placeholder="you@email.com" style={{ ...inputStyle, fontSize: 14 }} />
+                  <input type="email" defaultValue={settings.replyTo || (status && status.accountEmail) || (user && user.email) || ""} onBlur={(e) => { const v = e.target.value.trim(); if (!v || validEmail(v)) setSettings({ replyTo: v }); }} placeholder="you@email.com" style={{ ...inputStyle(), fontSize: 14 }} />
                   <Label>Mailing address</Label>
-                  <input defaultValue={settings.mailingAddress || ""} onBlur={(e) => setSettings({ mailingAddress: e.target.value.trim().slice(0, 200) })} placeholder="PO Box 12, Lawrence, KS 66044" style={{ ...inputStyle, fontSize: 14 }} />
+                  <input defaultValue={settings.mailingAddress || ""} onBlur={(e) => setSettings({ mailingAddress: e.target.value.trim().slice(0, 200) })} placeholder="PO Box 12, Lawrence, KS 66044" style={{ ...inputStyle(), fontSize: 14 }} />
                   <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>US law (CAN-SPAM) requires a mailing address at the bottom of promotional emails. A PO box is fine.</div>
                 </div>
               )}
@@ -519,7 +519,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
               })}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input value={newList} onChange={(e) => setNewList(e.target.value)} placeholder="New list (e.g. Duck eggs)" style={inputStyle}
+              <input value={newList} onChange={(e) => setNewList(e.target.value)} placeholder="New list (e.g. Duck eggs)" style={inputStyle()}
                 onKeyDown={(e) => { if (e.key === "Enter" && newList.trim()) { const nm = newList.trim(); mutate((d) => { if (!d.customerGroups.some((g) => g.name.toLowerCase() === nm.toLowerCase())) d.customerGroups.push({ id: newId(), name: nm.slice(0, 30), emoji: "🏷️" }); }); setNewList(""); } }} />
               <button type="button" onClick={() => { const nm = newList.trim(); if (!nm) return; mutate((d) => { if (!d.customerGroups.some((g) => g.name.toLowerCase() === nm.toLowerCase())) d.customerGroups.push({ id: newId(), name: nm.slice(0, 30), emoji: "🏷️" }); }); setNewList(""); }} style={btn("primary")}>Add</button>
             </div>

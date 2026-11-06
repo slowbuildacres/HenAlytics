@@ -21,7 +21,7 @@
 //   data.sales[] (hobbyType=tincture, batchId=...)
 // ============================================================================
 
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -123,11 +123,11 @@ function containersSummary(batch) {
   return getContainers(batch).map(c => `${c.count} × ${sizeLabel(c.size)}`).join(" · ");
 }
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
@@ -290,47 +290,47 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit tincture batch" : "Start a tincture batch"}>
       <Field label="Herb">
-        <input style={inputStyle} value={herb} onChange={e => setHerb(e.target.value)} placeholder="e.g. Echinacea, Calendula, Tulsi" autoFocus />
+        <input style={inputStyle()} value={herb} onChange={e => setHerb(e.target.value)} placeholder="e.g. Echinacea, Calendula, Tulsi" autoFocus />
       </Field>
       <Field label="Batch name (optional)">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder={herb ? `${herb} tincture` : "e.g. Spring Echinacea"} />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder={herb ? `${herb} tincture` : "e.g. Spring Echinacea"} />
       </Field>
       <Field label="Menstruum (solvent)">
-        <select style={inputStyle} value={menstruum} onChange={e => onMenstruumChange(e.target.value)}>
+        <select style={inputStyle()} value={menstruum} onChange={e => onMenstruumChange(e.target.value)}>
           {MENSTRUUMS.map(m => <option key={m.name} value={m.name}>{m.name}</option>)}
         </select>
       </Field>
       {!menstruum.includes("vinegar") && !menstruum.includes("glycerin") && !menstruum.includes("Glycerite") && (
         <Field label="Alcohol %">
-          <input type="number" min={0} max={100} step="1" inputMode="numeric" style={inputStyle} value={alcoholPct} onChange={e => setAlcoholPct(e.target.value)} placeholder="40" />
+          <input type="number" min={0} max={100} step="1" inputMode="numeric" style={inputStyle()} value={alcoholPct} onChange={e => setAlcoholPct(e.target.value)} placeholder="40" />
         </Field>
       )}
       <Field label="Ratio (herb:menstruum)">
-        <select style={inputStyle} value={ratioPreset} onChange={e => setRatioPreset(e.target.value)}>
+        <select style={inputStyle()} value={ratioPreset} onChange={e => setRatioPreset(e.target.value)}>
           {RATIO_PRESETS.map(r => <option key={r} value={r}>{r}</option>)}
         </select>
         {ratioPreset === "Custom" && (
-          <input style={{ ...inputStyle, marginTop: 8 }} value={ratioCustom} onChange={e => setRatioCustom(e.target.value)} placeholder="e.g. 1:7" />
+          <input style={{ ...inputStyle(), marginTop: 8 }} value={ratioCustom} onChange={e => setRatioCustom(e.target.value)} placeholder="e.g. 1:7" />
         )}
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Jars (optional)">
-            <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle} value={jarsStarted} onChange={e => setJarsStarted(e.target.value)} placeholder="1" />
+            <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle()} value={jarsStarted} onChange={e => setJarsStarted(e.target.value)} placeholder="1" />
           </Field>
         </div>
       </div>
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Where the herb came from, intended use, anything notable..."
         />
@@ -385,11 +385,11 @@ function StrainModal({ batch, hobbyId, update, onClose }) {
         Straining moves the batch from "infusing" to "ready to bottle". Track when you strained it and any observations.
       </div>
       <Field label="Strain date">
-        <input type="date" style={inputStyle} value={strainDate} onChange={e => setStrainDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={strainDate} onChange={e => setStrainDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 80, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 80, resize: "vertical" }}
           value={strainNotes} onChange={e => setStrainNotes(e.target.value)}
           placeholder="Color, aroma, how much liquid you recovered, etc."
         />
@@ -480,7 +480,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`${isEdit ? "Edit bottling" : "Bottle"} — ${batch.name}`}>
       <Field label="Bottled date">
-        <input type="date" style={inputStyle} value={bottledDate} onChange={e => setBottledDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={bottledDate} onChange={e => setBottledDate(e.target.value)} />
       </Field>
       <Field label="Containers">
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -489,11 +489,11 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div style={{ width: 84 }}>
                   <div style={{ fontSize: 10, color: palette.inkSoft, marginBottom: 3 }}>Count</div>
-                  <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle} value={r.count} onChange={e => setRow(r.id, { count: e.target.value })} placeholder="0" autoFocus={i === 0} />
+                  <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle()} value={r.count} onChange={e => setRow(r.id, { count: e.target.value })} placeholder="0" autoFocus={i === 0} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 10, color: palette.inkSoft, marginBottom: 3 }}>Size</div>
-                  <select style={inputStyle} value={r.sizeSel} onChange={e => setRow(r.id, { sizeSel: e.target.value })}>
+                  <select style={inputStyle()} value={r.sizeSel} onChange={e => setRow(r.id, { sizeSel: e.target.value })}>
                     {BOTTLE_SIZES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
                   </select>
                 </div>
@@ -502,7 +502,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
                 )}
               </div>
               {r.sizeSel === "custom" && (
-                <input style={inputStyle} value={r.customSize} onChange={e => setRow(r.id, { customSize: e.target.value })} placeholder="e.g. 8oz decanter, 0.75 oz dropper" />
+                <input style={inputStyle()} value={r.customSize} onChange={e => setRow(r.id, { customSize: e.target.value })} placeholder="e.g. 8oz decanter, 0.75 oz dropper" />
               )}
             </div>
           ))}
@@ -513,7 +513,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
         </div>
       </Field>
       <Field label="Total yield in fl oz (optional)">
-        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 12.5" />
+        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 12.5" />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
           For analytics. Helps track how much you recovered per batch. Decimals are fine (e.g. 5.5).
         </div>
@@ -591,25 +591,25 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         {max} of {batch.bottlesMade} remaining{getContainers(batch).length > 1 ? ` · ${containersSummary(batch)}` : ` · ${sizeLabel(batch.bottleSize)}`}
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Bottles (max ${max})`}>
-            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
+            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle()} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per bottle">
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={pricePerBottle} onChange={e => setPricePerBottle(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerBottle} onChange={e => setPricePerBottle(e.target.value)} placeholder="$0.00" />
           </Field>
         </div>
       </div>
       <Field label="Buyer (optional)">
-        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+        <input style={inputStyle()} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember about this sale..." />
+        <input style={inputStyle()} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember about this sale..." />
       </Field>
       {total > 0 && (
         <div style={{ background: palette.yolkSoft, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: palette.ink, marginBottom: 12 }}>

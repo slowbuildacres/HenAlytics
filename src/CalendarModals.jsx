@@ -10,7 +10,7 @@
 //   - ViewDayEventsModal: show all events on a single day
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import {
   ZONE_INFO, CROPS, cropsForSeason, methodsForCrop, generateCropEvents, getFrostDates, estimateZone,
@@ -29,12 +29,12 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px",
   borderRadius: 8, border: `1.5px solid ${palette.line}`,
   fontFamily: FONT_BODY, fontSize: 14, background: palette.white, color: palette.ink,
   boxSizing: "border-box",
-}));
+});
 
 const todayStr = () => {
   const d = new Date();
@@ -549,7 +549,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
           </div>
           <Field label="Crop name">
             <input
-              style={inputStyle}
+              style={inputStyle()}
               value={otherName}
               onChange={(e) => { setOtherName(e.target.value); setOtherError(""); }}
               placeholder="e.g. Black currants, dahlia tubers, asparagus crowns"
@@ -559,7 +559,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
           <Field label="Planting date">
             <input
               type="date"
-              style={inputStyle}
+              style={inputStyle()}
               value={otherDate}
               onChange={(e) => setOtherDate(e.target.value)}
             />
@@ -700,7 +700,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
             }}>
               <Field label="Variety name">
                 <input
-                  style={inputStyle}
+                  style={inputStyle()}
                   value={newVarietyName}
                   onChange={(e) => { setNewVarietyName(e.target.value); setVarietyError(""); }}
                   placeholder="e.g. Sungold, Cherokee Purple, San Marzano"
@@ -710,7 +710,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
               <Field label={`Days to harvest (default ${crop.daysToHarvest || "—"})`}>
                 <input
                   type="number"
-                  style={inputStyle}
+                  style={inputStyle()}
                   value={newVarietyDays}
                   onChange={(e) => { setNewVarietyDays(e.target.value); setVarietyError(""); }}
                   placeholder={String(crop.daysToHarvest || 60)}
@@ -782,7 +782,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
           <Field label="Plan year">
             <input
               type="number"
-              style={inputStyle}
+              style={inputStyle()}
               value={year}
               onChange={(e) => handleSetYear(parseInt(e.target.value) || new Date().getFullYear())}
               min={2024} max={2030}
@@ -897,14 +897,14 @@ export function PlanBirdsModal({ update, onClose, prefillDate }) {
         </div>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Number of birds (optional)">
-        <input type="number" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, fontFamily: FONT_BODY }}
+          style={{ ...inputStyle(), minHeight: 60, fontFamily: FONT_BODY }}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
@@ -997,7 +997,7 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
       </Field>
       <Field label="Title">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={title}
           onChange={(e) => setTitle(e.target.value)}
           placeholder="e.g. Order feed"
@@ -1005,20 +1005,20 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
         />
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Repeats">
-        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+        <select style={inputStyle()} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
           {RECUR_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </Field>
       {recurrence !== "none" && (
         <Field label="Repeat until (optional)">
-          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+          <input type="date" style={inputStyle()} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
         </Field>
       )}
       <Field label="Category">
-        <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
+        <select style={inputStyle()} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="custom">Custom / general</option>
           <option value="garden">Garden</option>
           <option value="chicken">Meat chicken</option>
@@ -1032,7 +1032,7 @@ export function AddCalendarEventModal({ update, onClose, prefillDate }) {
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, fontFamily: FONT_BODY }}
+          style={{ ...inputStyle(), minHeight: 60, fontFamily: FONT_BODY }}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
@@ -1104,19 +1104,19 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit event">
       <Field label="Title">
-        <input style={inputStyle} value={title} onChange={(e) => setTitle(e.target.value)} />
+        <input style={inputStyle()} value={title} onChange={(e) => setTitle(e.target.value)} />
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Repeats">
-        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+        <select style={inputStyle()} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
           {RECUR_OPTIONS.map((o) => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </Field>
       {recurrence !== "none" && (
         <Field label="Repeat until (optional)">
-          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+          <input type="date" style={inputStyle()} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
         </Field>
       )}
       {recurrence !== "none" && (
@@ -1126,7 +1126,7 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
       )}
       <Field label="Notes">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, fontFamily: FONT_BODY }}
+          style={{ ...inputStyle(), minHeight: 60, fontFamily: FONT_BODY }}
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
         />
@@ -1199,7 +1199,7 @@ export function EditZoneModal({ data, update, onClose }) {
       </div>
 
       <Field label="Hardiness system">
-        <select style={inputStyle} value={system} onChange={(e) => handleSystemChange(e.target.value)}>
+        <select style={inputStyle()} value={system} onChange={(e) => handleSystemChange(e.target.value)}>
           {Object.keys(HARDINESS_SYSTEMS).map((sysKey) => (
             <option key={sysKey} value={sysKey}>{HARDINESS_SYSTEMS[sysKey].label}</option>
           ))}
@@ -1210,7 +1210,7 @@ export function EditZoneModal({ data, update, onClose }) {
       </Field>
 
       <Field label="Your zone">
-        <select style={inputStyle} value={zone} onChange={(e) => setZone(e.target.value)}>
+        <select style={inputStyle()} value={zone} onChange={(e) => setZone(e.target.value)}>
           {zoneIds.map((z) => (
             <option key={z} value={z}>{sys.zones[z].label}</option>
           ))}

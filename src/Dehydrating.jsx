@@ -16,7 +16,7 @@
 // where freeze-drying didn't need it.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -137,11 +137,11 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   const editing = !!batch;
@@ -189,37 +189,37 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={editing ? "✏️ Edit batch" : "🌬️ New dehydrating batch"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Item">
-        <input style={inputStyle} value={item} onChange={(e) => setItem(e.target.value)} placeholder="e.g. Apple slices, jerky, herbs" autoFocus />
+        <input style={inputStyle()} value={item} onChange={(e) => setItem(e.target.value)} placeholder="e.g. Apple slices, jerky, herbs" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Dryer hours">
-            <input type="number" step="0.5" min={0} style={inputStyle} value={dryerHours} onChange={(e) => setDryerHours(e.target.value)} placeholder="0" inputMode="decimal" />
+            <input type="number" step="0.5" min={0} style={inputStyle()} value={dryerHours} onChange={(e) => setDryerHours(e.target.value)} placeholder="0" inputMode="decimal" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Temp (°F)">
-            <input type="number" min={0} style={inputStyle} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 135" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 135" inputMode="numeric" />
           </Field>
         </div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Trays">
-            <input type="number" min={0} style={inputStyle} value={trays} onChange={(e) => setTrays(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={trays} onChange={(e) => setTrays(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Output (oz)">
-            <input type="number" step="0.1" min={0} style={inputStyle} value={outputOz} onChange={(e) => setOutputOz(e.target.value)} placeholder="0" inputMode="decimal" />
+            <input type="number" step="0.1" min={0} style={inputStyle()} value={outputOz} onChange={(e) => setOutputOz(e.target.value)} placeholder="0" inputMode="decimal" />
           </Field>
         </div>
       </div>
       <Field label="Storage container">
-        <select style={inputStyle} value={containerType} onChange={(e) => setContainerType(e.target.value)}>
+        <select style={inputStyle()} value={containerType} onChange={(e) => setContainerType(e.target.value)}>
           <option value="jar">Mason jar</option>
           <option value="vacuum">Vacuum-sealed bag</option>
           <option value="mylar">Mylar bag</option>
@@ -232,7 +232,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
           type="number"
           step="0.01"
           min={0}
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -246,7 +246,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
         />
       </Field>
       <Field label="Notes">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, slice thickness, rotation schedule…" />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, slice thickness, rotation schedule…" />
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
@@ -283,16 +283,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. dehydrator, extra trays, mesh sheets" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. dehydrator, extra trays, mesh sheets" autoFocus />
       </Field>
       <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (

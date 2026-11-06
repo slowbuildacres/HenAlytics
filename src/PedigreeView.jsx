@@ -21,7 +21,7 @@
 // where someone bought a doe but never registered her parents in the app.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useRef, useState } from "react";
 import { X } from "lucide-react";
 
@@ -36,11 +36,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 // ============================================================================
 // SireDamPicker — used inside Add/Edit Animal forms
@@ -134,7 +134,7 @@ export function SireDamPicker({
         {label} (optional)
       </div>
       <select
-        style={inputStyle}
+        style={inputStyle()}
         value={dropdownValue}
         onChange={(e) => {
           const v = e.target.value;
@@ -186,7 +186,7 @@ export function SireDamPicker({
           </div>
           <input
             ref={freeTextRef}
-            style={{ ...inputStyle, background: palette.bg }}
+            style={{ ...inputStyle(), background: palette.bg }}
             value={selectedName || ""}
             onChange={(e) => onChange({ id: "", name: e.target.value })}
             placeholder={placeholder || `Type the ${label.toLowerCase()}'s name`}

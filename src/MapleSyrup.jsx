@@ -26,7 +26,7 @@
 // syrup AND the theoretical (so users can see boiling efficiency).
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -47,11 +47,11 @@ const palette = legacyPalette({
 });
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -151,34 +151,34 @@ function SeasonModal({ season, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={season ? "Edit season" : "New season"}>
       <Field label="Season name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. 2026 season" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. 2026 season" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Year">
-            <input type="number" min={2000} max={2100} style={inputStyle} value={year} onChange={e => setYear(e.target.value)} />
+            <input type="number" min={2000} max={2100} style={inputStyle()} value={year} onChange={e => setYear(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Total taps set">
-            <input type="number" min={0} style={inputStyle} value={totalTaps} onChange={e => setTotalTaps(e.target.value)} placeholder="0" />
+            <input type="number" min={0} style={inputStyle()} value={totalTaps} onChange={e => setTotalTaps(e.target.value)} placeholder="0" />
           </Field>
         </div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="End date (optional)">
-            <input type="date" style={inputStyle} value={endDate} onChange={e => setEndDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={endDate} onChange={e => setEndDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Weather notes, tree count, sugarbush conditions..." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Weather notes, tree count, sugarbush conditions..." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {season && onDelete && (
@@ -233,23 +233,23 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
   return (
     <Modal open onClose={onClose} title={titles[action] || "Log"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       {action === "sap_collected" && (
         <Field label="Sap collected (gallons)">
-          <input type="number" min={0} step="0.1" style={inputStyle} value={gallons} onChange={e => setGallons(e.target.value)} placeholder="0" autoFocus />
+          <input type="number" min={0} step="0.1" style={inputStyle()} value={gallons} onChange={e => setGallons(e.target.value)} placeholder="0" autoFocus />
         </Field>
       )}
       {action === "boil" && (
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
             <Field label="Sap boiled (gal)">
-              <input type="number" min={0} step="0.1" style={inputStyle} value={sapGal} onChange={e => setSapGal(e.target.value)} placeholder="0" autoFocus />
+              <input type="number" min={0} step="0.1" style={inputStyle()} value={sapGal} onChange={e => setSapGal(e.target.value)} placeholder="0" autoFocus />
             </Field>
           </div>
           <div style={{ flex: 1 }}>
             <Field label="Syrup produced (gal)">
-              <input type="number" min={0} step="0.01" style={inputStyle} value={syrupGal} onChange={e => setSyrupGal(e.target.value)} placeholder="0" />
+              <input type="number" min={0} step="0.01" style={inputStyle()} value={syrupGal} onChange={e => setSyrupGal(e.target.value)} placeholder="0" />
             </Field>
           </div>
         </div>
@@ -261,21 +261,21 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
       )}
       {action === "tap_set" && (
         <Field label="Taps set today">
-          <input type="number" min={0} style={inputStyle} value={count} onChange={e => setCount(e.target.value)} placeholder="0" autoFocus />
+          <input type="number" min={0} style={inputStyle()} value={count} onChange={e => setCount(e.target.value)} placeholder="0" autoFocus />
         </Field>
       )}
       {(action === "supplies" || action === "infrastructure") && (
         <>
           <Field label={action === "supplies" ? "What was purchased?" : "What was built / bought?"}>
-            <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder={action === "supplies" ? "e.g. spiles, filters, bottles" : "e.g. evaporator, sugar shack, RO machine"} autoFocus />
+            <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder={action === "supplies" ? "e.g. spiles, filters, bottles" : "e.g. evaporator, sugar shack, RO machine"} autoFocus />
           </Field>
           <Field label="Cost ($)">
-            <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
           </Field>
         </>
       )}
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} />
+        <textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} />
       </Field>
       <Btn onClick={handleSave}>Save</Btn>
     </Modal>
@@ -458,7 +458,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
           {seasons.length > 1 && (
             <div style={{ marginBottom: 14 }}>
               <select
-                style={inputStyle}
+                style={inputStyle()}
                 value={currentSeason.id}
                 onChange={e => setCurrentSeason(e.target.value)}
               >

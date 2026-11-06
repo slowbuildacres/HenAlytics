@@ -6,8 +6,9 @@
 // made with legacyPalette({...}) and changed in place whenever the look or
 // dark mode changes, so those screens follow the rest of the app.
 //
-// Style objects built once at load (inputStyle and friends) are made with
-// legacyStyle(() => ({...})) and rebuilt in place after the palettes change.
+// Style objects that used to be built once at load (inputStyle and friends)
+// are now small functions (inputStyle()) so each render gets current colors;
+// React ignores style objects changed in place (and freezes them in dev).
 //
 // Extra keys every palette gets, for colors that used to be typed in:
 //   onYolk   text on a yolk-yellow fill (always dark)
@@ -20,7 +21,6 @@
 // ============================================================================
 
 const palettes = [];
-const styles = [];
 
 const FARMHOUSE_LIGHT_LEGACY = {
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -84,21 +84,10 @@ export function legacyPalette(base) {
   return p;
 }
 
-export function legacyStyle(build) {
-  const o = build();
-  styles.push({ o, build });
-  return o;
-}
-
 // Called from applyLook() whenever the look or dark mode changes.
 export function applyLegacyTheme(look, dark, tokens) {
   state = { look, dark: !!dark, t: look === "farmhouse" && !dark ? null : { ...tokens } };
   for (const p of palettes) fill(p);
-  for (const s of styles) {
-    const next = s.build();
-    for (const k of Object.keys(s.o)) if (!(k in next)) delete s.o[k];
-    Object.assign(s.o, next);
-  }
 }
 
 // Section titles in the older screens started with an emoji ("📊 Cost

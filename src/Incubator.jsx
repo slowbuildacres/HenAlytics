@@ -1,7 +1,7 @@
 // ============================================================================
 // INCUBATOR — tracks hatching runs by bird type with auto calendar reminders
 // ============================================================================
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): the rebuilt incubator screens reuse this file's forms.
 import { IncubatorToday, IncubatorHistory } from "./newlook/incubator/IncubatorScreens.jsx";
@@ -22,11 +22,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -200,7 +200,7 @@ function RunModal({ run, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit run" : "Start a new run"}>
       <Field label="Run name (optional)">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder={`${birdType} run`} autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder={`${birdType} run`} autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
@@ -217,24 +217,24 @@ function RunModal({ run, hobbyId, update, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Variety / breed (optional)">
-            <input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Rhode Island Red" />
+            <input style={inputStyle()} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Rhode Island Red" />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Source (optional)">
-            <input style={inputStyle} value={source} onChange={e=>setSource(e.target.value)} placeholder="e.g. Own flock" />
+            <input style={inputStyle()} value={source} onChange={e=>setSource(e.target.value)} placeholder="e.g. Own flock" />
           </Field>
         </div>
       </div>
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Eggs set">
-            <input type="number" min={1} style={inputStyle} value={eggsSet} onChange={e=>setEggsSet(e.target.value)} placeholder="0" />
+            <input type="number" min={1} style={inputStyle()} value={eggsSet} onChange={e=>setEggsSet(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Date set">
-            <input type="date" style={inputStyle} value={dateSet} onChange={e=>setDateSet(e.target.value)} />
+            <input type="date" style={inputStyle()} value={dateSet} onChange={e=>setDateSet(e.target.value)} />
           </Field>
         </div>
       </div>
@@ -325,12 +325,12 @@ function CandleModal({ run, hobbyId, update, onClose }) {
         Log the number that <strong>kept developing</strong> (the keepers).
       </div>
       <Field label="Date candled">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label={`Eggs that showed development (of ${run.eggsSet} set)`}>
         <input
           type="number" min={0} max={run.eggsSet}
-          style={inputStyle} value={candled}
+          style={inputStyle()} value={candled}
           onChange={e => setCandled(e.target.value)}
           placeholder="0" autoFocus inputMode="numeric"
         />
@@ -365,7 +365,7 @@ function CandleModal({ run, hobbyId, update, onClose }) {
       )}
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="What you saw, which eggs you removed, etc."
         />
@@ -439,7 +439,7 @@ function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
         <input
           type="number" min={0}
           max={run.discardedAfterCandle && run.candledCount != null ? run.candledCount : run.eggsSet}
-          style={inputStyle} value={hatched}
+          style={inputStyle()} value={hatched}
           onChange={e=>setHatched(e.target.value)}
           placeholder="0" autoFocus
         />
@@ -455,7 +455,7 @@ function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
         </div>
       )}
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:70 }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Humidity, temp issues, quitters..." />
+        <textarea style={{ ...inputStyle(),minHeight:70 }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Humidity, temp issues, quitters..." />
       </Field>
       <Btn onClick={save} disabled={!hatched}>Log hatch</Btn>
     </Modal>
@@ -531,22 +531,22 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
         {run.eggsHatched} chicks hatched from <strong>{run.name}</strong>. Move them into a brooder batch so you can track what happens next.
       </div>
       <Field label="Brooder batch name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 chicks" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 chicks" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Chicks in brooder">
-            <input type="number" min={1} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={1} style={inputStyle()} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Skip</Btn>
@@ -629,7 +629,7 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
         Got chicks without hatching them — shipped from a hatchery, or picked up locally? Add them as a brooder batch to track what happens next.
       </div>
       <Field label="Brooder batch name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 shipped chicks" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 shipped chicks" autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -653,20 +653,20 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Chicks in brooder">
-            <input type="number" min={1} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={1} style={inputStyle()} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Source (optional)">
-        <input style={inputStyle} value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Murray McMurray Hatchery, local feed store" />
+        <input style={inputStyle()} value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Murray McMurray Hatchery, local feed store" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, breed mix, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, breed mix, etc." />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -767,7 +767,7 @@ function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit brooder batch">
       <Field label="Batch name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -789,17 +789,17 @@ function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Chicks (started with)">
-            <input type="number" min={0} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={initialCount} onChange={e => setInitialCount(e.target.value)} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
       </Field>
       <Btn onClick={save} disabled={!canSave} style={{ width: "100%" }}>Save changes</Btn>
 
@@ -1050,7 +1050,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
           <Field label="How many">
             <input
               type="number" min={1} max={remaining}
-              style={inputStyle} value={count}
+              style={inputStyle()} value={count}
               onChange={e => setCount(e.target.value)}
               inputMode="numeric"
             />
@@ -1058,7 +1058,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
           </Field>
         </div>
       </div>
@@ -1075,12 +1075,12 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Price each ($)">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerBird} onChange={e => setPricePerBird(e.target.value)} placeholder="0.00" inputMode="decimal" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerBird} onChange={e => setPricePerBird(e.target.value)} placeholder="0.00" inputMode="decimal" />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Sold to">
-                <input style={inputStyle} value={soldTo} onChange={e => setSoldTo(e.target.value)} placeholder="Buyer name" />
+                <input style={inputStyle()} value={soldTo} onChange={e => setSoldTo(e.target.value)} placeholder="Buyer name" />
               </Field>
             </div>
           </div>
@@ -1099,7 +1099,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
           </div>
         ) : (
           <Field label="Target">
-            <select style={inputStyle} value={targetFlockKey} onChange={e => setTargetFlockKey(e.target.value)}>
+            <select style={inputStyle()} value={targetFlockKey} onChange={e => setTargetFlockKey(e.target.value)}>
               {flockOptions.map(opt => (
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
               ))}
@@ -1110,12 +1110,12 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
 
       {type === "died" && (
         <Field label="Cause (optional)">
-          <input style={inputStyle} value={cause} onChange={e => setCause(e.target.value)} placeholder="e.g. failure to thrive, pasty butt" />
+          <input style={inputStyle()} value={cause} onChange={e => setCause(e.target.value)} placeholder="e.g. failure to thrive, pasty butt" />
         </Field>
       )}
 
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={dispNotes} onChange={e => setDispNotes(e.target.value)} placeholder="Anything else worth noting" />
+        <input style={inputStyle()} value={dispNotes} onChange={e => setDispNotes(e.target.value)} placeholder="Anything else worth noting" />
       </Field>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>

@@ -1,4 +1,4 @@
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect, useRef } from "react";
 
 import {
@@ -2987,11 +2987,11 @@ function Field({ label, children }) {
   );
 }
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 function Btn({ children, onClick, variant = "primary", style = {}, type = "button", small = false, disabled = false }) {
   const styles = {
@@ -8978,15 +8978,15 @@ function LogAnnualActionModal({ hobbyId, annual, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Log action — ${annual.name}`}>
       <Field label="Action">
-        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)} autoFocus>
           {ANNUAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how much you thinned, etc." />
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how much you thinned, etc." />
       </Field>
       <Btn variant="primary" onClick={() => {
         update(d => {
@@ -9254,7 +9254,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           autoFocus
           value={plant}
           onChange={(e) => setPlant(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder="e.g. Tomato, Pepper, Basil"
         />
       </Field>
@@ -9262,7 +9262,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
         <input
           value={variety}
           onChange={(e) => setVariety(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder="e.g. Cherokee Purple"
         />
       </Field>
@@ -9271,7 +9271,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           type="date"
           value={sowDate}
           onChange={(e) => setSowDate(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <Field label="Seeds sown *">
@@ -9281,7 +9281,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           min="1"
           value={seedsSown}
           onChange={(e) => setSeedsSown(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder="e.g. 24"
         />
       </Field>
@@ -9293,7 +9293,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           max="60"
           value={expectGermDays}
           onChange={(e) => setExpectGermDays(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
           We'll drop a "check seedlings" reminder on your calendar for this date. Typical range is 7–14 days.
@@ -9304,7 +9304,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          style={{ ...inputStyle, resize: "vertical", minHeight: 50 }}
+          style={{ ...inputStyle(), resize: "vertical", minHeight: 50 }}
           placeholder="Tray ID, soil mix, light setup..."
         />
       </Field>
@@ -9363,7 +9363,7 @@ function LogGerminationModal({ hobbyId, batch, update, onClose }) {
           max={sown}
           value={germinated}
           onChange={(e) => setGerminated(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder={`0 to ${sown}`}
         />
         {germinated !== "" && n >= 0 && sown > 0 && (
@@ -9377,7 +9377,7 @@ function LogGerminationModal({ hobbyId, batch, update, onClose }) {
           type="date"
           value={germDate}
           onChange={(e) => setGermDate(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -9515,7 +9515,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           max={remaining}
           value={count}
           onChange={(e) => setCount(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <Field label="Transplant date *">
@@ -9523,7 +9523,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <Field label="Notes (optional)">
@@ -9531,7 +9531,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          style={{ ...inputStyle, resize: "vertical", minHeight: 50 }}
+          style={{ ...inputStyle(), resize: "vertical", minHeight: 50 }}
           placeholder="Bed, spacing, weather..."
         />
       </Field>
@@ -9605,7 +9605,7 @@ function LogSeedStartLossModal({ hobbyId, batch, update, onClose }) {
           max={remaining}
           value={count}
           onChange={(e) => setCount(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -10669,7 +10669,7 @@ function EggShareModal({ data, hobby, update, user, onClose, onSignIn }) {
           {currencySymbol()}
           <input type="number" inputMode="decimal" step="0.25" min="0" value={price}
             onChange={(e) => setPrice(e.target.value)} onBlur={save}
-            style={{ ...inputStyle, width: 72, padding: "5px 8px", fontSize: 14 }} />
+            style={{ ...inputStyle(), width: 72, padding: "5px 8px", fontSize: 14 }} />
         </span>
         a dozen where I shop
       </label>
@@ -10837,7 +10837,7 @@ function GardenValueModal({ hobby, data, update, onClose, onShare }) {
                     type="number" inputMode="decimal" step="0.05" min="0"
                     defaultValue={r.price}
                     onBlur={(e) => { if (String(r.price) !== e.target.value) setPrice(r.plant, r.slot, e.target.value); }}
-                    style={{ ...inputStyle, width: 64, padding: "5px 6px", fontSize: 13, borderColor: r.custom ? palette.leaf : undefined }}
+                    style={{ ...inputStyle(), width: 64, padding: "5px 6px", fontSize: 13, borderColor: r.custom ? palette.leaf : undefined }}
                   />
                   /{VALUE_SLOT_LABEL[r.slot]}
                 </label>
@@ -12837,7 +12837,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
               {eggMonthly.length > 1 && (
                 <ChartCard title="🥚 Eggs by month">
                   <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={eggMonthly}>
+                    <LineChart data={eggMonthly} margin={{ top: 10, right: 18, left: 0, bottom: 5 }}>
                       <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
                       <YAxis stroke={palette.inkSoft} fontSize={11} />
                       <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [`${v} eggs`, "Laid"]} />
@@ -12862,7 +12862,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
             </div>
           )}
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={eggTrendByFlock || eggTrend} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+            <LineChart data={eggTrendByFlock || eggTrend} margin={{ top: 10, right: 18, left: 0, bottom: 5 }}>
               <XAxis
                 dataKey="date"
                 stroke={palette.inkSoft}
@@ -14257,7 +14257,7 @@ function InternationalSection({ data, update, setModal, onClose }) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>💵 Currency</div>
             <select
-              style={{ ...inputStyle }}
+              style={{ ...inputStyle() }}
               value={currency}
               onChange={e => setUnit("currency", e.target.value)}
             >
@@ -15804,7 +15804,7 @@ function CustomLogPickerModal({ data, update, hobbyId, onClose, setModal }) {
         <>
           <Field label="Label">
             <input
-              style={inputStyle}
+              style={inputStyle()}
               value={newLabel}
               onChange={(e) => { setNewLabel(e.target.value); setError(""); }}
               placeholder="e.g. Pull weeds"
@@ -16008,7 +16008,7 @@ function CustomizeQuickLogsModal({ data, update, hobbyId, onClose }) {
                 {isEditing ? (
                   <>
                     <input
-                      style={inputStyle}
+                      style={inputStyle()}
                       value={editLabel}
                       onChange={(e) => { setEditLabel(e.target.value); setEditError(""); }}
                       autoFocus
@@ -16314,7 +16314,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
     <Modal open onClose={onClose} title={isEdit ? "Edit pantry item" : "Add pantry item"}>
       <Field label="Name">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={name}
           onChange={e => { setName(e.target.value); setError(""); }}
           placeholder="e.g. All-purpose flour"
@@ -16324,7 +16324,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
 
       <Field label="Brand (optional)">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={brand}
           onChange={e => setBrand(e.target.value)}
           placeholder="e.g. King Arthur"
@@ -16332,7 +16332,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
       </Field>
 
       <Field label="Category">
-        <select style={inputStyle} value={category} onChange={e => setCategory(e.target.value)}>
+        <select style={inputStyle()} value={category} onChange={e => setCategory(e.target.value)}>
           {PANTRY_CATEGORIES.map(c => (
             <option key={c} value={c}>{PANTRY_CATEGORY_LABELS[c] || c}</option>
           ))}
@@ -16345,14 +16345,14 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
             type="number"
             step="0.01"
             min="0"
-            style={inputStyle}
+            style={inputStyle()}
             value={purchaseAmount}
             onChange={e => { setPurchaseAmount(e.target.value); setError(""); }}
             placeholder="10"
           />
         </Field>
         <Field label="Unit">
-          <select style={inputStyle} value={purchaseUnit} onChange={e => setPurchaseUnit(e.target.value)}>
+          <select style={inputStyle()} value={purchaseUnit} onChange={e => setPurchaseUnit(e.target.value)}>
             <optgroup label="Weight">
               {PANTRY_WEIGHT_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
             </optgroup>
@@ -16371,7 +16371,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={purchaseCost}
           onChange={e => { setPurchaseCost(e.target.value); setError(""); }}
           placeholder="5.00"
@@ -16379,7 +16379,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
       </Field>
 
       <Field label="Purchase date">
-        <input type="date" style={inputStyle} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
       </Field>
 
       <Field label="Current stock remaining">
@@ -16387,7 +16387,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={currentAmount}
           onChange={e => setCurrentAmount(e.target.value)}
           placeholder={purchaseAmount || "0"}
@@ -16402,7 +16402,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={densityOverride}
           onChange={e => setDensityOverride(e.target.value)}
           placeholder={builtInDensity != null ? `Default: ${builtInDensity}` : "No default for this category"}
@@ -16593,7 +16593,7 @@ function RefillPantryModal({ data, update, item, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={refillAmount}
           onChange={e => { setRefillAmount(e.target.value); setError(""); }}
           placeholder={item?.purchaseAmount != null ? String(item.purchaseAmount) : "0"}
@@ -16606,7 +16606,7 @@ function RefillPantryModal({ data, update, item, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={refillCost}
           onChange={e => { setRefillCost(e.target.value); setError(""); }}
           placeholder={item?.purchaseCost != null ? String(item.purchaseCost) : "0.00"}
@@ -16614,7 +16614,7 @@ function RefillPantryModal({ data, update, item, onClose }) {
       </Field>
 
       <Field label="Purchase date">
-        <input type="date" style={inputStyle} value={refillDate} onChange={e => setRefillDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={refillDate} onChange={e => setRefillDate(e.target.value)} />
       </Field>
 
       <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 12, padding: 10, background: palette.bgAlt, borderRadius: 6, lineHeight: 1.5 }}>
@@ -16652,7 +16652,7 @@ function RenameHomesteadModal({ data, update, onClose }) {
       </div>
       <Field label="Homestead name">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Slow Build Acres, Willow Creek Farm..."
@@ -16804,7 +16804,7 @@ function LocationModal({ data, update, onClose }) {
       <form onSubmit={useTyped}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
-            style={inputStyle}
+            style={inputStyle()}
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
             placeholder="Kansas City"
@@ -16934,10 +16934,10 @@ function WeatherSourceSettings({ data, update }) {
           {st.provider === "wu" ? (
             <>
               <Field label="Station ID">
-                <input style={inputStyle} value={st.stationId || ""} onChange={(e) => setField("stationId", e.target.value)} placeholder="KMOKANSA123" autoCapitalize="characters" />
+                <input style={inputStyle()} value={st.stationId || ""} onChange={(e) => setField("stationId", e.target.value)} placeholder="KMOKANSA123" autoCapitalize="characters" />
               </Field>
               <Field label="API key">
-                <input style={inputStyle} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} placeholder="From wunderground.com → My Profile → API Keys" />
+                <input style={inputStyle()} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} placeholder="From wunderground.com → My Profile → API Keys" />
               </Field>
               <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
                 Works with any station that uploads to Weather Underground (Ecowitt, Davis, AcuRite, Tempest, and others). Station owners get a free API key on their Weather Underground profile.
@@ -16946,13 +16946,13 @@ function WeatherSourceSettings({ data, update }) {
           ) : (
             <>
               <Field label="Station MAC address">
-                <input style={inputStyle} value={st.macAddress || ""} onChange={(e) => setField("macAddress", e.target.value)} placeholder="00:0E:C6:20:0F:7B" />
+                <input style={inputStyle()} value={st.macAddress || ""} onChange={(e) => setField("macAddress", e.target.value)} placeholder="00:0E:C6:20:0F:7B" />
               </Field>
               <Field label="API key">
-                <input style={inputStyle} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} />
+                <input style={inputStyle()} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} />
               </Field>
               <Field label="Application key">
-                <input style={inputStyle} value={st.applicationKey || ""} onChange={(e) => setField("applicationKey", e.target.value)} />
+                <input style={inputStyle()} value={st.applicationKey || ""} onChange={(e) => setField("applicationKey", e.target.value)} />
               </Field>
               <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
                 Create both keys at ambientweather.net → Account → API Keys. The MAC address is on the Devices page.
@@ -17022,12 +17022,12 @@ function FrostDateSettings({ data, update }) {
       <div style={{ display: "flex", gap: 8 }}>
         <label style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
           Last spring frost
-          <input type="date" style={{ ...inputStyle, marginTop: 4 }} value={lastSpring}
+          <input type="date" style={{ ...inputStyle(), marginTop: 4 }} value={lastSpring}
             onChange={(e) => { setLastSpring(e.target.value); save(e.target.value, firstFall); }} />
         </label>
         <label style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
           First fall frost
-          <input type="date" style={{ ...inputStyle, marginTop: 4 }} value={firstFall}
+          <input type="date" style={{ ...inputStyle(), marginTop: 4 }} value={firstFall}
             onChange={(e) => { setFirstFall(e.target.value); save(lastSpring, e.target.value); }} />
         </label>
       </div>
@@ -17284,7 +17284,7 @@ function DailyNudgeSetting({ data, update }) {
           ))}
           <input type="time" value={n.time || "18:00"}
             onChange={(e) => { const v = e.target.value; if (v) update((d) => { d.dailyNudge = { ...(d.dailyNudge || {}), enabled: true, time: v }; return d; }); }}
-            style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 12 }} />
+            style={{ ...inputStyle(), width: "auto", padding: "4px 8px", fontSize: 12 }} />
         </div>
       )}
     </div>
@@ -17473,7 +17473,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       </div>
 
       <Field label="Type of feedback">
-        <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select style={inputStyle()} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="idea">💡 New idea</option>
           <option value="bug">🐛 Bug report</option>
           <option value="hobby">🌱 New hobby/category request</option>
@@ -17483,7 +17483,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
 
       <Field label="Your message">
         <textarea
-          style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 120, resize: "vertical" }}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="What would make this app better for you?"
@@ -17495,7 +17495,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       <Field label="Your email (optional, so I can reply)">
         <input
           type="email"
-          style={inputStyle}
+          style={inputStyle()}
           value={fromEmail}
           onChange={(e) => setFromEmail(e.target.value)}
           placeholder="you@example.com"
@@ -17596,10 +17596,10 @@ function AddHobbyModal({ update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Add a hobby">
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bees, Goats" />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bees, Goats" />
       </Field>
       <Field label="Behavior template">
-        <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
+        <select style={inputStyle()} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="garden">Like Garden (planting/harvest)</option>
           <option value="egg_layers">Like Egg Layers (ongoing flock)</option>
           <option value="meat_chickens">Like Meat Birds (seasonal batches)</option>
@@ -18046,7 +18046,7 @@ function AddFlockModal({ hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Add a flock">
       <Field label="Flock name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main Flock, Duck Pen, Turkey Run" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main Flock, Duck Pen, Turkey Run" autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -18058,12 +18058,12 @@ function AddFlockModal({ hobbyId, update, onClose }) {
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.femalePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={females} onChange={(e) => setFemales(e.target.value)} placeholder="0" />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={females} onChange={(e) => setFemales(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.malePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={males} onChange={(e) => setMales(e.target.value)} placeholder="0" />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={males} onChange={(e) => setMales(e.target.value)} placeholder="0" />
           </Field>
         </div>
       </div>
@@ -18073,13 +18073,13 @@ function AddFlockModal({ hobbyId, update, onClose }) {
         </div>
       )}
       <Field label="Date acquired">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <Field label="Where purchased (optional)">
-        <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
+        <input style={inputStyle()} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
       </Field>
       <Btn variant="primary" onClick={() => {
         const f = parseInt(females) || 0;
@@ -18501,7 +18501,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                   }} />
                 )}
                 <input
-                  style={{ ...inputStyle, flex: 1, padding: "6px 10px" }}
+                  style={{ ...inputStyle(), flex: 1, padding: "6px 10px" }}
                   value={b.name}
                   onChange={(e) => updateBird(b.id, { name: e.target.value })}
                   placeholder="Bird name"
@@ -18511,7 +18511,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                 }}><X size={16} /></button>
               </div>
               <select
-                style={{ ...inputStyle, padding: "6px 10px", fontSize: 13 }}
+                style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13 }}
                 value={b.bandColor || ""}
                 onChange={(e) => updateBird(b.id, { bandColor: e.target.value })}
               >
@@ -18565,7 +18565,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                 return (
                   <>
                     <select
-                      style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                      style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                       value={selectVal}
                       onChange={(e) => {
                         const v = e.target.value;
@@ -18584,7 +18584,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                     </select>
                     {selectVal === "Other" && (
                       <input
-                        style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                        style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                         value={!inList ? savedBreed : ""}
                         onChange={(e) => updateBird(b.id, { breed: e.target.value })}
                         onBlur={(e) => rememberBreed(e.target.value)}
@@ -18595,7 +18595,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                 );
               })()}
               <input
-                style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                 value={b.notes || ""}
                 onChange={(e) => updateBird(b.id, { notes: e.target.value })}
                 placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
@@ -18612,7 +18612,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                   <label style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap" }}>Hatched</label>
                   <input
                     type="date"
-                    style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, flex: 1 }}
+                    style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, flex: 1 }}
                     value={b.hatchDate || ""}
                     max={todayStr()}
                     onChange={(e) => updateBird(b.id, { hatchDate: e.target.value || null })}
@@ -18673,10 +18673,10 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                     Mark {b.name} as died? This decrements your flock count by 1 and adds a death entry.
                   </div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                    <input type="date" style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, flex: 1 }} value={deathDate} onChange={(e) => setDeathDate(e.target.value)} />
+                    <input type="date" style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, flex: 1 }} value={deathDate} onChange={(e) => setDeathDate(e.target.value)} />
                   </div>
                   <input
-                    style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginBottom: 8 }}
+                    style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginBottom: 8 }}
                     value={deathCause}
                     onChange={(e) => setDeathCause(e.target.value)}
                     placeholder="Cause (optional): predator, illness, unknown…"
@@ -18713,7 +18713,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
-            style={{ ...inputStyle, flex: 1 }}
+            style={{ ...inputStyle(), flex: 1 }}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Name (e.g. Henrietta, Big Red)"
@@ -18721,7 +18721,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
           />
         </div>
         <select
-          style={inputStyle}
+          style={inputStyle()}
           value={newBandColor}
           onChange={(e) => setNewBandColor(e.target.value)}
         >
@@ -18730,7 +18730,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
           ))}
         </select>
         <select
-          style={{ ...inputStyle, marginTop: 8 }}
+          style={{ ...inputStyle(), marginTop: 8 }}
           value={newBreed}
           onChange={(e) => setNewBreed(e.target.value)}
         >
@@ -18741,7 +18741,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
         </select>
         {newBreed === "Other" && (
           <input
-            style={{ ...inputStyle, marginTop: 8 }}
+            style={{ ...inputStyle(), marginTop: 8 }}
             value={newBreedOther}
             onChange={(e) => setNewBreedOther(e.target.value)}
             placeholder="Breed name"
@@ -18775,7 +18775,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
           })}
         </div>
         <input
-          style={{ ...inputStyle, marginTop: 8 }}
+          style={{ ...inputStyle(), marginTop: 8 }}
           value={newNotes}
           onChange={(e) => setNewNotes(e.target.value)}
           placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
@@ -18901,7 +18901,7 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
   return (
     <Modal open onClose={onClose} title="Edit flock">
       <Field label="Flock name">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} />
       </Field>
       <Field label="Bird type">
         <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
@@ -18913,12 +18913,12 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.femalePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={females} onChange={e=>setFemales(e.target.value)} />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={females} onChange={e=>setFemales(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.malePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={males} onChange={e=>setMales(e.target.value)} />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={males} onChange={e=>setMales(e.target.value)} />
           </Field>
         </div>
       </div>
@@ -18928,13 +18928,13 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
         </div>
       )}
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Total cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
       </Field>
       <Field label="Where purchased (optional)">
-        <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
+        <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
       </Field>
       <div style={{ display:"flex",gap:8,marginTop:8,flexWrap:"wrap" }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -19079,7 +19079,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
             <Field label={`How many birds (this flock has ${sourceCount})`}>
               <input
                 type="number" inputMode="numeric" min={1} max={sourceCount}
-                style={inputStyle} value={count}
+                style={inputStyle()} value={count}
                 onChange={e => setCount(e.target.value)}
               />
             </Field>
@@ -19087,7 +19087,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 
           {mode === "named" && (
             <Field label="Which bird">
-              <select style={inputStyle} value={birdId} onChange={e => setBirdId(e.target.value)}>
+              <select style={inputStyle()} value={birdId} onChange={e => setBirdId(e.target.value)}>
                 {namedBirds.map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -19096,7 +19096,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
           )}
 
           <Field label="Move to flock">
-            <select style={inputStyle} value={destId} onChange={e => setDestId(e.target.value)}>
+            <select style={inputStyle()} value={destId} onChange={e => setDestId(e.target.value)}>
               {destOptions}
             </select>
           </Field>
@@ -19167,13 +19167,13 @@ function EditFlockEntryModalBody({ hobby, index, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit flock entry">
       <Field label="How many birds?">
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Date acquired">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -19326,7 +19326,7 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit batch">
       <Field label="Batch name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -19346,10 +19346,10 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
         </div>
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"} (started with)`}>
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Current bird count (alive now)">
-        <input type="number" inputMode="numeric" style={inputStyle} value={currentCount} onChange={(e) => setCurrentCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={currentCount} onChange={(e) => setCurrentCount(e.target.value)} />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
           {(() => {
             const t = parseInt(currentCount);
@@ -19362,10 +19362,10 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
         </div>
       </Field>
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
       </Field>
       <Btn variant="primary" onClick={save}>Save changes</Btn>
       {/* Finalize / Delete row — separated visually from the primary save
@@ -19415,7 +19415,7 @@ function HatchBatchModal({ hobby, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🐣 Hatch new batch">
       <Field label="Batch name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -19435,13 +19435,13 @@ function HatchBatchModal({ hobby, update, onClose }) {
         </div>
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"} (optional)`}>
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} />
       </Field>
       <Btn variant="primary" onClick={() => {
         const n = parseInt(count);
@@ -19621,7 +19621,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
           {!batchId && activeBatches.length > 1 && (
             <Field label="Which batch?">
               <select
-                style={inputStyle}
+                style={inputStyle()}
                 value={selectedBatchId}
                 onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
               >
@@ -19642,7 +19642,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
           )}
 
           <Field label="What happened?">
-            <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
+            <select style={inputStyle()} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
               {reasonOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
@@ -19651,12 +19651,12 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
           </Field>
 
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label="How many?">
             <input
               type="number" inputMode="numeric"
-              style={inputStyle}
+              style={inputStyle()}
               value={count}
               onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
               placeholder={batch ? `e.g. 5 (of ${remaining})` : "Pick a batch first"}
@@ -19670,7 +19670,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
               <input
                 type="number" inputMode="decimal"
                 step="0.01"
-                style={inputStyle}
+                style={inputStyle()}
                 value={avgWeight}
                 onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }}
                 placeholder="e.g. 5.5"
@@ -19681,7 +19681,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
               <input
                 type="number" inputMode="decimal"
                 step="0.01"
-                style={inputStyle}
+                style={inputStyle()}
                 value={avgWeight}
                 onChange={(e) => setAvgWeight(e.target.value)}
                 placeholder="optional"
@@ -19691,7 +19691,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
 
           <Field label={isSoftCull ? "Notes (who took them, etc)" : "Notes (cause, details, etc)"}>
             <textarea
-              style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
+              style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={
@@ -20001,7 +20001,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
           Tell Henalytics how much feed you have, and your regular feed logs do the rest — it learns how fast you go through it, shows days remaining, estimates the empty date, and drops a heads-up on your calendar (and weekly chore email) about {(Number(warnDays) || 5)} days before you run out. A standard bag is 50 lbs.
         </div>
         <Field label="Feed on hand right now (lbs)">
-          <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 75" autoFocus />
+          <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 75" autoFocus />
         </Field>
         <Btn variant="accent" onClick={startTracking} disabled={!lbsOk} style={{ width: "100%" }}>Start tracking</Btn>
       </Modal>
@@ -20035,10 +20035,10 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
       {mode === "add" && (
         <>
           <Field label="Feed added (lbs)">
-            <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 50" autoFocus />
+            <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 50" autoFocus />
           </Field>
           <Field label="Cost (optional — logs a Feed expense)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 18.99" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 18.99" />
           </Field>
           <Btn variant="accent" onClick={addFeed} disabled={!lbsOk || lbsNum <= 0} style={{ width: "100%" }}>Add to supply</Btn>
         </>
@@ -20050,7 +20050,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
             If the estimate has drifted from what's actually in the bin, set the real number and the tracker re-anchors from now.
           </div>
           <Field label="Feed on hand right now (lbs)">
-            <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 60" />
+            <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 60" />
           </Field>
           <Btn variant="accent" onClick={recount} disabled={!lbsOk} style={{ width: "100%" }}>Save recount</Btn>
         </>
@@ -20059,10 +20059,10 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
       {mode === "settings" && (
         <>
           <Field label="Cups per lb (for feedings logged in cups)">
-            <input type="number" inputMode="decimal" min={0.5} step="0.5" style={inputStyle} value={cupsPerLb} onChange={(e) => setCupsPerLb(e.target.value)} />
+            <input type="number" inputMode="decimal" min={0.5} step="0.5" style={inputStyle()} value={cupsPerLb} onChange={(e) => setCupsPerLb(e.target.value)} />
           </Field>
           <Field label="Warn me this many days before empty">
-            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={warnDays} onChange={(e) => setWarnDays(e.target.value)} />
+            <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={warnDays} onChange={(e) => setWarnDays(e.target.value)} />
           </Field>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="accent" onClick={saveSettings} style={{ flex: 1 }}>Save settings</Btn>
@@ -20121,7 +20121,7 @@ function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
       </div>
       <Field label={enabled ? "Recount — eggs on hand right now" : "How many eggs do you have on hand right now?"}>
         <input
-          type="number" inputMode="numeric" min={0} style={inputStyle}
+          type="number" inputMode="numeric" min={0} style={inputStyle()}
           value={count} onChange={(e) => setCount(e.target.value)}
           placeholder="e.g. 24" autoFocus
         />
@@ -20274,7 +20274,7 @@ function HatchEggsModal({ hobby, update, setModal, onClose }) {
         <>
           {flocks.length > 1 && (
             <Field label="Which flock hatched them?">
-              <select style={inputStyle} value={selectedFlockId} onChange={(e) => setSelectedFlockId(e.target.value)}>
+              <select style={inputStyle()} value={selectedFlockId} onChange={(e) => setSelectedFlockId(e.target.value)}>
                 <option value="">— Select flock —</option>
                 {flocks.map((f) => (
                   <option key={f.id} value={f.id}>{f.name || f.birdType || "Flock"}</option>
@@ -20285,17 +20285,17 @@ function HatchEggsModal({ hobby, update, setModal, onClose }) {
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Chicks hatched">
-                <input type="number" min={1} inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
+                <input type="number" min={1} inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Hatch date">
-                <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+                <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
               </Field>
             </div>
           </div>
           <Field label="Notes (optional)">
-            <textarea style={{ ...inputStyle, minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Which hen, breed mix, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Which hen, breed mix, etc." />
           </Field>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -20378,7 +20378,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       {!flock && availableFlocks.length > 1 && (
         <Field label="Which flock?">
           <select
-            style={inputStyle}
+            style={inputStyle()}
             value={selectedFlockId}
             onChange={(e) => { setSelectedFlockId(e.target.value); setValidationError(""); }}
           >
@@ -20399,7 +20399,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       )}
 
       <Field label="What happened?">
-        <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
+        <select style={inputStyle()} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
           {reasonOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
@@ -20408,13 +20408,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       </Field>
 
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       <Field label="How many?">
         <input
           type="number" inputMode="numeric"
-          style={inputStyle}
+          style={inputStyle()}
           value={count}
           onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
           placeholder={activeFlock ? `e.g. 1 (of ${remaining})` : "Pick a flock first"}
@@ -20425,17 +20425,17 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
           for everything else. Keep it accessible for sold-for-meat scenarios. */}
       {isButcher && (
         <Field label="Average weight (lbs)">
-          <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
+          <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
         </Field>
       )}
       {!isButcher && (
         <Field label="Average weight (lbs, optional)">
-          <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
+          <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
         </Field>
       )}
 
       <Field label={isSoftCull ? "Notes (who took them, etc)" : "Notes (cause, details, etc)"}>
-        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder={
+        <textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder={
           reason === "sold" ? "e.g. sold to neighbor for $15 each" :
           reason === "rehomed" ? "e.g. retired breeders, given to Sarah's farm" :
           reason === "given_away" ? "e.g. friend wanted laying hens" :
@@ -20747,7 +20747,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
 
           {flocks.length > 1 && (
             <Field label="Which flock?">
-              <select style={inputStyle} value={flockId} onChange={(e) => { setFlockId(e.target.value); setValidationError(""); }}>
+              <select style={inputStyle()} value={flockId} onChange={(e) => { setFlockId(e.target.value); setValidationError(""); }}>
                 <option value="">— pick a flock —</option>
                 {flocks.map(f => (
                   <option key={f.id} value={f.id}>{f.name} ({f.birdType || "Bird"})</option>
@@ -20759,12 +20759,12 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{ flex: 1 }}>
               <Field label="Start date">
-                <input type="date" style={inputStyle} value={startDate} max={endDate || today} onChange={(e) => { setStartDate(e.target.value); setValidationError(""); }} />
+                <input type="date" style={inputStyle()} value={startDate} max={endDate || today} onChange={(e) => { setStartDate(e.target.value); setValidationError(""); }} />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="End date">
-                <input type="date" style={inputStyle} value={endDate} max={today} onChange={(e) => { setEndDate(e.target.value); setValidationError(""); }} />
+                <input type="date" style={inputStyle()} value={endDate} max={today} onChange={(e) => { setEndDate(e.target.value); setValidationError(""); }} />
               </Field>
             </div>
           </div>
@@ -20794,7 +20794,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
             <Field label="Total eggs across the range">
               <input
                 type="number" inputMode="numeric"
-                style={inputStyle}
+                style={inputStyle()}
                 value={totalCount}
                 onChange={(e) => { setTotalCount(e.target.value); setValidationError(""); }}
                 placeholder="e.g. 500"
@@ -20804,7 +20804,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
             <Field label="Average eggs per day">
               <input
                 type="number" inputMode="numeric"
-                style={inputStyle}
+                style={inputStyle()}
                 value={perDayCount}
                 onChange={(e) => { setPerDayCount(e.target.value); setValidationError(""); }}
                 placeholder="e.g. 18"
@@ -20946,10 +20946,10 @@ function StartGardenSeasonModal({ hobby, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🌱 Start new garden season">
       <Field label="Season name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Spring 2026" />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="Spring 2026" />
       </Field>
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       {carriable.length > 0 && (
@@ -21798,7 +21798,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
   return (
     <Modal open onClose={onClose} title={dynamicTitle}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       {/* Optional weather — auto by default, hand entry when you want it. */}
@@ -21832,7 +21832,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   type="number"
                   inputMode="decimal"
                   step={k === "rain" ? "0.01" : "1"}
-                  style={{ ...inputStyle, marginTop: 4 }}
+                  style={{ ...inputStyle(), marginTop: 4 }}
                   value={wxManual[k]}
                   onChange={(e) => { const v = e.target.value; setWxManual((m) => ({ ...m, [k]: v })); }}
                 />
@@ -21858,7 +21858,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         ["fed","bedding","death","eggs","sold_eggs","note","issue","broody","custom"].includes(action) && (
         <Field label="Which flock?">
           <select
-            style={inputStyle}
+            style={inputStyle()}
             value={fields.flockId || (action === "custom" ? "__ALL__" : (hobby.flocks[0]?.id || ""))}
             onChange={(e) => set("flockId", e.target.value)}
           >
@@ -21899,7 +21899,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {needsBatchPicker && (
         <Field label="Which batch?">
           <select
-            style={inputStyle}
+            style={inputStyle()}
             value={selectedBatchId}
             onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
           >
@@ -21925,7 +21925,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {action === "watered" && hobby.type === "garden" && (
         <Field label="Notes (amount, beds, etc.)">
-          <input style={inputStyle} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder="e.g. soaked all beds" />
+          <input style={inputStyle()} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder="e.g. soaked all beds" />
         </Field>
       )}
 
@@ -21944,7 +21944,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         return (
           <Field label={isMetric ? "Liters" : "Gallons"}>
             <input
-              type="number" inputMode="decimal" step="0.1" style={inputStyle}
+              type="number" inputMode="decimal" step="0.1" style={inputStyle()}
               value={displayValue}
               onChange={(e) => {
                 const raw = e.target.value;
@@ -21962,7 +21962,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "fertilized" && hobby.type === "garden" && (
         <>
           <Field label="Type">
-            <select style={inputStyle} value={fields.fertilizerType || "compost"} onChange={(e) => set("fertilizerType", e.target.value)}>
+            <select style={inputStyle()} value={fields.fertilizerType || "compost"} onChange={(e) => set("fertilizerType", e.target.value)}>
               <option value="compost">Compost</option>
               <option value="manure">Manure</option>
               <option value="granular">Granular (synthetic)</option>
@@ -21974,16 +21974,16 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             </select>
           </Field>
           <Field label="Product / source (optional)">
-            <input style={inputStyle} value={fields.product || ""} onChange={(e) => set("product", e.target.value)} placeholder="e.g. Espoma Plant-tone, chicken manure" />
+            <input style={inputStyle()} value={fields.product || ""} onChange={(e) => set("product", e.target.value)} placeholder="e.g. Espoma Plant-tone, chicken manure" />
           </Field>
           <Field label="Amount (optional)">
-            <input style={inputStyle} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder='e.g. "2 lbs", "1 wheelbarrow", "1 gal diluted"' />
+            <input style={inputStyle()} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder='e.g. "2 lbs", "1 wheelbarrow", "1 gal diluted"' />
           </Field>
           <Field label="Where (optional)">
-            <input style={inputStyle} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} placeholder="All beds, tomato bed, etc." />
+            <input style={inputStyle()} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} placeholder="All beds, tomato bed, etc." />
           </Field>
           <Field label="Cost ($, optional)">
-            <input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0.00" />
+            <input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0.00" />
           </Field>
         </>
       )}
@@ -21991,17 +21991,17 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "planted" && (
         <>
           <Field label="Annual (what you planted)">
-            <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
+            <input style={inputStyle()} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
           <Field label="How many">
-            <input type="number" inputMode="numeric" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
+            <input type="number" inputMode="numeric" style={inputStyle()} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Bed / location (optional)">
-            <input style={inputStyle} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} />
+            <input style={inputStyle()} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} />
           </Field>
           <Field label="Cost (seeds, soil — optional)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
         </>
       )}
@@ -22009,14 +22009,14 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "harvested" && (
         <>
           <Field label="Plant / crop">
-            <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
+            <input style={inputStyle()} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
           <Field label="Quantity">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Unit">
-            <select style={inputStyle} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
+            <select style={inputStyle()} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
               <option value="lbs">lbs</option>
               <option value="oz">oz</option>
               <option value="each">each</option>
@@ -22033,20 +22033,20 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "issue" && (
         <>
           <Field label="Type">
-            <select style={inputStyle} value={fields.issueType || "disease"} onChange={(e) => set("issueType", e.target.value)}>
+            <select style={inputStyle()} value={fields.issueType || "disease"} onChange={(e) => set("issueType", e.target.value)}>
               <option value="disease">Disease</option>
               <option value="pest">Pest</option>
               <option value="other">Other</option>
             </select>
           </Field>
           <Field label="Plant affected (optional)">
-            <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} />
+            <input style={inputStyle()} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} />
           </Field>
           <Field label="Specific (e.g. powdery mildew, aphids)">
-            <input style={inputStyle} value={fields.detail || ""} onChange={(e) => set("detail", e.target.value)} />
+            <input style={inputStyle()} value={fields.detail || ""} onChange={(e) => set("detail", e.target.value)} />
           </Field>
           <Field label="Notes / solution">
-            <textarea style={{ ...inputStyle, minHeight: 70 }} value={fields.notes || ""} onChange={(e) => set("notes", e.target.value)} placeholder="What you'll try..." />
+            <textarea style={{ ...inputStyle(), minHeight: 70 }} value={fields.notes || ""} onChange={(e) => set("notes", e.target.value)} placeholder="What you'll try..." />
           </Field>
         </>
       )}
@@ -22119,7 +22119,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   return (
                     <input
                       type="number" inputMode="decimal" step="0.1"
-                      style={inputStyle}
+                      style={inputStyle()}
                       value={shownValue}
                       onChange={(e) => {
                         const raw = e.target.value;
@@ -22137,14 +22137,14 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             );
           })()}
           <Field label="Cost of bag (or this feeding)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
         </>
       )}
 
       {action === "free_range" && (
         <Field label="Notes (optional)">
-          <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. 4 hours in pasture" />
+          <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. 4 hours in pasture" />
         </Field>
       )}
 
@@ -22169,7 +22169,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                 <Field label="Distance per move (feet)">
                   <input
                     type="number" inputMode="numeric"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={fields.distanceFeet || ""}
                     onChange={(e) => set("distanceFeet", e.target.value)}
                     placeholder="e.g. 10"
@@ -22185,7 +22185,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                 <Field label="Distance moved (feet)">
                   <input
                     type="number" inputMode="numeric"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={fields.distanceFeet ?? ""}
                     onChange={(e) => set("distanceFeet", e.target.value)}
                     placeholder={String(defaultDist)}
@@ -22194,7 +22194,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               </>
             )}
             <Field label="Notes (optional)">
-              <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. moved to north pasture" />
+              <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. moved to north pasture" />
             </Field>
           </>
         );
@@ -22202,7 +22202,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {(action === "eggs" || action === "eggs_laid") && (
         <Field label="Eggs collected">
-          <input type="number" inputMode="numeric" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
+          <input type="number" inputMode="numeric" style={inputStyle()} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
         </Field>
       )}
 
@@ -22217,7 +22217,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           <Field label="How many butchered">
             <input
               type="number" inputMode="numeric"
-              style={inputStyle}
+              style={inputStyle()}
               value={fields.count || ""}
               onChange={(e) => set("count", e.target.value)}
               placeholder="0"
@@ -22227,7 +22227,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             <input
               type="number" inputMode="decimal"
               step="0.01"
-              style={inputStyle}
+              style={inputStyle()}
               value={fields.avgWeight || ""}
               onChange={(e) => set("avgWeight", e.target.value)}
               placeholder="0.0"
@@ -22235,7 +22235,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           </Field>
           <Field label="Notes (optional)">
             <textarea
-              style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
+              style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }}
               value={fields.note || ""}
               onChange={(e) => set("note", e.target.value)}
               placeholder="Anything notable about this butcher day..."
@@ -22254,7 +22254,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "bedding" && (
         <>
           <Field label="Type of change">
-            <select style={inputStyle} value={fields.changeType || "Partial"} onChange={(e) => set("changeType", e.target.value)}>
+            <select style={inputStyle()} value={fields.changeType || "Partial"} onChange={(e) => set("changeType", e.target.value)}>
               <option value="Full">Full clean-out (replace bedding)</option>
               <option value="Partial">Partial / topped up</option>
               <option value="Power wash">Power wash (no bedding — wire floor)</option>
@@ -22267,13 +22267,13 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               power wash / rinse / poop tray dump don't, so keep those fields
               optional rather than removing them, in case users mix patterns. */}
           <Field label="Cubic feet of bedding (optional)">
-            <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
+            <input type="number" inputMode="decimal" step="0.1" style={inputStyle()} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
           </Field>
           <Field label="Cost (optional)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
           </Field>
           <Field label="Notes (optional)">
-            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. left hutch, quail run, ammonia getting strong" />
+            <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. left hutch, quail run, ammonia getting strong" />
           </Field>
         </>
       )}
@@ -22281,10 +22281,10 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "death" && (
         <>
           <Field label="How many died?">
-            <input type="number" inputMode="numeric" min="1" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="1" />
+            <input type="number" inputMode="numeric" min="1" style={inputStyle()} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="1" />
           </Field>
           <Field label="Cause / reason (optional)">
-            <input style={inputStyle} value={fields.cause || ""} onChange={(e) => set("cause", e.target.value)} placeholder="predator, illness, unknown..." />
+            <input style={inputStyle()} value={fields.cause || ""} onChange={(e) => set("cause", e.target.value)} placeholder="predator, illness, unknown..." />
           </Field>
         </>
       )}
@@ -22296,7 +22296,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               for downstream analytics (cost/egg, etc.). Unit options match
               how eggs are actually sold at farmer's markets / farm gates. */}
           <Field label="Unit">
-            <select style={inputStyle} value={fields.unit || "dozen"} onChange={(e) => set("unit", e.target.value)}>
+            <select style={inputStyle()} value={fields.unit || "dozen"} onChange={(e) => set("unit", e.target.value)}>
               <option value="single">Single eggs (1 each)</option>
               <option value="half_dozen">Half dozen (6)</option>
               <option value="dozen">Dozen (12)</option>
@@ -22307,14 +22307,14 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           </Field>
           {fields.unit === "custom" && (
             <Field label="Eggs per unit">
-              <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.customEggsPerUnit || ""} onChange={(e) => set("customEggsPerUnit", e.target.value)} placeholder="e.g. 24" />
+              <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.customEggsPerUnit || ""} onChange={(e) => set("customEggsPerUnit", e.target.value)} placeholder="e.g. 24" />
             </Field>
           )}
           <Field label="Number of units">
-            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.unitQty || ""} onChange={(e) => set("unitQty", e.target.value)} placeholder="how many" />
+            <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.unitQty || ""} onChange={(e) => set("unitQty", e.target.value)} placeholder="how many" />
           </Field>
           <Field label="Price per unit ($)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
           </Field>
           {/* Customer picker — mirrors the Sales tab. Pick an existing
               customer or add a new one. The chosen buyerId rides on the
@@ -22324,7 +22324,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             {!fields._showNewBuyer ? (
               <div style={{ display: "flex", gap: 8 }}>
                 <select
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(), flex: 1 }}
                   value={fields.buyerId || ""}
                   onChange={(e) => set("buyerId", e.target.value)}
                 >
@@ -22344,7 +22344,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
                 <input
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(), flex: 1 }}
                   value={fields.newBuyerName || ""}
                   onChange={(e) => set("newBuyerName", e.target.value)}
                   placeholder="Customer name"
@@ -22361,7 +22361,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             )}
           </Field>
           <Field label="Sold to / notes (optional)">
-            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
+            <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
           </Field>
           {(() => {
             const unitToCount = {
@@ -22399,17 +22399,17 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               (they carry price + customer and flow into data.sales); this
               covers everything else that takes eggs out of the fridge. */}
           <Field label="What happened to them?">
-            <select style={inputStyle} value={fields.useType || "ate"} onChange={(e) => set("useType", e.target.value)}>
+            <select style={inputStyle()} value={fields.useType || "ate"} onChange={(e) => set("useType", e.target.value)}>
               {USED_EGGS_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
           </Field>
           <Field label="How many eggs?">
-            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 6" />
+            <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 6" />
           </Field>
           <Field label="Notes (optional)">
-            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="breakfast, gave to neighbor, cracked..." />
+            <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="breakfast, gave to neighbor, cracked..." />
           </Field>
           {(() => {
             // Live "left after this" preview — only when inventory tracking
@@ -22440,13 +22440,13 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "infrastructure" && (
         <>
           <Field label="What was built / repaired / bought?">
-            <input style={inputStyle} value={fields.item || ""} onChange={(e) => set("item", e.target.value)} placeholder="new coop, run extension, fencing..." />
+            <input style={inputStyle()} value={fields.item || ""} onChange={(e) => set("item", e.target.value)} placeholder="new coop, run extension, fencing..." />
           </Field>
           <Field label="Cost ($)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
           <Field label="Notes (optional)">
-            <textarea style={{ ...inputStyle, minHeight: 60 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="materials, who built it, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 60 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="materials, who built it, etc." />
           </Field>
         </>
       )}
@@ -22454,7 +22454,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "custom" && (
         <Field label="Notes (optional)">
           <textarea
-            style={{ ...inputStyle, minHeight: 100 }}
+            style={{ ...inputStyle(), minHeight: 100 }}
             value={fields.note || ""}
             onChange={(e) => set("note", e.target.value)}
             placeholder={`What you want to remember about this ${resolvedCustomLabel || "log"}...`}
@@ -22465,7 +22465,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {action === "note" && (
         <Field label="Note">
-          <textarea style={{ ...inputStyle, minHeight: 100 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Anything you want to remember about this hobby..." autoFocus />
+          <textarea style={{ ...inputStyle(), minHeight: 100 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Anything you want to remember about this hobby..." autoFocus />
         </Field>
       )}
 
@@ -22501,7 +22501,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             </Field>
             {broodyCandidates.length > 0 && (
               <Field label={`Which ${sn.female}? (optional)`}>
-                <select style={inputStyle} value={fields.namedBirdId || ""} onChange={e => set("namedBirdId", e.target.value)}>
+                <select style={inputStyle()} value={fields.namedBirdId || ""} onChange={e => set("namedBirdId", e.target.value)}>
                   <option value="">— No specific bird, just track count —</option>
                   {broodyCandidates.map(b => (
                     <option key={b.id} value={b.id}>{b.name}{b.broody ? " (currently broody)" : ""}</option>
@@ -22510,7 +22510,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               </Field>
             )}
             <Field label="Note (optional)">
-              <textarea style={{ ...inputStyle, minHeight: 70 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder={status === "started" ? "Where she's sitting, how long, etc." : "Did chicks hatch? How many?"} />
+              <textarea style={{ ...inputStyle(), minHeight: 70 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder={status === "started" ? "Where she's sitting, how long, etc." : "Did chicks hatch? How many?"} />
             </Field>
           </>
         );
@@ -22847,7 +22847,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
             </p>
             <Field label="What's your homestead called? (optional)">
               <input
-                style={inputStyle}
+                style={inputStyle()}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Slow Build Acres"
@@ -22871,7 +22871,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
             </p>
             <Field label="Country">
               <select
-                style={inputStyle}
+                style={inputStyle()}
                 value={country}
                 onChange={(e) => { setCountry(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
               >
@@ -22901,7 +22901,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
             <Field label="Zip / postal code">
               <div style={{ display: "flex", gap: 6 }}>
                 <input
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(), flex: 1 }}
                   value={zip}
                   onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
                   placeholder="e.g. 66002"
@@ -24582,7 +24582,7 @@ function AddPerennialModal({ hobbyId, category: initialCategory = "plant", updat
         </div>
       </Field>
       <Field label={category === "tree" ? "Tree name" : "Plant name"}>
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder={category === "tree" ? "Apple tree, peach tree..." : "Blueberries, asparagus..."} autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder={category === "tree" ? "Apple tree, peach tree..." : "Blueberries, asparagus..."} autoFocus />
         {!name && (
           <div style={{ display:"flex",flexWrap:"wrap",gap:4,marginTop:6 }}>
             {SUGGESTIONS.slice(0,8).map(s=>(
@@ -24592,13 +24592,13 @@ function AddPerennialModal({ hobbyId, category: initialCategory = "plant", updat
         )}
       </Field>
       <Field label="Variety (optional)">
-        <input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp, Jersey Giant..." />
+        <input style={inputStyle()} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp, Jersey Giant..." />
       </Field>
       <Field label="Plant date (optional)">
-        <input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={plantDate} onChange={e=>setPlantDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, rootstock..." />
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, rootstock..." />
       </Field>
       <Btn variant="primary" onClick={() => {
         if (!name.trim()) return;
@@ -24658,10 +24658,10 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} autoFocus /></Field>
-      <Field label="Variety (optional)"><input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp" /></Field>
-      <Field label="Plant date (optional)"><input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} /></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
+      <Field label="Name"><input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} autoFocus /></Field>
+      <Field label="Variety (optional)"><input style={inputStyle()} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp" /></Field>
+      <Field label="Plant date (optional)"><input type="date" style={inputStyle()} value={plantDate} onChange={e=>setPlantDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
       <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
         {!confirmDelete && <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete</Btn>}
@@ -24684,19 +24684,19 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:2 }}>
           <Field label="Quantity">
-            <input type="number" inputMode="decimal" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
+            <input type="number" inputMode="decimal" min={0} step="0.1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Unit">
-            <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
+            <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
               {["lbs","oz","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
         </div>
       </div>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} /></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
       <Btn onClick={() => {
         const q = Number(qty);
         if (!q) return;
@@ -24802,15 +24802,15 @@ function LogPerennialActionModal({ hobbyId, perennial, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Log action — ${perennial.name}`}>
       <Field label="Action">
-        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)} autoFocus>
           {PERENNIAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how hard you pruned, etc." />
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how hard you pruned, etc." />
       </Field>
       <Btn variant="primary" onClick={() => {
         update(d => {

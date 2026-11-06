@@ -16,7 +16,7 @@
 // cost per lb, and what that meat would have cost at the store.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -32,11 +32,11 @@ const palette = legacyPalette({
 });
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -159,46 +159,46 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={harvest ? "Edit harvest" : "🦌 Log a harvest"} onClose={onClose}>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
         <div style={{ flex: 1 }}><Field label="Species">
-          <select style={inputStyle} value={species} onChange={e => setSpecies(e.target.value)}>
+          <select style={inputStyle()} value={species} onChange={e => setSpecies(e.target.value)}>
             {HUNT_SPECIES.map(s => <option key={s}>{s}</option>)}
           </select>
         </Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Sex (optional)">
-          <select style={inputStyle} value={sex} onChange={e => setSex(e.target.value)}>
+          <select style={inputStyle()} value={sex} onChange={e => setSex(e.target.value)}>
             <option value="">—</option><option value="male">Male / buck / tom</option><option value="female">Female / doe / hen</option>
           </select>
         </Field></div>
         <div style={{ flex: 1 }}><Field label="Weapon">
-          <select style={inputStyle} value={weapon} onChange={e => setWeapon(e.target.value)}>
+          <select style={inputStyle()} value={weapon} onChange={e => setWeapon(e.target.value)}>
             {WEAPONS.map(w => <option key={w}>{w}</option>)}
           </select>
         </Field></div>
       </div>
       <Field label="Tag used (optional)">
-        <select style={inputStyle} value={tagId} onChange={e => setTagId(e.target.value)}>
+        <select style={inputStyle()} value={tagId} onChange={e => setTagId(e.target.value)}>
           <option value="">— No tag / not required —</option>
           {openTags.map(t => <option key={t.id} value={t.id}>{t.name}{t.species ? ` (${t.species})` : ""}</option>)}
         </select>
         {tags.length === 0 && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>Add your tags in the Tags section and they'll show up here.</div>}
       </Field>
-      <Field label="Location (optional)"><input style={inputStyle} value={location} onChange={e => setLocation(e.target.value)} placeholder="Back 40, public land unit 12…" /></Field>
+      <Field label="Location (optional)"><input style={inputStyle()} value={location} onChange={e => setLocation(e.target.value)} placeholder="Back 40, public land unit 12…" /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Field-dressed lbs"><input type="number" inputMode="decimal" min={0} style={inputStyle} value={fieldDressedLbs} onChange={e => setFieldDressedLbs(e.target.value)} placeholder="optional" /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Meat packaged (lbs)"><input type="number" inputMode="decimal" min={0} style={inputStyle} value={meatLbs} onChange={e => setMeatLbs(e.target.value)} placeholder="can add later" /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Field-dressed lbs"><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={fieldDressedLbs} onChange={e => setFieldDressedLbs(e.target.value)} placeholder="optional" /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Meat packaged (lbs)"><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={meatLbs} onChange={e => setMeatLbs(e.target.value)} placeholder="can add later" /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Processed by">
-          <select style={inputStyle} value={processedBy} onChange={e => setProcessedBy(e.target.value)}>
+          <select style={inputStyle()} value={processedBy} onChange={e => setProcessedBy(e.target.value)}>
             <option value="self">Myself</option><option value="processor">Processor</option>
           </select>
         </Field></div>
-        <div style={{ flex: 1 }}><Field label="Processing cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={processingCost} onChange={e => setProcessingCost(e.target.value)} placeholder="0" /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Processing cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={processingCost} onChange={e => setProcessingCost(e.target.value)} placeholder="0" /></Field></div>
       </div>
-      <Field label="Notes (optional)"><textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Points, conditions, cuts you got…" /></Field>
+      <Field label="Notes (optional)"><textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Points, conditions, cuts you got…" /></Field>
       <DeleteRow canDelete={!!harvest} onDelete={() => { onDelete(harvest.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!date} />
     </ModalShell>
   );
@@ -223,20 +223,20 @@ function TagModal({ tag, onSave, onDelete, onClose }) {
   };
   return (
     <ModalShell title={tag ? "Edit tag" : "🏷️ Add a tag / license"} onClose={onClose}>
-      <Field label="Tag or license name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Any-deer permit, Turkey tag #2" autoFocus /></Field>
+      <Field label="Tag or license name"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Any-deer permit, Turkey tag #2" autoFocus /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Species"><select style={inputStyle} value={species} onChange={e => setSpecies(e.target.value)}>{HUNT_SPECIES.map(s => <option key={s}>{s}</option>)}</select></Field></div>
-        <div style={{ flex: 1 }}><Field label="State / unit"><input style={inputStyle} value={state} onChange={e => setState(e.target.value)} placeholder="KS, unit 4…" /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Species"><select style={inputStyle()} value={species} onChange={e => setSpecies(e.target.value)}>{HUNT_SPECIES.map(s => <option key={s}>{s}</option>)}</select></Field></div>
+        <div style={{ flex: 1 }}><Field label="State / unit"><input style={inputStyle()} value={state} onChange={e => setState(e.target.value)} placeholder="KS, unit 4…" /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Season"><input style={inputStyle} value={seasonYear} onChange={e => setSeasonYear(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Season"><input style={inputStyle()} value={seasonYear} onChange={e => setSeasonYear(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Bought"><input type="date" style={inputStyle} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Expires (optional)"><input type="date" style={inputStyle} value={expires} onChange={e => setExpires(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Bought"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Expires (optional)"><input type="date" style={inputStyle()} value={expires} onChange={e => setExpires(e.target.value)} /></Field></div>
       </div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Draw results, bag limits…" /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Draw results, bag limits…" /></Field>
       <DeleteRow canDelete={!!tag} onDelete={() => { onDelete(tag.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!name.trim()} />
     </ModalShell>
   );
@@ -254,13 +254,13 @@ function GearModal({ item, onSave, onDelete, onClose }) {
   };
   return (
     <ModalShell title={item ? "Edit gear / supply" : "🎒 Add equipment or supplies"} onClose={onClose}>
-      <Field label="Item"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tree stand, box of .308, game bags" autoFocus /></Field>
+      <Field label="Item"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tree stand, box of .308, game bags" autoFocus /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Category"><select style={inputStyle} value={category} onChange={e => setCategory(e.target.value)}>{GEAR_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Category"><select style={inputStyle()} value={category} onChange={e => setCategory(e.target.value)}>{GEAR_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field></div>
+        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
       </div>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
       <DeleteRow canDelete={!!item} onDelete={() => { onDelete(item.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!name.trim()} />
     </ModalShell>
   );
@@ -357,7 +357,7 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
         {gearModal.open && <GearModal item={gearModal.item} onSave={saveGear} onDelete={deleteGear} onClose={() => setGearModal({ open: false, item: null })} />}
         {editPrice && (
           <ModalShell title="Store meat price" onClose={() => setEditPrice(false)}>
-            <Field label="Price per lb at the store"><input type="number" step="0.01" min={0} value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} style={inputStyle} /></Field>
+            <Field label="Price per lb at the store"><input type="number" step="0.01" min={0} value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} style={inputStyle()} /></Field>
             <Btn onClick={() => { const v = parseFloat(priceDraft); mutate((h) => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
           </ModalShell>
         )}
@@ -383,7 +383,7 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 16 }}>
         {editPrice ? (
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-            Store price per lb: <input type="number" step="0.01" min={0} value={priceDraft} onChange={e => setPriceDraft(e.target.value)} style={{ ...inputStyle, width: 90, padding: "4px 8px", fontSize: 13 }} />
+            Store price per lb: <input type="number" step="0.01" min={0} value={priceDraft} onChange={e => setPriceDraft(e.target.value)} style={{ ...inputStyle(), width: 90, padding: "4px 8px", fontSize: 13 }} />
             <Btn small onClick={() => { const v = parseFloat(priceDraft); mutate(h => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
           </span>
         ) : (

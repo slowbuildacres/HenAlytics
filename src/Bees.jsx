@@ -1,4 +1,4 @@
-import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from "react";
 // NEW_LOOK (3.0): the rebuilt bee screens reuse this file's forms.
 import { BeeToday, BeeHives, BeeHive, HivePicker } from "./newlook/bees/BeeScreens.jsx";
@@ -23,11 +23,11 @@ const palette = legacyPalette({
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const HIVE_TYPES = ["Langstroth", "Top Bar", "Warré", "Flow Hive", "Long Langstroth", "Other"];
 const HIVE_SOURCES = ["Package", "Nucleus (nuc)", "Swarm", "Split", "Purchased colony", "Other"];
@@ -116,43 +116,43 @@ function HiveModal({ hive, onSave, onClose }) {
         <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive Name</div>
-            <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Hive 1, Back yard, East meadow" autoFocus />
+            <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Hive 1, Back yard, East meadow" autoFocus />
           </label>
           <div style={{ display:"flex",gap:12 }}>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive Type</div>
-              <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)}>
+              <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)}>
                 {HIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </label>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Source</div>
-              <select style={inputStyle} value={source} onChange={e=>setSource(e.target.value)}>
+              <select style={inputStyle()} value={source} onChange={e=>setSource(e.target.value)}>
                 {HIVE_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
           </div>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Install / Start Date</div>
-            <input style={inputStyle} type="date" value={installDate} onChange={e=>setInstallDate(e.target.value)} />
+            <input style={inputStyle()} type="date" value={installDate} onChange={e=>setInstallDate(e.target.value)} />
           </label>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Location / spot (optional)</div>
-            <input style={inputStyle} value={location} onChange={e=>setLocation(e.target.value)} placeholder="e.g. Back of orchard, facing east" />
+            <input style={inputStyle()} value={location} onChange={e=>setLocation(e.target.value)} placeholder="e.g. Back of orchard, facing east" />
           </label>
           <div style={{ display:"flex",gap:12 }}>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive cost (optional)</div>
-              <input type="number" step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+              <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
             </label>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Where from (optional)</div>
-              <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Mann Lake, local apiary" />
+              <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Mann Lake, local apiary" />
             </label>
           </div>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-            <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything notable about this hive..." />
+            <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything notable about this hive..." />
           </label>
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -257,7 +257,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
 
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Date</div>
-            <input style={inputStyle} type="date" value={date} onChange={e=>setDate(e.target.value)} />
+            <input style={inputStyle()} type="date" value={date} onChange={e=>setDate(e.target.value)} />
           </label>
 
           {action === "inspect" && <>
@@ -276,13 +276,13 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Brood pattern</div>
-                <select style={inputStyle} value={broodPattern} onChange={e=>setBroodPattern(e.target.value)}>
+                <select style={inputStyle()} value={broodPattern} onChange={e=>setBroodPattern(e.target.value)}>
                   {["Excellent","Good","Spotty","Poor","None"].map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Temperament</div>
-                <select style={inputStyle} value={temperament} onChange={e=>setTemperament(e.target.value)}>
+                <select style={inputStyle()} value={temperament} onChange={e=>setTemperament(e.target.value)}>
                   {TEMPERAMENT.map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
@@ -290,13 +290,13 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Honey stores</div>
-                <select style={inputStyle} value={honeyStores} onChange={e=>setHoneyStores(e.target.value)}>
+                <select style={inputStyle()} value={honeyStores} onChange={e=>setHoneyStores(e.target.value)}>
                   {["Plentiful","Adequate","Low","Critical"].map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Population</div>
-                <select style={inputStyle} value={population} onChange={e=>setPopulation(e.target.value)}>
+                <select style={inputStyle()} value={population} onChange={e=>setPopulation(e.target.value)}>
                   {["Strong","Medium","Weak","Critical"].map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
@@ -315,7 +315,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes</div>
-              <textarea style={{ ...inputStyle,minHeight:70,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you observe?" autoFocus />
+              <textarea style={{ ...inputStyle(),minHeight:70,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you observe?" autoFocus />
             </label>
           </>}
 
@@ -323,38 +323,38 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Pounds harvested</div>
-                <input style={inputStyle} type="number" min={0} step="0.1" value={harvestLbs} onChange={e=>setHarvestLbs(e.target.value)} placeholder="0.0" />
+                <input style={inputStyle()} type="number" min={0} step="0.1" value={harvestLbs} onChange={e=>setHarvestLbs(e.target.value)} placeholder="0.0" />
               </label>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Jars filled</div>
-                <input style={inputStyle} type="number" min={0} value={harvestJars} onChange={e=>setHarvestJars(e.target.value)} placeholder="0" />
+                <input style={inputStyle()} type="number" min={0} value={harvestJars} onChange={e=>setHarvestJars(e.target.value)} placeholder="0" />
               </label>
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Revenue (optional)</div>
-              <input style={inputStyle} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder="$0.00" />
+              <input style={inputStyle()} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder="$0.00" />
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Color, flavor, which super..." />
+              <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Color, flavor, which super..." />
             </label>
           </>}
 
           {action === "feed" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Feed type</div>
-              <select style={inputStyle} value={feedType} onChange={e=>setFeedType(e.target.value)}>
+              <select style={inputStyle()} value={feedType} onChange={e=>setFeedType(e.target.value)}>
                 {["Sugar syrup (1:1)","Sugar syrup (2:1)","Dry sugar","Pollen patty","Fondant","Protein supplement","Other"].map(v=><option key={v}>{v}</option>)}
               </select>
             </label>
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Quantity (lbs or oz)</div>
-                <input style={inputStyle} type="number" min={0} step="0.1" value={feedQty} onChange={e=>setFeedQty(e.target.value)} placeholder="0" />
+                <input style={inputStyle()} type="number" min={0} step="0.1" value={feedQty} onChange={e=>setFeedQty(e.target.value)} placeholder="0" />
               </label>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
-                <input style={inputStyle} type="number" min={0} step="0.01" value={feedCost} onChange={e=>setFeedCost(e.target.value)} placeholder="0.00" />
+                <input style={inputStyle()} type="number" min={0} step="0.01" value={feedCost} onChange={e=>setFeedCost(e.target.value)} placeholder="0.00" />
               </label>
             </div>
           </>}
@@ -362,23 +362,23 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
           {action === "treatment" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Treatment type</div>
-              <select style={inputStyle} value={treatmentType} onChange={e=>setTreatmentType(e.target.value)}>
+              <select style={inputStyle()} value={treatmentType} onChange={e=>setTreatmentType(e.target.value)}>
                 {MITE_TREATMENTS.map(v=><option key={v}>{v}</option>)}
               </select>
             </label>
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Mite count (per 100 bees)</div>
-                <input style={inputStyle} type="number" min={0} step="0.1" value={miteCount} onChange={e=>setMiteCount(e.target.value)} placeholder="0" />
+                <input style={inputStyle()} type="number" min={0} step="0.1" value={miteCount} onChange={e=>setMiteCount(e.target.value)} placeholder="0" />
               </label>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
-                <input style={inputStyle} type="number" min={0} step="0.01" value={treatmentCost} onChange={e=>setTreatmentCost(e.target.value)} placeholder="0.00" />
+                <input style={inputStyle()} type="number" min={0} step="0.01" value={treatmentCost} onChange={e=>setTreatmentCost(e.target.value)} placeholder="0.00" />
               </label>
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Dosage, conditions, result..." />
+              <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Dosage, conditions, result..." />
             </label>
           </>}
 
@@ -388,7 +388,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Method</div>
-              <select style={inputStyle} value={varroaMethod} onChange={e=>setVarroaMethod(e.target.value)}>
+              <select style={inputStyle()} value={varroaMethod} onChange={e=>setVarroaMethod(e.target.value)}>
                 <option value="Sugar roll">Sugar roll</option>
                 <option value="Alcohol wash">Alcohol wash</option>
                 <option value="Sticky board">Sticky board (24hr drop)</option>
@@ -396,7 +396,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Mite count (optional — per 100 bees)</div>
-              <input style={inputStyle} type="number" min={0} step="0.1" value={varroaCount} onChange={e=>setVarroaCount(e.target.value)} placeholder="e.g. 2 = 2 mites per 100 bees" />
+              <input style={inputStyle()} type="number" min={0} step="0.1" value={varroaCount} onChange={e=>setVarroaCount(e.target.value)} placeholder="e.g. 2 = 2 mites per 100 bees" />
             </label>
             {Number(varroaCount) >= 3 && (
               <div style={{ padding:"10px 12px",background:palette.accent,color:palette.onColor,borderRadius:8,fontSize:13,fontWeight:600,lineHeight:1.5 }}>
@@ -409,49 +409,49 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Sample size, conditions, treatment plan..." />
+              <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Sample size, conditions, treatment plan..." />
             </label>
           </>}
 
           {action === "infrastructure" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Item</div>
-              <input style={inputStyle} value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. New super, frames, hive stand..." />
+              <input style={inputStyle()} value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. New super, frames, hive stand..." />
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
-              <input style={inputStyle} type="number" min={0} step="0.01" value={infraCost} onChange={e=>setInfraCost(e.target.value)} placeholder="0.00" />
+              <input style={inputStyle()} type="number" min={0} step="0.01" value={infraCost} onChange={e=>setInfraCost(e.target.value)} placeholder="0.00" />
             </label>
           </>}
 
           {(action === "split" || action === "swarm") && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Details</div>
-              <input style={inputStyle} value={splitDetails} onChange={e=>setSplitDetails(e.target.value)} placeholder={action==="split"?"Where did the split go?":"Where did the swarm land?"} />
+              <input style={inputStyle()} value={splitDetails} onChange={e=>setSplitDetails(e.target.value)} placeholder={action==="split"?"Where did the split go?":"Where did the swarm land?"} />
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} />
+              <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} />
             </label>
           </>}
 
           {action === "death" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Likely cause</div>
-              <select style={inputStyle} value={deathCause} onChange={e=>setDeathCause(e.target.value)}>
+              <select style={inputStyle()} value={deathCause} onChange={e=>setDeathCause(e.target.value)}>
                 {["Unknown","Varroa mites","Starvation","Winter loss","Queen failure","Pesticides","Disease","Absconded","Other"].map(v=><option key={v}>{v}</option>)}
               </select>
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes</div>
-              <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What you observed..." />
+              <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What you observed..." />
             </label>
           </>}
 
           {(action === "note" || action === "winter_prep" || action === "spring_buildup") && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes</div>
-              <textarea style={{ ...inputStyle,minHeight:90,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you do / observe?" autoFocus />
+              <textarea style={{ ...inputStyle(),minHeight:90,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you do / observe?" autoFocus />
             </label>
           </>}
 

@@ -17,7 +17,7 @@
 // so we don't surface countdown UI).
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -141,11 +141,11 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 // ============================================================================
 // BATCH MODAL — create/edit a freeze-drying batch
@@ -194,28 +194,28 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={editing ? "✏️ Edit batch" : "❄️ New freeze-drying batch"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Item">
-        <input style={inputStyle} value={item} onChange={(e) => setItem(e.target.value)} placeholder="e.g. Strawberries, beef stew, scrambled eggs" autoFocus />
+        <input style={inputStyle()} value={item} onChange={(e) => setItem(e.target.value)} placeholder="e.g. Strawberries, beef stew, scrambled eggs" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Run hours">
-            <input type="number" step="0.5" min={0} style={inputStyle} value={runHours} onChange={(e) => setRunHours(e.target.value)} placeholder="0" inputMode="decimal" />
+            <input type="number" step="0.5" min={0} style={inputStyle()} value={runHours} onChange={(e) => setRunHours(e.target.value)} placeholder="0" inputMode="decimal" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Trays">
-            <input type="number" min={0} style={inputStyle} value={trays} onChange={(e) => setTrays(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={trays} onChange={(e) => setTrays(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
       </div>
       <Field label="Output weight (oz)">
-        <input type="number" step="0.1" min={0} style={inputStyle} value={outputOz} onChange={(e) => setOutputOz(e.target.value)} placeholder="0" inputMode="decimal" />
+        <input type="number" step="0.1" min={0} style={inputStyle()} value={outputOz} onChange={(e) => setOutputOz(e.target.value)} placeholder="0" inputMode="decimal" />
       </Field>
       <Field label="Storage container">
-        <select style={inputStyle} value={containerType} onChange={(e) => setContainerType(e.target.value)}>
+        <select style={inputStyle()} value={containerType} onChange={(e) => setContainerType(e.target.value)}>
           <option value="mylar">Mylar bag</option>
           <option value="jar">Mason jar</option>
           <option value="vacuum">Vacuum-sealed bag</option>
@@ -228,7 +228,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
           type="number"
           step="0.01"
           min={0}
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -242,7 +242,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
         />
       </Field>
       <Field label="Notes">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, freezing notes, runtime quirks…" />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, freezing notes, runtime quirks…" />
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (

@@ -15,7 +15,7 @@
 //     is batch.jarsRemaining.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
@@ -76,11 +76,11 @@ const daysUntil = (iso) => {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 };
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const JAR_TYPES = ["Half-pint", "Pint", "Quart", "Half-gallon", "Other"];
 
@@ -258,11 +258,11 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit batch" : "New canning batch"}>
       <Field label="Date canned">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What did you can?">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={item}
           onChange={e => setItem(e.target.value)}
           placeholder="e.g. Tomato sauce"
@@ -296,26 +296,26 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Jars made">
-            <input type="number" min="0" style={inputStyle} value={jarsMade} onChange={e => setJarsMade(e.target.value)} placeholder="12" />
+            <input type="number" min="0" style={inputStyle()} value={jarsMade} onChange={e => setJarsMade(e.target.value)} placeholder="12" />
           </Field>
         </div>
         {isEdit && (
           <div style={{ flex: 1 }}>
             <Field label="Jars remaining">
-              <input type="number" min="0" style={inputStyle} value={jarsRemaining} onChange={e => setJarsRemaining(e.target.value)} />
+              <input type="number" min="0" style={inputStyle()} value={jarsRemaining} onChange={e => setJarsRemaining(e.target.value)} />
             </Field>
           </div>
         )}
       </div>
       <Field label="Eat by (optional)">
-        <input type="date" style={inputStyle} value={eatByDate} onChange={e => setEatByDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={eatByDate} onChange={e => setEatByDate(e.target.value)} />
       </Field>
       <Field label="Ingredients cost ($, optional)">
         <input
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={e => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -328,7 +328,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
         />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Recipe, water bath time, pressure..." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Recipe, water bath time, pressure..." />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -405,10 +405,10 @@ function UseJarsModal({ batch, onUse, onClose }) {
       </div>
 
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="Jars used">
-        <input type="number" min="1" max={batch.jarsRemaining} style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} autoFocus />
+        <input type="number" min="1" max={batch.jarsRemaining} style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} autoFocus />
       </Field>
       <Field label="Reason">
         <div style={{ display: "flex", gap: 6 }}>
@@ -437,7 +437,7 @@ function UseJarsModal({ batch, onUse, onClose }) {
       {reason === "sale" && (
         <>
           <Field label="Price per jar ($)">
-            <input type="number" step="0.01" min="0" style={inputStyle} value={pricePerJar} onChange={e => setPricePerJar(e.target.value)} placeholder="0.00" />
+            <input type="number" step="0.01" min="0" style={inputStyle()} value={pricePerJar} onChange={e => setPricePerJar(e.target.value)} placeholder="0.00" />
           </Field>
           <div style={{
             padding: 12, background: palette.yolkSoft, borderRadius: 8,
@@ -448,7 +448,7 @@ function UseJarsModal({ batch, onUse, onClose }) {
         </>
       )}
       <Field label="Note (optional)">
-        <input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} placeholder={reason === "sale" ? "Buyer, occasion..." : "What did you use it for?"} />
+        <input style={inputStyle()} value={note} onChange={e => setNote(e.target.value)} placeholder={reason === "sale" ? "Buyer, occasion..." : "What did you use it for?"} />
       </Field>
 
       {exceedsStock && (
@@ -507,16 +507,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. pressure canner, jar storage shelves" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. pressure canner, jar storage shelves" autoFocus />
       </Field>
       <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (

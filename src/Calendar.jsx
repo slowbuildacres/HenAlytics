@@ -11,7 +11,7 @@
 // (frost dates) are computed from the user's zone, not stored.
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 import {
   Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight,
@@ -385,13 +385,13 @@ function MonthView({ events, update, setModal, userEvents }) {
         display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 10,
       }}>
-        <button onClick={goPrev} style={navBtnStyle} aria-label="Previous month">
+        <button onClick={goPrev} style={navBtnStyle()} aria-label="Previous month">
           <ChevronLeft size={18} />
         </button>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink }}>
           {monthNames[viewMonth]} {viewYear}
         </div>
-        <button onClick={goNext} style={navBtnStyle} aria-label="Next month">
+        <button onClick={goNext} style={navBtnStyle()} aria-label="Next month">
           <ChevronRight size={18} />
         </button>
       </div>
@@ -505,7 +505,7 @@ function MonthView({ events, update, setModal, userEvents }) {
   );
 }
 
-const navBtnStyle = legacyStyle(() => ({
+const navBtnStyle = () => ({
   background: palette.card,
   border: `1.5px solid ${palette.line}`,
   borderRadius: 8,
@@ -513,7 +513,7 @@ const navBtnStyle = legacyStyle(() => ({
   cursor: "pointer",
   display: "flex", alignItems: "center", justifyContent: "center",
   color: palette.ink,
-}));
+});
 
 // ============================================================================
 // HELPERS

@@ -14,7 +14,7 @@
 // "Sell" action, which writes to data.sales[] with hobbyType="baking".
 // ============================================================================
 
-import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -51,11 +51,11 @@ const todayIso = () => {
   return `${d.getFullYear()}-${m}-${day}`;
 };
 
-const inputStyle = legacyStyle(() => ({
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-}));
+});
 
 const RECIPE_TYPES = [
   { id: "bread", label: "🍞 Bread", unit: "loaves" },
@@ -266,7 +266,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit recipe" : "Add recipe"}>
       <Field label="Recipe name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Mom's banana bread" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Mom's banana bread" autoFocus />
       </Field>
       <Field label="Type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -289,7 +289,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
         </div>
       </Field>
       <Field label="Link (optional)">
-        <input style={inputStyle} value={link} onChange={e => setLink(e.target.value)} placeholder="https://... or paste a URL" />
+        <input style={inputStyle()} value={link} onChange={e => setLink(e.target.value)} placeholder="https://... or paste a URL" />
       </Field>
 
       {/* SHARED_PANTRY: structured ingredients section. Each row can
@@ -318,7 +318,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                 <div key={ing.id} style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, padding: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center", marginBottom: 6 }}>
                     <input
-                      style={{ ...inputStyle, marginBottom: 0 }}
+                      style={{ ...inputStyle(), marginBottom: 0 }}
                       value={ing.name}
                       onChange={e => updateIngredient(ing.id, { name: e.target.value })}
                       placeholder="Ingredient name (e.g. flour)"
@@ -337,13 +337,13 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                       type="number"
                       step="0.01"
                       min="0"
-                      style={{ ...inputStyle, marginBottom: 0 }}
+                      style={{ ...inputStyle(), marginBottom: 0 }}
                       value={ing.amount}
                       onChange={e => updateIngredient(ing.id, { amount: e.target.value })}
                       placeholder="Amount"
                     />
                     <select
-                      style={{ ...inputStyle, marginBottom: 0 }}
+                      style={{ ...inputStyle(), marginBottom: 0 }}
                       value={ing.unit}
                       onChange={e => updateIngredient(ing.id, { unit: e.target.value })}
                     >
@@ -359,7 +359,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                     </select>
                   </div>
                   <select
-                    style={{ ...inputStyle, marginBottom: 0, fontSize: 12 }}
+                    style={{ ...inputStyle(), marginBottom: 0, fontSize: 12 }}
                     value={ing.pantryId || ""}
                     onChange={e => handlePantryLink(ing.id, e.target.value)}
                   >
@@ -397,7 +397,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
       </div>
 
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Method, tweaks, anything else..." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Method, tweaks, anything else..." />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -493,10 +493,10 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
   return (
     <Modal open onClose={onClose} title="Log a bake">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="Recipe">
-        <select style={inputStyle} value={recipeId} onChange={e => setRecipeId(e.target.value)}>
+        <select style={inputStyle()} value={recipeId} onChange={e => setRecipeId(e.target.value)}>
           <option value="">— pick a recipe —</option>
           {activeRecipes.map(r => (
             <option key={r.id} value={r.id}>{r.name}</option>
@@ -506,13 +506,13 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
       </Field>
       {usingCustom && (
         <Field label="What did you bake?">
-          <input style={inputStyle} value={customName} onChange={e => setCustomName(e.target.value)} placeholder="e.g. Apple pie" />
+          <input style={inputStyle()} value={customName} onChange={e => setCustomName(e.target.value)} placeholder="e.g. Apple pie" />
         </Field>
       )}
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Quantity (${effectiveUnit})`}>
-            <input type="number" step="0.5" min="0" style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} />
+            <input type="number" step="0.5" min="0" style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
@@ -521,7 +521,7 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
               type="number"
               step="0.01"
               min="0"
-              style={inputStyle}
+              style={inputStyle()}
               value={cost}
               onChange={e => { setCost(e.target.value); setCostTouched(true); }}
               placeholder="0.00"
@@ -540,7 +540,7 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
         <StarRating value={rating} onChange={setRating} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="How did it turn out?" />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="How did it turn out?" />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -586,22 +586,22 @@ function SellBakeModal({ bake, onSell, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Sell ${bake.recipeName}`}>
       <Field label="Sale date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Quantity (${bake.unit || "items"})`}>
-            <input type="number" step="0.5" min="0" style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} />
+            <input type="number" step="0.5" min="0" style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per unit ($)">
-            <input type="number" step="0.01" min="0" style={inputStyle} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} autoFocus />
+            <input type="number" step="0.01" min="0" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} autoFocus />
           </Field>
         </div>
       </div>
       <Field label="Note (optional)">
-        <input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} placeholder="Buyer, occasion..." />
+        <input style={inputStyle()} value={note} onChange={e => setNote(e.target.value)} placeholder="Buyer, occasion..." />
       </Field>
       <div style={{
         padding: 12, background: palette.yolkSoft, borderRadius: 8,
@@ -646,16 +646,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. stand mixer, new oven, baking sheets" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. stand mixer, new oven, baking sheets" autoFocus />
       </Field>
       <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (
