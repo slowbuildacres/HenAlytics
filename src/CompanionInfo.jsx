@@ -30,10 +30,12 @@ const DEFAULT_FONTS = {
   body: `'Be Vietnam Pro', -apple-system, sans-serif`,
 };
 
-function Chip({ item, tone, fonts }) {
+// The host's palette (legacyPalette) has goodBg/dangerBg that follow dark
+// mode; the typed-in colors are the light-mode fallback.
+function Chip({ item, tone, fonts, palette = DEFAULT_PALETTE }) {
   const colors = tone === "good"
-    ? { bg: "#E8F0DC", border: "#5A7A3C", ink: "#3D5226" }
-    : { bg: "#FBE5DE", border: "#C84B31", ink: "#8A2E1C" };
+    ? { bg: palette.goodBg || "#E8F0DC", border: palette.leaf || "#5A7A3C", ink: palette.goodBg ? palette.ink : "#3D5226" }
+    : { bg: palette.dangerBg || "#FBE5DE", border: palette.accent || "#C84B31", ink: palette.dangerBg ? palette.ink : "#8A2E1C" };
   return (
     <span style={{
       display: "inline-flex", alignItems: "center", gap: 4,
@@ -87,7 +89,7 @@ export function CompanionPanel({ cropId, palette = DEFAULT_PALETTE, fonts = DEFA
                 ✓ Plant near
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {companions.good.map((it, i) => <Chip key={`g${i}`} item={it} tone="good" fonts={fonts} />)}
+                {companions.good.map((it, i) => <Chip key={`g${i}`} item={it} tone="good" fonts={fonts} palette={palette} />)}
               </div>
             </div>
           )}
@@ -98,7 +100,7 @@ export function CompanionPanel({ cropId, palette = DEFAULT_PALETTE, fonts = DEFA
                 ✗ Keep apart
               </div>
               <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
-                {companions.bad.map((it, i) => <Chip key={`b${i}`} item={it} tone="bad" fonts={fonts} />)}
+                {companions.bad.map((it, i) => <Chip key={`b${i}`} item={it} tone="bad" fonts={fonts} palette={palette} />)}
               </div>
             </div>
           )}
@@ -130,8 +132,8 @@ export function RotationNote({ cropId, priorCropIds = [], palette = DEFAULT_PALE
   return (
     <div style={{
       marginTop: 12, padding: "10px 12px",
-      background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
-      borderRadius: 8, fontSize: 12, color: "#8A2E1C", lineHeight: 1.5,
+      background: palette.dangerBg || "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+      borderRadius: 8, fontSize: 12, color: palette.dangerBg ? palette.ink : "#8A2E1C", lineHeight: 1.5,
     }}>
       <strong>🔄 Rotation heads-up:</strong> this bed recently grew {list}
       {" "}— also in the {conflict.family.label.toLowerCase()} family.
