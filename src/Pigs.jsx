@@ -1,6 +1,7 @@
 // ============================================================================
 // PIGS — per-animal tracking, growth monitoring, FCR, litters, butcher
 // ============================================================================
+import { localIso } from "./localDate.js";
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
@@ -280,7 +281,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?localIso():null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};

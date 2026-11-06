@@ -10,6 +10,7 @@
 //   - ViewDayEventsModal: show all events on a single day
 // ============================================================================
 
+import { localIso } from "./localDate.js";
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import {
@@ -226,7 +227,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
     // Default to one week out so users have a sensible starting point
     const d = new Date();
     d.setDate(d.getDate() + 7);
-    return d.toISOString().slice(0, 10);
+    return localIso(d);
   });
   const [otherError, setOtherError] = useState("");
 

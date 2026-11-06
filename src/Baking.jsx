@@ -14,6 +14,7 @@
 // "Sell" action, which writes to data.sales[] with hobbyType="baking".
 // ============================================================================
 
+import { localIso } from "./localDate.js";
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
@@ -821,7 +822,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
 
   if (nl) {
     const made = bakes.filter((b) => b.action !== "infrastructure");
-    const monthAgo = new Date(Date.now() - 30 * 864e5).toISOString().slice(0, 10);
+    const monthAgo = localIso(new Date(Date.now() - 30 * 864e5));
     const lastMonth = made.filter((b) => (b.date || "") >= monthAgo).reduce((t, b) => t + (Number(b.qty) || 0), 0);
     const ctx = {
       key: "baking",

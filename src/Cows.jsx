@@ -1,6 +1,7 @@
 // ============================================================================
 // COWS — per-animal tracking, dairy or beef, milk/calves/butcher logging
 // ============================================================================
+import { localIso } from "./localDate.js";
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
@@ -457,7 +458,7 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),pastureId:pastureId||null,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),pastureId:pastureId||null,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?localIso():null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -1726,7 +1727,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
         entry.expectedCalving = pregExpectedCalving || (() => {
           const t = new Date(date + "T12:00");
           t.setDate(t.getDate() + 283);
-          return t.toISOString().slice(0, 10);
+          return localIso(t);
         })();
       }
     }
@@ -1989,7 +1990,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
           try {
             const t = new Date(date + "T12:00");
             t.setDate(t.getDate() + 283);
-            defaultCalving = t.toISOString().slice(0, 10);
+            defaultCalving = localIso(t);
           } catch (e) {}
           return (
             <Field label="Expected calving date (optional)">

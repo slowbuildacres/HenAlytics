@@ -3463,7 +3463,7 @@ export default function HomesteadApp() {
 // Track daily app opens (web + native)
 useEffect(() => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr(new Date());
     if (localStorage.getItem('last_open') === today) return;
     localStorage.setItem('last_open', today);
     const platform = window.Capacitor?.getPlatform?.() || 'web';
@@ -10055,7 +10055,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
   // current season's date range count too.
   const harvests = collectGardenHarvests(data, { seasonId: season.id, season });
   const plantings = seasonEntries.filter((e) => e.action === "planted").length;
-  const days = Math.floor((Date.now() - new Date(season.startDate).getTime()) / (1000 * 60 * 60 * 24));
+  const days = Math.floor((Date.now() - new Date(season.startDate + "T00:00").getTime()) / (1000 * 60 * 60 * 24));
   // Garden map shape changed from { photoPath, pins } to { areas: [{ photoPath, pins }] }.
   // Read the new shape, but stay backwards-compatible for any unmigrated season.
   const gmAreas = Array.isArray(season.gardenMap?.areas) ? season.gardenMap.areas : null;
@@ -11652,7 +11652,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   return (
     <div>
       {activeBatches.map((batch) => {
-        const days = Math.floor((Date.now() - new Date(batch.startDate).getTime()) / (1000 * 60 * 60 * 24));
+        const days = Math.floor((Date.now() - new Date(batch.startDate + "T00:00").getTime()) / (1000 * 60 * 60 * 24));
         const weeks = (days / 7).toFixed(1);
         const alive = batchAlive(batch, entries);
         return (
@@ -20744,12 +20744,12 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
   const [endDate, setEndDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
   const [mode, setMode] = useState("total"); // "total" | "perday"
   const [totalCount, setTotalCount] = useState("");
@@ -23842,7 +23842,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           return runStart <= todayStr && runEnd >= todayStr;
         }
         // For week/year, window is [oneWeekAgo/oneYearAgo, today]
-        const windowStartIso = (filter === "week" ? oneWeekAgo : oneYearAgo).toISOString().slice(0, 10);
+        const windowStartIso = localDateStr(filter === "week" ? oneWeekAgo : oneYearAgo);
         if (runEnd < windowStartIso) return false; // ended before window
         if (runStart > todayStr) return false;     // started after window (future-dated)
         return true;

@@ -13,6 +13,7 @@
 // hobby, so it syncs and survives season close-outs.
 // ============================================================================
 
+import { localIso } from "./localDate.js";
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useEffect, useMemo, useState } from "react";
 import { loadSeedAffiliate, seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
@@ -207,7 +208,7 @@ export function SeedUseModal({ hobby, plantName, update, onClose }) {
     update((d) => {
       const g = (d.hobbies || []).find((h) => h.id === hobby.id);
       if (g && Array.isArray(g.seeds)) {
-        g.seeds.forEach((p) => { if (picked[p.id]) { p.amount = picked[p.id]; p.lastUsed = new Date().toISOString().slice(0, 10); } });
+        g.seeds.forEach((p) => { if (picked[p.id]) { p.amount = picked[p.id]; p.lastUsed = localIso(); } });
       }
       return d;
     });
