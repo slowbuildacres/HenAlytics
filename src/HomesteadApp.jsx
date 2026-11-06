@@ -1702,6 +1702,7 @@ const fmtTractorDistance = (totalFeet) => {
 // ============================================================================
 import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { groupDigits } from "./numFmt.js";
+import { useSupportProgress } from "./newlook/supportProgress.js";
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -3500,6 +3501,8 @@ useEffect(() => {
   // the safe default (never grants early access it cannot confirm).
   const [earlyAccessConfig, setEarlyAccessConfig] = useState(null);
   const [isSupporter, setIsSupporter] = useState(false);
+  // This month's running costs covered (heart button on Home, Support page).
+  const nlSupport = useSupportProgress();
   // "unknown" until the server gives a definite answer — the new look keeps a
   // supporter's chosen colors meanwhile instead of flashing Farmhouse.
   const [supporterStatus, setSupporterStatus] = useState("unknown");
@@ -6373,7 +6376,8 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             onOpenCalendar={() => setPage("calendar")}
             onOpenHobby={(e) => nlOpenEntry(e)}
             onOpenSwitcher={() => setSwitcherOpen(true)}
-            onManage={() => setModal({ type: "manageHobbies" })}
+onManage={() => setModal({ type: "manageHobbies" })}
+            support={nlSupport} onOpenSupport={() => setPage("supporter")}
             onOpenMore={() => setPage("more")}
             HobbyIcon={HobbyIcon}
           />
@@ -6409,6 +6413,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             onCheckout={(tier) => startCheckout(tier)}
             isIap={isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true}
             onRestore={restoreSupporter} onManage={() => openManageSubscriptions()} onClaim={claimWebSupporter}
+            support={nlSupport}
             onContact={() => openExternalUrl("mailto:slowbuildacres@gmail.com")} onOpenUrl={openExternalUrl}
           />
         )}

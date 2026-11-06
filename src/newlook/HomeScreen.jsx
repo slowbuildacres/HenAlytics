@@ -7,8 +7,9 @@
 // ============================================================================
 
 import React from "react";
-import { Snowflake, Wheat, CalendarDays, Plus, ChevronRight } from "lucide-react";
+import { Snowflake, Wheat, CalendarDays, Plus, ChevronRight, Heart } from "lucide-react";
 import { nl, font, type } from "./theme.js";
+import { progressMonthName } from "./supportProgress.js";
 import { Card, CardHeader, Row } from "./ui.jsx";
 import { switcherEntries } from "./hobbies.js";
 import HobbyGlyph from "./HobbyGlyph.jsx";
@@ -116,6 +117,7 @@ export function tileStat(entry, data, today) {
 export default function HomeScreen({
   data, today, frost, feedAlerts = [], announcement,
   onOpenCalendar, onOpenHobby, onOpenSwitcher, onManage, onOpenMore, HobbyIcon,
+  support = null, onOpenSupport,
 }) {
   const now = parseDay(today);
   const dateLine = now.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" });
@@ -148,14 +150,34 @@ export default function HomeScreen({
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", gap: 12 }}>
-        <div>
+        <div style={{ minWidth: 0 }}>
           <div style={{ fontSize: type.small, color: nl.soft }}>{dateLine}</div>
           <h1 style={{ margin: "4px 0 0", fontFamily: font.display, fontWeight: 400, fontSize: 30, lineHeight: 1.1 }}>{name}</h1>
         </div>
-        <button type="button" onClick={onOpenMore} aria-label="Account and settings" style={{
-          width: 44, height: 44, borderRadius: 22, background: nl.ink, color: nl.paper, border: "none",
-          font: `700 15px ${font.body}`, cursor: "pointer", flexShrink: 0,
-        }}>{initials}</button>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+          {onOpenSupport && (() => {
+            // This month's running costs covered by supporters; just a heart
+            // until the first answer arrives (or when offline).
+            const month = progressMonthName(support, now);
+            const pct = month ? Math.max(0, support.percent) : null;
+            return (
+              <button type="button" onClick={onOpenSupport}
+                aria-label={pct != null ? `Support Henalytics. ${pct}% of ${month}'s running costs covered` : "Support Henalytics"}
+                style={{
+                  height: 44, minWidth: 44, padding: pct != null ? "0 12px 0 10px" : 0, borderRadius: 22, border: "none",
+                  background: nl.yolkTint, color: nl.yolkInk, display: "flex", alignItems: "center", justifyContent: "center", gap: 5,
+                  font: `700 14px ${font.body}`, cursor: "pointer",
+                }}>
+                <Heart size={17} strokeWidth={2.2} fill="currentColor" aria-hidden="true" />
+                {pct != null && <span>{pct}%</span>}
+              </button>
+            );
+          })()}
+          <button type="button" onClick={onOpenMore} aria-label="Account and settings" style={{
+            width: 44, height: 44, borderRadius: 22, background: nl.ink, color: nl.paper, border: "none",
+            font: `700 15px ${font.body}`, cursor: "pointer", flexShrink: 0,
+          }}>{initials}</button>
+        </div>
       </div>
 
       <Card>

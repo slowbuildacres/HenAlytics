@@ -13,6 +13,7 @@ import { ChevronLeft, Palette, Zap, Trophy, Award, Heart, Check, ChevronRight } 
 import { nl, font, type } from "./theme.js";
 import { Card, Badge, Button } from "./ui.jsx";
 import { monthName, seasonOf } from "./MonthlyRecap.jsx";
+import { progressMonthName } from "./supportProgress.js";
 
 const TIERS = [
   { tier: "monthly_1", amount: 1, label: "Seedling" },
@@ -20,6 +21,36 @@ const TIERS = [
   { tier: "monthly_5", amount: 5, label: "Sustaining", popular: true },
   { tier: "monthly_10", amount: 10, label: "Generous" },
 ];
+
+// This month's running costs and how much supporters cover (after store and
+// card fees), from /api/support-progress.
+function CostsCard({ support }) {
+  const month = progressMonthName(support);
+  if (!month) return null;
+  const { goal, covered, percent, supporters } = support;
+  const done = covered >= goal;
+  return (
+    <Card padded>
+      <div style={{ fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase", color: nl.soft, fontWeight: 700 }}>{month} running costs</div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 10, flexWrap: "wrap", marginTop: 4 }}>
+        <span style={{ fontFamily: font.display, fontSize: 26, lineHeight: 1.15 }}>{done ? "Covered. Thank you!" : `$${covered.toLocaleString("en-US")} of $${goal.toLocaleString("en-US")}`}</span>
+        <span style={{ fontWeight: 700, color: nl.goodInk || nl.good, whiteSpace: "nowrap" }}>{percent}%</span>
+      </div>
+      <div role="progressbar" aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.min(100, percent)} aria-label={`${percent}% of ${month}'s running costs covered`}
+        style={{ height: 10, borderRadius: 5, background: nl.chip, overflow: "hidden", marginTop: 10 }}>
+        <div style={{ width: `${Math.min(100, Math.max(percent > 0 ? 2 : 0, percent))}%`, height: "100%", borderRadius: 5, background: nl.good }} />
+      </div>
+      <div style={{ fontSize: 14, marginTop: 10, lineHeight: 1.45 }}>
+        {supporters > 0
+          ? `${done ? `$${covered.toLocaleString("en-US")} of $${goal.toLocaleString("en-US")}, covered` : "Covered"} by ${supporters.toLocaleString("en-US")} supporter${supporters === 1 ? "" : "s"}.`
+          : "Nobody has chipped in yet this month. You could be the first."}
+      </div>
+      <div style={{ fontSize: 12, color: nl.soft, marginTop: 6, lineHeight: 1.45 }}>
+        Servers, the plant scanner, email and app store fees, after Apple, Google and card fees. It doesn't count the time that goes into building Henalytics.
+      </div>
+    </Card>
+  );
+}
 
 function Perk({ icon: I, title, sub, isNew, onClick, first }) {
   const Tag = onClick ? "button" : "div";
@@ -47,7 +78,7 @@ const linkStyle = () => ({ background: "none", border: "none", padding: 0, color
 
 export default function SupporterScreen({
   isSupporter, recapKey, recapTeaser, recapReady, onBack, onOpenRecap, onLook,
-  onCheckout, isIap, onRestore, onManage, onClaim, onContact, onOpenUrl,
+  onCheckout, isIap, onRestore, onManage, onClaim, onContact, onOpenUrl, support = null,
 }) {
   const [claimOpen, setClaimOpen] = useState(false);
   const [email, setEmail] = useState("");
@@ -83,8 +114,10 @@ export default function SupporterScreen({
       <p style={{ margin: "-6px 0 0", fontSize: 14, lineHeight: 1.45, color: nl.soft }}>
         {isSupporter
           ? "Thank you. You're the reason Henalytics stays free for every homestead, including the ones that can't chip in."
-          : "Henalytics is free for every homestead. It's built by one homesteader in Kansas, and supporters cover the ~$3,000 a year it costs to run."}
+          : "Henalytics is free for every homestead. It's built by one homesteader in Kansas, and supporters cover what it costs to run."}
       </p>
+
+      <CostsCard support={support} />
 
       <button type="button" onClick={onOpenRecap} disabled={!recapReady} style={{
         display: "flex", alignItems: "center", gap: 14, padding: 14, borderRadius: 20, border: "none", textAlign: "left",
