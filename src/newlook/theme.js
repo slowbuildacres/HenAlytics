@@ -112,20 +112,42 @@ import { applyLegacyTheme } from "./legacyTheme.js";
 export const nl = { ...FARMHOUSE_LIGHT };
 
 let current = { look: "farmhouse", dark: false };
+let domApplied = false;
 export function currentLook() { return current; }
 
 // look: "farmhouse" | "meadow" | "barn"; dark: boolean. Returns true when it changed.
 export function applyLook(look, dark) {
   const L = LOOKS[look] || LOOKS.farmhouse;
   const next = { look: L.key, dark: !!dark };
-  if (next.look === current.look && next.dark === current.dark) return false;
+  // The page-level bits (color scheme, chart colors) also run on the very
+  // first call, which is usually Farmhouse light, the starting value.
+  if (next.look === current.look && next.dark === current.dark && domApplied) return false;
   Object.assign(nl, dark ? L.dark : L.light);
   current = next;
   applyLegacyTheme(L.key, !!dark, nl);
   if (typeof document !== "undefined") {
+    domApplied = true;
     try {
       document.documentElement.style.colorScheme = dark ? "dark" : "light";
       document.documentElement.dataset.nlLook = `${L.key}${dark ? "-dark" : ""}`;
+      // Charts (recharts) draw their tooltips, axes and grid in fixed light
+      // colors; these variables and rules make them follow the look.
+      const root = document.documentElement.style;
+      for (const k of ["paper", "card", "ink", "soft", "line", "rule", "chip", "faint"]) root.setProperty(`--nl-${k}`, nl[k]);
+      if (!document.getElementById("nl-chart-colors")) {
+        const st = document.createElement("style");
+        st.id = "nl-chart-colors";
+        st.textContent = [
+          ".recharts-default-tooltip{background-color:var(--nl-card)!important;border-color:var(--nl-line)!important;border-radius:10px;color:var(--nl-ink)}",
+          ".recharts-tooltip-label{color:var(--nl-ink)!important}",
+          "rect.recharts-tooltip-cursor{fill:var(--nl-chip)}",
+          "path.recharts-tooltip-cursor,line.recharts-tooltip-cursor{stroke:var(--nl-faint)}",
+          ".recharts-cartesian-axis-tick-value{fill:var(--nl-soft)}",
+          ".recharts-cartesian-axis-line,.recharts-cartesian-axis-tick-line{stroke:var(--nl-faint)}",
+          ".recharts-cartesian-grid line{stroke:var(--nl-rule)}",
+        ].join("\n");
+        document.head.appendChild(st);
+      }
       const meta = document.querySelector('meta[name="theme-color"]');
       if (meta) meta.setAttribute("content", nl.paper);
     } catch (_) { /* ignore */ }
