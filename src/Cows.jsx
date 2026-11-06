@@ -13,7 +13,7 @@ import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
 import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
-import { showUndo } from "./newlook/UndoBar.jsx";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
@@ -2883,6 +2883,10 @@ export default function CowsPage({hobby,data,update,user,setModal:setAppModal}){
 const COW_UNDO = { milk: "milk", fed: "feeding", weight: "weight", health: "health log", note: "note", calf: "calving", heat: "heat", ai: "AI breeding", preg_test: "preg check" };
 const COW_TALLY = ["Cow", "Bull", "Steer", "Heifer", "Calf", "Unsexed"];
 
+// Forms that save something other than a log (a breeding record, a
+// shearing, an animal): what the Undo bar says.
+const FORM_SAVED = { breeding: "Saved breeding", shearing: "Saved shearing", shear: "Saved shearing", animal: "Saved", addAnimal: "Saved", herd: "Saved herd count" };
+
 export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onOpenJournal, onOpenCalendar }) {
   const sp = SPECIES.cows;
   const entries = data.entries[hobby.id] || [];
@@ -2898,19 +2902,20 @@ export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, 
   const [undoCheck, setUndoCheck] = useState(null);
   useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
 
-  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)) }); };
-  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck({ before: form.before, snap: form.snap, kind: form.kind }); setForm(null); };
   useEffect(() => {
     if (!undoCheck) return;
-    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    const added = entries.filter((e) => e && !undoCheck.before.has(e.id));
     setUndoCheck(null);
+    if (!added.length) { if (FORM_SAVED[undoCheck.kind]) offerUndoSince(update, undoCheck.snap, data, FORM_SAVED[undoCheck.kind]); return; }
     if (!added.length || !COW_UNDO[added[0].action]) return;
     const ids = new Set(added.map((e) => e.id));
     const e = added[0];
     const msg = e.action === "milk" ? `Saved ${milkText(sp.milkOz(e))}${e.animalName ? ` from ${e.animalName}` : ""}`
       : e.action === "calf" ? `Saved ${Number(e.count) || 1} ${Number(e.count) === 1 ? "calf" : "calves"}${e.animalName ? ` for ${e.animalName}` : ""}`
       : `Saved ${COW_UNDO[e.action]}${e.animalName && added.length === 1 ? ` for ${e.animalName}` : added.length > 1 ? ` for ${added.length} head` : ""}`;
-    showUndo(msg, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+    offerUndoSince(update, undoCheck.snap, data, msg);
   }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const act = {
@@ -2921,7 +2926,7 @@ export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, 
     note: (id) => open("note", id || null),
     birth: (id) => open("calf", id || null),
     log: (key, id) => open(key, id || null),
-    breeding: (b, damId) => setForm({ kind: "breeding", breeding: b || null, animalId: damId || null }),
+    breeding: (b, damId) => setForm({ kind: "breeding", before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id), breeding: b || null, animalId: damId || null }),
     remove: () => setForm({ kind: "remove" }),
     addAnimal: () => setLocal({ type: "addAnimal" }),
     editAnimal: (id) => setLocal({ type: "editAnimal", animalId: id }),
@@ -2972,7 +2977,7 @@ export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, 
       {f.kind === "preg_test" && <PregTestCowModal {...props} />}
       {["weight", "health", "note"].includes(f.kind) && <LogCowEntryModal {...props} action={f.kind} />}
       {f.kind === "remove" && <RemoveCowModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
-      {f.kind === "breeding" && <BreedingModal animals={hobby.animals || []} breeding={f.breeding} initialDamId={f.animalId} onClose={() => setForm(null)} onSave={saveBreeding} onDelete={deleteBreeding} addCalendarEvent={addCalendarEvent} />}
+      {f.kind === "breeding" && <BreedingModal animals={hobby.animals || []} breeding={f.breeding} initialDamId={f.animalId} onClose={closeForm} onSave={saveBreeding} onDelete={deleteBreeding} addCalendarEvent={addCalendarEvent} />}
       <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={COW_TALLY} noun="cattle" />
       {view && view.kind === "pedigree" && (
         <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />

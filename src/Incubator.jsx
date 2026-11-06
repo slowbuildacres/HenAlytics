@@ -6,6 +6,7 @@ import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): the rebuilt incubator screens reuse this file's forms.
 import { IncubatorToday, IncubatorHistory } from "./newlook/incubator/IncubatorScreens.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import { X, Edit3, Trash2, Plus, Calendar } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { groupDigits } from "./numFmt.js";
@@ -174,7 +175,7 @@ function RunModal({ run, hobbyId, update, onClose }) {
       notes: run?.notes || "",
       created: run?.created || Date.now(),
     };
-    update(d => {
+    undoable(update, run ? "Saved changes" : `Started ${n} ${birdType.toLowerCase()} eggs`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.runs)) h.runs = [];
@@ -489,7 +490,7 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
     // to leave the heated brooder and move to outdoor coop. Stored alongside
     // other incubator calendar events using the existing `type` field convention.
     const readyDate = addDays(startDate, 42);
-    update(d => {
+    undoable(update, `Moved ${count} chicks to the brooder`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
@@ -589,7 +590,7 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
     // heated brooder. Same convention as the hatch-created flow.
     const readyDate = addDays(startDate, 42);
     const batchName = name.trim() || `${birdType} chicks`;
-    update(d => {
+    undoable(update, `Added ${count} chicks to the brooder`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];

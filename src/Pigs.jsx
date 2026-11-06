@@ -13,7 +13,7 @@ import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
 import { SPECIES } from "./newlook/livestock/livestockData.js";
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
-import { showUndo } from "./newlook/UndoBar.jsx";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
@@ -1523,6 +1523,10 @@ export default function PigsPage({hobby,data,update,user,setModal:setAppModal}){
 const PIG_UNDO = { fed: "feeding", bred: "breeding", litter: "farrowing", weight: "weight", health: "health log", note: "note" };
 const PIG_TALLY = ["Sow", "Boar", "Barrow", "Gilt", "Piglet", "Unsexed"];
 
+// Forms that save something other than a log (a breeding record, a
+// shearing, an animal): what the Undo bar says.
+const FORM_SAVED = { breeding: "Saved breeding", shearing: "Saved shearing", animal: "Saved", addAnimal: "Saved", herd: "Saved herd count" };
+
 export function PigsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
   const sp = SPECIES.pigs;
   const entries = data.entries[hobby.id] || [];
@@ -1538,24 +1542,19 @@ export function PigsNewLook({ hobby, data, update, user, setModal: setAppModal, 
   const [undoCheck, setUndoCheck] = useState(null);
   useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
 
-  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)) }); };
-  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck({ before: form.before, snap: form.snap, kind: form.kind }); setForm(null); };
   useEffect(() => {
     if (!undoCheck) return;
-    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    const added = entries.filter((e) => e && !undoCheck.before.has(e.id));
     setUndoCheck(null);
+    if (!added.length) { if (FORM_SAVED[undoCheck.kind]) offerUndoSince(update, undoCheck.snap, data, FORM_SAVED[undoCheck.kind]); return; }
     if (!added.length || !PIG_UNDO[added[0].action]) return;
     const ids = new Set(added.map((e) => e.id));
     const e = added[0];
     const msg = e.action === "litter" ? `Saved ${Number(e.pigletsAlive) || 0} piglets${e.animalName ? ` for ${e.animalName}` : ""}`
       : `Saved ${PIG_UNDO[e.action]}${e.animalName && added.length === 1 ? ` for ${e.animalName}` : added.length > 1 ? ` for ${added.length} pigs` : ""}`;
-    showUndo(msg, () => update((d) => {
-      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id));
-      if (e.action === "bred" && Array.isArray(d.calendarEvents)) {
-        d.calendarEvents = d.calendarEvents.filter((c) => !(c.date === e.farrowDate && String(c.title || "").includes("farrow expected")));
-      }
-      return d;
-    }));
+    offerUndoSince(update, undoCheck.snap, data, msg);
   }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openProfile = (id) => { setProfileId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} };

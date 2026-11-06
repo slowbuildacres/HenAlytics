@@ -70,7 +70,7 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
       <div style={{ textAlign: "center", padding: "28px 12px", display: "flex", flexDirection: "column", alignItems: "center", gap: 10 }}>
         <div style={{ width: 96, height: 96, borderRadius: 48, background: nl.yolkTint, display: "flex", alignItems: "center", justifyContent: "center" }}><HobbyGlyph type={sp.key} size={48} /></div>
         <h2 style={{ margin: "6px 0 0", fontFamily: font.display, fontWeight: 400, fontSize: 26 }}>Add your first {sp.noun}</h2>
-        <p style={{ margin: 0, fontSize: 15, color: nl.soft, lineHeight: 1.45 }}>Add each {sp.noun} by name to track milk, {sp.birthNoun} and health. Just want a head count? Count the herd instead.</p>
+        <p style={{ margin: 0, fontSize: 15, color: nl.soft, lineHeight: 1.45 }}>Add each {sp.noun} by name to track {(sp.milkFor ? sp.milkFor(hobby) : sp.milk !== false) ? "milk" : "weights"}, {sp.birthNoun} and health. Just want a head count? Count the herd instead.</p>
         <Button onClick={act.addAnimal} style={{ width: "100%", marginTop: 8 }}>Add a {sp.noun}</Button>
         <Button kind="quiet" onClick={act.herdCount} style={{ width: "100%" }}>Count the herd instead</Button>
       </div>

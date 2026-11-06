@@ -242,7 +242,7 @@ export default function EggToday({ hobby, data, update, setModal, onOpenJournal 
           {BUILT_INS.filter(([a]) => !hidden.includes(a)).map(([a, label], i) => {
             const Icon = ACTION_ICONS[a] || NotebookPen;
             return <Row key={a} first={i === 0} icon={<Icon size={20} strokeWidth={1.8} />} title={label} chevron
-              onClick={() => { setMoreOpen(false); if (a === "used_eggs" && !(hobby.eggInventory && hobby.eggInventory.enabled)) setModal({ type: "eggInventorySetup", hobbyId: hobby.id }); else log(a); }} />;
+              onClick={() => { setMoreOpen(false); if (a === "used_eggs" && !hobby.eggInventory) setModal({ type: "eggInventorySetup", hobbyId: hobby.id, next: "used_eggs" }); else log(a); }} />;
           })}
           {custom.map((c) => <Row key={c.id} icon={<NotebookPen size={20} strokeWidth={1.8} />} title={c.label} chevron
             onClick={() => { setMoreOpen(false); setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }); }} />)}

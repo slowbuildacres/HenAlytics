@@ -161,7 +161,7 @@ import GardenMapModal from "./GardenMap.jsx";
 import PlantScannerModal from "./PlantScannerModal.jsx";
 import RabbitsPage, { RabbitsAnalytics, RabbitsNewLook } from "./Rabbits.jsx";
 import { RabbitStats } from "./newlook/rabbits/RabbitScreens.jsx";
-import SalesPage, { AddExpenseModal, expandRecurringExpenses, YearEndReportModal } from "./Sales.jsx";
+import SalesPage, { AddExpenseModal, expandRecurringExpenses, YearEndReportModal, shareOrDownload } from "./Sales.jsx";
 import {
   PANTRY_CATEGORIES, PANTRY_CATEGORY_LABELS, INGREDIENT_DENSITIES,
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
@@ -389,6 +389,9 @@ function migrateData(data) {
   if (!data || typeof data !== "object") return defaultData();
   if (!Array.isArray(data.hobbies)) data.hobbies = defaultData().hobbies;
   if (!data.entries || typeof data.entries !== "object") data.entries = {};
+  // Fix record shapes old versions, sync or imports may have left (dates
+  // that aren't "YYYY-MM-DD", lists that became null, empty slots).
+  tidyData(data);
   // Celebrations (Suggestions.jsx) — ensure state exists and back-mark any
   // already-earned milestones so they never fire retroactively.
   migrateCelebrationState(data);
@@ -1465,8 +1468,24 @@ function exportAllAsCsv(data) {
     });
   });
 
+  // And data.expenses[]: costs logged with "Log an expense" (feed bags,
+  // equipment, vet bills). They live outside data.entries too.
+  (data.expenses || []).forEach((x) => {
+    if (!x) return;
+    const sourceHobby = x.hobbyId ? hobbies.find(h => h.id === x.hobbyId) : null;
+    rows.push({
+      ...x,
+      action: "expense",
+      hobbyName: sourceHobby ? sourceHobby.name : "General",
+      hobbyType: sourceHobby ? sourceHobby.type : "",
+      cost: x.amount,
+      item: x.description || x.item || "",
+      archived: false,
+    });
+  });
+
   // Sort newest first
-  rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  rows.sort((a, b) => (String(b.date || "")).localeCompare(String(a.date || "")));
 
   // Define columns. Order matters — most useful first. Sales-relevant columns
   // (revenue/price/buyer/totals) sit near the start so they're visible
@@ -1481,11 +1500,11 @@ function exportAllAsCsv(data) {
     "pricePerUnit", "pricePerLb", "pricePerDozen", "flatPrice",
     "costPerUnit", "cost", "totalRevenue", "totalCost",
     // entity / who bought / what was sold
-    "buyer", "crop", "plant", "item", "saleForm", "saleType",
+    "buyer", "animalName", "crop", "plant", "item", "category", "saleForm", "saleType",
     "eggType", "eggPurpose", "eggTypeCustom",
     "honeyForm", "honeyContainer", "gardenUnit", "birdType",
     // measurements
-    "lbs", "gallons", "avgWeight", "avgWeightLbs", "cuft",
+    "lbs", "oz", "gallons", "weight", "avgWeight", "avgWeightLbs", "cuft",
     // events / context
     "cause", "issueType", "detail", "note",
     // weather (live entries only — sales don't have it)
@@ -1512,18 +1531,11 @@ function exportAllAsCsv(data) {
 
   const csv = [headerRow, ...bodyRows].join("\n");
 
-  // Download as file
+  // Phones: the share sheet (Save to Files, Drive, Mail…); computers: a download.
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
   const dateStr = localDateStr(new Date());
   const safeName = (data.homesteadName || "homestead").replace(/[^a-zA-Z0-9-_]/g, "_") || "homestead";
-  a.download = `${safeName}-export-${dateStr}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  shareOrDownload(blob, `${safeName}-export-${dateStr}.csv`, "Henalytics export");
 }
 
 // ============ UTIL ============
@@ -1703,6 +1715,8 @@ const fmtTractorDistance = (totalFeet) => {
 import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { useSupportProgress } from "./newlook/supportProgress.js";
+import { tidyData } from "./tidyData.js";
+import { friendlyError } from "./friendlyError.js";
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -3241,7 +3255,7 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
       await onSwitch(h.homesteadId);
       setOpen(false);
     } catch (e) {
-      setError(e.message || "Could not switch homestead");
+      setError(friendlyError(e, "Could not switch homestead"));
     } finally {
       // Always clear the switching flag — including on success. Previously
       // success left `switching` stuck true, so the FIRST switch worked but
@@ -5466,7 +5480,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
     if (h.type === "garden" && !h.currentSeason) { setModal({ type: "gardenNeedSeason" }); return; }
     if (a.onPage) { setPage(hobbyPage(h)); requestHobbyAction(h.id, a.key); }
     else if (a.modal === "gardenMore") setModal({ type: "gardenMore", hobbyId: h.id });
-    else if (a.key === "used_eggs" && !(h.eggInventory && h.eggInventory.enabled)) setModal({ type: "eggInventorySetup", hobbyId: h.id });
+    else if (a.key === "used_eggs" && !h.eggInventory) setModal({ type: "eggInventorySetup", hobbyId: h.id, next: "used_eggs" });
     else setModal({ type: "log", action: a.key, hobbyIdOverride: h.id });
   };
   const nlFeedAlerts = newLook ? data.hobbies
@@ -8112,8 +8126,8 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
               // Use Eggs doubles as the discovery point for inventory
               // tracking: first tap (tracking off) opens setup, after
               // that it opens the normal used_eggs log.
-              if (t.action === "used_eggs" && !(hobby.eggInventory && hobby.eggInventory.enabled)) {
-                setModal({ type: "eggInventorySetup", hobbyId: hobby.id });
+              if (t.action === "used_eggs" && !hobby.eggInventory) {
+                setModal({ type: "eggInventorySetup", hobbyId: hobby.id, next: "used_eggs" });
               } else {
                 setModal({ type: "log", action: t.action });
               }
@@ -13916,7 +13930,10 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "eggInventorySetup") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <EggInventorySetupModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} sales={data.sales || []} update={update} onClose={close} />;
+    // Opened from Use Eggs: after setting up (or skipping), go on to the
+    // Use Eggs form instead of closing, so the eggs still get logged.
+    const onContinue = modal.next ? () => setModal({ type: "log", action: modal.next, hobbyIdOverride: targetHobby.id }) : null;
+    return <EggInventorySetupModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} sales={data.sales || []} update={update} onClose={close} onContinue={onContinue} />;
   }
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -14006,6 +14023,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
       ? (data.hobbies.find((h) => h.id === modal.hobbyIdOverride) || hobby)
       : hobby;
     return <LogModal hobby={targetHobby} action={modal.action} customLogId={modal.customLogId} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry}
+      onEggCount={() => setModal({ type: "eggInventorySetup", hobbyId: targetHobby.id })}
       onPlanted={(plantName) => {
         const gh = data.hobbies.find((h) => h.type === "garden");
         if (gh && matchingPackets(gh.seeds, plantName).length) setTimeout(() => setModal({ type: "seedUse", plantName }), 0);
@@ -16897,7 +16915,7 @@ function LocationModal({ data, update, onClose }) {
       });
       onClose();
     } catch (e) {
-      setError(e.message || "Could not get location.");
+      setError(friendlyError(e, "Could not get location."));
     } finally {
       setBusy(false);
     }
@@ -16914,7 +16932,7 @@ function LocationModal({ data, update, onClose }) {
         setSearchResults(result);
       }
     } catch (e) {
-      setError(e.message || "Search failed.");
+      setError(friendlyError(e, "Search failed."));
     } finally {
       setBusy(false);
     }
@@ -17616,9 +17634,9 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       // so we can show a friendly explanation instead of a generic red error box.
       if (e && e.kind === 'rate_limit') {
         setIsRateLimit(true);
-        setError(e.message || "We've hit our daily email send limit. Please try again tomorrow or use the email fallback below.");
+        setError(friendlyError(e, "We've hit our daily email send limit. Please try again tomorrow or use the email fallback below."));
       } else {
-        setError(e.message || "Could not send. Please try the fallback options below.");
+        setError(friendlyError(e, "Could not send. Please try the fallback options below."));
       }
     } finally {
       setSending(false);
@@ -20270,7 +20288,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
 // Turn eggs-on-hand tracking on/off and recount. The starting count is the
 // ground truth: on-hand = startCount ± everything logged after the moment
 // you saved it (see computeEggsOnHand). Recounting just re-anchors.
-function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
+function EggInventorySetupModal({ hobby, entries, sales, update, onClose, onContinue = null }) {
   const inv = hobby.eggInventory;
   const enabled = !!(inv && inv.enabled);
   const [count, setCount] = useState("");
@@ -20290,7 +20308,17 @@ function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
       };
       return d;
     });
-    onClose();
+    if (onContinue) onContinue(); else onClose();
+  };
+  // "Not now": remember the choice so Use Eggs goes straight to its form
+  // from now on (tracking can still be turned on from the egg screen).
+  const skip = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h && !h.eggInventory) h.eggInventory = { enabled: false, skipped: true };
+      return d;
+    });
+    if (onContinue) onContinue(); else onClose();
   };
 
   const turnOff = () => {
@@ -20322,6 +20350,9 @@ function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
         <Btn variant="accent" onClick={saveCount} disabled={count === "" || isNaN(parseInt(count, 10)) || parseInt(count, 10) < 0} style={{ flex: 1 }}>
           {enabled ? "Save recount" : "Start tracking"}
         </Btn>
+        {!enabled && onContinue && (
+          <Btn variant="ghost" onClick={skip}>Not now, just log</Btn>
+        )}
         {enabled && (
           <Btn variant="ghost" onClick={turnOff}>Turn off</Btn>
         )}
@@ -21397,7 +21428,7 @@ function undoMessage(action, f, hobby) {
   return `Saved ${words[action] ? "the " + words[action] : "it"}`;
 }
 
-function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry, onPlanted }) {
+function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry, onPlanted, onEggCount }) {
   const isEdit = !!existingEntry;
 
   // Push 4b — multi-batch support for meat chickens. Active batches live in
@@ -22602,7 +22633,16 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             // is on, so folks who just want disposition stats aren't shown
             // an on-hand number they never set up.
             const inv = hobby && hobby.eggInventory;
-            if (!inv || !inv.enabled) return null;
+            if (!inv || !inv.enabled) {
+              // Tracking is off (skipped or turned off): offer it here, the
+              // one place Use Eggs people always pass through.
+              if (isEdit || !onEggCount) return null;
+              return (
+                <button type="button" onClick={onEggCount} style={{ display: "block", margin: "0 auto 14px", border: "none", background: "none", color: palette.leaf, font: "inherit", fontSize: 13, fontWeight: 600, textDecoration: "underline", cursor: "pointer", minHeight: 36 }}>
+                  Keep a count of eggs on hand
+                </button>
+              );
+            }
             const onHand = computeEggsOnHand(hobby, data.entries[hobby.id] || [], data.sales || []);
             const using = Number(fields.count) || 0;
             // On edit, the existing entry is already subtracted from onHand —

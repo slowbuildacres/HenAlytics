@@ -24,6 +24,7 @@ import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus a
 import { X } from "lucide-react";
 import { fmtMoney, fmtWeight } from "./units.js";
 import { groupDigits } from "./numFmt.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -289,7 +290,9 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
   const t = huntingTotals(hobby, (d) => (d || "").startsWith(year));
   const openTags = tags.filter(x => tagStatus(x).label === "Open");
 
-  const mutate = (fn) => update(d => {
+  // `message` adds an Undo bar that puts back everything the save changed
+  // (the harvest and the tag it filled).
+  const mutate = (fn, message) => (message ? undoable(update, message) : update)(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     if (!h) return d;
     ["harvests", "tags", "gear"].forEach(k => { if (!Array.isArray(h[k])) h[k] = []; });
@@ -310,12 +313,12 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
       if (tg) tg.filledHarvestId = rec.id;
     }
     upsert(h.harvests, rec);
-  });
+  }, `Saved ${[rec.species, "harvest"].filter(Boolean).join(" ")}`);
   const deleteHarvest = (id) => mutate(h => {
     h.harvests = h.harvests.filter(x => x.id !== id);
     h.tags.forEach(tg => { if (tg.filledHarvestId === id) tg.filledHarvestId = null; });
-  });
-  const saveTag = (rec) => mutate(h => upsert(h.tags, rec));
+  }, "Deleted harvest");
+  const saveTag = (rec) => mutate(h => upsert(h.tags, rec), "Saved tag");
   const deleteTag = (id) => mutate(h => {
     h.tags = h.tags.filter(x => x.id !== id);
     h.harvests.forEach(hv => { if (hv.tagId === id) hv.tagId = null; });

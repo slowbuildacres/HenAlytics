@@ -5,6 +5,9 @@ import { supabase } from "./supabase";
 import { apiUrl } from "./apiBase.js";
 import { IAP_PRODUCTS, SCAN_PACK_PRODUCTS } from "./IapManager.js";
 import { purchaseProduct, restorePurchases } from "./IapManager.js";
+import { friendlyError } from "./friendlyError.js";
+const scanError = (e, fallback) => friendlyError(e, fallback, "Sign in to use the plant scanner. It's free, and your scans are saved to your account.");
+
 
 // ============================================================================
 // PLANT SCANNER MODAL
@@ -185,7 +188,7 @@ export default function PlantScannerModal({ onClose }) {
       setQuotaStatus(json);
       return json;
     } catch (e) {
-      setError(e.message || "Could not load scan status");
+      setError(scanError(e, "Could not load scan status"));
     } finally {
       setLoadingQuota(false);
     }
@@ -207,7 +210,7 @@ export default function PlantScannerModal({ onClose }) {
         webInputRef.current?.click();
       }
     } catch (e) {
-      setError(e.message || "Could not capture photo");
+      setError(scanError(e, "Could not capture photo"));
     }
   };
 
@@ -224,7 +227,7 @@ export default function PlantScannerModal({ onClose }) {
         webLibraryInputRef.current?.click();
       }
     } catch (e) {
-      setError(e.message || "Could not pick photo");
+      setError(scanError(e, "Could not pick photo"));
     }
   };
 
@@ -236,7 +239,7 @@ export default function PlantScannerModal({ onClose }) {
       setPhotoBase64(photo.base64);
       setPhotoDataUrl(photo.dataUrl);
     } catch (err) {
-      setError(err.message || "Could not read photo");
+      setError(scanError(err, "Could not read photo"));
     }
   };
 
@@ -289,7 +292,7 @@ export default function PlantScannerModal({ onClose }) {
       setView("result");
       await refreshQuota();
     } catch (e) {
-      setError(e.message || "Scan failed");
+      setError(scanError(e, "Scan failed"));
     } finally {
       setScanning(false);
     }
@@ -343,7 +346,7 @@ export default function PlantScannerModal({ onClose }) {
         window.location.href = url;
       }
     } catch (e) {
-      setError(e.message || "Purchase failed");
+      setError(scanError(e, "Purchase failed"));
     } finally {
       setPurchasing(false);
     }
@@ -358,7 +361,7 @@ export default function PlantScannerModal({ onClose }) {
       if (!result.success) throw new Error(result.error || "Restore failed");
       await refreshQuota();
     } catch (e) {
-      setError(e.message || "Restore failed");
+      setError(scanError(e, "Restore failed"));
     } finally {
       setPurchasing(false);
     }

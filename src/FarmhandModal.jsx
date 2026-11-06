@@ -1,6 +1,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle, MailCheck, MailX } from 'lucide-react';
+import { friendlyError } from "./friendlyError.js";
 import {
   listMembers, listPendingInvites, createInvite, cancelInvite,
   removeMember, sendFarmhandInvite, getActiveHomesteadId,
@@ -37,7 +38,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       setMembers(m);
       setInvites(i);
     } catch (e) {
-      setError(e.message || 'Could not load members');
+      setError(friendlyError(e, 'Could not load members'));
     } finally {
       setLoading(false);
     }
@@ -68,7 +69,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       setInviteEmail('');
       refresh();
     } catch (e) {
-      setError(e.message || 'Could not send invite');
+      setError(friendlyError(e, 'Could not send invite'));
     } finally {
       setBusy(false);
     }
@@ -81,7 +82,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       await removeMember(getActiveHomesteadId(), member.user_id);
       refresh();
     } catch (e) {
-      setError(e.message || 'Could not remove member');
+      setError(friendlyError(e, 'Could not remove member'));
     } finally {
       setBusy(false);
     }
@@ -93,7 +94,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       await cancelInvite(invite.id);
       refresh();
     } catch (e) {
-      setError(e.message || 'Could not cancel invite');
+      setError(friendlyError(e, 'Could not cancel invite'));
     } finally {
       setBusy(false);
     }
@@ -117,7 +118,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
         ? "Chore emails turned ON for this member"
         : "Chore emails turned OFF for this member");
     } catch (e) {
-      setError(e.message || 'Could not update preference');
+      setError(friendlyError(e, 'Could not update preference'));
     } finally {
       setBusy(false);
     }

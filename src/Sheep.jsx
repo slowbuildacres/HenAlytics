@@ -30,7 +30,7 @@ import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/lives
 import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
 import { Sheet as NlSheet, Card as NlCard, Row as NlRow, Chip as NlChip, CardHeader as NlCardHeader } from "./newlook/ui.jsx";
-import { showUndo } from "./newlook/UndoBar.jsx";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
@@ -2025,6 +2025,10 @@ export function SheepAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ allEnt
 const SHEEP_UNDO = { milk: "milk", fed: "feeding", weight: "weight", health: "health log", note: "note" };
 const SHEEP_TALLY = ["Ewe", "Ram", "Lamb", "Wether", "Unsexed"];
 
+// Forms that save something other than a log (a breeding record, a
+// shearing, an animal): what the Undo bar says.
+const FORM_SAVED = { breeding: "Saved breeding", shearing: "Saved shearing", shear: "Saved shearing", animal: "Saved", addAnimal: "Saved", herd: "Saved herd count" };
+
 export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJournal, onOpenCalendar }) {
   const sp = SPECIES.sheep;
   const entries = (data.entries && data.entries[hobby.id]) || [];
@@ -2041,18 +2045,19 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
   const [undoCheck, setUndoCheck] = useState(null);
   useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
 
-  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: new Set(entries.map((e) => e.id)) }); };
-  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck({ before: form.before, snap: form.snap, kind: form.kind }); setForm(null); };
   useEffect(() => {
     if (!undoCheck) return;
-    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    const added = entries.filter((e) => e && !undoCheck.before.has(e.id));
     setUndoCheck(null);
+    if (!added.length) { if (FORM_SAVED[undoCheck.kind]) offerUndoSince(update, undoCheck.snap, data, FORM_SAVED[undoCheck.kind]); return; }
     if (!added.length || !SHEEP_UNDO[added[0].action]) return;
     const ids = new Set(added.map((e) => e.id));
     const e = added[0];
     const who = e.animalName || (animals.find((a) => a.id === e.animalId) || {}).name;
     const msg = e.action === "milk" ? `Saved ${milkText(e.oz)}${who ? ` from ${who}` : ""}` : `Saved ${SHEEP_UNDO[e.action]}${who ? ` for ${who}` : ""}`;
-    showUndo(msg, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+    offerUndoSince(update, undoCheck.snap, data, msg);
   }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = (fn) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) fn(h, d); return d; });
@@ -2069,10 +2074,10 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
     weight: (id) => open("weight", { animalId: id || null }),
     health: (id) => open("health", { animalId: id || null }),
     note: (id) => open("note", { animalId: id || null }),
-    breeding: (b, damId) => setForm({ kind: "breeding", breeding: raw(b), animalId: damId || null }),
+    breeding: (b, damId) => setForm({ kind: "breeding", before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id), breeding: raw(b), animalId: damId || null }),
     // Lambing is recorded on the ewe's breeding: open it (or a new one).
-    birth: (id) => { const b = (hobby.breedings || []).filter((x) => x && (x.eweId || x.damId) === id && !(x.lambedDate || x.birthedDate)).sort((x, y) => ((x.breedDate || "") < (y.breedDate || "") ? 1 : -1))[0]; setForm({ kind: "breeding", breeding: b || null, animalId: id || null }); },
-    log: (key) => { if (key === "shear") setForm({ kind: "shear" }); },
+    birth: (id) => { const b = (hobby.breedings || []).filter((x) => x && (x.eweId || x.damId) === id && !(x.lambedDate || x.birthedDate)).sort((x, y) => ((x.breedDate || "") < (y.breedDate || "") ? 1 : -1))[0]; setForm({ kind: "breeding", before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id), breeding: b || null, animalId: id || null }); },
+    log: (key) => { if (key === "shear") setForm({ kind: "shear", before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id) }); },
     remove: () => setRemoveOpen(true),
     addAnimal: () => setForm({ kind: "animal", animal: null }),
     editAnimal: (id) => setForm({ kind: "animal", animal: animals.find((a) => a.id === id) || null }),
@@ -2112,8 +2117,8 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
       {f.kind === "animal" && <AnimalModal animal={f.animal} animals={animals} paddocks={hobby.paddocks || []} onClose={() => setForm(null)} onSave={upsert("animals")} onDelete={remove("animals")} update={update} user={user} hobbyId={hobby.id} />}
       {f.kind === "paddock" && <PaddockModal paddock={f.paddock} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
       {f.kind === "move" && f.animal && <MoveSheepModal animal={f.animal} paddocks={hobby.paddocks || []} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
-      {f.kind === "breeding" && <BreedingModal animals={animals} breeding={f.breeding} initialDamId={f.animalId} onClose={() => setForm(null)} onSave={upsert("breedings")} onDelete={remove("breedings")} calendarEvents={data.calendarEvents} addCalendarEvent={addCalendarEvent} />}
-      {f.kind === "shear" && <ShearingModal animals={animals} shearing={null} onClose={() => setForm(null)} onSave={upsert("shearings")} onDelete={remove("shearings")} />}
+      {f.kind === "breeding" && <BreedingModal animals={animals} breeding={f.breeding} initialDamId={f.animalId} onClose={closeForm} onSave={upsert("breedings")} onDelete={remove("breedings")} calendarEvents={data.calendarEvents} addCalendarEvent={addCalendarEvent} />}
+      {f.kind === "shear" && <ShearingModal animals={animals} shearing={null} onClose={closeForm} onSave={upsert("shearings")} onDelete={remove("shearings")} />}
       {f.kind === "milk" && <MilkLogModal animals={animals} initialAnimalId={f.animalId} onSave={addEntry} onClose={closeForm} />}
       {f.kind === "fed" && <FedLogModal onSave={addEntry} onClose={closeForm} />}
       {f.kind === "butcher" && <ButcherLogModal animals={animals} onSave={({ entry, animalId }) => { addEntry(entry); archive(animalId, "butchered"); }} onClose={() => setForm(null)} />}

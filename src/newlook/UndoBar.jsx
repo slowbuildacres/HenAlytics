@@ -103,6 +103,42 @@ export function undoable(update, message) {
   };
 }
 
+// For forms that save on their own (the older livestock forms): take a
+// snapshot when the form opens, then offer Undo for what changed by the time
+// it closes. Limited to one hobby, its logs and the calendar, so a farmhand's
+// sync landing meanwhile isn't touched. Undo puts back everything the form
+// did: the log, a breeding record, the "next heat" reminder it added.
+export function undoSnapshot(data, hobbyId) {
+  return {
+    hobbyId,
+    hobbies: clone(((data && data.hobbies) || []).filter((h) => h && h.id === hobbyId)),
+    entries: { [hobbyId]: clone(data && data.entries ? data.entries[hobbyId] : undefined) },
+    calendarEvents: clone(data ? data.calendarEvents : undefined),
+  };
+}
+export function offerUndoSince(update, snap, data, message) {
+  if (!snap) return false;
+  const now = {
+    hobbies: ((data && data.hobbies) || []).filter((h) => h && h.id === snap.hobbyId),
+    entries: { [snap.hobbyId]: data && data.entries ? data.entries[snap.hobbyId] : undefined },
+    calendarEvents: data ? data.calendarEvents : undefined,
+  };
+  let saved;
+  try { saved = diffSave(snap, now); } catch (_) { return false; }
+  if (!saved.hobbies.length && !saved.entries.length && !saved.keys.length) return false;
+  // Calendar: drop only the reminders this save added (others may have been
+  // added meanwhile), rather than putting the whole list back.
+  const calKey = saved.keys.find((k) => k.key === "calendarEvents");
+  const added = calKey ? new Set((now.calendarEvents || []).map((e) => e && e.id).filter((id) => !(snap.calendarEvents || []).some((x) => x && x.id === id))) : null;
+  saved.keys = saved.keys.filter((k) => k.key !== "calendarEvents");
+  showUndo(message, () => update((d) => {
+    restoreSave(d, saved);
+    if (added && added.size && Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter((e) => !(e && added.has(e.id)));
+    return d;
+  }));
+  return true;
+}
+
 export function UndoHost() {
   const [item, setItem] = useState(null);
   const timer = useRef(null);

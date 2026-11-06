@@ -28,7 +28,7 @@ import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 // NEW_LOOK (3.0): the rebuilt horse screens reuse this file's forms.
 import { HorseToday, HorseHerd, HorseProfile } from "./newlook/horses/HorseScreens.jsx";
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
-import { showUndo } from "./newlook/UndoBar.jsx";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -1873,8 +1873,8 @@ export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab,
   const [undoCheck, setUndoCheck] = useState(null);
   useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
 
-  const snap = () => ({ entries: new Set(entries.map((e) => e.id)), ...Object.fromEntries(HORSE_LISTS.map((k) => [k, new Set((hobby[k] || []).map((r) => r.id))])) });
-  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: snap() }); };
+  const snap = (kind) => ({ kind, full: undoSnapshot(data, hobby.id), entries: new Set(entries.map((e) => e.id)), ...Object.fromEntries(HORSE_LISTS.map((k) => [k, new Set((hobby[k] || []).map((r) => r.id))])) });
+  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: snap(kind) }); };
   const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
   useEffect(() => {
     if (!undoCheck) return;
@@ -1887,14 +1887,13 @@ export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab,
       const r = added[0];
       const who = k === "rides" ? name(r.horseId) : (Array.isArray(r.horseIds) && r.horseIds.length > 1 ? `${r.horseIds.length} horses` : name((r.horseIds || [])[0] || r.horseId));
       const what = k === "rides" ? `${Number(r.durationMinutes) || 0} min ride` : k === "deworming" ? "dewormer" : `${k} visit`;
-      showUndo(`Saved ${what}${who ? ` for ${who}` : ""}`, () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h[k] = (h[k] || []).filter((x) => !ids.has(x.id)); return d; }));
+      void ids;
+      offerUndoSince(update, b.full, data, `Saved ${what}${who ? ` for ${who}` : ""}`);
       return;
     }
     const added = entries.filter((e) => e && !b.entries.has(e.id) && e.action === "fed");
-    if (added.length) {
-      const ids = new Set(added.map((e) => e.id));
-      showUndo("Saved feeding", () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
-    }
+    if (added.length) { offerUndoSince(update, b.full, data, "Saved feeding"); return; }
+    if (b.kind === "breeding") offerUndoSince(update, b.full, data, "Saved breeding");
   }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const save = (key) => (rec) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; if (!Array.isArray(h[key])) h[key] = []; const i = h[key].findIndex((x) => x.id === rec.id); if (i >= 0) h[key][i] = rec; else h[key].push(rec); return d; });
@@ -1906,7 +1905,7 @@ export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab,
     editRide: (r) => open("ride", { ride: r }),
     care: (kind, id) => open("care", { careKind: kind, horseId: id || null }),
     fed: () => open("fed"),
-    breeding: (b, mareId) => setForm({ kind: "breeding", breeding: b || null, horseId: mareId || null }),
+    breeding: (b, mareId) => setForm({ kind: "breeding", breeding: b || null, horseId: mareId || null, before: snap("breeding") }),
     sale: () => setForm({ kind: "sale" }),
     death: () => setForm({ kind: "death" }),
     addHorse: () => setForm({ kind: "horse", horse: null }),
@@ -1935,7 +1934,7 @@ export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab,
       {f.kind === "ride" && <RideModal horses={horses} ride={f.ride || null} initialHorseId={f.horseId} onSave={save("rides")} onDelete={del("rides")} onClose={closeForm} />}
       {f.kind === "care" && <CareLogModal kind={f.careKind} horses={horses} log={null} initialHorseId={f.horseId} onSave={(k, rec) => save(k)(rec)} onDelete={(k, id) => del(k)(id)} onClose={closeForm} />}
       {f.kind === "fed" && <HorseFeedModal onClose={closeForm} onSave={(payload) => update((d) => { d.entries = d.entries || {}; d.entries[hobby.id] = d.entries[hobby.id] || []; d.entries[hobby.id].push(payload.entry); return d; })} />}
-      {f.kind === "breeding" && <BreedingModal horses={horses} breeding={f.breeding} initialMareId={f.horseId} onClose={() => setForm(null)} onSave={save("breedings")} onDelete={del("breedings")} calendarEvents={data.calendarEvents || []} addCalendarEvent={addCalendarEvent} />}
+      {f.kind === "breeding" && <BreedingModal horses={horses} breeding={f.breeding} initialMareId={f.horseId} onClose={closeForm} onSave={save("breedings")} onDelete={del("breedings")} calendarEvents={data.calendarEvents || []} addCalendarEvent={addCalendarEvent} />}
       {f.kind === "sale" && <HorseSaleModal horse={null} horses={horses} customers={data.customers || []} onClose={() => setForm(null)}
         onSave={(payload) => { update((d) => { archive(d, payload); d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData); return d; }); setForm(null); }} />}
       {f.kind === "death" && <HorseDeathModal horse={null} horses={horses} onClose={() => setForm(null)}
