@@ -33,6 +33,7 @@ import { Sheet as NlSheet, Card as NlCard, Row as NlRow, Chip as NlChip, CardHea
 import { showUndo } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
@@ -129,7 +130,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );

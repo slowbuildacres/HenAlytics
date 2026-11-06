@@ -98,7 +98,7 @@ import LookScreen from "./newlook/LookScreen.jsx";
 import ImportScreen from "./newlook/importer/ImportScreen.jsx";
 import { ProjectsHome, ProjectRecord, ProjectForm, SectionSheet, ProjectLogSheet, PdfGuide, AetSummary, InfoSheet } from "./newlook/projects/ProjectScreens.jsx";
 import { projectsOf } from "./newlook/projects/projectData.js";
-import { GraduationCap } from "lucide-react";
+import { GraduationCap, Milk as MilkIcon, Scale as ScaleIcon, Baby as BabyIcon, Syringe as SyringeIcon, Flame as FlameIcon, Droplets as DropletsIcon } from "lucide-react";
 import { MonthlyRecapViewer, recapMonthKey, monthTeaser, monthHasStory, monthName } from "./newlook/MonthlyRecap.jsx";
 import NavBar from "./newlook/NavBar.jsx";
 import LogPicker from "./newlook/LogPicker.jsx";
@@ -190,7 +190,7 @@ import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.j
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
-import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
+import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, chartPeriodRows, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
 import BakingPage, { BakingAnalytics, bakingStats } from "./Baking.jsx";
 import CanningPage, { CanningAnalytics, canningStats } from "./Canning.jsx";
 import { PantryStatsPage, pantryNew } from "./newlook/pantry/PantryScreens.jsx";
@@ -1701,6 +1701,7 @@ const fmtTractorDistance = (totalFeet) => {
 // data.units.
 // ============================================================================
 import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -2919,7 +2920,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
         fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1,
         whiteSpace: "normal", wordBreak: "break-word",
       }}>
-        {value}
+        {groupDigits(value)}
       </div>
       {sub && (
         <div style={{
@@ -7870,7 +7871,7 @@ function JournalPage({ data, update, setModal }) {
               active={hobbyFilter === h.id}
               onClick={() => setHobbyFilter(h.id)}
             >
-              {h.name}
+              <span style={{ display: "block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={cleanName(h.name)}>{cleanName(h.name)}</span>
             </PillButton>
           ))}
         </div>
@@ -7967,8 +7968,9 @@ function JournalPage({ data, update, setModal }) {
                           marginBottom: 3,
                           marginLeft: 2,
                           fontWeight: 600,
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                         }}>
-                          {hobby.name}
+                          {cleanName(hobby.name)}
                         </div>
                       )}
                       <ActivityRow
@@ -11701,12 +11703,23 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     death: "Death reported", note: "Note", butcher: "Butchered",
     sold_eggs: "Eggs sold", used_eggs: "Eggs used", infrastructure: "Infrastructure",
     move_tractor: "Moved chicken tractor",
+    // Logs from the other hobbies (the Journal lists every hobby here).
+    fertilized: "Fertilized", milk: "Milked", weight: "Weighed", sale: "Sold", use: "Used",
+    litter: "Litter", kid: "Kidding", calf: "Calving", hatched: "Hatched", bred: "Bred",
+    heat: "In heat", preg_test: "Pregnancy check", ai: "AI breeding", broody: "Broody",
+    treatment: "Treatment", inspect: "Hive inspection", harvest: "Harvest", feed: "Fed",
+    varroa: "Mite check", swarm: "Swarm", split: "Hive split", spring_buildup: "Spring buildup",
+    winter_prep: "Winter prep", tap_set: "Taps set", sap_collected: "Sap collected",
+    boil: "Boil", supplies: "Supplies", restock: "Restocked", more: "More",
   };
   const icons = {
     watered: Droplet, fertilized: Leaf, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
     fed: Sun, free_range: Bird, eggs: Egg, eggs_laid: Egg, bedding: Archive, death: Skull,
     butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, used_eggs: Egg, infrastructure: Hammer,
     move_tractor: Truck,
+    milk: MilkIcon, weight: ScaleIcon, sale: DollarSign, litter: BabyIcon, kid: BabyIcon, calf: BabyIcon,
+    hatched: Egg, treatment: SyringeIcon, varroa: SyringeIcon, boil: FlameIcon, sap_collected: DropletsIcon,
+    feed: Sun, harvest: Scissors,
   };
   const Icon = icons[entry.action] || Edit3;
   let detail = "";
@@ -11819,8 +11832,23 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       break;
     }
     case "note": detail = entry.note ? (entry.note.length > 50 ? entry.note.slice(0, 50) + "…" : entry.note) : ""; break;
-    default: detail = entry.note || "";
+    default: {
+      // Other hobbies: the amounts their logs carry, then any note.
+      const parts = [];
+      if (entry.action === "milk" && (entry.oz != null || entry.gallons != null)) parts.push(fmtVolume(entry.oz != null ? Number(entry.oz) / 128 : Number(entry.gallons) || 0));
+      else if (entry.action === "boil" && Number(entry.syrupGal) > 0) parts.push(`${fmtVolume(Number(entry.syrupGal))} syrup`);
+      else if (entry.gallons != null && Number(entry.gallons) > 0) parts.push(fmtVolume(Number(entry.gallons)));
+      if (entry.action === "weight" && Number(entry.weight) > 0) parts.push(fmtWeight(Number(entry.weight)));
+      if (entry.action === "litter" && entry.kitsAlive != null) parts.push(`${entry.kitsAlive} kit${Number(entry.kitsAlive) === 1 ? "" : "s"}`);
+      else if (Number(entry.count) > 0) parts.push(groupDigits(Number(entry.count)));
+      if (Number(entry.cost) > 0) parts.push(fmtMoney(entry.cost));
+      if (entry.animalName) parts.unshift(entry.animalName);
+      const note = entry.note || entry.notes || "";
+      if (note) parts.push(note.length > 50 ? note.slice(0, 50) + "…" : note);
+      detail = parts.join(" · ");
+    }
   }
+  const prettyAction = (a) => { const t = String(a || "Log").replace(/_/g, " "); return t.charAt(0).toUpperCase() + t.slice(1); };
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
@@ -11833,7 +11861,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
         <Icon size={18} strokeWidth={1.8} color={palette.ink} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{entry.action === "custom" ? (entry.customLabel || "Custom log") : (labels[entry.action] || entry.action)}</div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{entry.action === "custom" ? (entry.customLabel || "Custom log") : (labels[entry.action] || prettyAction(entry.action))}</div>
         <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {fmtDate(entry.date)} {detail && "· " + detail}
         </div>
@@ -12788,29 +12816,18 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
   const tractorFeet = tractorMoves.reduce((s, e) => s + (Number(e.distanceFeet) || 0), 0);
   const tractorMoveCount = tractorMoves.length;
 
-  // egg trend — keep full ISO date so multi-year data sorts correctly
-  // and so we can render an axis label that includes year context for
-  // ranges that span more than one year (otherwise "01-04" from 2024 and
-  // 2025 collapse into a confusing duplicate).
+  // Egg trend: daily for short ranges, by week or month for long ones
+  // (chartPeriodRows), so years of logs stay readable on a phone.
   const byDate = {};
   eggs.forEach((e) => { byDate[e.date] = (byDate[e.date] || 0) + (Number(e.count) || 0); });
-  const eggTrendRaw = Object.entries(byDate)
-    .map(([date, count]) => ({ date, count }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  // Detect multi-year span — if spread, switch the axis label to YYYY-MM-DD
-  // (Recharts will still thin ticks via interval/minTickGap below). Single-
-  // year ranges stay on the friendlier MM-DD format.
-  const eggTrendYears = new Set(eggTrendRaw.map(p => (p.date || "").slice(0, 4)));
-  const eggTrendMultiYear = eggTrendYears.size > 1;
-  const eggTrend = eggTrendRaw.map(p => ({
-    date: eggTrendMultiYear ? p.date : (p.date || "").slice(5),
-    count: p.count,
-  }));
+  const eggPeriods = chartPeriodRows(Object.entries(byDate).map(([date, count]) => ({ date, count })));
+  const eggTrend = eggPeriods.rows;
+  const eggTrendBy = eggPeriods.by;
   // With 2+ flocks, the production chart gets a line per flock (+ total).
   const chartFlocks = (hobby.flocks || []).filter(f => f && !f.archived);
   const FLOCK_LINE_COLORS = [palette.leaf, palette.accent, "#4C8FD6", palette.feather || "#8B6F47", "#8E5BB5", "#2E9C8F"];
   const eggTrendByFlock = chartFlocks.length > 1
-    ? eggSeriesByFlock(eggs, chartFlocks).map(r => ({ ...r, date: eggTrendMultiYear ? r.date : (r.date || "").slice(5) }))
+    ? chartPeriodRows(eggSeriesByFlock(eggs, chartFlocks)).rows
     : null;
 
   return (
@@ -12977,7 +12994,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
                 {eggDelta && (
                   <div style={{ flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
                     <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Eggs vs. prior period</div>
-                    <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1.1 }}>{totalEggs} eggs</div>
+                    <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1.1 }}>{groupDigits(totalEggs)} eggs</div>
                     <div style={{ marginTop: 4 }}><StatTrend delta={eggDelta} palette={palette} fonts={pFonts} /></div>
                   </div>
                 )}
@@ -13000,7 +13017,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
       })()}
 
       {eggTrend.length > 0 && (
-        <ChartCard title={eggTrendByFlock ? "Egg production by flock" : "Egg production"}>
+        <ChartCard title={`${eggTrendByFlock ? "Egg production by flock" : "Egg production"}${eggTrendBy === "day" ? "" : eggTrendBy === "week" ? ", by week" : ", by month"}`}>
           {eggTrendByFlock && (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: palette.inkSoft, marginBottom: 6 }}>
               <span><span style={{ display: "inline-block", width: 10, height: 3, background: palette.yolk, verticalAlign: "middle", marginRight: 4 }} />All flocks</span>
@@ -13012,15 +13029,16 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
           <ResponsiveContainer width="100%" height={220}>
             <LineChart data={eggTrendByFlock || eggTrend} margin={{ top: 10, right: 18, left: 0, bottom: 5 }}>
               <XAxis
-                dataKey="date"
+                dataKey="label"
                 stroke={palette.inkSoft}
                 fontSize={11}
                 interval="preserveStartEnd"
-                minTickGap={40}
+                minTickGap={24}
                 tickMargin={6}
+                padding={{ left: 8, right: 8 }}
               />
-              <YAxis stroke={palette.inkSoft} fontSize={11} />
-              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} />
+              <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={(v) => Number(v).toLocaleString()} width={44} />
+              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} labelFormatter={(l) => (eggTrendBy === "week" ? `Week of ${l}` : l)} formatter={(v, n) => [Number(v).toLocaleString(), n === "count" ? "Eggs" : n]} />
               {eggTrendByFlock ? (
                 <>
                   <Line type="monotone" dataKey="total" name="All flocks" stroke={palette.yolk} strokeWidth={3} dot={false} />
@@ -13029,7 +13047,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
                   ))}
                 </>
               ) : (
-                <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+                <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={eggTrend.length > 40 ? false : { fill: palette.accent, r: 4 }} />
               )}
             </LineChart>
           </ResponsiveContainer>
@@ -13074,7 +13092,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
                       <div style={{ fontSize:12,color:palette.inkSoft }}>{fl.birdType} · {fl.birdCount} birds</div>
                     </div>
                     <div style={{ fontSize:18,fontWeight:700,color:palette.yolk,fontFamily:FONT_DISPLAY }}>
-                      {flockEggs}
+                      {flockEggs.toLocaleString()}
                       <span style={{ fontSize:11,color:palette.inkSoft,fontWeight:500,marginLeft:4 }}>eggs</span>
                     </div>
                   </div>
@@ -13487,7 +13505,7 @@ function PhotoLibraryPage({ data, user }) {
     return (
       <div>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 12px", color: palette.ink }}>
-          photo library
+          Photos
         </h2>
         <div style={{
           padding: 32, background: palette.card, border: `1.5px dashed ${palette.line}`,
@@ -13594,7 +13612,7 @@ function PhotoLibraryPage({ data, user }) {
   return (
     <div>
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 12px", color: palette.ink }}>
-        photo library
+        Photos
       </h2>
 
       {!anyPhotos && (
@@ -22522,7 +22540,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   padding: 10, background: palette.yolkSoft, borderRadius: 6,
                   fontSize: 13, color: palette.ink, marginBottom: 14, textAlign: "center",
                 }}>
-                  <strong>{totalEggs} eggs</strong> · Revenue: <strong>{fmtMoney(totalRevenue)}</strong>
+                  <strong>{groupDigits(totalEggs)} eggs</strong> · Revenue: <strong>{fmtMoney(totalRevenue)}</strong>
                   {price === 0 && (
                     <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
                       $0 sale — logged as donated / given away. Egg count still counts toward your stats.

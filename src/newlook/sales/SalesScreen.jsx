@@ -144,14 +144,32 @@ export default function SalesScreen({ data, update, setModal, onEmailCustomers, 
         <>
           <RangeChips options={WINDOWS} value={win} onPick={setWin} />
           <Card padded>
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
-              {[["Sold", st.totalRevenue, nl.ink], ["Spent", st.totalExpenses, nl.ink], ["Profit", st.netProfit, st.netProfit >= 0 ? nl.good : nl.alert]].map(([k, v, c]) => (
-                <div key={k}>
-                  <div style={{ fontSize: type.small, color: nl.soft }}>{k}</div>
-                  <div style={{ fontFamily: font.display, fontSize: 26, lineHeight: 1.1, color: c, overflowWrap: "anywhere" }}>{v < 0 ? "−" : ""}{money(Math.abs(v))}</div>
+            {(() => {
+              const cells = [["Sold", st.totalRevenue, nl.ink], ["Spent", st.totalExpenses, nl.ink], ["Profit", st.netProfit, st.netProfit >= 0 ? nl.good : nl.alert]]
+                .map(([k, v, c]) => [k, `${v < 0 ? "−" : ""}${money(Math.abs(v))}`, c]);
+              // Three across fits up to "$99,999"; bigger amounts get a row
+              // each so a number never breaks in the middle.
+              const stacked = cells.some(([, t]) => t.length > 8);
+              return stacked ? (
+                <div style={{ display: "grid", gap: 4 }}>
+                  {cells.map(([k, t, c]) => (
+                    <div key={k} style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 12 }}>
+                      <span style={{ fontSize: type.small, color: nl.soft }}>{k}</span>
+                      <span style={{ fontFamily: font.display, fontSize: 24, lineHeight: 1.2, color: c, whiteSpace: "nowrap" }}>{t}</span>
+                    </div>
+                  ))}
                 </div>
-              ))}
-            </div>
+              ) : (
+                <div style={{ display: "grid", gridTemplateColumns: "repeat(3, minmax(0, 1fr))", gap: 8 }}>
+                  {cells.map(([k, t, c]) => (
+                    <div key={k}>
+                      <div style={{ fontSize: type.small, color: nl.soft }}>{k}</div>
+                      <div style={{ fontFamily: font.display, fontSize: 26, lineHeight: 1.1, color: c, overflowWrap: "anywhere" }}>{t}</div>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
             <div style={{ fontSize: 12, color: nl.soft, marginTop: 10, lineHeight: 1.4 }}>
               {mode === "fifo" ? "FIFO: oldest costs are paid off first by sales." : "Money in and out in this period."} One-time costs like coops and fencing aren't counted.{" "}
               <button type="button" onClick={() => update((d) => { d.profitMode = mode === "fifo" ? "simple" : "fifo"; return d; })}
@@ -180,8 +198,8 @@ export default function SalesScreen({ data, update, setModal, onEmailCustomers, 
                     </span>
                     <span style={{ flex: 1, minWidth: 0 }}>
                       <span style={{ display: "flex", justifyContent: "space-between", gap: 8, fontSize: type.body }}>
-                        <span style={{ fontWeight: 600 }}>{hb ? cleanName(hb.name) : h.label}</span>
-                        <span style={{ fontWeight: 600, color: h.profit >= 0 ? nl.ink : nl.alert }}>{h.profit < 0 ? "−" : ""}{money(Math.abs(h.profit))}</span>
+                        <span style={{ fontWeight: 600, minWidth: 0 }}>{hb ? cleanName(hb.name) : h.label}</span>
+                        <span style={{ fontWeight: 600, color: h.profit >= 0 ? nl.ink : nl.alert, whiteSpace: "nowrap", flexShrink: 0 }}>{h.profit < 0 ? "−" : ""}{money(Math.abs(h.profit))}</span>
                       </span>
                       <span style={{ display: "block", height: 6, borderRadius: 3, background: nl.chip, marginTop: 6, overflow: "hidden" }}>
                         <span style={{ display: "block", height: "100%", width: `${(Math.abs(h.profit) / maxAbs) * 100}%`, background: h.profit >= 0 ? nl.good : nl.alert }} />

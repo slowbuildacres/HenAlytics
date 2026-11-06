@@ -38,6 +38,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recha
 import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+import { groupDigits } from "./numFmt.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -136,7 +137,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
       borderRadius: 16,
     }}>
       <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
     </div>
   );

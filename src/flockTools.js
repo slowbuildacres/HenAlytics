@@ -247,3 +247,38 @@ export function agoLabel(days) {
   if (days < 60) return `${Math.round(days / 7)} weeks ago`;
   return `${Math.round(days / 30.44)} months ago`;
 }
+
+// ---- Long ranges on a line chart --------------------------------------------------
+// A chart with one point per day turns into a solid block after a few months
+// (five years is ~1,800 points on a 300px phone chart). Rows are { date:
+// "YYYY-MM-DD", ...numbers }. Up to 120 days stay daily; up to two years are
+// summed by week (starting Monday); anything longer is summed by month. Each
+// row gets a short `label` ("Nov 5", "Wk of Nov 2", "Nov '26") for the axis.
+const MON = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+function ymd(s) { const [y, m, d] = String(s).split('-').map(Number); return new Date(y, (m || 1) - 1, d || 1); }
+function isoOf(d) { return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`; }
+export function chartPeriodRows(rows) {
+  const list = (rows || []).filter((r) => r && r.date).slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (!list.length) return { rows: [], by: 'day' };
+  const days = (ymd(list[list.length - 1].date) - ymd(list[0].date)) / 86400000;
+  const multiYear = list[0].date.slice(0, 4) !== list[list.length - 1].date.slice(0, 4);
+  if (days <= 120) {
+    return { by: 'day', rows: list.map((r) => { const d = ymd(r.date); return { ...r, label: `${MON[d.getMonth()]} ${d.getDate()}${multiYear ? ` '${String(d.getFullYear()).slice(2)}` : ''}` }; }) };
+  }
+  const by = days <= 730 ? 'week' : 'month';
+  const groups = new Map();
+  for (const r of list) {
+    const d = ymd(r.date);
+    let key;
+    if (by === 'week') { const s = new Date(d); s.setDate(d.getDate() - ((d.getDay() + 6) % 7)); key = isoOf(s); } else key = r.date.slice(0, 7) + '-01';
+    const g = groups.get(key) || { date: key };
+    for (const [k, v] of Object.entries(r)) if (k !== 'date' && k !== 'label' && typeof v === 'number') g[k] = (g[k] || 0) + v;
+    groups.set(key, g);
+  }
+  const out = [...groups.values()].sort((a, b) => a.date.localeCompare(b.date)).map((g) => {
+    const d = ymd(g.date);
+    const yy = `'${String(d.getFullYear()).slice(2)}`;
+    return { ...g, label: by === 'week' ? `${MON[d.getMonth()]} ${d.getDate()}${multiYear ? ` ${yy}` : ''}` : `${MON[d.getMonth()]} ${yy}` };
+  });
+  return { by, rows: out };
+}

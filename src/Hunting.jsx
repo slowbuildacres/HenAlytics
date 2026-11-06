@@ -23,6 +23,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Tag as NlTag, DollarSign as NlDollar } from "lucide-react";
 import { X } from "lucide-react";
 import { fmtMoney, fmtWeight } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -87,7 +88,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontFamily: FONT_BODY }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );

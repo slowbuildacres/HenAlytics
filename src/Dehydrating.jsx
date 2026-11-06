@@ -27,6 +27,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, L
 import { fmtMoney } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
+import { groupDigits } from "./numFmt.js";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -95,7 +96,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
       borderRadius: 16,
     }}>
       <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
     </div>
   );

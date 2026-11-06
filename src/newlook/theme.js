@@ -145,6 +145,9 @@ export function applyLook(look, dark) {
           ".recharts-cartesian-axis-tick-value{fill:var(--nl-soft)}",
           ".recharts-cartesian-axis-line,.recharts-cartesian-axis-tick-line{stroke:var(--nl-faint)}",
           ".recharts-cartesian-grid line{stroke:var(--nl-rule)}",
+          // The first and last axis labels are centered on the chart's edge;
+          // let them draw into the card's padding instead of being cut off.
+          "svg.recharts-surface{overflow:visible}",
         ].join("\n");
         document.head.appendChild(st);
       }

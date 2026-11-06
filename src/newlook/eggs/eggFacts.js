@@ -108,7 +108,12 @@ export function eggFunFacts({ data, hobby, range, today = isoDay(), storePrice =
     }
     if (run >= 0 && paidOn) {
       facts.push({ key: "breakeven", icon: "calendar", big: prettyDay(paidOn), line: "the day our flock paid for itself", title: `Your flock paid for itself on ${prettyDay(paidOn)}${paidOn.slice(0, 4) !== today.slice(0, 4) ? ", " + paidOn.slice(0, 4) : ""}`,
-        sub: `Eggs at store prices passed the ${fmtMoney0(spent)} you've spent on feed, supplies and the coop.` });
+        // What had been spent by that day, not since: a flock that paid back
+        // its start-up costs years ago has spent far more since.
+        sub: (() => { const by = costs.filter((c) => c.date <= paidOn).reduce((s, c) => s + c.amount, 0);
+          return by < spent - 0.5
+            ? `Eggs at store prices passed the ${fmtMoney0(by)} spent by then, and they've kept up with every cost since (${fmtMoney0(spent)} in all).`
+            : `Eggs at store prices passed the ${fmtMoney0(spent)} you've spent on feed, supplies and the coop.`; })() });
     } else if (run < 0) {
       const dozens = Math.ceil(-run / storePrice);
       facts.push({ key: "breakeven", icon: "calendar", big: `${dozens.toLocaleString("en-US")} dozen`, line: "to go until our flock pays for itself", title: `${dozens.toLocaleString("en-US")} more dozen until your flock pays for itself`,

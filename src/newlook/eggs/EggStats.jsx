@@ -135,7 +135,7 @@ export default function EggStats({ hobby, data, setModal, allNumbers }) {
           style={{ display: "grid", gridTemplateColumns: `repeat(${months.length}, minmax(0, 1fr))`, gap: 10, alignItems: "end", height: 140, marginTop: 14 }}>
           {months.map((m) => (
             <div key={m.key} style={{ display: "flex", flexDirection: "column", alignItems: "stretch", justifyContent: "flex-end", height: "100%" }}>
-              <div style={{ fontSize: 11, color: nl.soft, textAlign: "center", marginBottom: 4 }}>{m.total || ""}</div>
+              <div style={{ fontSize: 11, color: nl.soft, textAlign: "center", marginBottom: 4 }}>{m.total ? m.total.toLocaleString() : ""}</div>
               <div style={{ height: `${(m.total / maxMonth) * 96}px`, minHeight: m.total ? 3 : 0, borderRadius: "6px 6px 0 0", overflow: "hidden", display: "flex", flexDirection: "column-reverse" }}>
                 {flocks.map((f, i) => {
                   const v = m.byFlock[f.id] || 0;

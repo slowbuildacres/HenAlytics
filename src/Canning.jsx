@@ -26,6 +26,7 @@ import { pantryItemCostForUsage } from "./pantry.js";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer, Receipt, Archive as ArchiveIcon, NotebookPen, Plus as PlusIcon, ShoppingBasket } from "lucide-react";
+import { groupDigits } from "./numFmt.js";
 
 // SHARED_PANTRY helper: sum cost across pantry-picker lines.
 function computePantryLinesTotal(lines, pantry) {
@@ -131,7 +132,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
       padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box",
     }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );

@@ -22,6 +22,7 @@ import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs } from "./analy
 // region_stats the trophy hub uses. games.js imports THIS module dynamically,
 // so this static import does not form a cycle.
 import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES, countryFlag } from "./games.js";
+import { groupDigits } from "./numFmt.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -574,7 +575,7 @@ function CoverCard({ year, stats }) {
         {year}
       </div>
       <div style={{ fontSize: 14, color: palette.inkSoft, fontStyle: "italic" }}>
-        {stats.totalEntries} {stats.totalEntries === 1 ? "entry" : "entries"} logged · {stats.activeDays} active {stats.activeDays === 1 ? "day" : "days"}
+        {groupDigits(stats.totalEntries)} {stats.totalEntries === 1 ? "entry" : "entries"} logged · {stats.activeDays} active {stats.activeDays === 1 ? "day" : "days"}
       </div>
     </Card>
   );
@@ -666,8 +667,8 @@ function EggsCard({ stats }) {
       </div>
       <CountUp number={eggsCollected} suffix="eggs collected" big />
       <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 12 }}>
-        That's <strong style={{ color: palette.ink }}>{dozensCollected.toFixed(1)} dozen</strong>
-        {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{(eggsSold / 12).toFixed(1)} dozen</strong></>}
+        That's <strong style={{ color: palette.ink }}>{groupDigits(dozensCollected.toFixed(1))} dozen</strong>
+        {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{groupDigits((eggsSold / 12).toFixed(1))} dozen</strong></>}
       </div>
 
       {(eggLayerTotalCost > 0 && dozensCollected > 0) && (
@@ -690,7 +691,7 @@ function EggsCard({ stats }) {
             {eggLayerInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerInfraCost)}</strong></div>}
             {eggLayerBirdCost > 0 && <div>🐔 Bird purchases · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerBirdCost)}</strong></div>}
             <div style={{ marginTop: 6, fontSize: 11, fontStyle: "italic" }}>
-              Buying {dozensCollected.toFixed(1)} dozen pasture-raised at the grocery store would have cost {fmtMoney(groceryStoreEquivalent)}.
+              Buying {groupDigits(dozensCollected.toFixed(1))} dozen pasture-raised at the grocery store would have cost {fmtMoney(groceryStoreEquivalent)}.
             </div>
           </div>
         </div>
@@ -724,7 +725,7 @@ function EggsCard({ stats }) {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: palette.inkSoft, marginBottom: 2 }}>
                     <span>{r.label}</span>
-                    <strong style={{ color: palette.ink }}>{r.n} egg{r.n === 1 ? "" : "s"}</strong>
+                    <strong style={{ color: palette.ink }}>{groupDigits(r.n)} egg{r.n === 1 ? "" : "s"}</strong>
                   </div>
                   <div style={{ height: 6, background: palette.card, borderRadius: 3, overflow: "hidden" }}>
                     <div style={{ width: `${(r.n / maxN) * 100}%`, height: "100%", background: r.color, borderRadius: 3 }} />
@@ -1442,7 +1443,7 @@ function FunFactsCard({ stats }) {
         {facts.map((f, i) => (
           <div key={i} style={{ padding: "10px 12px", background: palette.bgAlt, borderRadius: 8, border: `1px solid ${palette.line}` }}>
             <div style={{ fontSize: 16, marginBottom: 2 }}>{f.emoji}</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>{f.value}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>{groupDigits(f.value)}</div>
             <div style={{ fontSize: 10, color: palette.inkSoft }}>{f.label}</div>
           </div>
         ))}
@@ -2001,7 +2002,7 @@ function CountUp({ number, suffix, big }) {
 
   return (
     <div style={{ fontFamily: FONT_DISPLAY, fontSize: big ? 56 : 36, color: palette.ink, lineHeight: 1, marginBottom: 4 }}>
-      {shown.toLocaleString()} <span style={{ fontSize: big ? 16 : 14, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>{suffix}</span>
+      {shown.toLocaleString()} <span style={{ fontSize: big ? 16 : 14, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>{groupDigits(suffix)}</span>
     </div>
   );
 }
@@ -2009,7 +2010,7 @@ function CountUp({ number, suffix, big }) {
 function Stat({ big, label, accent = palette.ink }) {
   return (
     <div style={{ flex: "1 1 110px", padding: 14, borderRadius: 10, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderLeft: `4px solid ${accent}` }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>{big}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>{groupDigits(big)}</div>
       <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{label}</div>
     </div>
   );
