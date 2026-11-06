@@ -14629,7 +14629,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
 
       {/* SPOUSE MODE */}
       <div style={{ marginTop: 16, marginBottom: 4 }}>
-        <div style={{ fontSize: 11, color: data.spouseMode ? "#A0A0B0" : palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
           🤫 Spouse Mode
         </div>
         <div style={{
