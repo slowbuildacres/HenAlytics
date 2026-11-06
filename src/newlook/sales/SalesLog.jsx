@@ -15,13 +15,13 @@ import { Card, Chip, Button } from "../ui.jsx";
 import HobbyGlyph from "../HobbyGlyph.jsx";
 import { showUndo } from "../UndoBar.jsx";
 import { AddSaleModal, AddExpenseModal, collectAllSales, computeRevenue, removeSale, saleKind, expandRecurringExpenses } from "../../Sales.jsx";
-import { extractHobbyExpenses } from "../../expenseFifo.js";
+import { extractHobbyExpenses, extractBuildCosts } from "../../expenseFifo.js";
 import { fmtMoney } from "../../units.js";
 import { cleanName } from "../hobbies.js";
 import { isoDay, prettyDay } from "../eggs/eggFacts.js";
 
 const SALE_HOBBY = { eggs: "egg_layers", honey: "bees", horse: "horses", cow: "cows", goat: "goats", pig: "pigs", dog: "dogs", cat: "cats", rabbit: "rabbits" };
-const ENTRY_LABEL = { fed: "Feed", bedding: "Bedding", fertilized: "Fertilizer", supplies: "Supplies", restock: "Restock", flock_purchase: "Birds", chick_purchase: "Chicks", hive_purchase: "Hive", animal_purchase: "Animal" };
+const ENTRY_LABEL = { fed: "Feed", bedding: "Bedding", fertilized: "Fertilizer", supplies: "Supplies", restock: "Restock", flock_purchase: "Birds", chick_purchase: "Chicks", hive_purchase: "Hive", animal_purchase: "Animal", infrastructure: "Building and equipment" };
 const money2 = (v) => fmtMoney(Number(v) || 0);
 const monthLabel = (key) => { const [y, m] = key.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString("en-US", { month: "long", year: "numeric" }); };
 
@@ -50,7 +50,7 @@ export default function SalesLog({ data, update, onOpenHobby }) {
     }
     for (const h of data.hobbies || []) {
       if (!h) continue;
-      extractHobbyExpenses(data, h.id).forEach((r, i) => {
+      [...extractHobbyExpenses(data, h.id), ...extractBuildCosts(data, h.id)].forEach((r, i) => {
         if (!r || r.source === "logged_expense" || !r.date || r.date > today || !(Number(r.cost) > 0)) return;
         out.push({ key: `x:${h.id}:${r.date}:${r.source}:${i}`, kind: "expense", date: r.date, amount: Number(r.cost) || 0, title: ENTRY_LABEL[r.source] || "Expense", sub: [r.note, cleanName(h.name)].filter(Boolean).join(" · "), glyph: h.type, hobby: cleanName(h.name), fromHobby: h });
       });
@@ -141,7 +141,7 @@ export default function SalesLog({ data, update, onOpenHobby }) {
         </Card>
       ))}
       {months.length > limit && <Button kind="quiet" onClick={() => setLimit((n) => n + 6)}>Show older months</Button>}
-      <div style={{ fontSize: 12.5, color: nl.soft, padding: "0 4px" }}>Costs like feed and bought birds that you logged on a hobby's page show here too. Tap one to open that hobby and change it.</div>
+      <div style={{ fontSize: 12.5, color: nl.soft, padding: "0 4px" }}>Costs like feed, bought birds and building or equipment that you logged on a hobby's page show here too. Tap one to open that hobby and change it.</div>
     </div>
   );
 }
