@@ -18,7 +18,7 @@ import {
   Package, CalendarDays, MapPin, Trophy, Leaf, ChevronDown, Plus, Archive,
 } from "lucide-react";
 import { nl, font, type } from "../theme.js";
-import { Card, CardHeader, Row, Badge, Button } from "../ui.jsx";
+import { Card, CardHeader, Row, Badge, Button, Sheet } from "../ui.jsx";
 import { winterSeason, WINTER_ITEMS } from "../../winterChecklist.js";
 import { getWeeklyPrecip } from "../../weather.js";
 import { needsBuying, seedViability } from "../../SeedInventory.jsx";
@@ -34,6 +34,112 @@ const STATUS = {
   done: ["quiet", "Done"], sprouting: ["quiet", "Sprouting"], ready: ["ready", "Ready to move"],
 };
 const Ico = ({ I }) => <I size={20} strokeWidth={1.8} />;
+
+
+// "This week": planting windows coming up and the winter checklist. Shown on
+// Today, and between seasons too.
+function GardenWeek({ data, update, setModal, onTab, onMap }) {
+  const today = isoDay();
+  const windows = useMemo(() => plantingWindows(data, today, 2), [data, today]);
+  const season = winterSeason();
+  const wst = season ? ((data.winterChecklist && data.winterChecklist[season]) || {}) : null;
+  const winterItems = season && !(wst && wst.hidden) ? (WINTER_ITEMS.garden || []).map((it) => ({ ...it, key: `garden:${it.id}` })) : [];
+  const done = (wst && wst.done) || {};
+  const toggle = (k) => update((d) => {
+    d.winterChecklist = d.winterChecklist || {};
+    const cur = d.winterChecklist[season] || {};
+    const nd = { ...(cur.done || {}) };
+    if (nd[k]) delete nd[k]; else nd[k] = true;
+    d.winterChecklist[season] = { ...cur, done: nd };
+    return d;
+  });
+  const soon = windows ? windows.list.filter((w) => (parseDay(w.date) - parseDay(today)) / DAY <= 21) : [];
+  const jobAction = (it) => it.action === "seeds" || it.action === "shop" ? { label: "Seed box", run: () => onTab("plan") } : it.action === "map" ? (onMap || { label: "Map", run: () => setModal({ type: "gardenMap" }) }) : null;
+
+  return (
+    <>
+      {(soon.length > 0 || winterItems.length > 0) && (
+        <Card>
+          <CardHeader title="This week" right={windows ? windows.label || `Zone ${windows.zone}` : null} />
+          {soon.map((w) => (
+            <Row key={w.date + w.verb} icon={<Ico I={Sprout} />} iconBg={nl.goodTint}
+              title={`${w.verb}: ${w.crops.slice(0, 3).join(", ").toLowerCase()}${w.crops.length > 3 ? ` +${w.crops.length - 3}` : ""}`}
+              sub={w.date <= today ? "Now" : prettyDay(w.date)} trailing={<Badge tone="good">Planting</Badge>} />
+          ))}
+          {winterItems.map((it) => {
+            const on = !!done[it.key];
+            const act = jobAction(it);
+            return (
+              <div key={it.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", borderTop: `1px solid ${nl.rule}` }}>
+                <button type="button" aria-pressed={on} aria-label={on ? `Undo: ${it.text}` : `Done: ${it.text}`} onClick={() => toggle(it.key)} style={{
+                  width: 28, height: 28, borderRadius: 14, flexShrink: 0, boxSizing: "border-box", cursor: "pointer",
+                  border: on ? "none" : `1.5px solid ${nl.navIdle}`, background: on ? nl.good : "transparent",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}>{on && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}</button>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: type.body, fontWeight: 600, textDecoration: on ? "line-through" : "none", color: on ? nl.soft : nl.ink }}>{it.text}</div>
+                  {!on && <div style={{ fontSize: type.small, color: nl.soft }}>{it.sub}</div>}
+                </div>
+                {act && !on && <Button kind="link" onClick={act.run}>{act.label}</Button>}
+              </div>
+            );
+          })}
+        </Card>
+      )}
+    </>
+  );
+}
+
+
+// ------------------------------------------------------------ Between seasons
+// When no season is open (it was closed at the end of the year), the garden
+// keeps its tabs: Today offers the next season or reopening, and Plants,
+// Plan and Stats show the season that just closed. `closed` =
+// { season, next, onStart, onReopen, onPast, value, harvestCount }.
+export function nextGardenSeasonName(today = new Date()) {
+  // From October on, the next garden is next year's.
+  return `${today.getMonth() >= 9 ? today.getFullYear() + 1 : today.getFullYear()} Garden`;
+}
+
+export function GardenClosed({ closed, data, update, setModal, onTab, onOpenJournal }) {
+  const s = closed.season;
+  const closedOn = s.endDate ? prettyDay(s.endDate) : null;
+  return (
+    <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      <div style={{ background: nl.deep, color: nl.onDeep, borderRadius: 20, padding: "16px 16px 14px", display: "flex", flexDirection: "column", gap: 10 }}>
+        <div>
+          <div style={{ fontSize: 12, letterSpacing: 1.2, textTransform: "uppercase", fontWeight: 700, color: nl.accentOnDeep }}>Season closed{closedOn ? ` ${closedOn}` : ""}</div>
+          <div style={{ fontFamily: font.display, fontSize: 24, lineHeight: 1.15, marginTop: 4 }}>{s.name || "Last season"}</div>
+          <div style={{ fontSize: 13, color: nl.onDeepSoft, marginTop: 2 }}>
+            {closed.harvestCount ? `${money0(closed.value)} of food grown · ${closed.harvestCount} harvest${closed.harvestCount === 1 ? "" : "s"}` : "Its plants, map and numbers are saved."}
+          </div>
+        </div>
+        <Button onClick={closed.onStart}>Start the {closed.next}</Button>
+        <div style={{ fontSize: 12.5, color: nl.onDeepSoft, lineHeight: 1.4 }}>Your beds carry over, empty and ready to plant. Last season stays saved on the Plants and Stats tabs.</div>
+      </div>
+      <Card>
+        <Row first icon={<Ico I={Archive} />} title={`Reopen ${s.name || "last season"}`} sub="Closed it too soon? Pick up where you left off" onClick={closed.onReopen} chevron />
+        {closed.pastCount > 1 && <Row icon={<Ico I={CalendarDays} />} title={`All ${closed.pastCount} past seasons`} sub="Look back at or reopen an older garden" onClick={closed.onPast} chevron />}
+      </Card>
+      <GardenWeek data={data} update={update} setModal={setModal} onTab={onTab} onMap={{ label: "Start season", run: closed.onStart }} />
+      <Card><Row first icon={<Ico I={BookOpen} />} title="Everything you've logged" sub="Every season's logs are in the Journal" onClick={onOpenJournal} chevron /></Card>
+    </div>
+  );
+}
+
+// Asked when a garden log is started with no season open.
+export function GardenNeedSeason({ next, onStart, onClose }) {
+  return (
+    <Sheet open onClose={onClose} label="Start the garden season first" showClose>
+      <div style={{ padding: 4, display: "flex", flexDirection: "column", gap: 12 }}>
+        <div style={{ fontFamily: font.display, fontSize: 22 }}>Start the {next}</div>
+        <div style={{ fontSize: 15, color: nl.soft, lineHeight: 1.5 }}>Garden logs go with a season, so start this year's first. Your beds carry over from last season.</div>
+        <Button onClick={onStart}>Start the {next}</Button>
+        <Button kind="quiet" onClick={onClose}>Not now</Button>
+      </div>
+    </Sheet>
+  );
+}
 
 // ------------------------------------------------------------------- Today
 export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnualConfirm, onOpenJournal, onTab, spent }) {
@@ -52,22 +158,6 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
   const log = (action) => setModal({ type: "log", action, hobbyIdOverride: hobby.id });
   const harvests = useMemo(() => seasonHarvests(data, hobby), [data, hobby]);
   const value = useMemo(() => computeHarvestValue(harvests, hobby.harvestPrices || {}).total, [harvests, hobby.harvestPrices]);
-  const windows = useMemo(() => plantingWindows(data, today, 2), [data, today]);
-  const season = winterSeason();
-  const wst = season ? ((data.winterChecklist && data.winterChecklist[season]) || {}) : null;
-  const winterItems = season && !(wst && wst.hidden) ? (WINTER_ITEMS.garden || []).map((it) => ({ ...it, key: `garden:${it.id}` })) : [];
-  const done = (wst && wst.done) || {};
-  const toggle = (k) => update((d) => {
-    d.winterChecklist = d.winterChecklist || {};
-    const cur = d.winterChecklist[season] || {};
-    const nd = { ...(cur.done || {}) };
-    if (nd[k]) delete nd[k]; else nd[k] = true;
-    d.winterChecklist[season] = { ...cur, done: nd };
-    return d;
-  });
-  const soon = windows ? windows.list.filter((w) => (parseDay(w.date) - parseDay(today)) / DAY <= 21) : [];
-  const jobAction = (it) => it.action === "seeds" || it.action === "shop" ? { label: "Seed box", run: () => onTab("plan") } : it.action === "map" ? { label: "Map", run: () => setModal({ type: "gardenMap" }) } : null;
-
   const quick = [
     { k: "harvest", label: "Harvest", I: ShoppingBasket, primary: true, run: () => log("harvested") },
     { k: "water", label: "Watered", I: Droplet, run: () => log("watered") },
@@ -97,34 +187,7 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
         ))}
       </div>
 
-      {(soon.length > 0 || winterItems.length > 0) && (
-        <Card>
-          <CardHeader title="This week" right={windows ? windows.label || `Zone ${windows.zone}` : null} />
-          {soon.map((w) => (
-            <Row key={w.date + w.verb} icon={<Ico I={Sprout} />} iconBg={nl.goodTint}
-              title={`${w.verb}: ${w.crops.slice(0, 3).join(", ").toLowerCase()}${w.crops.length > 3 ? ` +${w.crops.length - 3}` : ""}`}
-              sub={w.date <= today ? "Now" : prettyDay(w.date)} trailing={<Badge tone="good">Planting</Badge>} />
-          ))}
-          {winterItems.map((it) => {
-            const on = !!done[it.key];
-            const act = jobAction(it);
-            return (
-              <div key={it.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", borderTop: `1px solid ${nl.rule}` }}>
-                <button type="button" aria-pressed={on} aria-label={on ? `Undo: ${it.text}` : `Done: ${it.text}`} onClick={() => toggle(it.key)} style={{
-                  width: 28, height: 28, borderRadius: 14, flexShrink: 0, boxSizing: "border-box", cursor: "pointer",
-                  border: on ? "none" : `1.5px solid ${nl.navIdle}`, background: on ? nl.good : "transparent",
-                  display: "flex", alignItems: "center", justifyContent: "center",
-                }}>{on && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}</button>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: type.body, fontWeight: 600, textDecoration: on ? "line-through" : "none", color: on ? nl.soft : nl.ink }}>{it.text}</div>
-                  {!on && <div style={{ fontSize: type.small, color: nl.soft }}>{it.sub}</div>}
-                </div>
-                {act && !on && <Button kind="link" onClick={act.run}>{act.label}</Button>}
-              </div>
-            );
-          })}
-        </Card>
-      )}
+      <GardenWeek data={data} update={update} setModal={setModal} onTab={onTab} />
 
       <div style={{ background: nl.deep, color: nl.onDeep, borderRadius: 20, padding: "14px 16px", display: "flex", alignItems: "center", gap: 12 }}>
         <button type="button" onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })} style={{ flex: 1, textAlign: "left", background: "none", border: "none", padding: 0, cursor: "pointer", color: nl.onDeep, font: "inherit" }}>
@@ -144,17 +207,19 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
 }
 
 // ------------------------------------------------------------------ Plants
-export function GardenPlants({ hobby, data, setModal, onPlanAnnualConfirm }) {
+export function GardenPlants({ hobby, data, setModal, onPlanAnnualConfirm, closed, liveHobby }) {
   const [seg, setSeg] = useState("growing");
   const [showDone, setShowDone] = useState(false);
   const annuals = useMemo(() => annualRows(hobby, data), [hobby, data]);
   const perennials = useMemo(() => perennialRows(hobby), [hobby]);
-  const starts = useMemo(() => seedStartRows(hobby), [hobby]);
+  // Seed starts are often sown before the season opens, so between seasons
+  // they come from the live garden, not the closed season.
+  const starts = useMemo(() => seedStartRows(closed && liveHobby ? liveHobby : hobby), [hobby, closed, liveHobby]);
   const segs = [["growing", `Growing · ${annuals.active.length}`], ["perennials", `Perennials · ${perennials.length}`], ["starts", `Seed starts${starts.length ? ` · ${starts.length}` : ""}`]];
-  const add = seg === "growing" ? () => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm })
+  const add = seg === "growing" ? (closed ? closed.onStart : () => setModal({ type: "planCrop", onConfirm: onPlanAnnualConfirm }))
     : seg === "perennials" ? () => setModal({ type: "addPerennial", hobbyId: hobby.id })
     : () => setModal({ type: "addSeedStart", hobbyId: hobby.id });
-  const addLabel = seg === "growing" ? "Add a plant" : seg === "perennials" ? "Add a perennial or tree" : "Start seeds";
+  const addLabel = seg === "growing" ? (closed ? `Start the ${closed.next} to add plants` : "Add a plant") : seg === "perennials" ? "Add a perennial or tree" : "Start seeds";
   const row = (r, i, onClick) => {
     const st = STATUS[r.status];
     return <Row key={r.id} first={i === 0} icon={<Ico I={r.tree ? Leaf : Sprout} />} iconBg={r.status === "harvesting" || r.status === "ready" ? nl.goodTint : undefined}
@@ -170,6 +235,7 @@ export function GardenPlants({ hobby, data, setModal, onPlanAnnualConfirm }) {
           }}>{label}</button>
         ))}
       </div>
+      {seg === "growing" && closed && <div style={{ fontSize: type.small, color: nl.soft }}>{closed.season.name || "Last season"}, closed</div>}
       {seg === "growing" && (annuals.active.length ? (
         <Card>{annuals.active.map((r, i) => row(r, i, () => setModal({ type: "annualDetail", hobbyId: hobby.id, annualId: r.id })))}</Card>
       ) : <Card padded><div style={{ fontSize: 14, color: nl.soft }}>Nothing growing yet this season. Add what you planted to track harvests.</div></Card>)}
@@ -188,13 +254,13 @@ export function GardenPlants({ hobby, data, setModal, onPlanAnnualConfirm }) {
       <div style={{ display: "flex", gap: 8 }}>
         <Button kind="quiet" icon={<Plus size={18} />} onClick={add} style={{ flex: 1 }}>{addLabel}</Button>
       </div>
-      <Button kind="link" onClick={() => setModal({ type: "gardenMore", hobbyId: hobby.id })} style={{ color: nl.soft, alignSelf: "center" }}>Wrap up the season and more</Button>
+      {!closed && <Button kind="link" onClick={() => setModal({ type: "gardenMore", hobbyId: hobby.id })} style={{ color: nl.soft, alignSelf: "center" }}>Wrap up the season and more</Button>}
     </div>
   );
 }
 
 // -------------------------------------------------------------------- Plan
-export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onOpenBarn }) {
+export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onOpenBarn, closed }) {
   const today = isoDay();
   const [boxOpen, setBoxOpen] = useState(false);
   const season = hobby.currentSeason;
@@ -208,12 +274,21 @@ export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onO
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+      {closed ? (
+        <Card>
+          <CardHeader title="Garden map" />
+          <Row icon={<Ico I={MapIcon} />} title={`Start the ${closed.next} to plan your beds`}
+            sub="Your beds carry over from last season, empty and ready to plant, with crop rotation tips from what grew there."
+            onClick={closed.onStart} chevron />
+        </Card>
+      ) : (
       <Card>
-        <CardHeader title="Garden map" right={<Button kind="link" onClick={() => setModal({ type: "gardenMap" })}>{hasMap ? "Open map" : "Start a map"}</Button>} />
-        <Row icon={<Ico I={MapIcon} />} title={hasMap ? `${pins} plant${pins === 1 ? "" : "s"} pinned` : "Map your beds"}
-          sub={hasMap ? "See what's planted where, with crop rotation tips" : "Use a photo or draw a grid. Henalytics flags same-family crops in the same bed."}
-          onClick={() => setModal({ type: "gardenMap" })} chevron />
-      </Card>
+          <CardHeader title="Garden map" right={<Button kind="link" onClick={() => setModal({ type: "gardenMap" })}>{hasMap ? "Open map" : "Start a map"}</Button>} />
+          <Row icon={<Ico I={MapIcon} />} title={hasMap ? `${pins} plant${pins === 1 ? "" : "s"} pinned` : "Map your beds"}
+            sub={hasMap ? "See what's planted where, with crop rotation tips" : "Use a photo or draw a grid. Henalytics flags same-family crops in the same bed."}
+            onClick={() => setModal({ type: "gardenMap" })} chevron />
+        </Card>
+      )}
 
       <Card>
         <CardHeader title="Seed box" right={`${seeds.length} packet${seeds.length === 1 ? "" : "s"}`} />
@@ -241,7 +316,7 @@ export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onO
 }
 
 // ------------------------------------------------------------------- Stats
-export function GardenStats({ hobby, data, setModal, spent, allNumbers }) {
+export function GardenStats({ hobby, data, setModal, spent, allNumbers, closed }) {
   const [showAll, setShowAll] = useState(false);
   const harvests = useMemo(() => seasonHarvests(data, hobby), [data, hobby]);
   const { total, crops } = useMemo(() => harvestByCrop(harvests, hobby.harvestPrices), [harvests, hobby.harvestPrices]);
@@ -253,10 +328,10 @@ export function GardenStats({ hobby, data, setModal, spent, allNumbers }) {
   const FI = { harvest: ShoppingBasket, trophy: Trophy, water: Droplet, leaf: Leaf };
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-      <div style={{ fontSize: type.small, color: nl.soft }}>{hobby.currentSeason ? hobby.currentSeason.name : "This season"}</div>
+      <div style={{ fontSize: type.small, color: nl.soft }}>{hobby.currentSeason ? `${hobby.currentSeason.name}${closed ? ", closed" : ""}` : "This season"}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
         <Card padded><div style={{ fontSize: type.small, color: nl.soft }}>Harvested</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{Math.round(lbs).toLocaleString("en-US")} lbs</div><div style={{ fontSize: 12, color: nl.soft }}>{harvests.length} harvest{harvests.length === 1 ? "" : "s"} logged</div></Card>
-        <Card padded onClick={() => setModal({ type: "gardenValue", hobbyId: hobby.id })}><div style={{ fontSize: type.small, color: nl.soft }}>Food grown</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1, color: nl.good }}>{money0(total)}</div><div style={{ fontSize: 12, color: nl.soft }}>{spent > 0 ? `Spent ${money0(spent)} · ${total >= spent ? `${money0(total - spent)} ahead` : `${money0(spent - total)} to go`}` : "At grocery prices"}</div></Card>
+        <Card padded onClick={closed ? undefined : () => setModal({ type: "gardenValue", hobbyId: hobby.id })}><div style={{ fontSize: type.small, color: nl.soft }}>Food grown</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1, color: nl.good }}>{money0(total)}</div><div style={{ fontSize: 12, color: nl.soft }}>{spent > 0 ? `Spent ${money0(spent)} · ${total >= spent ? `${money0(total - spent)} ahead` : `${money0(spent - total)} to go`}` : "At grocery prices"}</div></Card>
       </div>
       {facts.length > 0 && (
         <div role="region" aria-label="Garden fun facts, swipe for more" style={{ display: "flex", gap: 10, overflowX: "auto", scrollSnapType: "x mandatory", margin: "0 -20px", padding: "0 20px", scrollbarWidth: "none" }}>

@@ -58,6 +58,13 @@ export function tileStat(entry, data, today) {
         const { total } = computeHarvestValue(harvests, entry.hobby.harvestPrices || {});
         return { big: fmtMoney(Math.round(total)).replace(/\.00$/, ""), small: "grown" };
       }
+    } else {
+      // Between seasons: the line says so instead of "Nothing logged yet".
+      const past = (entry.hobby.archivedSeasons || []).filter(Boolean);
+      if (past.length) {
+        const last = past.slice().sort((a, b) => String(b.endDate || b.startDate || "").localeCompare(String(a.endDate || a.startDate || "")))[0];
+        return { big: null, small: `${last.name || "Last season"} closed` };
+      }
     }
   }
   if (entry.type === "meat_chickens") {

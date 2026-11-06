@@ -115,7 +115,7 @@ import EggToday from "./newlook/eggs/EggToday.jsx";
 import EggBirds from "./newlook/eggs/EggBirds.jsx";
 import EggStats from "./newlook/eggs/EggStats.jsx";
 import YearScreen from "./newlook/YearScreen.jsx";
-import { GardenToday, GardenPlants, GardenPlan, GardenStats } from "./newlook/garden/GardenScreens.jsx";
+import { GardenToday, GardenPlants, GardenPlan, GardenStats, GardenClosed, GardenNeedSeason, nextGardenSeasonName } from "./newlook/garden/GardenScreens.jsx";
 import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
 import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES, cleanName } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
@@ -5329,6 +5329,28 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   const nlRebuilt = !!(newLook && hobby && hobby.type === "egg_layers");
   // Garden: rebuilt when a season is running (no-season start/reopen screen stays as is).
   const nlGarden = !!(newLook && hobby && hobby.type === "garden" && hobby.currentSeason);
+  // Between seasons (the last one was closed): the same tabs, showing the
+  // season that just closed, with Start next season / Reopen on Today.
+  const nlGardenClosed = !!(newLook && hobby && hobby.type === "garden" && !hobby.currentSeason && (hobby.archivedSeasons || []).length > 0);
+  const nlGardenView = nlGardenClosed ? (() => {
+    const past = (hobby.archivedSeasons || []).slice().sort((a, b) => String(b.endDate || b.startDate || "").localeCompare(String(a.endDate || a.startDate || "")));
+    const last = past[0];
+    const fe = Array.isArray(last.finalEntries) ? last.finalEntries : [];
+    const vData = { ...data, entries: { ...data.entries, garden: [...(data.entries.garden || []), ...fe] } };
+    const vHobby = { ...hobby, currentSeason: last };
+    const harvests = collectGardenHarvests(vData, { seasonId: last.id, season: last });
+    return {
+      hobby: vHobby, data: vData,
+      spent: gardenSeasonCost(vData, vHobby, last, fe),
+      closed: {
+        season: last, next: nextGardenSeasonName(), pastCount: past.length,
+        value: computeHarvestValue(harvests, hobby.harvestPrices || {}).total, harvestCount: harvests.length,
+        onStart: () => setModal({ type: "startGardenSeason" }),
+        onReopen: () => reopenGardenSeason(update, hobby.id, last.id),
+        onPast: () => setModal({ type: "reopenSeason" }),
+      },
+    };
+  })() : null;
   const nlGoats = !!(newLook && hobby && hobby.type === "goats");
   const nlMeat = !!(newLook && hobby && hobby.type === "meat_chickens");
   const nlRabbits = !!(newLook && hobby && hobby.type === "rabbits");
@@ -5387,6 +5409,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
     setLogPickerOpen(false);
     setActiveHobby(h.id);
     if (isHobbyPage) setPage(hobbyPage(h));
+    if (h.type === "garden" && !h.currentSeason) { setModal({ type: "gardenNeedSeason" }); return; }
     if (a.onPage) { setPage(hobbyPage(h)); requestHobbyAction(h.id, a.key); }
     else if (a.modal === "gardenMore") setModal({ type: "gardenMore", hobbyId: h.id });
     else if (a.key === "used_eggs" && !(h.eggInventory && h.eggInventory.enabled)) setModal({ type: "eggInventorySetup", hobbyId: h.id });
@@ -6398,7 +6421,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         {wrappedYearNow && !newLook && WRAPPED_BANNER_PAGES.includes(page) && (
           <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
-        {page === "home" && !(newLook && (nlRebuilt || nlGarden || nlMeat)) && (
+        {page === "home" && !(newLook && (nlRebuilt || nlGarden || nlGardenClosed || nlMeat)) && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
         {/* NEW_LOOK (3.0) rebuilt hobbies: Today · animals · Stats */}
@@ -6414,7 +6437,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         {newLook && nlRebuilt && page === "home" && nlHobbyTab === "animals" && (
           <EggBirds hobby={hobby} data={data} update={update} setModal={setModal} />
         )}
-        {newLook && nlGarden && (page === "home" || page === "analytics") && (
+        {newLook && (nlGarden || nlGardenClosed) && (page === "home" || page === "analytics") && (
           <HobbyTabs label="Garden sections"
             tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Plants" }, { key: "plan", label: "Plan" }, { key: "stats", label: "Stats" }]}
             active={page === "analytics" ? "stats" : nlHobbyTab}
@@ -6426,6 +6449,17 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         )}
         {newLook && nlGarden && page === "home" && nlHobbyTab === "animals" && (
           <GardenPlants hobby={hobby} data={data} setModal={setModal} onPlanAnnualConfirm={nlPlanConfirm} />
+        )}
+        {nlGardenView && page === "home" && (nlHobbyTab === "today" || !["animals", "plan"].includes(nlHobbyTab)) && (
+          <GardenClosed closed={nlGardenView.closed} data={data} update={update} setModal={setModal} onTab={(k) => setNlHobbyTab(k)} onOpenJournal={() => setPage("journal")} />
+        )}
+        {nlGardenView && page === "home" && nlHobbyTab === "animals" && (
+          <GardenPlants hobby={nlGardenView.hobby} data={nlGardenView.data} liveHobby={hobby} closed={nlGardenView.closed} setModal={setModal} onPlanAnnualConfirm={nlPlanConfirm} />
+        )}
+        {nlGardenView && page === "home" && nlHobbyTab === "plan" && (
+          <GardenPlan hobby={nlGardenView.hobby} data={data} setModal={setModal} closed={nlGardenView.closed}
+            seedBox={<SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={ALMANAC_CROPS.map((c) => String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim())} openUrl={openExternalUrl} />}
+            onOpenCalendar={() => setPage("calendar")} onOpenBarn={() => setModal({ type: "barn" })} />
         )}
         {newLook && nlGarden && page === "home" && nlHobbyTab === "plan" && (
           <GardenPlan hobby={hobby} data={data} setModal={setModal}
@@ -6538,8 +6572,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         {page === "analytics" && !nlPantryCfg && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && !(newLook && (nlRebuilt || nlGarden || nlMeat)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
+        {page === "analytics" && !(newLook && (nlRebuilt || nlGarden || nlGardenClosed || nlMeat)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+        )}
+        {page === "analytics" && nlGardenView && (
+          <GardenStats hobby={nlGardenView.hobby} data={nlGardenView.data} setModal={setModal} spent={nlGardenView.spent} closed={nlGardenView.closed} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
         )}
         {page === "analytics" && nlGarden && (
           <GardenStats hobby={hobby} data={data} setModal={setModal} spent={nlGardenSpent} allNumbers={
@@ -13823,6 +13862,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
+  if (modal.type === "gardenNeedSeason") return <GardenNeedSeason next={nextGardenSeasonName()} onStart={() => setModal({ type: "startGardenSeason" })} onClose={close} />;
   if (modal.type === "reopenSeason") return <ReopenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} data={data} update={update} onClose={close} />;
   if (modal.type === "closeOutCrops") return <CloseOutCropsModal hobbyId={modal.hobbyId || "garden"} data={data} update={update} setModal={setModal} onClose={close} />;
@@ -20949,14 +20989,8 @@ function carryForwardAreas(areas) {
 }
 
 function StartGardenSeasonModal({ hobby, update, onClose }) {
-  const guess = (() => {
-    const m = new Date().getMonth();
-    const y = new Date().getFullYear();
-    if (m >= 1 && m <= 5) return `Spring ${y}`;
-    if (m >= 6 && m <= 8) return `Summer ${y}`;
-    if (m >= 9 && m <= 10) return `Fall ${y}`;
-    return `Winter ${y}`;
-  })();
+  // "2027 Garden": the year it's planted (next year's from October on).
+  const guess = nextGardenSeasonName();
   const [name, setName] = useState(guess);
   const [date, setDate] = useState(todayStr());
 
