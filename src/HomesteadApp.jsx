@@ -3434,6 +3434,18 @@ export default function HomesteadApp() {
   const [nlNotice, setNlNotice] = useState(null); // announcement opened from the Home card
   const [nlHobbyTab, setNlHobbyTab] = useState("today"); // rebuilt hobbies: "today" | "animals"
   const [nlYear, setNlYear] = useState(() => new Date().getFullYear());
+  // Through January, Year in review opens on the year that just ended (if
+  // there's anything in it); after that, on the new year.
+  useEffect(() => {
+    if (page !== "year" || !data) return;
+    const now = new Date();
+    const y = now.getFullYear();
+    if (now.getMonth() !== 0) { setNlYear(y); return; }
+    const has = (dt) => String(dt || "").startsWith(String(y - 1));
+    const any = Object.values(allEntriesByHobby(data)).some((arr) => Array.isArray(arr) && arr.some((e) => e && has(e.date)))
+      || (data.sales || []).some((x) => x && has(x.date));
+    setNlYear(any ? y - 1 : y);
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -6634,11 +6646,12 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             data={data} year={nlYear} years={nlYears} onYear={setNlYear}
             onBack={() => setPage("analytics")}
             wrappedOpen={!!wrappedYearNow} wrappedYear={wrappedYearNow}
-            onOpenWrapped={() => setModal({ type: "wrapped", year: wrappedYearNow })}
+            onOpenWrapped={(y) => setModal({ type: "wrapped", year: y || wrappedYearNow })}
+            isSupporter={isSupporter} onOpenMonth={(k) => setModal({ type: "monthlyRecap", month: k })} onBecomeSupporter={() => setPage("supporter")}
             onOpenHobby={(e) => { setActiveHobby(e.hobby.id); setPage("analytics"); }}
             onYearEndReport={() => setModal({ type: "yearEndReport" })}
           >
-            <Legacy><YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /></Legacy>
+            <Legacy><YearInReviewPage data={data} update={update} year={nlYear} embedded isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /></Legacy>
           </YearScreen>
         )}
         {/* HOMESTEAD_GAMES — regional standings hub (trophy icon in header) */}

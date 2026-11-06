@@ -125,7 +125,9 @@ const fmtTractorDistance = (totalFeet) => {
     : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
 };
 
-export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport, onScrolled }) {
+// In the new look the page sits under Year in review's own header, which
+// picks the year (`year`) and shows the title; `embedded` hides the old ones.
+export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport, onScrolled, year: yearProp, embedded = false }) {
   // STEP3_REVIEW_PROMPT: notify the parent when the user has scrolled
   // the YIR page. Parent uses this signal to decide whether to show the
   // review prompt when the user leaves the page. Threshold is 200px so
@@ -153,11 +155,12 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
 
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
-  const [year, setYear] = useState(() => {
+  const [ownYear, setYear] = useState(() => {
     if (availableYears.includes(currentYear)) return currentYear;
     if (availableYears.length > 0) return availableYears[0];
     return currentYear;
   });
+  const year = yearProp != null ? yearProp : ownYear;
 
   const stats = useMemo(() => computeStats(data, year), [data, year]);
 
@@ -222,12 +225,12 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
 
   return (
     <div>
-      <div style={{
+      {!embedded && <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 18, flexWrap: "wrap", gap: 10,
       }}>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: 0, color: palette.ink }}>
-          year in review
+          Year in review
         </h2>
         {availableYears.length > 0 && (
           <select
@@ -245,7 +248,7 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
             ))}
           </select>
         )}
-      </div>
+      </div>}
 
       {/* Homestead Standings — locked teaser shown to non-supporters at the
           very top. This is intentionally NOT gating anything necessary: the
