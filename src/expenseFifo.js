@@ -1,3 +1,4 @@
+import { hobbyAllEntries } from "./allEntries.js";
 // ============================================================================
 // expenseFifo.js — per-hobby FIFO expense matching for the Sales tab
 // ----------------------------------------------------------------------------
@@ -169,8 +170,9 @@ export function extractHobbyExpenses(data, hobbyId) {
   const out = [];
   if (!data || !hobbyId) return out;
 
-  // (1) Entry-based expenses
-  const entries = (data.entries && data.entries[hobbyId]) || [];
+  // (1) Entry-based expenses: the live log plus closed garden seasons and
+  // finished batches, so closing a season doesn't drop its costs.
+  const entries = hobbyAllEntries(data, hobbyId);
   for (const e of entries) {
     if (!EXPENSE_ACTIONS.has(e.action)) continue;
     const cost = Number(e.cost) || 0;

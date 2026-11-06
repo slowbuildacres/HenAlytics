@@ -105,6 +105,7 @@ import LogPicker from "./newlook/LogPicker.jsx";
 import HomeScreen from "./newlook/HomeScreen.jsx";
 import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
+import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
 import { UndoHost, showUndo } from "./newlook/UndoBar.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
@@ -5315,8 +5316,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   const isHobbyPage = HOBBY_PAGES.includes(page);
   // Years with any logs, newest first (Year in review's year chips).
   const nlYears = newLook && page === "year" ? (() => {
+    // Every year with anything in it: live logs, closed garden seasons,
+    // finished batches, sales and expenses.
     const set = new Set([new Date().getFullYear()]);
-    Object.values(data.entries || {}).forEach((arr) => (Array.isArray(arr) ? arr : []).forEach((e) => { const y = Number(String((e && e.date) || "").slice(0, 4)); if (y > 2000) set.add(y); }));
+    const add = (dt) => { const y = Number(String(dt || "").slice(0, 4)); if (y > 2000 && y < 2100) set.add(y); };
+    Object.values(allEntriesByHobby(data)).forEach((arr) => (Array.isArray(arr) ? arr : []).forEach((e) => add(e && e.date)));
+    (data.sales || []).forEach((x) => add(x && x.date));
+    (data.expenses || []).forEach((x) => add(x && x.date));
     return [...set].sort((a, b) => b - a);
   })() : [];
   // Hobbies already rebuilt for 3.0 (more join phase by phase).
@@ -7618,10 +7624,14 @@ function JournalPage({ data, update, setModal }) {
   const archivedEntriesByHobby = React.useMemo(() => {
     const map = {};
     for (const h of data.hobbies || []) {
-      const batches = Array.isArray(h.archivedBatches) ? h.archivedBatches : [];
+      // Finished batches and closed garden seasons both keep their logs as
+      // finalEntries; a closed 2026 garden must still show in the Journal.
       const merged = [];
-      for (const b of batches) {
+      for (const b of (Array.isArray(h.archivedBatches) ? h.archivedBatches : [])) {
         if (Array.isArray(b.finalEntries)) merged.push(...b.finalEntries);
+      }
+      for (const se of (Array.isArray(h.archivedSeasons) ? h.archivedSeasons : [])) {
+        if (Array.isArray(se.finalEntries)) merged.push(...se.finalEntries);
       }
       if (merged.length > 0) map[h.id] = merged;
     }
@@ -7707,16 +7717,8 @@ function JournalPage({ data, update, setModal }) {
   const deleteEntry = (entry, hobby) => {
     getEntryPhotos(entry).forEach((p) => deletePhoto(p).catch(() => {}));
     update((d) => {
-      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== entry.id);
-      // Also strip the entry from any archived batch's finalEntries.
-      const hForArchive = d.hobbies.find((x) => x.id === hobby.id);
-      if (hForArchive && Array.isArray(hForArchive.archivedBatches)) {
-        for (const b of hForArchive.archivedBatches) {
-          if (Array.isArray(b.finalEntries)) {
-            b.finalEntries = b.finalEntries.filter((x) => x.id !== entry.id);
-          }
-        }
-      }
+      // Wherever it lives: the live log, a finished batch or a closed season.
+      removeEntryEverywhere(d, hobby.id, entry.id);
       if (entry.action === "butcher") {
         const h = d.hobbies.find((x) => x.id === hobby.id);
         if (h && Array.isArray(h.currentBatches)) {
@@ -21742,23 +21744,23 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         d.entries[hobby.id].push(entry);
       } else {
         // Edit: replace the existing entry in place. The entry may live in
-        // data.entries[hobby.id] OR — for finalized meat-bird batches — on
-        // an archivedBatch's finalEntries snapshot. Update wherever it is.
+        // data.entries[hobby.id] OR on a finished batch's / closed garden
+        // season's finalEntries snapshot. Update wherever it is.
         const idx = d.entries[hobby.id].findIndex((e) => e.id === existingEntry.id);
         if (idx !== -1) {
           d.entries[hobby.id][idx] = entry;
         } else {
           let foundInArchive = false;
           const hForArchive = d.hobbies.find((x) => x.id === hobby.id);
-          if (hForArchive && Array.isArray(hForArchive.archivedBatches)) {
-            for (const b of hForArchive.archivedBatches) {
-              if (!Array.isArray(b.finalEntries)) continue;
-              const ai = b.finalEntries.findIndex((e) => e.id === existingEntry.id);
-              if (ai !== -1) {
-                b.finalEntries[ai] = entry;
-                foundInArchive = true;
-                break;
-              }
+          // Finished batches and closed garden seasons both keep finalEntries.
+          const closedLists = hForArchive ? [...(hForArchive.archivedBatches || []), ...(hForArchive.archivedSeasons || [])] : [];
+          for (const b of closedLists) {
+            if (!b || !Array.isArray(b.finalEntries)) continue;
+            const ai = b.finalEntries.findIndex((e) => e.id === existingEntry.id);
+            if (ai !== -1) {
+              b.finalEntries[ai] = entry;
+              foundInArchive = true;
+              break;
             }
           }
           if (!foundInArchive) {

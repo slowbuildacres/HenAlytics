@@ -17,6 +17,7 @@
 
 import { collectAllSales, computeRevenue, saleKind } from "../../Sales.jsx";
 import { extractHobbyExpenses } from "../../expenseFifo.js";
+import { hobbyAllEntries } from "../../allEntries.js";
 import { collectGardenHarvests } from "../../analytics.js";
 import { computeHarvestValue } from "../../gardenValue.js";
 import { SPECIES, liveAnimals, milkOz, birthHistory } from "../livestock/livestockData.js";
@@ -129,7 +130,7 @@ export function production(data, p) {
   const h = hobbyFor(data, p);
   const k = kindOf(p.kind);
   if (!h) return [];
-  const ents = (data.entries && data.entries[h.id]) || [];
+  const ents = hobbyAllEntries(data, h.id);
   const r = { start: p.start, end: p.end };
   const out = [];
   try {
@@ -176,7 +177,7 @@ const HEALTH = new Set(["health", "vet", "medication", "med", "deworming", "dewo
 export function healthLogs(data, p) {
   const h = hobbyFor(data, p);
   if (!h) return [];
-  const rows = ((data.entries && data.entries[h.id]) || []).filter((e) => e && HEALTH.has(e.action) && inR(e.date, p))
+  const rows = hobbyAllEntries(data, h.id).filter((e) => e && HEALTH.has(e.action) && inR(e.date, p))
     .map((e) => ({ date: e.date, what: [e.animalName, e.treatment || e.medication || e.condition || e.reason || e.note || e.notes || String(e.action).replace(/_/g, " ")].filter(Boolean).join(": ") }));
   for (const c of (h.careLogs || h.care || [])) {
     if (c && inR(c.date, p)) rows.push({ date: c.date, what: [c.kind || c.type, c.note || c.notes].filter(Boolean).join(": ") });
@@ -194,7 +195,7 @@ export function photoPaths(data, p) {
   const h = hobbyFor(data, p);
   if (!h) return [];
   const out = [];
-  for (const e of (data.entries && data.entries[h.id]) || []) {
+  for (const e of hobbyAllEntries(data, h.id)) {
     if (!e || !inR(e.date, p)) continue;
     for (const path of e.photoPaths || []) out.push({ path, date: e.date, caption: e.note || e.notes || "" });
   }
