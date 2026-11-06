@@ -236,7 +236,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
           maxHeight: "90vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{

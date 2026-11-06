@@ -365,7 +365,7 @@ export default function PlantScannerModal({ onClose }) {
       <style>{`@keyframes scan-spin { to { transform: rotate(360deg); } }`}</style>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 12, maxWidth: 540, width: "100%",
-        border: `2px solid ${palette.ink}`, boxShadow: `4px 4px 0 ${palette.line}`,
+        border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
       }}>
         {/* Header */}
         <div style={{

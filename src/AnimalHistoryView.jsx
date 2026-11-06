@@ -493,7 +493,7 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
           background: palette.bg, borderRadius: 16,
           maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `6px 8px 0 ${palette.line}`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY,
         }}
       >
@@ -814,7 +814,7 @@ export function AnimalHistoryView({ animal, hobby, entries, sales, species, upda
           background: palette.bg, borderRadius: 16,
           maxWidth: 520, width: "100%", maxHeight: "92vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `6px 8px 0 ${palette.line}`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY,
         }}
       >

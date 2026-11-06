@@ -108,7 +108,7 @@ function HiveModal({ hive, onSave, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{hive ? "Edit Hive" : "Add Hive"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -248,7 +248,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit " : ""}{titles[action]||action}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -589,7 +589,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>{emoji}</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>{label}</div>
@@ -603,7 +603,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>💵</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>Add Expense</div>
@@ -616,7 +616,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>{c.emoji || "📝"}</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>{c.label}</div>
@@ -627,7 +627,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>➕</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>+ Custom</div>

@@ -112,7 +112,7 @@ function Modal({ open, onClose, title, children }) {
           background: palette.bg, padding: 24, borderRadius: 12,
           maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "4px 4px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, color: palette.ink,
         }}
       >

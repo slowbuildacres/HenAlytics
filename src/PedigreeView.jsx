@@ -261,7 +261,7 @@ export function PedigreeView({ animal, animals, onClose, onJumpTo }) {
           background: palette.bg, borderRadius: 16,
           maxWidth: 720, width: "100%", maxHeight: "92vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY,
         }}
       >
         <div style={{

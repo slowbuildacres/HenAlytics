@@ -472,7 +472,7 @@ export function PdfGuide({ data, project, onBack }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <Back label="4-H and FFA" onBack={onBack} title="Where your PDF comes from" />
-      <div aria-hidden="true" style={{ background: "#FFFFFF", borderRadius: 6, padding: "16px 18px", boxShadow: `0 1px 2px ${nl.shadow}, 0 10px 28px ${nl.shadow}`, display: "flex", flexDirection: "column", gap: 12, margin: "0 10px", color: "#2A1A12" }}>
+      <div aria-hidden="true" data-allow-light="paper preview of the PDF" style={{ background: "#FFFFFF", borderRadius: 6, padding: "16px 18px", boxShadow: `0 1px 2px ${nl.shadow}, 0 10px 28px ${nl.shadow}`, display: "flex", flexDirection: "column", gap: 12, margin: "0 10px", color: "#2A1A12" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", borderBottom: "1.5px solid #2A1A12", paddingBottom: 6, gap: 8 }}>
           <span style={{ fontFamily: font.display, fontSize: 15 }}>{p ? p.title : k.label} Project Record</span>
           <span style={{ fontSize: 9, color: "#6B5646" }}>{p ? [p.member, yearLabel(p)].filter(Boolean).join(" · ") : programYear().label}</span>

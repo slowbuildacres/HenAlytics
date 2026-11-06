@@ -280,7 +280,7 @@ function GardenMapBody({ data, update, user, onClose, /* GARDEN_GRID */ earlyAcc
           background: palette.bg, padding: 20, borderRadius: 12,
           maxWidth: 560, width: "100%", maxHeight: "92vh", overflowY: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "4px 4px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, color: palette.ink,
         }}
       >
@@ -448,7 +448,7 @@ function NewAreaModal({ gridChoiceOffered, onCancel, onCreate, /* GARDEN_GRID_LO
         style={{
           background: palette.bg, padding: 18, borderRadius: 12,
           maxWidth: 380, width: "100%",
-          border: `2px solid ${palette.ink}`, boxShadow: "4px 4px 0 " + palette.line,
+          border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, color: palette.ink,
         }}
       >

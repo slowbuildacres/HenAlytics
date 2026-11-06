@@ -12,10 +12,13 @@
 //
 // Extra keys every palette gets, for colors that used to be typed in:
 //   onYolk   text on a yolk-yellow fill (always dark)
-//   onColor  text on a red, green or brown fill (always cream)
+//   onColor  text on a red, green or brown fill (cream; dark in dark mode,
+//            where those fills are lighter)
 //   onInk    text on an ink fill (cream in light, dark in dark)
 //   white    "white" panels and inputs
 //   dangerBg / goodBg / warnBg   pale red, green and yellow panels
+//   deep / onDeep   dark feature cards (big yellow number on dark) that stay
+//                   dark in dark mode instead of flipping light
 //
 // Farmhouse in light mode keeps the original colors exactly.
 // ============================================================================
@@ -29,6 +32,7 @@ const FARMHOUSE_LIGHT_LEGACY = {
   line: "#2C181030", card: "#FAF5EA",
   onYolk: "#2C1810", onColor: "#FFFAF2", onInk: "#FAF5EA", white: "#FFFFFF",
   dangerBg: "#FBE5DE", goodBg: "#EAF3DD", warnBg: "#FFF3CD",
+  deep: "#2C1810", onDeep: "#F4EDE0",
 };
 
 let state = { look: "farmhouse", dark: false, t: null };
@@ -41,15 +45,16 @@ function mapped(t, dark) {
     return {
       ...FARMHOUSE_LIGHT_LEGACY,
       bg: t.paper, bgAlt: t.chip, card: t.card, ink: t.ink, inkSoft: t.soft,
-      line: `${t.ink}30`, onInk: t.paper, white: t.card,
+      line: `${t.ink}30`, onInk: t.paper, white: t.card, deep: t.deep, onDeep: t.onDeep,
     };
   }
   return {
     bg: t.paper, bgAlt: t.chip, card: t.card, ink: t.ink, inkSoft: t.soft,
     accent: t.alert, accentSoft: "#B5664A", leaf: t.good, leafSoft: "#4E6B38",
     yolk: "#E8B04A", yolkSoft: t.yolkTint, feather: "#C2A57E", featherSoft: "#6B5640",
-    line: `${t.ink}30`, onYolk: "#1A130F", onColor: "#FFFAF2", onInk: t.paper, white: t.card,
+    line: `${t.ink}30`, onYolk: "#1A130F", onColor: t.paper, onInk: t.paper, white: t.card,
     dangerBg: t.alertTint, goodBg: t.goodTint, warnBg: t.yolkTint,
+    deep: t.deep, onDeep: t.onDeep,
   };
 }
 

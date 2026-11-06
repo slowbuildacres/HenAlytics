@@ -338,7 +338,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
         display: "inline-block", padding: "8px 14px", borderRadius: 8,
         background: busy ? palette.bgAlt : palette.yolk,
         border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
-        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink,
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: busy ? palette.ink : palette.onYolk,
       }}>
         {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another photo")}
         <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />

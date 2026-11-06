@@ -105,6 +105,7 @@ import LogPicker from "./newlook/LogPicker.jsx";
 import HomeScreen from "./newlook/HomeScreen.jsx";
 import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
+import { closeTopOverlay } from "./newlook/backClose.js";
 import { UndoHost, showUndo } from "./newlook/UndoBar.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
 import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
@@ -2844,7 +2845,7 @@ function Tile({ icon: Icon, label, sub, onClick, color = palette.ink, bg = palet
         cursor: "pointer",
         fontFamily: FONT_BODY,
         color: palette.ink,
-        boxShadow: "2px 3px 0 " + palette.line,
+        boxShadow: "none",
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         minHeight: big ? 110 : 90,
       }}
@@ -2957,7 +2958,7 @@ function Modal({ open, onClose, title, children }) {
           background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
           maxHeight: "90vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{
@@ -3271,7 +3272,7 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
           position: "absolute", top: "100%", left: 0, marginTop: 4,
           minWidth: 240, maxWidth: 300,
           background: palette.card, border: `2px solid ${palette.ink}`,
-          borderRadius: 12, boxShadow: `4px 5px 0 ${palette.line}`,
+          borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           zIndex: 60, overflow: "hidden",
         }}>
           {error && (
@@ -4753,7 +4754,7 @@ useEffect(() => {
   //   2. Sub-pages — return to home
   //   3. Fall through — Capacitor exits the app (Android default)
   // On iOS and web this hook is a no-op (no hardware back button).
-useNativeBackButton(React.useCallback(() => {
+const nativeBack = React.useCallback(() => {
   // Onboarding: step back through wizard before doing anything else.
   if (onboardingStep > 0) {
     setOnboardingStep((s) => Math.max(0, s - 1));
@@ -4778,13 +4779,26 @@ useNativeBackButton(React.useCallback(() => {
   if (nlProjectInfo) { setNlProjectInfo(null); return true; }
   // New look: screens under More go back to More (a project's pages back to
   // the project), Year in review back to Stats, everything else to Home.
+  const nlParent = () => (page === "project" ? "projects"
+    : page === "projectAet" ? "project"
+    : page === "projectGuide" ? (nlProjectId ? "project" : "projects")
+    : ["supporter", "look", "projects", "import", "sales", "journal", "games", "photos"].includes(page) ? "more"
+    : page === "year" ? "analytics"
+    : page !== "dash" ? "dash" : null);
+  // Forms and sheets a screen opened itself (a milk form, a canning batch, a
+  // sale…) close before going back a screen, so typed-in work isn't lost.
+  // If what's on top didn't close, go back a screen as usual.
+  const layer = closeTopOverlay();
+  if (layer) {
+    setTimeout(() => {
+      if (!layer.isConnected) return;
+      const parent = newLook ? nlParent() : (page !== "home" ? "home" : null);
+      if (parent) setPage(parent);
+    }, 120);
+    return true;
+  }
   if (newLook) {
-    const parent = page === "project" ? "projects"
-      : page === "projectAet" ? "project"
-      : page === "projectGuide" ? (nlProjectId ? "project" : "projects")
-      : ["supporter", "look", "projects", "import", "sales", "journal", "games", "photos"].includes(page) ? "more"
-      : page === "year" ? "analytics"
-      : page !== "dash" ? "dash" : null;
+    const parent = nlParent();
     if (parent) { setPage(parent); return true; }
     return false;
   }
@@ -4792,7 +4806,10 @@ useNativeBackButton(React.useCallback(() => {
   if (page !== "home") { setPage("home"); return true; }
   // Home, nothing open — exit the app.
   return false;
-}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page, newLook, logPickerOpen, switcherOpen, nlProjectSection, nlProjectForm, nlProjectLog, nlProjectInfo, nlProjectId]));
+}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page, newLook, logPickerOpen, switcherOpen, nlProjectSection, nlProjectForm, nlProjectLog, nlProjectInfo, nlProjectId]);
+useNativeBackButton(nativeBack);
+// Lets the browser tests press "Android back" (dev builds only).
+if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nativeBack;
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
@@ -5467,7 +5484,9 @@ useNativeBackButton(React.useCallback(() => {
   return (
     <div style={{
       minHeight: "100vh",
-      background: newLook ? nl.paper : sp.bg,
+      // backgroundColor, not the background shorthand: React warns when the
+      // shorthand changes (light/dark) next to backgroundImage/backgroundSize.
+      backgroundColor: newLook ? nl.paper : sp.bg,
       backgroundImage: newLook ? "none" : `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
@@ -5616,7 +5635,7 @@ useNativeBackButton(React.useCallback(() => {
             onClick={(e) => e.stopPropagation()}
             style={{
               background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
-              border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+              border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
               padding: 20,
             }}
           >
@@ -6099,7 +6118,7 @@ useNativeBackButton(React.useCallback(() => {
               overflowX: "hidden",
               WebkitOverflowScrolling: "touch",
               overscrollBehavior: "contain",
-              boxShadow: "3px 4px 0 " + palette.line,
+              boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
             }}>
               {(() => {
                 const preservingTypes = ["canning", "freeze_drying", "dehydrating", "fermentation"];
@@ -7374,7 +7393,7 @@ function TellAFriendCard({ data, update, setModal }) {
   if (tf.done || snoozed || daysIn < 14 || totalLogs < 20) return null;
   const close = (patch) => update((d) => { d.tellAFriend = { ...(d.tellAFriend || {}), lastShownAt: Date.now(), ...patch }; return d; });
   return (
-    <div style={{ marginTop: 22, background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 14, padding: 14, boxShadow: "2px 3px 0 " + palette.line }}>
+    <div style={{ marginTop: 22, background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 14, padding: 14, boxShadow: "none" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
         <div style={{ fontSize: 26, lineHeight: 1 }}>🤝</div>
         <div style={{ flex: 1 }}>
@@ -10562,7 +10581,7 @@ function BragShareModal({ card, user, onClose, onSignIn, children }) {
         const scale = Math.min(1, (shape === "story" ? Math.min(avail, 230) : avail) / sz.w);
         return (
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-            <div style={{ width: sz.w * scale, height: sz.h * scale, position: "relative", boxShadow: "3px 4px 0 " + palette.line, borderRadius: 18 * scale }}>
+            <div style={{ width: sz.w * scale, height: sz.h * scale, position: "relative", boxShadow: "0 12px 32px rgba(0,0,0,0.22)", borderRadius: 18 * scale }}>
               <div style={{ position: "absolute", left: 0, top: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
                 <BragCardArt card={card} layout={shape} />
               </div>
@@ -11535,7 +11554,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
             key={batch.id}
             onClick={() => setModal({ type: "editBatch", hobbyId: hobby.id, batchId: batch.id })}
             style={{
-              background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
+              background: palette.deep, color: palette.onDeep, borderRadius: 12, padding: 14,
               marginBottom: 10, cursor: "pointer",
             }}
           >
@@ -13244,13 +13263,13 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode, /* ADV_A
 
       {leadingCause && (
         <div style={{
-          background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14, marginBottom: 12,
+          background: palette.deep, color: palette.onDeep, borderRadius: 12, padding: 14, marginBottom: 12,
         }}>
           <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5 }}>
             Leading cause of death
           </div>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.yolk, marginTop: 4 }}>
-            {leadingCause[0]} <span style={{ fontSize: 14, color: palette.bg, opacity: 0.7 }}>({leadingCause[1]} of {totalDeaths})</span>
+            {leadingCause[0]} <span style={{ fontSize: 14, color: palette.onDeep, opacity: 0.7 }}>({leadingCause[1]} of {totalDeaths})</span>
           </div>
           {avgDeathAge && (
             <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>
@@ -15495,7 +15514,7 @@ function SupporterNamePromptModal({ user, onClose }) {
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
-        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+        border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         fontFamily: FONT_BODY, overflow: "hidden",
         display: "flex", flexDirection: "column",
       }}>
@@ -18235,7 +18254,7 @@ function BirdPhotoSection({ bird, user, onCommit }) {
         display: "inline-block", padding: "6px 12px", borderRadius: 7,
         background: busy ? palette.line : palette.yolk,
         border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
-        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, color: palette.ink,
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, color: busy ? palette.ink : palette.onYolk,
       }}>
         {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another")}
         <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
@@ -22763,7 +22782,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
         background: palette.bg, borderRadius: 14,
         maxWidth: 460, width: "100%", maxHeight: "92vh",
         border: `2px solid ${palette.ink}`,
-        boxShadow: "6px 6px 0 " + palette.line,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         // Use overflow:auto with safe-area-aware bottom padding so iOS
         // rubber-band bounce doesn't snap users back before they can tap
         // the Done button at the bottom of the hobby list.
@@ -24243,7 +24262,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden" }}>
 
         {/* Period filter */}
         <div style={{ padding:"16px 16px 0",display:"flex",gap:6,justifyContent:"center" }}>
@@ -24411,7 +24430,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 20, maxWidth: 420, width: "100%",
-          border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+          border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, overflow: "hidden",
         }}
       >
@@ -24512,7 +24531,7 @@ export function TutorialPrompt({ onStart, onSkip }) {
       <div
         style={{
           background: palette.bg, borderRadius: 20, maxWidth: 380, width: "100%",
-          border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+          border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, padding: "32px 28px",
           textAlign: "center",
         }}
@@ -24850,7 +24869,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           padding: "26px 24px",
           textAlign: "center",
         }}
@@ -24991,7 +25010,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
       <div onClick={(e) => e.stopPropagation()} style={{
         position: "relative", width: "100%", maxWidth: 400, maxHeight: "90vh",
         overflowY: "auto", borderRadius: 20, border: `2px solid ${palette.ink}`,
-        boxShadow: "8px 10px 0 rgba(20,30,15,0.30)", background: palette.card,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.22)", background: palette.card,
         fontFamily: FONT_BODY, color: palette.ink,
       }}>
         <button onClick={onClose} aria-label="Close" style={{
@@ -25190,7 +25209,7 @@ function AppStoreLaunchModal({ onClose, webOS }) {
           borderRadius: 22,
           overflow: "hidden",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `8px 10px 0 rgba(20,30,60,0.35)`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           background: "linear-gradient(160deg, #2F6BD8 0%, #1E47B0 100%)",
           animation: "henAppStorePop 0.32s ease-out",
         }}
@@ -25390,13 +25409,13 @@ function WhatsNewModal({ onClose }) {
         style={{
           background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",
           maxHeight:"min(85vh, 600px)",
-          border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,
+          border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",
           fontFamily:FONT_BODY,overflow:"hidden",
           display:"flex",flexDirection:"column",
         }}
       >
         {/* Header — fixed, with close button */}
-        <div style={{ background:palette.ink,padding:"20px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
+        <div style={{ background:palette.deep,padding:"20px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -25404,7 +25423,7 @@ function WhatsNewModal({ onClose }) {
               position:"absolute",top:12,right:12,
               background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",
               width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",
-              color:palette.bg,cursor:"pointer",padding:0,
+              color:palette.onDeep,cursor:"pointer",padding:0,
             }}
           >
             <X size={18}/>
@@ -25680,7 +25699,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
         <div style={{ background:palette.leaf,padding:"24px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
           <button
             onClick={onClose}
@@ -25853,7 +25872,7 @@ function PhotosModal({ data, user, onClose }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}
+        style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}
       >
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Photo library</div>

@@ -494,7 +494,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit sale" : "Log a sale"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -988,7 +988,7 @@ function CustomerModal({ customer, onSave, onClose }) {
   const [note, setNote] = useState(customer?.note || "");
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>{customer ? "Edit customer" : "Add customer"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink }}><X size={20}/></button>
@@ -1333,7 +1333,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit expense" : "Log expense"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -1702,7 +1702,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
 
       {/* Revenue summary cards */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
-        <div style={{ flex:"1 1 140px",background:palette.ink,color:palette.bg,borderRadius:12,padding:14 }}>
+        <div style={{ flex:"1 1 140px",background:palette.deep,color:palette.onDeep,borderRadius:12,padding:14 }}>
           <div style={{ fontSize:10,opacity:0.7,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>All-time revenue</div>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:32,color:palette.yolk,lineHeight:1 }}>{fmtMoney(totalRevenue)}</div>
           <div style={{ fontSize:11,opacity:0.7,marginTop:4 }}>{allSales.length} sale{allSales.length===1?"":"s"}</div>

@@ -108,7 +108,7 @@ function Modal({ open, onClose, title, children }) {
       <div onClick={e => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
         maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`,
-        boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
