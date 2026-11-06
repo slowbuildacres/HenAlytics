@@ -295,6 +295,8 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
 function Pill({ active, onClick, children }) {
   return (
     <button
+      type="button"
+      aria-pressed={!!active}
       onClick={onClick}
       style={{
         padding: "7px 13px", borderRadius: 999, whiteSpace: "nowrap",
@@ -520,8 +522,17 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold, l
 // ============================================================================
 // Page
 // ============================================================================
+// The Games started in 2026; earlier years have no boards.
+const GAMES_FIRST_YEAR = 2026;
+
 export default function GamesHubPage({ data, user, isSupporter = false, onOpenSupport }) {
-  const year = new Date().getFullYear();
+  // Through January, open on last year's final standings (they're still
+  // taking late logs); the new year's board fills in as people log.
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const inJanuary = now.getMonth() === 0;
+  const gameYears = [thisYear, thisYear - 1, thisYear - 2].filter((y) => y >= GAMES_FIRST_YEAR);
+  const [year, setYear] = useState(() => (inJanuary && thisYear - 1 >= GAMES_FIRST_YEAR ? thisYear - 1 : thisYear));
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState(null);
   const [boards, setBoards] = useState([]);
@@ -547,11 +558,9 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [r, b] = await Promise.all([loadMyRegion(), fetchRegionBoards(year)]);
+      const r = await loadMyRegion();
       if (cancelled) return;
       setRegion(r);
-      setBoards(b);
-      setLoading(false);
       if (!r || r.display_mode !== "hidden") {
         // May auto-place a US/CA homestead from its weather location —
         // re-read the row afterward so the boards reflect it immediately.
@@ -571,6 +580,14 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The boards for the year picked (reloaded when the year changes).
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchRegionBoards(year).then((b) => { if (!cancelled) { setBoards(b); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [year]);
 
   // County names load lazily, only when the counties tab is opened.
   useEffect(() => {
@@ -679,10 +696,17 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
           Homestead Games
         </div>
       </div>
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        {year} standings, built from what the community logs. Anonymous always —
-        regions compete, never names.
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 10 }}>
+        {year < thisYear
+          ? (inJanuary && year === thisYear - 1 ? `${year} final standings. Logs you add for ${year} still count through January 31.` : `${year} final standings.`)
+          : `${year} standings, built from what the community logs.${inJanuary ? " The new year's board fills in as people log." : ""}`}
+        {" "}Anonymous always: regions compete, never names.
       </div>
+      {gameYears.length > 1 && (
+        <div role="group" aria-label="Year" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {gameYears.map((y) => <Pill key={y} active={y === year} onClick={() => setYear(y)}>{y}</Pill>)}
+        </div>
+      )}
 
       {/* Tab bar: regional standings vs personal achievements */}
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
