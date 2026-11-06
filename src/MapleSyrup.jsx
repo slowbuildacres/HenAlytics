@@ -28,6 +28,8 @@
 
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
+import { Sheet, Button as NlButton } from "./newlook/ui.jsx";
+import { font as NL_FONT } from "./newlook/theme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -296,6 +298,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     return seasons.find(s => !s.archived) || seasons[0] || null;
   }, [seasons, hobby.currentSeasonId]);
 
+  const [askSeason, setAskSeason] = useState(false);
   const [seasonModal, setSeasonModal] = useState({ open: false, season: null });
   const [entryModal, setEntryModal] = useState({ open: false, action: null, entry: null });
 
@@ -306,8 +309,9 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
       if (!Array.isArray(h.seasons)) h.seasons = [];
       const idx = h.seasons.findIndex(x => x.id === s.id);
       if (idx >= 0) h.seasons[idx] = s; else h.seasons.push(s);
-      // If this is the very first season, auto-mark it as current.
-      if (h.seasons.length === 1) h.currentSeasonId = s.id;
+      // A season you just started becomes the current one (it used to only
+      // when it was the first, so a new year's logs kept going to last year).
+      if (idx < 0 || h.seasons.length === 1) h.currentSeasonId = s.id;
       return d;
     });
   };
@@ -383,12 +387,37 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     const LABEL = { sap_collected: "Sap collected", boil: "Boil", tap_set: "Taps set", supplies: "Supplies", infrastructure: "Equipment", note: "Note" };
     const open = (action, entry = null) => setEntryModal({ open: true, action, entry });
     const st = stats;
+    // From January 15 through April, if the current season is from a past
+    // year: offer the new year's season (taps carried over) before logging.
+    const todayIso = todayStr();
+    const thisYear = Number(todayIso.slice(0, 4));
+    const md = todayIso.slice(5);
+    const curYear = currentSeason ? (Number(currentSeason.year) || Number(String(currentSeason.startDate || "").slice(0, 4))) : null;
+    const seasonDue = !!(currentSeason && curYear && curYear < thisYear && md >= "01-15" && md <= "04-30" && !((hobby.seasonPrompt || {})[thisYear]));
+    const taps = (st && st.effectiveTaps) || currentSeason?.totalTaps || 0;
+    const startNewSeason = () => undoable(update, `Started the ${thisYear} season`)((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      if (!Array.isArray(h.seasons)) h.seasons = [];
+      const prev = h.seasons.find((x) => x.id === h.currentSeasonId);
+      if (prev && !prev.endDate) prev.endDate = todayIso;
+      const ns = { id: newId(), name: `${thisYear} season`, year: thisYear, startDate: todayIso, endDate: null, totalTaps: taps, notes: "", created: Date.now(), archived: false };
+      h.seasons.push(ns);
+      h.currentSeasonId = ns.id;
+      return d;
+    });
     const ctx = {
       key: "maple_syrup",
       summary: currentSeason
         ? { big: `${(st.totalSyrupGal || 0).toFixed(1)} gal`, small: `of syrup in ${currentSeason.name || currentSeason.year || "this season"}`, line: [st.totalSapGal ? `${st.totalSapGal.toFixed(0)} gal of sap` : null, st.effectiveTaps ? `${st.effectiveTaps} taps` : null, st.boilEfficiency ? `${st.boilEfficiency.toFixed(0)} to 1 sap to syrup` : null].filter(Boolean).join(" · ") }
         : { big: "0", small: "seasons yet", line: "Start a season when you tap your trees." },
-      newLabel: currentSeason ? "Log sap collected" : "Start a season", onNew: () => (currentSeason ? open("sap_collected") : setSeasonModal({ open: true, season: null })),
+      notice: seasonDue ? {
+        title: `Start the ${thisYear} sugaring season`,
+        sub: `New logs still go to ${currentSeason.name || curYear}. Start ${thisYear}${taps ? ` with your ${taps} taps carried over` : ""}.`,
+        action: `Start ${thisYear}`, onAction: startNewSeason,
+        onDismiss: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h.seasonPrompt = { ...(h.seasonPrompt || {}), [thisYear]: true }; return d; }),
+      } : null,
+      newLabel: currentSeason ? "Log sap collected" : "Start a season", onNew: () => (currentSeason ? (seasonDue ? setAskSeason(true) : open("sap_collected")) : setSeasonModal({ open: true, season: null })),
       goingTitle: "This season",
       going: currentSeason ? [{ id: currentSeason.id, title: currentSeason.name || String(currentSeason.year || "Season"), onOpen: () => setSeasonModal({ open: true, season: currentSeason }),
         sub: [`${(st.totalSapBoiled || 0).toFixed(0)} of ${(st.totalSapGal || 0).toFixed(0)} gal of sap boiled`, st.expectedSyrup ? `about ${st.expectedSyrup.toFixed(1)} gal of syrup in what you've collected` : null].filter(Boolean).join(" · "),
@@ -414,6 +443,16 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     return (
       <div>
         {seasonModal.open && <SeasonModal season={seasonModal.season} onSave={saveSeason} onDelete={deleteSeason} onClose={() => setSeasonModal({ open: false, season: null })} />}
+        {askSeason && (
+          <Sheet open onClose={() => setAskSeason(false)} label="Which season?" showClose>
+            <div style={{ padding: 4, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontFamily: NL_FONT.display, fontSize: 22 }}>Start the {thisYear} season?</div>
+              <div style={{ fontSize: 15, lineHeight: 1.5 }}>The current season is {currentSeason.name || curYear}.{taps ? ` Your ${taps} taps carry over.` : ""}</div>
+              <NlButton onClick={() => { setAskSeason(false); startNewSeason(); open("sap_collected"); }}>Start {thisYear} and log sap</NlButton>
+              <NlButton kind="quiet" onClick={() => { setAskSeason(false); open("sap_collected"); }}>Log to {currentSeason.name || curYear}</NlButton>
+            </div>
+          </Sheet>
+        )}
         {entryModal.open && <LogEntryModal action={entryModal.action} season={currentSeason} entry={entryModal.entry} onSave={saveEntry} onClose={() => setEntryModal({ open: false, action: null, entry: null })} />}
         <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
       </div>

@@ -73,6 +73,20 @@ export function PantryToday({ ctx, onOpenJournal, onSeeAll }) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <SubTabs tabs={ctx.tabs} />
+      {ctx.notice && (
+        // A one-line heads-up a hobby can raise (e.g. "Start the 2027
+        // sugaring season"), with its action and a way to dismiss it.
+        <Card padded style={{ display: "flex", flexDirection: "column", gap: 8, background: nl.yolkTint, borderColor: nl.yolkTint }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: nl.yolkInk }}>{ctx.notice.title}</div>
+              {ctx.notice.sub && <div style={{ fontSize: 13, color: nl.quietInk, marginTop: 2, lineHeight: 1.4 }}>{ctx.notice.sub}</div>}
+            </div>
+            {ctx.notice.onDismiss && <button type="button" aria-label="Dismiss" onClick={ctx.notice.onDismiss} style={{ width: 36, height: 36, margin: "-6px -6px 0 0", border: "none", background: "none", cursor: "pointer", color: nl.yolkInk, fontSize: 18 }}>×</button>}
+          </div>
+          {ctx.notice.action && <Button small onClick={ctx.notice.onAction} style={{ alignSelf: "flex-start" }}>{ctx.notice.action}</Button>}
+        </Card>
+      )}
       {summary && (
         <Card padded>
           <div style={{ display: "flex", alignItems: "baseline", gap: 10, flexWrap: "wrap" }}>
