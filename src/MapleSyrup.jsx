@@ -426,7 +426,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
         actions: [{ label: "Boil", primary: st.totalSapGal > st.totalSapBoiled, run: () => open("boil") }, { label: "Set taps", run: () => open("tap_set") }] }] : [],
       shelfTitle: "Logs this season", shelfEmpty: currentSeason ? "Nothing logged this season yet." : "Start a season to log sap and boils.",
       shelf: recentEntries.map((e) => ({ id: e.id, title: LABEL[e.action] || e.customLabel || "Log", onOpen: () => open(e.action, e),
-        sub: [e.date ? new Date(e.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "", e.action === "sap_collected" ? `${e.gallons} gal sap` : e.action === "boil" ? `${e.sapGal} gal sap to ${e.syrupGal} gal syrup` : e.action === "tap_set" ? `${e.count} taps` : e.cost ? `$${Number(e.cost).toFixed(2)}${e.item ? ` · ${e.item}` : ""}` : null, e.note || null].filter(Boolean).join(" · ") })),
+        sub: [e.date ? new Date(e.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "", e.action === "sap_collected" ? `${e.gallons} gal sap` : e.action === "boil" ? `${e.sapGal} gal sap to ${e.syrupGal} gal syrup` : e.action === "tap_set" ? `${e.count} taps` : e.cost ? `${fmtMoney(Number(e.cost))}${e.item ? ` · ${e.item}` : ""}` : null, e.note || null].filter(Boolean).join(" · ") })),
       past: seasons.filter((x) => !currentSeason || x.id !== currentSeason.id).map((x) => ({ id: x.id, title: x.name || String(x.year || "Season"), sub: "Tap to make this the current season", onOpen: () => setCurrentSeason(x.id) })),
       pastTitle: "Other seasons", pastSub: "Tap one to switch to it.",
       extras: [
@@ -603,7 +603,7 @@ export function mapleStats(hobby, data, range = "year") {
     cards: [
       { label: "Syrup", value: `${syrup.toFixed(1)} gal`, sub: boiled && syrup ? `${(boiled / syrup).toFixed(0)} to 1 sap to syrup` : "" },
       { label: "Sap", value: `${Math.round(sap)} gal`, sub: `${Math.round(boiled)} gal boiled` },
-      ...(cost ? [{ label: "Spent", value: `$${cost.toFixed(2)}`, sub: syrup ? `$${(cost / syrup).toFixed(2)} a gallon of syrup` : "" }] : []),
+      ...(cost ? [{ label: "Spent", value: fmtMoney(cost), sub: syrup ? `${fmtMoney((cost / syrup))} a gallon of syrup` : "" }] : []),
     ],
     bars: rows.length ? { title: "Syrup by season", right: "", rows } : null,
     facts, emoji: "🍁", kicker: "Our sugarbush",

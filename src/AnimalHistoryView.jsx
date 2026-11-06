@@ -31,6 +31,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import { X, Trash2, Save, Edit3 } from "lucide-react";
+import { fmtMoney as fmtMoneyIntl } from "./units.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -51,7 +52,7 @@ const fmtDate = (s) => {
     month: "short", day: "numeric", year: "numeric",
   });
 };
-const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+const fmtMoney =(n) =>fmtMoneyIntl(Number(n)||0);
 
 // ----------------------------------------------------------------------------
 // Action label/emoji map — covers every per-animal action across all species.

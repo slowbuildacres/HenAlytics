@@ -18,11 +18,12 @@
 import { collectAllSales, computeRevenue, saleKind } from "../../Sales.jsx";
 import { extractHobbyExpenses } from "../../expenseFifo.js";
 import { hobbyAllEntries } from "../../allEntries.js";
-import { collectGardenHarvests } from "../../analytics.js";
+import { collectGardenHarvests, harvestLbs } from "../../analytics.js";
 import { computeHarvestValue } from "../../gardenValue.js";
 import { SPECIES, liveAnimals, milkOz, birthHistory } from "../livestock/livestockData.js";
 import { rabbitSummary } from "../rabbits/rabbitData.js";
 import { rideTotals } from "../horses/horseData.js";
+import { fmtMoneyWhole, fmtWeight } from "../../units.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 export const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -139,10 +140,10 @@ export function production(data, p) {
       out.push({ label: "Eggs collected", value: eggs, text: `${eggs.toLocaleString("en-US")} eggs` });
     } else if (k.hobbyType === "garden") {
       const hv = collectGardenHarvests(data, { range: r });
-      const lbs = hv.reduce((t, x) => t + (/^lb/i.test(String(x.unit || "")) ? Number(x.quantity != null ? x.quantity : x.qty) || 0 : /^oz/i.test(String(x.unit || "")) ? (Number(x.quantity != null ? x.quantity : x.qty) || 0) / 16 : 0), 0);
+      const lbs = hv.reduce((t, x) => t + (harvestLbs(x) || 0), 0);
       const val = computeHarvestValue(hv, h.harvestPrices || {});
-      out.push({ label: "Harvested", value: lbs, text: `${r1(lbs)} lbs` });
-      if (val.total > 0) out.push({ label: "Worth at store prices", value: val.total, text: `$${Math.round(val.total)}` });
+      out.push({ label: "Harvested", value: lbs, text: fmtWeight(lbs, { forceBig: true }) });
+      if (val.total > 0) out.push({ label: "Worth at store prices", value: val.total, text: fmtMoneyWhole(val.total) });
     } else if (k.hobbyType === "rabbits") {
       const s = rabbitSummary(ents, r);
       out.push({ label: "Kits born alive", value: s.kits, text: `${s.kits} kits in ${s.litters} litters` });
@@ -225,7 +226,7 @@ export function projectRecord(data, p) {
   const k = kindOf(p.kind);
   const hobby = hobbyFor(data, p);
   const hobbyName = hobby ? (hobby.name || k.label) : k.label;
-  const money$ = (n) => `$${Math.round(n).toLocaleString("en-US")}`;
+  const money$ = (n) => fmtMoneyWhole(n);
   const sections = [
     { key: "goals", title: "Project goals", source: "You write these", status: (p.goals || "").trim() ? "done" : "todo", value: (p.goals || "").trim() ? "Written" : null, need: "goals", write: true },
     { key: "inventory", title: "Animal inventory", source: `From ${hobbyName}`, status: inv.count > 0 ? "done" : "todo", value: inv.count ? `${inv.count} ${inv.word}` : null, need: "inventory" },

@@ -34,6 +34,8 @@
 
 import React from "react";
 
+const HARVEST_LBS_PER = { lbs: 1, lb: 1, oz: 1 / 16, kg: 2.20462262, g: 0.00220462262 };
+
 // ---- Celebration catalog ----------------------------------------------------
 // Each entry: id (stable, unique, one-time), the copy (tone-guide voice), and
 // an optional `reviewWorthy` flag — these are the happy moments we also let the
@@ -272,12 +274,12 @@ export function computeCelebrationSignals(data) {
         e.qty != null ||
         e.quantity != null;
       if (!isHarvest) return false;
-      const unit = e.unit ? e.unit : "lbs";
-      return unit === "lbs";
+      // Weights only (lbs, oz, kg, g); counts and volumes don't add up.
+      return HARVEST_LBS_PER[String(e.unit || "lbs").toLowerCase()] != null;
     })
     .reduce((s, e) => {
       const raw = e.quantity != null ? e.quantity : e.qty;
-      return s + (Number(raw) || 0);
+      return s + (Number(raw) || 0) * HARVEST_LBS_PER[String(e.unit || "lbs").toLowerCase()];
     }, 0);
 
   // Sourdough: bakes are a countable array on the sourdough hobby (hobby.bakes[]).

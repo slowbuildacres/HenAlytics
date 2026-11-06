@@ -993,7 +993,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
     } else if (action === "sale") {
       // Pass sale payload so the page can archive AND create a Sales entry.
       const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
-      const priceStr = Number(salePrice) > 0 ? ` for $${Number(salePrice).toFixed(2)}` : "";
+      const priceStr = Number(salePrice) > 0 ? ` for ${fmtMoney(Number(salePrice))}` : "";
       const buyerStr = saleBuyer.trim() ? ` to ${saleBuyer.trim()}` : "";
       onSave({
         entry,

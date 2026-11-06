@@ -1058,7 +1058,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
       onSave({ entry, animalId, archiveReason: "died" });
     } else if (action === "sale") {
       const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
-      const priceStr = Number(salePrice) > 0 ? ` for $${Number(salePrice).toFixed(2)}` : "";
+      const priceStr = Number(salePrice) > 0 ? ` for ${fmtMoney(Number(salePrice))}` : "";
       const buyerStr = saleBuyer.trim() ? ` to ${saleBuyer.trim()}` : "";
       onSave({
         entry, animalId,

@@ -464,7 +464,7 @@ export function freezeDryingStats(hobby, data, range = "year") {
     cards: [
       { label: "Stored", value: oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${Math.round(oz)} oz`, sub: `${bs.length} run${bs.length === 1 ? "" : "s"}` },
       { label: "Run time", value: `${Math.round(hours)} hr`, sub: bs.length ? `${(hours / bs.length).toFixed(0)} hr a run` : "" },
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: oz ? `$${(cost / oz).toFixed(2)} an ounce` : "" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: oz ? `${fmtMoney((cost / oz))} an ounce` : "" }] : []),
     ],
     bars: rows.length ? { title: "What you freeze dried", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "❄️", kicker: "Our pantry",

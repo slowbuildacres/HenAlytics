@@ -32,7 +32,7 @@ import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus a
 import { X, Plus, Trash2 } from "lucide-react";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, tempFromF, fFromInput, tempUnitLabel, tempHint, fmtTemp } from "./units.js";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -179,7 +179,7 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
   const [startDate, setStartDate] = useState(ferment?.startDate || todayIso());
   const [expectedDays, setExpectedDays] = useState(ferment?.expectedFinishDate ? daysBetween(ferment.startDate, ferment.expectedFinishDate).toString() : "7");
   const [recipeId, setRecipeId] = useState(ferment?.recipeId || "");
-  const [startedTemperatureF, setStartedTemperatureF] = useState(ferment?.startedTemperatureF?.toString() || "");
+  const [startedTemperatureF, setStartedTemperatureF] = useState(String(tempFromF(ferment?.startedTemperatureF)));
   const [location, setLocation] = useState(ferment?.location || "");
   const [ingredients, setIngredients] = useState(ferment?.ingredients || "");
   const [ingredientsCost, setIngredientsCost] = useState(ferment?.ingredientsCost?.toString() || "");
@@ -215,7 +215,7 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
       recipeId: recipeId || null,
       startDate,
       expectedFinishDate: addDaysIso(startDate, days),
-      startedTemperatureF: parseFloat(startedTemperatureF) || null,
+      startedTemperatureF: fFromInput(startedTemperatureF),
       location: location.trim(),
       ingredients: ingredients.trim(),
       ingredientsCost: parseFloat(ingredientsCost) || 0,
@@ -256,8 +256,8 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Starting temp (°F)">
-            <input type="number" min={0} style={inputStyle()} value={startedTemperatureF} onChange={(e) => setStartedTemperatureF(e.target.value)} placeholder="e.g. 68" inputMode="numeric" />
+          <Field label={`Starting temp (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={startedTemperatureF} onChange={(e) => setStartedTemperatureF(e.target.value)} placeholder={`e.g. ${tempHint(68)}`} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
@@ -317,7 +317,7 @@ function LogStageModal({ ferment, onSave, onClose }) {
     onSave({
       date,
       dayNumber: daysBetween(ferment.startDate, date) + 1,
-      temperatureF: parseFloat(temperatureF) || null,
+      temperatureF: fFromInput(temperatureF),
       stageLabel: stageLabel.trim(),
       observation: observation.trim(),
       created: Date.now(),
@@ -335,8 +335,8 @@ function LogStageModal({ ferment, onSave, onClose }) {
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Temp (°F)">
-            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 70" inputMode="numeric" />
+          <Field label={`Temp (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder={`e.g. ${tempHint(70)}`} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
@@ -384,8 +384,8 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
   const editing = !!recipe;
   const [name, setName] = useState(recipe?.name || "");
   const [expectedDays, setExpectedDays] = useState(recipe?.expectedDays?.toString() || "7");
-  const [defaultTempLow, setDefaultTempLow] = useState(recipe?.defaultTempLow?.toString() || "");
-  const [defaultTempHigh, setDefaultTempHigh] = useState(recipe?.defaultTempHigh?.toString() || "");
+  const [defaultTempLow, setDefaultTempLow] = useState(String(tempFromF(recipe?.defaultTempLow)));
+  const [defaultTempHigh, setDefaultTempHigh] = useState(String(tempFromF(recipe?.defaultTempHigh)));
   const [ingredients, setIngredients] = useState(recipe?.ingredients || "");
   const [notes, setNotes] = useState(recipe?.notes || "");
 
@@ -397,8 +397,8 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
       id: recipe?.id || newId(),
       name: name.trim(),
       expectedDays: parseInt(expectedDays, 10) || 7,
-      defaultTempLow: parseFloat(defaultTempLow) || null,
-      defaultTempHigh: parseFloat(defaultTempHigh) || null,
+      defaultTempLow: fFromInput(defaultTempLow),
+      defaultTempHigh: fFromInput(defaultTempHigh),
       ingredients: ingredients.trim(),
       notes: notes.trim(),
       created: recipe?.created || Date.now(),
@@ -416,13 +416,13 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Temp low (°F)">
-            <input type="number" min={0} style={inputStyle()} value={defaultTempLow} onChange={(e) => setDefaultTempLow(e.target.value)} placeholder="65" inputMode="numeric" />
+          <Field label={`Temp low (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={defaultTempLow} onChange={(e) => setDefaultTempLow(e.target.value)} placeholder={tempHint(65)} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Temp high (°F)">
-            <input type="number" min={0} style={inputStyle()} value={defaultTempHigh} onChange={(e) => setDefaultTempHigh(e.target.value)} placeholder="72" inputMode="numeric" />
+          <Field label={`Temp high (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={defaultTempHigh} onChange={(e) => setDefaultTempHigh(e.target.value)} placeholder={tempHint(72)} inputMode="numeric" />
           </Field>
         </div>
       </div>
@@ -774,7 +774,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
                       <div key={s.id || i} style={{ fontSize: 12, color: palette.ink, marginBottom: i < Math.min(2, stages.length - 1) ? 6 : 0, lineHeight: 1.4 }}>
                         <strong>Day {s.dayNumber}</strong>
                         {s.stageLabel && ` · ${s.stageLabel}`}
-                        {s.temperatureF != null && ` · ${s.temperatureF}°F`}
+                        {s.temperatureF != null && ` · ${fmtTemp(s.temperatureF)}`}
                         <div style={{ color: palette.inkSoft }}>{s.observation}</div>
                       </div>
                     ))}
@@ -816,7 +816,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink }}>{r.name}</div>
               <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>
                 ~{r.expectedDays} days
-                {r.defaultTempLow && r.defaultTempHigh && ` · ${r.defaultTempLow}–${r.defaultTempHigh}°F`}
+                {r.defaultTempLow && r.defaultTempHigh && ` · ${tempFromF(r.defaultTempLow)}–${fmtTemp(r.defaultTempHigh)}`}
               </div>
               {r.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{r.notes}</div>}
             </div>
@@ -907,7 +907,7 @@ export function fermentationStats(hobby, data, range = "year") {
     cards: [
       { label: "Started", value: fs.length, sub: `${done.length} finished` },
       { label: "Average time", value: days.length ? `${Math.round(days.reduce((a, b) => a + b, 0) / days.length)} days` : "—", sub: "From start to done" },
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: fs.length ? `$${(cost / fs.length).toFixed(2)} a batch` : "" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: fs.length ? `${fmtMoney((cost / fs.length))} a batch` : "" }] : []),
     ],
     bars: rows.length ? { title: "What you fermented", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🫙", kicker: "Our kitchen",

@@ -6,7 +6,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp, fmtWeight } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel } from "./units.js";
 import { huntingTotals } from "./Hunting.jsx";
 import { soapBatchStats } from "./SoapMaking.jsx";
 import { getYearWeather } from "./weather.js";
@@ -17,7 +17,7 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 // rows that the old reducer was incorrectly summing as if they were lbs).
 // Imported under an alias so the existing `totalHarvestLbs` local-variable
 // name downstream can be reused without collision.
-import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs } from "./analytics.js";
+import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs, harvestLbs } from "./analytics.js";
 // HOMESTEAD_GAMES — closing-ceremony card reads the same pre-aggregated
 // region_stats the trophy hub uses. games.js imports THIS module dynamically,
 // so this static import does not form a cycle.
@@ -776,7 +776,7 @@ function GardenCard({ stats }) {
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
         🌱 Garden
       </div>
-      <CountUp number={Math.round(totalHarvestLbs)} suffix="lbs harvested" big />
+      <CountUp number={Math.round(weightFromLbs(totalHarvestLbs))} suffix={`${weightUnitLabel()} harvested`} big />
       <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
         From <strong style={{ color: palette.ink }}>{harvestsCount}</strong> harvest{harvestsCount === 1 ? "" : "s"}
         {plantingsCount > 0 && <> · {plantingsCount} planting{plantingsCount === 1 ? "" : "s"}</>}
@@ -2556,10 +2556,11 @@ export function computeStats(data, year) {
   const plantingsCount = allEntries.filter((e) => e.action === "planted").length;
   const plantTotals = {};
   allGardenHarvests.forEach((h) => {
-    if (h.unit !== "lbs") return;
+    const w = harvestLbs(h);
+    if (w == null) return;
     const name = (h.plant || "Unknown").trim();
     if (!name) return;
-    plantTotals[name] = (plantTotals[name] || 0) + (Number(h.quantity) || 0);
+    plantTotals[name] = (plantTotals[name] || 0) + w;
   });
   const topPlants = Object.entries(plantTotals).map(([plant, lbs]) => ({ plant, lbs })).sort((a, b) => b.lbs - a.lbs);
 

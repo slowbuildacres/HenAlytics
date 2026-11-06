@@ -15,7 +15,7 @@ import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
 import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
-import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, fmtMoney as fmtMoneyIntl } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -56,7 +56,7 @@ const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const ageInMonths=(dob)=>{if(!dob)return null;const b=parseLocalDate(dob);if(!b)return null;const n=new Date();return(n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth());};
 const fmtAge=(dob)=>{const m=ageInMonths(dob);if(m==null)return"";if(m<12)return`${m}mo`;const y=Math.floor(m/12);const mm=m%12;return mm===0?`${y}y`:`${y}y ${mm}mo`;};
-const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
+const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
 
 const COW_BREEDS=["Angus","Hereford","Holstein","Jersey","Ayrshire","Simmental","Charolais","Longhorn","Dexter","Highland","Brown Swiss","Guernsey","Limousin","Red Angus","Shorthorn","Mixed","Other"];
 const COW_PURPOSES=["Dairy","Beef","Both"];
@@ -1522,7 +1522,7 @@ function RemoveCowModal({ hobby, hobbyId, update, onClose }) {
           created: Date.now(),
         };
         d.entries[hobbyId].push(entry);
-        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const priceStr = numericPrice > 0 ? ` for ${fmtMoney(numericPrice)}` : "";
         const partyStr = partyName ? ` to ${partyName}` : "";
         target.archived = true;
         target.archivedReason = `${verb}${partyStr}${priceStr}`;
@@ -1815,7 +1815,7 @@ function LogModal({animal,hobbyId,action,animals=[],hobby,update,onClose,custome
         if(a&&!a.archived){
           a.archived=true;
           const verb=saleType==="leased"?"Leased":"Sold";
-          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const priceStr=Number(salePrice)>0?` for ${fmtMoney(Number(salePrice))}`:"";
           const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
           a.archivedReason=`${verb}${buyerStr}${priceStr}`;
           a.archivedDate=date;

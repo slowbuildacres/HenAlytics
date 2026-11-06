@@ -501,7 +501,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
       }),
       shelfTitle: "Recent bakes", shelfEmpty: "No bakes yet. Log your next loaf.",
       shelf: bakes.map((b) => ({ id: b.id, title: b.recipe || "Bake", onOpen: () => setBakeModal({ open: true, bake: b }),
-        sub: [fmtDate(b.date), `${Number(b.loafCount) || 0} loa${Number(b.loafCount) === 1 ? "f" : "ves"}`, b.crumbRating ? `crumb ${b.crumbRating} of 5` : null, b.costPerLoaf ? `$${Number(b.costPerLoaf).toFixed(2)} a loaf` : null].filter(Boolean).join(" · ") })),
+        sub: [fmtDate(b.date), `${Number(b.loafCount) || 0} loa${Number(b.loafCount) === 1 ? "f" : "ves"}`, b.crumbRating ? `crumb ${b.crumbRating} of 5` : null, b.costPerLoaf ? `${fmtMoney(Number(b.costPerLoaf))} a loaf` : null].filter(Boolean).join(" · ") })),
       past: archivedStarters.map((st) => ({ id: st.id, title: st.name || "Starter", sub: "Retired starter", onOpen: () => setStarterModal({ open: true, starter: st }) })),
       pastTitle: "Retired starters",
       extras: [
@@ -715,8 +715,8 @@ export function sourdoughStats(hobby, data, range = "year") {
   return {
     cards: [
       { label: "Loaves", value: loaves, sub: `${bakes.length} bake${bakes.length === 1 ? "" : "s"}` },
-      ...(revenue ? [{ label: "Sold", value: `$${revenue.toFixed(2)}`, sub: "Bread sales" }] : []),
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: loaves ? `$${(cost / loaves).toFixed(2)} a loaf` : "" }] : []),
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Bread sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: loaves ? `${fmtMoney((cost / loaves))} a loaf` : "" }] : []),
     ],
     bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🍞", kicker: "Our kitchen",

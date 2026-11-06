@@ -15,7 +15,7 @@ import { SPECIES } from "./newlook/livestock/livestockData.js";
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
 import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
-import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
+import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, currencySymbol, fmtMoney as fmtMoneyIntl } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -54,7 +54,7 @@ const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.g
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
-const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
+const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
 const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000)); /* PIGS_UNIFY_V1 */
 
 const PIG_BREEDS=["Berkshire","Duroc","Hampshire","Yorkshire","Landrace","Tamworth","Spotted","Mangalitsa","Kunekune","Chester White","Poland China","American Guinea Hog","Mixed","Other"];
@@ -908,7 +908,7 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
           created: Date.now(),
         };
         d.entries[hobbyId].push(entry);
-        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const priceStr = numericPrice > 0 ? ` for ${fmtMoney(numericPrice)}` : "";
         const partyStr = partyName ? ` to ${partyName}` : "";
         target.archived = true;
         target.archivedReason = `${verb}${partyStr}${priceStr}`;
@@ -1092,7 +1092,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
         if(a&&!a.archived){
           a.archived=true;
           const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
-          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const priceStr=Number(salePrice)>0?` for ${fmtMoney(Number(salePrice))}`:"";
           const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
           a.archivedReason=`${verb}${buyerStr}${priceStr}`;
           a.archivedDate=date;
@@ -1290,7 +1290,7 @@ export function PigsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=null
         <StatCard label="Meat produced" value={fmtWeight(totalMeatLbs)} accent={palette.leaf}/>
         <StatCard label="Piglets born" value={totalPiglets} accent={palette.yolk}/>
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
-        {costPerLb!=="—"&&<StatCard label="Feed cost / lb" value={`$${costPerLb}`} accent={palette.accent}/>}
+        {costPerLb!=="—"&&<StatCard label="Feed cost / lb" value={`${currencySymbol()}${costPerLb}`} accent={palette.accent}/>}
       </div>
 
       <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>

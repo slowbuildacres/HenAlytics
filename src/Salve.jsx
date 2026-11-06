@@ -611,8 +611,8 @@ export function salveStats(hobby, data, range = "year") {
   return {
     cards: [
       { label: "Tins made", value: made, sub: `${bs.length} batch${bs.length === 1 ? "" : "es"}` },
-      { label: revenue ? "Sold" : "Gone", value: revenue ? `$${revenue.toFixed(2)}` : gone, sub: revenue ? `${gone} tins` : "Sold or used" },
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: made ? `$${(cost / made).toFixed(2)} a tin` : "" }] : []),
+      { label: revenue ? "Sold" : "Gone", value: revenue ? fmtMoney(revenue) : gone, sub: revenue ? `${gone} tins` : "Sold or used" },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: made ? `${fmtMoney((cost / made))} a tin` : "" }] : []),
     ],
     bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🌿", kicker: "Our apothecary",

@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { isoDay, parseDay, prettyDay, DAY, costRows } from "../eggs/eggFacts.js";
-import { fmtVolume, volumeUnitLabel } from "../../units.js";
+import { fmtVolume, volumeUnitLabel, fmtMoney, fmtMoneyWhole } from "../../units.js";
 
 export const SPECIES = {
   goats: {
@@ -285,8 +285,8 @@ export function herdFunFacts(sp, { data, hobby, range, milkPrice = 0 }) {
   }
   if (total >= 128 && milkPrice > 0) {
     const v = (total / 128) * milkPrice;
-    facts.push({ key: "worth", icon: "money", big: `$${Math.round(v).toLocaleString("en-US")}`, line: "of milk, at store prices",
-      title: `Worth about $${Math.round(v).toLocaleString("en-US")} at the store`, sub: `At $${milkPrice.toFixed(2)} a gallon.` });
+    facts.push({ key: "worth", icon: "money", big: fmtMoneyWhole(v), line: "of milk, at store prices",
+      title: `Worth about ${fmtMoneyWhole(v)} at the store`, sub: `At ${fmtMoney(milkPrice)} a gallon.` });
   }
   const top = milkByAnimal(sp, entries, hobby, range);
   if (top.length > 1 && top[0].oz > 0) {

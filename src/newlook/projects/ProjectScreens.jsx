@@ -22,10 +22,11 @@ import {
 } from "./projectData.js";
 import { buildProjectPdf, aetRows } from "./projectPdf.js";
 import { shareOrDownload } from "../../Sales.jsx";
+import { fmtMoney, fmtMoneyWhole } from "../../units.js";
 
 const uid = () => `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
 const ic = (I) => <I size={20} strokeWidth={1.8} aria-hidden="true" />;
-const money0 = (n) => `$${Math.round(Number(n) || 0).toLocaleString("en-US")}`;
+const money0 = (n) => fmtMoneyWhole(Number(n) || 0);
 const shortDate = (iso) => { if (!iso) return ""; const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
 
 function ClubTag({ club }) {
@@ -409,13 +410,13 @@ function MoneyPicker({ which, rec, project: p, setP }) {
                   <span style={{ display: "block", fontSize: 14, fontWeight: 600, overflowWrap: "anywhere" }}>{x.what}</span>
                   <span style={{ display: "block", fontSize: 12, color: nl.soft }}>{[shortDate(x.date), isIncome ? x.buyer : x.category !== x.what ? x.category : null].filter(Boolean).join(" · ")}</span>
                 </span>
-                <span style={{ fontSize: 14, fontWeight: 600 }}>${x.amount.toFixed(2)}</span>
+                <span style={{ fontSize: 14, fontWeight: 600 }}>{fmtMoney(x.amount)}</span>
               </Tag>
             );
           })}
         </Card>
       ) : <div style={{ fontSize: 14, color: nl.soft }}>{isIncome ? "No sales in these dates yet. Log them in Sales & costs." : "No costs in these dates yet. Log feed and supplies in the hobby or in Sales & costs."}</div>}
-      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, margin: "12px 4px 0" }}><span>Total {isIncome ? "income" : "expenses"}</span><span>${total.toFixed(2)}</span></div>
+      <div style={{ display: "flex", justifyContent: "space-between", fontWeight: 700, fontSize: 15, margin: "12px 4px 0" }}><span>Total {isIncome ? "income" : "expenses"}</span><span>{fmtMoney(total)}</span></div>
     </div>
   );
 }
@@ -568,8 +569,8 @@ export function AetSummary({ data, project: p, onBack, toast }) {
         ))}
       </div>
       {block("Journal", rows.journal, (r) => `${r.date} · ${r.hours ? `${r.hours} hrs · ` : ""}${r.category}`, (r) => r.description)}
-      {block("Expenses", rows.expenses, (r) => `${r.date} · $${r.amount}`, (r) => (r.description === r.category ? r.description : `${r.description} · ${r.category}`))}
-      {block("Income", rows.income, (r) => `${r.date} · $${r.amount}`, (r) => [r.description, r.qty].filter(Boolean).join(" · "))}
+      {block("Expenses", rows.expenses, (r) => `${r.date} · ${fmtMoney(r.amount)}`, (r) => (r.description === r.category ? r.description : `${r.description} · ${r.category}`))}
+      {block("Income", rows.income, (r) => `${r.date} · ${fmtMoney(r.amount)}`, (r) => [r.description, r.qty].filter(Boolean).join(" · "))}
       {block("Inventory", rows.inventory, (r) => r.item, (r) => r.details)}
     </div>
   );

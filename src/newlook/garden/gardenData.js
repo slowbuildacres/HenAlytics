@@ -9,12 +9,13 @@
 
 import { CROPS, getFrostDates } from "../../gardenAlmanac.js";
 import { autoDetectHardiness } from "../../hardiness.js";
-import { collectGardenHarvests, totalHarvestLbs } from "../../analytics.js";
+import { collectGardenHarvests, totalHarvestLbs, harvestLbs } from "../../analytics.js";
 import { computeHarvestValue } from "../../gardenValue.js";
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
+import { fmtMoneyWhole, fmtWeight, weightUnitLabel } from "../../units.js";
 
 const key = (s) => String(s || "").trim().toLowerCase();
-const UNIT = { lbs: "lbs", oz: "oz", each: "each", count: "", cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches", quart: "quarts", pint: "pints" };
+const UNIT = { lbs: "lbs", oz: "oz", kg: "kg", g: "g", each: "each", count: "", cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches", quart: "quarts", pint: "pints" };
 
 export function harvestText(harvests) {
   const t = {};
@@ -122,8 +123,7 @@ export function harvestByCrop(harvests, overrides) {
   for (const h of harvests) {
     const p = String(h.plant || "Unknown").trim() || "Unknown";
     const g = byPlant.get(key(p)) || { plant: p, lbs: 0, value: 0 };
-    if (!h.unit || h.unit === "lbs") g.lbs += Number(h.quantity != null ? h.quantity : h.qty) || 0;
-    if (h.unit === "oz") g.lbs += (Number(h.quantity != null ? h.quantity : h.qty) || 0) / 16;
+    g.lbs += harvestLbs(h) || 0;
     byPlant.set(key(p), g);
   }
   for (const r of rows) { const g = byPlant.get(key(r.plant)); if (g) g.value += r.value; }
@@ -133,22 +133,26 @@ export function harvestByCrop(harvests, overrides) {
 export function gardenFunFacts({ data, hobby, harvests, today = isoDay() }) {
   const facts = [];
   const { crops } = harvestByCrop(harvests, hobby.harvestPrices);
-  const money = (v) => `$${Math.round(v).toLocaleString("en-US")}`;
+  const money = (v) => fmtMoneyWhole(v);
   if (crops[0] && crops[0].value >= 5) {
     facts.push({ key: "topcrop", icon: "harvest", big: money(crops[0].value), line: `of ${key(crops[0].plant)} from our garden`,
       title: `Your ${key(crops[0].plant)} alone were worth ${money(crops[0].value)}`, sub: "At grocery store prices." });
   }
   const byDay = new Map();
-  for (const h of harvests) if (h.date && (!h.unit || h.unit === "lbs")) byDay.set(h.date, (byDay.get(h.date) || 0) + (Number(h.quantity != null ? h.quantity : h.qty) || 0));
+  for (const h of harvests) { const w = harvestLbs(h); if (h.date && w != null) byDay.set(h.date, (byDay.get(h.date) || 0) + w); }
   if (byDay.size >= 3) {
     const [d, lbs] = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
-    if (lbs >= 2) facts.push({ key: "bigday", icon: "trophy", big: `${Math.round(lbs)} lbs`, line: `our biggest harvest, ${prettyDay(d)}`, title: `Biggest haul: ${Math.round(lbs)} lbs on ${prettyDay(d)}`, sub: "Your best picking day this season." });
+    if (lbs >= 2) facts.push({ key: "bigday", icon: "trophy", big: fmtWeight(lbs, { decimals: 0, forceBig: true }), line: `our biggest harvest, ${prettyDay(d)}`, title: `Biggest haul: ${fmtWeight(lbs, { decimals: 0, forceBig: true })} on ${prettyDay(d)}`, sub: "Your best picking day this season." });
   }
   const season = hobby.currentSeason;
   const waters = ((data.entries && data.entries.garden) || []).filter((e) => e && e.action === "watered" && (!season || e.seasonId === season.id)).length;
   if (waters >= 5) facts.push({ key: "water", icon: "water", big: String(waters), line: "times we watered this season", title: `You watered ${waters} times this season`, sub: waters >= 50 ? "That's dedication." : "Every one of them counted." });
   const lbs = totalHarvestLbs(harvests);
-  if (lbs >= 10) facts.push({ key: "salads", icon: "leaf", big: `${Math.round(lbs).toLocaleString("en-US")} lbs`, line: "of food from our garden", title: `That's about ${Math.round(lbs * 4).toLocaleString("en-US")} side dishes`, sub: `${Math.round(lbs)} lbs at roughly a quarter pound each.` });
+  if (lbs >= 10) {
+    const w = fmtWeight(lbs, { decimals: 0, forceBig: true });
+    const metric = weightUnitLabel() === "kg";
+    facts.push({ key: "salads", icon: "leaf", big: w, line: "of food from our garden", title: `That's about ${Math.round(lbs * 4).toLocaleString("en-US")} side dishes`, sub: `${w} at roughly ${metric ? "115 g" : "a quarter pound"} each.` });
+  }
   return facts;
 }
 

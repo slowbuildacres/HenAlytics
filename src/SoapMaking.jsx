@@ -408,7 +408,7 @@ export default function SoapMakingPage({ hobby, data, update, setModal, nl = nul
       const st = soapBatchStats(b, sales);
       return {
         id: b.id, title: b.name || "Soap", left: st.remaining, unit: "bars", onOpen: () => setBatchModal({ open: true, batch: b }),
-        sub: [`${st.remaining} of ${st.bars} bars`, b.madeDate ? `made ${shortDate(b.madeDate)}` : null, st.costPerBar ? `$${st.costPerBar.toFixed(2)} a bar` : null].filter(Boolean).join(" · "),
+        sub: [`${st.remaining} of ${st.bars} bars`, b.madeDate ? `made ${shortDate(b.madeDate)}` : null, st.costPerBar ? `${fmtMoney(st.costPerBar)} a bar` : null].filter(Boolean).join(" · "),
         pct: !st.cured && b.madeDate && b.cureWeeks ? (1 - st.daysLeft / (b.cureWeeks * 7)) * 100 : null,
         badge: st.cured ? null : { tone: "ready", text: `Ready ${shortDate(b.expectedCureDate)}` },
         actions: st.remaining > 0 ? [{ label: "Sell", run: () => setMoveModal({ open: true, mode: "sell", batchId: b.id }) }, { label: "Use or gift", run: () => setMoveModal({ open: true, mode: "use", batchId: b.id }) }] : [{ label: "Archive", run: () => setArchived(b.id, true) }],
@@ -416,7 +416,7 @@ export default function SoapMakingPage({ hobby, data, update, setModal, nl = nul
     };
     const ctx = {
       key: "soap",
-      summary: { big: readyBars, small: `bar${readyBars === 1 ? "" : "s"} ready to use or sell`, line: [curingBars ? `${curingBars} still curing` : null, yearRevenue ? `$${yearRevenue.toFixed(2)} sold this year` : null].filter(Boolean).join(" · ") },
+      summary: { big: readyBars, small: `bar${readyBars === 1 ? "" : "s"} ready to use or sell`, line: [curingBars ? `${curingBars} still curing` : null, yearRevenue ? `${fmtMoney(yearRevenue)} sold this year` : null].filter(Boolean).join(" · ") },
       newLabel: "Make a batch", onNew: () => setBatchModal({ open: true, batch: null }),
       goingTitle: "Curing", going: curing.map(row),
       shelfTitle: "Ready", shelfEmpty: "No cured bars yet.",
@@ -506,8 +506,8 @@ export function soapStats(hobby, data, range = "year") {
   return {
     cards: [
       { label: "Bars made", value: bars, sub: `${bs.length} batch${bs.length === 1 ? "" : "es"}` },
-      { label: "Sold", value: revenue ? `$${revenue.toFixed(2)}` : sold, sub: `${sold} bars` },
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: bars ? `$${(cost / bars).toFixed(2)} a bar` : "" }] : []),
+      { label: "Sold", value: revenue ? fmtMoney(revenue) : sold, sub: `${sold} bars` },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: bars ? `${fmtMoney((cost / bars))} a bar` : "" }] : []),
     ],
     bars: rows.length ? { title: "Your batches", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🧼", kicker: "Our soap",

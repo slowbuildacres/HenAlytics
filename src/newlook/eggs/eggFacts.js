@@ -9,6 +9,7 @@
 
 import { expandRecurringExpenses } from "../../Sales.jsx";
 import { daylightHours, fmtHours } from "../../eggInsights.js";
+import { fmtMoneyWhole } from "../../units.js";
 
 export const DAY = 86400000;
 const pad = (n) => String(n).padStart(2, "0");
@@ -91,7 +92,7 @@ export function eggFunFacts({ data, hobby, range, today = isoDay(), storePrice =
   const inR = ents.filter((e) => inRange(e.date, r));
   const total = inR.reduce((s, e) => s + (Number(e.count) || 0), 0);
   const facts = [];
-  const fmtMoney0 = (v) => `$${Math.round(v).toLocaleString("en-US")}`;
+  const fmtMoney0 = (v) => fmtMoneyWhole(v);
 
   // 1. Break-even: the day eggs (at store prices) passed everything spent.
   const costs = costRows(data, hobby, today);

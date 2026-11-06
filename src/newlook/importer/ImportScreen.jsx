@@ -14,6 +14,7 @@ import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Button, Chip } from "../ui.jsx";
 import { showUndo } from "../UndoBar.jsx";
 import { readFile, parseDelimited, headerRow, columnNames, guessColumns, buildRecords, KIND_FIELDS, loggedEggDays, newId } from "./importData.js";
+import { fmtMoney } from "../../units.js";
 
 const KINDS = [
   { key: "eggs", label: "Egg counts", sub: "A date and how many eggs", I: Egg },
@@ -246,7 +247,7 @@ export default function ImportScreen({ data, update, onBack, toast }) {
                 <div key={r.id} style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "8px 14px", borderTop: `1px solid ${nl.rule}`, fontSize: 14 }}>
                   <span style={{ color: nl.soft, flexShrink: 0 }}>{shortDate(r.date)}</span>
                   <span style={{ fontWeight: 600, textAlign: "right", overflowWrap: "anywhere" }}>
-                    {kind === "eggs" ? `${r.count} eggs` : kind === "harvest" ? `${r.quantity} ${r.unit} ${r.plant}` : `$${r.totalRevenue.toFixed(2)}${r.crop || r.item ? ` · ${r.crop || r.item}` : ""}`}
+                    {kind === "eggs" ? `${r.count} eggs` : kind === "harvest" ? `${r.quantity} ${r.unit} ${r.plant}` : `${fmtMoney(r.totalRevenue)}${r.crop || r.item ? ` · ${r.crop || r.item}` : ""}`}
                   </span>
                 </div>
               ))}

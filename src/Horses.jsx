@@ -917,7 +917,7 @@ function HorseSaleModal({ horse, horses, onClose, onSave, customers = [] }) {
   const handleSave = () => {
     const id = newId();
     const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
-    const priceStr = Number(price) > 0 ? ` for $${Number(price).toFixed(2)}` : "";
+    const priceStr = Number(price) > 0 ? ` for ${fmtMoney(Number(price))}` : "";
     const buyerStr = buyer.trim() ? ` to ${buyer.trim()}` : "";
     onSave({
       horseId: selectedHorse.id,

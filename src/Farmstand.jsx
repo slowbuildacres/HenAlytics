@@ -19,7 +19,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, fmtMoneyWhole } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -1324,7 +1324,7 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={monthChart}>
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: palette.inkSoft }} />
-                <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => `$${v}`} />
+                <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => fmtMoneyWhole(v)} />
                 <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ background: palette.bg, border: `1px solid ${palette.line}`, borderRadius: 8 }} />
                 <Bar dataKey="revenue" fill={palette.leaf} name="Revenue" />
                 <Bar dataKey="profit" fill={palette.feather} name="Profit" />
@@ -1371,7 +1371,7 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={revMonthly}>
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: palette.inkSoft }} />
-                      <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => `$${v}`} />
+                      <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => fmtMoneyWhole(v)} />
                       <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ background: palette.bg, border: `1px solid ${palette.line}`, borderRadius: 8 }} />
                       <Line type="monotone" dataKey="revenue" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
                     </LineChart>

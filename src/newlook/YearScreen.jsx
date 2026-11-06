@@ -17,7 +17,7 @@ import { switcherEntries } from "./hobbies.js";
 import { computeStats } from "../YearInReview.jsx";
 import { computeHarvestValue } from "../gardenValue.js";
 import { collectGardenHarvests } from "../analytics.js";
-import { fmtMoney } from "../units.js";
+import { fmtMoney, weightFromLbs, weightUnitLabel } from "../units.js";
 import { allEntriesByHobby } from "../allEntries.js";
 
 // Months of `year` with a story to tell (5+ logs, same bar as the monthly
@@ -37,7 +37,7 @@ const n0 = (v) => Math.round(Number(v) || 0).toLocaleString("en-US");
 function highlight(type, st) {
   switch (type) {
     case "egg_layers": return st.eggsCollected ? `${n0(st.eggsCollected)} eggs${st.peakEggMonth ? ` · best month ${st.peakEggMonth}` : ""}` : null;
-    case "garden": return st.totalHarvestLbs ? `${n0(st.totalHarvestLbs)} lbs harvested${st.topPlants && st.topPlants[0] ? ` · top crop ${String(st.topPlants[0].plant).toLowerCase()}` : ""}` : null;
+    case "garden": return st.totalHarvestLbs ? `${n0(weightFromLbs(st.totalHarvestLbs))} ${weightUnitLabel()} harvested${st.topPlants && st.topPlants[0] ? ` · top crop ${String(st.topPlants[0].plant).toLowerCase()}` : ""}` : null;
     case "meat_chickens": return st.birdsRaised ? `${n0(st.birdsRaised)} birds raised${st.totalMeatLbs ? ` · ${n0(st.totalMeatLbs)} lbs of meat` : ""}` : null;
     case "goats": return st.goatMilkOz || st.goatKids ? [st.goatMilkOz ? `${(st.goatMilkOz / 128).toFixed(1)} gal milk` : null, st.goatKids ? `${st.goatKids} kids born` : null].filter(Boolean).join(" · ") : null;
     case "cows": return st.cowMilkGal || st.cowCalves ? [st.cowMilkGal ? `${n0(st.cowMilkGal)} gal milk` : null, st.cowCalves ? `${st.cowCalves} calves` : null].filter(Boolean).join(" · ") : null;

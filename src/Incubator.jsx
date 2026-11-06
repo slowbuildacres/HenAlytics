@@ -10,6 +10,7 @@ import { undoable } from "./newlook/UndoBar.jsx";
 import { X, Edit3, Trash2, Plus, Calendar } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { groupDigits } from "./numFmt.js";
+import { fmtMoney } from "./units.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
@@ -1088,7 +1089,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
           </div>
           {pricePerBird && n > 0 && (
             <div style={{ marginBottom: 12, padding: "8px 12px", background: palette.leafSoft, borderRadius: 8, fontSize: 13, color: palette.ink }}>
-              Total: <strong>${(parseFloat(pricePerBird) * n).toFixed(2)}</strong>
+              Total: <strong>{fmtMoney(parseFloat(pricePerBird) * n)}</strong>
             </div>
           )}
         </>
@@ -1372,7 +1373,7 @@ function BrooderBatchCard({ batch, hobbyId, data, update, setModal }) {
             <div style={{ marginTop: 6, padding: "8px 10px", background: palette.bgAlt, borderRadius: 6 }}>
               {batch.dispositions.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(d => {
                 let label = "";
-                if (d.type === "sold") label = `💰 Sold ${d.count} @ $${(d.pricePerBird || 0).toFixed(2)} ea`;
+                if (d.type === "sold") label = `💰 Sold ${d.count} @ ${fmtMoney((d.pricePerBird || 0))} ea`;
                 else if (d.type === "moved_to_flock") label = `🐔 Moved ${d.count} to flock`;
                 else if (d.type === "died") label = `🪦 ${d.count} died${d.cause ? ` — ${d.cause}` : ""}`;
                 else label = `📝 ${d.count} ${d.notes || "removed"}`;

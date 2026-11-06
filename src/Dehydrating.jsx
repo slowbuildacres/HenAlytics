@@ -24,7 +24,7 @@ import { showUndo, undoable } from "./newlook/UndoBar.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, tempFromF, fFromInput, tempUnitLabel, tempHint, fmtTemp } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
 import { groupDigits } from "./numFmt.js";
@@ -151,7 +151,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   const [dryerHours, setDryerHours] = useState(batch?.dryerHours?.toString() || "");
   const [trays, setTrays] = useState(batch?.trays?.toString() || "");
   const [outputOz, setOutputOz] = useState(batch?.outputOz?.toString() || "");
-  const [temperatureF, setTemperatureF] = useState(batch?.temperatureF?.toString() || "");
+  const [temperatureF, setTemperatureF] = useState(String(tempFromF(batch?.temperatureF)));
   const [containerType, setContainerType] = useState(batch?.containerType || "jar");
   const [ingredientsCost, setIngredientsCost] = useState(batch?.ingredientsCost?.toString() || "");
   const [costTouched, setCostTouched] = useState(false);
@@ -176,7 +176,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
       dryerHours: parseFloat(dryerHours) || 0,
       trays: parseInt(trays, 10) || 0,
       outputOz: parseFloat(outputOz) || 0,
-      temperatureF: parseInt(temperatureF, 10) || 0,
+      temperatureF: fFromInput(temperatureF) || 0,
       containerType,
       ingredientsCost: parseFloat(ingredientsCost) || 0,
       notes: notes.trim(),
@@ -202,8 +202,8 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Temp (°F)">
-            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 135" inputMode="numeric" />
+          <Field label={`Temp (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder={`e.g. ${tempHint(135)}`} inputMode="numeric" />
           </Field>
         </div>
       </div>
@@ -409,7 +409,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
       newLabel: "Log a dehydrator batch", onNew: () => setBatchModal({ open: true, batch: null }),
       shelfTitle: "Stored", shelfEmpty: "Nothing dried yet. Log your next dehydrator batch and it shows up here.",
       shelf: active.map((b) => ({ id: b.id, title: b.item || "Batch", onOpen: () => setBatchModal({ open: true, batch: b }),
-        sub: [shortDate(b.date), b.outputOz ? nlOz(b.outputOz) : null, b.trays ? `${b.trays} trays` : null, b.dryerHours ? `${b.dryerHours} hr` : null, b.temperatureF ? `${b.temperatureF}°F` : null, null].filter(Boolean).join(" · "),
+        sub: [shortDate(b.date), b.outputOz ? nlOz(b.outputOz) : null, b.trays ? `${b.trays} trays` : null, b.dryerHours ? `${b.dryerHours} hr` : null, b.temperatureF ? fmtTemp(b.temperatureF) : null, null].filter(Boolean).join(" · "),
         actions: [{ label: "Archive", run: () => archiveWithUndo(b) }] })),
       past: archived.map((b) => ({ id: b.id, title: b.item || "Batch", sub: `${shortDate(b.date)} · ${nlOz(b.outputOz)}`, onOpen: () => setBatchModal({ open: true, batch: b }) })),
       extras: [
@@ -490,7 +490,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
               <div style={{ flex: 1, minWidth: 0 }}>
                 <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.2 }}>{b.item}</div>
                 <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
-                  {b.date} · {b.outputOz || 0}oz · {b.trays || 0} trays · {b.dryerHours || 0}hr{b.temperatureF ? ` @ ${b.temperatureF}°F` : ""}
+                  {b.date} · {b.outputOz || 0}oz · {b.trays || 0} trays · {b.dryerHours || 0}hr{b.temperatureF ? ` @ ${fmtTemp(b.temperatureF)}` : ""}
                 </div>
                 {b.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{b.notes}</div>}
               </div>
@@ -545,7 +545,7 @@ export function dehydratingStats(hobby, data, range = "year") {
     cards: [
       { label: "Stored", value: oz >= 16 ? `${(oz / 16).toFixed(1)} lb` : `${Math.round(oz)} oz`, sub: `${bs.length} run${bs.length === 1 ? "" : "s"}` },
       { label: "Run time", value: `${Math.round(hours)} hr`, sub: bs.length ? `${(hours / bs.length).toFixed(0)} hr a run` : "" },
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: oz ? `$${(cost / oz).toFixed(2)} an ounce` : "" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: oz ? `${fmtMoney((cost / oz))} an ounce` : "" }] : []),
     ],
     bars: rows.length ? { title: "What you dried", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🍎", kicker: "Our pantry",

@@ -1,3 +1,4 @@
+import { fmtMoney } from "../../units.js";
 // ============================================================================
 // Dogs and cats (3.0) — Stats numbers
 // ----------------------------------------------------------------------------
@@ -6,7 +7,7 @@
 // work), entries (fed with cost, health with cost) and hobby expenses.
 // ============================================================================
 
-const money = (v) => `$${(Number(v) || 0).toFixed(2)}`;
+const money = (v) => fmtMoney((Number(v) || 0));
 
 export function petStats(hobby, data, range = "year") {
   const year = String(new Date().getFullYear());

@@ -926,8 +926,8 @@ export function tinctureStats(hobby, data, range = "year") {
   return {
     cards: [
       { label: "Batches", value: bs.length, sub: `${made} bottles made` },
-      { label: revenue ? "Sold" : "Gone", value: revenue ? `$${revenue.toFixed(2)}` : sold, sub: revenue ? `${sold} bottles` : "Sold or used" },
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: made ? `$${(cost / made).toFixed(2)} a bottle` : "" }] : []),
+      { label: revenue ? "Sold" : "Gone", value: revenue ? fmtMoney(revenue) : sold, sub: revenue ? `${sold} bottles` : "Sold or used" },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: made ? `${fmtMoney((cost / made))} a bottle` : "" }] : []),
     ],
     bars: rows.length ? { title: "By herb", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🌿", kicker: "Our apothecary",

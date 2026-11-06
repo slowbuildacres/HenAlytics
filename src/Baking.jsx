@@ -1053,8 +1053,8 @@ export function bakingStats(hobby, data, range = "year") {
   return {
     cards: [
       { label: "Baked", value: items, sub: `${made.length} bake${made.length === 1 ? "" : "s"}` },
-      ...(revenue ? [{ label: "Sold", value: `$${revenue.toFixed(2)}`, sub: "Baked goods sales" }] : []),
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: items ? `$${(cost / items).toFixed(2)} each` : "" }] : []),
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Baked goods sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: items ? `${fmtMoney((cost / items))} each` : "" }] : []),
     ],
     bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🥧", kicker: "Our kitchen",

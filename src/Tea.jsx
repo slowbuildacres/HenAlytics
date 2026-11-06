@@ -640,8 +640,8 @@ export function teaStats(hobby, data, range = "year") {
   return {
     cards: [
       { label: "Blends", value: bs.length, sub: [sachets ? `${sachets} sachets` : null, oz ? `${Math.round(oz)} oz` : null].filter(Boolean).join(" · ") || "" },
-      ...(revenue ? [{ label: "Sold", value: `$${revenue.toFixed(2)}`, sub: "Tea sales" }] : []),
-      ...(cost ? [{ label: "Ingredients", value: `$${cost.toFixed(2)}`, sub: "Herbs and packaging" }] : []),
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Tea sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: "Herbs and packaging" }] : []),
     ],
     bars: rows.length ? { title: "Your blends", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🍵", kicker: "Our apothecary",

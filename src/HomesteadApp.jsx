@@ -16,7 +16,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ADV_ANALYTICS_FEATURE_KEY, priorDateRange, computeDelta, StatTrend,
   personalRecord, monthlySeries, LockedStatOverlay,
-  collectGardenHarvests, totalHarvestLbs,
+  collectGardenHarvests, totalHarvestLbs, harvestLbs
 } from "./analytics.js";
 import AuthModal from "./AuthModal.jsx";
 import FarmhandModal from "./FarmhandModal.jsx";
@@ -1221,8 +1221,11 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
 // "5" of anything. These helpers group a list of harvest entries by unit so
 // totals are reported per-unit. Entries with no unit are treated as "lbs"
 // (every harvest logged before the unit picker existed was implicitly lbs).
+// The weight unit a new harvest starts with: kg for metric homesteads.
+const defaultHarvestUnit = () => (getCurrentWeightUnit() === "kg" ? "kg" : "lbs");
+
 const HARVEST_UNIT_LABELS = {
-  lbs: "lbs", oz: "oz", each: "each", count: "count",
+  lbs: "lbs", oz: "oz", kg: "kg", g: "g", each: "each", count: "count",
   cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches",
   // Singular aliases — perennial harvest records historically stored these.
   quart: "quarts", pint: "pints",
@@ -12490,9 +12493,10 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
   // by-plant aggregate (lbs only — non-lbs units mix poorly in a bar chart)
   const byPlant = {};
   harvests.forEach((h) => {
-    if (h.unit !== "lbs") return;
+    const w = harvestLbs(h);
+    if (w == null) return;
     const p = h.plant || "Unknown";
-    byPlant[p] = (byPlant[p] || 0) + (Number(h.quantity) || 0);
+    byPlant[p] = (byPlant[p] || 0) + w;
   });
   const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value }));
 
@@ -16675,7 +16679,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
 
       {!isEdit && (
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, marginBottom: 10, lineHeight: 1.5, padding: 10, background: palette.bgAlt, borderRadius: 6 }}>
-          Adding this also logs a ${parseFloat(purchaseCost || 0).toFixed(2)} expense in Sales & costs (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
+          Adding this also logs a {fmtMoney(parseFloat(purchaseCost || 0))} expense in Sales & costs (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
         </div>
       )}
 
@@ -21578,6 +21582,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
     // only writes fields.useType when touched — same trap as sold_eggs' unit
     // select above. Persist the default so stats bucket correctly.
     if (action === "used_eggs" && !cleanFields.useType) cleanFields.useType = "ate";
+    // Harvest: the unit select shows lbs (or kg with metric units) until
+    // touched; save what it showed.
+    if (action === "harvested" && !cleanFields.unit) cleanFields.unit = defaultHarvestUnit();
 
     // We need an entry id up front so we can attach photos to it.
     // For edits, we keep the existing id so we don't create a duplicate.
@@ -22233,9 +22240,11 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Unit">
-            <select style={inputStyle()} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
+            <select style={inputStyle()} value={fields.unit || defaultHarvestUnit()} onChange={(e) => set("unit", e.target.value)}>
               <option value="lbs">lbs</option>
               <option value="oz">oz</option>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
               <option value="each">each</option>
               <option value="count">count</option>
               <option value="cups">cups</option>
@@ -24902,7 +24911,7 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
 // ============================================================================
 function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
   const [qty, setQty] = useState("");
-  const [unit, setUnit] = useState("lbs");
+  const [unit, setUnit] = useState(defaultHarvestUnit);
   const [date, setDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
   return (
@@ -24916,7 +24925,7 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
         <div style={{ flex:1 }}>
           <Field label="Unit">
             <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
-              {["lbs","oz","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
+              {["lbs","oz","kg","g","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
         </div>
@@ -24933,7 +24942,7 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
           if (!p) return d;
           p.harvests = p.harvests || [];
           p.harvests.push({ id: newId(), date, qty: q, unit, notes });
-          p.totalHarvest = (p.totalHarvest||0) + (unit === "lbs" ? q : 0);
+          p.totalHarvest = (p.totalHarvest||0) + (harvestLbs({ qty: q, unit }) || 0);
           return d;
         });
         onClose();

@@ -17,7 +17,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, fmtMoneyWhole } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
 
 const palette = legacyPalette({
@@ -461,7 +461,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
           if (a && !a.archived) {
             a.archived = true;
             const verb = (otherItem || "sold") === "leased" ? "Leased" : "Sold";
-            const priceStr = Number(pricePerUnit) > 0 ? ` for $${Number(pricePerUnit).toFixed(2)}` : "";
+            const priceStr = Number(pricePerUnit) > 0 ? ` for ${fmtMoney(Number(pricePerUnit))}` : "";
             a.archivedReason = `${verb}${priceStr}`;
             a.archivedDate = date;
             a.saleId = sale.id;
@@ -1828,7 +1828,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
                   layout="vertical"
                   margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
                 >
-                  <XAxis type="number" stroke={palette.inkSoft} fontSize={10} tickFormatter={v=>`$${v}`} />
+                  <XAxis type="number" stroke={palette.inkSoft} fontSize={10} tickFormatter={(v) => fmtMoneyWhole(v)} />
                   <YAxis type="category" dataKey="name" stroke={palette.inkSoft} fontSize={11} width={110} />
                   <Tooltip
                     contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }}
@@ -1883,7 +1883,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={byMonth}>
               <XAxis dataKey="month" stroke={palette.inkSoft} fontSize={11} />
-              <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={v=>`$${v}`} />
+              <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={(v) => fmtMoneyWhole(v)} />
               <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v=>[fmtMoney(v),"Revenue"]} />
               <Bar dataKey="revenue" fill={palette.leaf} radius={[6,6,0,0]} />
             </BarChart>

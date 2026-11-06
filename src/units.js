@@ -56,6 +56,22 @@ export function fmtMoney(n) {
   }
 }
 
+// Whole amounts ("$46", "€46") for headlines, fun facts and chart axes.
+export function fmtMoneyWhole(n) {
+  const num = Math.round(Number(n) || 0);
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALES[_currentCurrency] || "en-US", {
+      style: "currency",
+      currency: _currentCurrency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(num);
+  } catch (e) {
+    const sym = CURRENCY_SYMBOLS[_currentCurrency] || "$";
+    return `${num < 0 ? "-" : ""}${sym}${Math.abs(num).toLocaleString("en-US")}`;
+  }
+}
+
 // fmtTemp takes Fahrenheit (the canonical storage unit, since weather APIs
 // return F here) and renders in user's preferred unit.
 export function fmtTemp(f) {
@@ -66,6 +82,22 @@ export function fmtTemp(f) {
   }
   return `${Math.round(num)}°F`;
 }
+
+// Temperature fields: stored in Fahrenheit, typed and shown in the
+// person's unit.
+export function tempUnitLabel() { return _currentTempUnit === "C" ? "°C" : "°F"; }
+export function tempFromF(f) {
+  if (f === null || f === undefined || f === "" || isNaN(Number(f))) return "";
+  const n = Number(f);
+  return _currentTempUnit === "C" ? Math.round((n - 32) * 5 / 9) : n;
+}
+export function fFromInput(v) {
+  if (v === null || v === undefined || v === "" || isNaN(Number(v))) return null;
+  const n = Number(v);
+  return _currentTempUnit === "C" ? Math.round(n * 9 / 5 + 32) : n;
+}
+// A typical Fahrenheit value written for the person's unit (placeholders).
+export function tempHint(f) { return String(tempFromF(f)); }
 
 export function currencySymbol() {
   return CURRENCY_SYMBOLS[_currentCurrency] || "$";

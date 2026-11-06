@@ -14,7 +14,7 @@ import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/lives
 import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
 import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
-import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, fmtMoney as fmtMoneyIntl } from "./units.js";
 import { photosOf, profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -53,7 +53,7 @@ const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.g
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
-const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
+const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
 
 const GOAT_BREEDS=["Nubian","Boer","Alpine","LaMancha","Oberhasli","Saanen","Toggenburg","Nigerian Dwarf","Kiko","Myotonic (Fainting)","Angora","Pygmy","Mixed","Other"];
 const GOAT_PURPOSES=["Dairy","Meat","Both"];
@@ -969,7 +969,7 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
           created: Date.now(),
         };
         d.entries[hobbyId].push(entry);
-        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const priceStr = numericPrice > 0 ? ` for ${fmtMoney(numericPrice)}` : "";
         const partyStr = partyName ? ` to ${partyName}` : "";
         target.archived = true;
         target.archivedReason = `${verb}${partyStr}${priceStr}`;
@@ -1153,7 +1153,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
         if(a&&!a.archived){
           a.archived=true;
           const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
-          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const priceStr=Number(salePrice)>0?` for ${fmtMoney(Number(salePrice))}`:"";
           const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
           a.archivedReason=`${verb}${buyerStr}${priceStr}`;
           a.archivedDate=date;

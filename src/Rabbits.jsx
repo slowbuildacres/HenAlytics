@@ -45,7 +45,7 @@ import { RabbitToday, RabbitHerd, RabbitProfile } from "./newlook/rabbits/Rabbit
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
 import { showUndo } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
-import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
+import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, fmtMoney as fmtMoneyIntl } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
 
@@ -65,7 +65,7 @@ const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const ageInMonths=(birthdate)=>{if(!birthdate)return null;const b=parseLocalDate(birthdate);if(!b)return null;const n=new Date();return(n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth());};
 const fmtAge=(birthdate)=>{const m=ageInMonths(birthdate);if(m==null)return"";if(m<12)return`${m}mo`;const y=Math.floor(m/12);const mm=m%12;return mm===0?`${y}y`:`${y}y ${mm}mo`;};
-const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
+const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
 const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000));
 
 const RABBIT_BREEDS=[
@@ -614,7 +614,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
         if(a&&!a.archived){
           a.archived=true;
           const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
-          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const priceStr=Number(salePrice)>0?` for ${fmtMoney(Number(salePrice))}`:"";
           const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
           a.archivedReason=`${verb}${buyerStr}${priceStr}`;
           a.archivedDate=date;
@@ -1267,7 +1267,7 @@ function RemoveRabbitModal({ hobby, hobbyId, update, onClose }) {
           created: Date.now(),
         };
         d.entries[hobbyId].push(entry);
-        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const priceStr = numericPrice > 0 ? ` for ${fmtMoney(numericPrice)}` : "";
         const partyStr = partyName ? ` to ${partyName}` : "";
         target.archived = true;
         target.archivedReason = `${verb}${partyStr}${priceStr}`;

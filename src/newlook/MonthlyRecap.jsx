@@ -16,7 +16,7 @@ import { computeStats } from "../YearInReview.jsx";
 import { collectGardenHarvests } from "../analytics.js";
 import { computeHarvestValue } from "../gardenValue.js";
 import { buildYearReport } from "../Sales.jsx";
-import { fmtMoney } from "../units.js";
+import { fmtMoney, weightFromLbs, weightUnitLabel } from "../units.js";
 import { renderNodeToBlob } from "../shareCard.js";
 import { moreFacts, shareFiles } from "../Wrapped.jsx";
 import { font } from "./theme.js";
@@ -115,7 +115,9 @@ export function buildMonthSlides(data, key) {
   const name = String(data.homesteadName || "").trim();
   const mm = Number(key.split("-")[1]);
   const slides = [];
-  const gardenLbs = Number(s.totalHarvestLbs) || 0;
+  // Harvest weight in the homestead's unit (lbs or kg).
+  const gardenLbs = weightFromLbs(Number(s.totalHarvestLbs) || 0);
+  const wUnit = weightUnitLabel();
   const more = moreFacts(s);
 
   slides.push({
@@ -157,7 +159,7 @@ export function buildMonthSlides(data, key) {
       unit: garden.total > 0 ? "worth of food" : `lbs in ${month}`,
       sub: garden.total > 0 ? "At grocery store prices." : "",
       minis: [
-        garden.total > 0 && gardenLbs > 0 ? { icon: "sprout", bold: `${one(gardenLbs)} lbs`, text: "picked" } : null,
+        garden.total > 0 && gardenLbs > 0 ? { icon: "sprout", bold: `${one(gardenLbs)} ${wUnit}`, text: "picked" } : null,
         top ? { icon: "sprout", bold: top.plant, text: "was the top crop" } : null,
         garden.rows.length > 1 ? { icon: "sprout", bold: int(garden.rows.length), text: "different crops" } : null,
       ].filter(Boolean),
@@ -193,7 +195,7 @@ export function buildMonthSlides(data, key) {
   const grid = [];
   if (s.eggsCollected > 0) grid.push({ big: int(s.eggsCollected), label: "eggs" });
   if (garden.total > 0) grid.push({ big: money(garden.total), label: "of food grown" });
-  else if (gardenLbs > 0) grid.push({ big: one(gardenLbs), label: "lbs harvested" });
+  else if (gardenLbs > 0) grid.push({ big: one(gardenLbs), label: `${wUnit} harvested` });
   more.slice(0, 2).forEach((x) => grid.push({ big: x.big, label: x.label }));
   if (revenue > 0) grid.push({ big: money(revenue), label: "in sales" });
   if (s.activeDays > 0) grid.push({ big: int(s.activeDays), label: plural(s.activeDays, "day") + " logged" });

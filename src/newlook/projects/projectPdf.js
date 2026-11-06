@@ -10,8 +10,9 @@
 
 import { kindOf, projectRecord } from "./projectData.js";
 import { getPhotoUrl } from "../../sync.js";
+import { fmtMoney } from "../../units.js";
 
-const money = (n) => `${n < 0 ? "-" : ""}$${Math.abs(Number(n) || 0).toFixed(2)}`;
+const money = (n) => `${n < 0 ? "-" : ""}${fmtMoney(Math.abs(Number(n) || 0))}`;
 const longDate = (iso) => {
   if (!iso) return "";
   const [y, m, d] = iso.split("-").map(Number);

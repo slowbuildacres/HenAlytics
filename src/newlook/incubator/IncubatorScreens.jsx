@@ -16,6 +16,7 @@ import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, Badge, Button } from "../ui.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers } from "../StatsParts.jsx";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
+import { fmtTemp } from "../../units.js";
 
 export const BIRD_INCUBATION = {
   Chicken: { lockdown: 18, hatch: 21 }, Duck: { lockdown: 25, hatch: 28 }, Turkey: { lockdown: 25, hatch: 28 },
@@ -127,7 +128,7 @@ export function IncubatorToday({ hobby, setModal, act }) {
             </div>
             <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "10px 12px", borderRadius: 14, background: nl.chip }}>
               <Thermometer size={18} strokeWidth={2} style={{ flexShrink: 0, marginTop: 1 }} />
-              <div style={{ fontSize: 13, lineHeight: 1.45 }}>{heat ? <><b>About {heat}°F under the lamp this week.</b> Chicks huddled under it are cold; spread far from it are too warm.</> : <><b>They're feathered out.</b> Most chicks can go without extra heat now unless nights are cold.</>}</div>
+              <div style={{ fontSize: 13, lineHeight: 1.45 }}>{heat ? <><b>About {fmtTemp(heat)} under the lamp this week.</b> Chicks huddled under it are cold; spread far from it are too warm.</> : <><b>They're feathered out.</b> Most chicks can go without extra heat now unless nights are cold.</>}</div>
             </div>
             <Button kind="quiet" icon={ic(LogOut)} onClick={() => act.brooderOut(b.id)}>Chicks left the brooder</Button>
           </Card>
