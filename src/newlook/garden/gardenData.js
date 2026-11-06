@@ -151,3 +151,33 @@ export function gardenFunFacts({ data, hobby, harvests, today = isoDay() }) {
   if (lbs >= 10) facts.push({ key: "salads", icon: "leaf", big: `${Math.round(lbs).toLocaleString("en-US")} lbs`, line: "of food from our garden", title: `That's about ${Math.round(lbs * 4).toLocaleString("en-US")} side dishes`, sub: `${Math.round(lbs)} lbs at roughly a quarter pound each.` });
   return facts;
 }
+
+// "Start your 2027 garden": from February 1, or six weeks before the last
+// spring frost if that's earlier, through June, when the garden's open
+// season started in a past year (or the last one was closed and nothing has
+// started this year). Never closes anything by itself; the user taps.
+// Returns { year, open: season|null, last: season|null } or null.
+export function gardenNewSeasonDue(hobby, data, today = isoDay()) {
+  if (!hobby || hobby.hidden) return null;
+  const year = Number(today.slice(0, 4));
+  if (today > `${year}-06-30`) return null;
+  if ((data.gardenSeasonPrompt || {})[year]) return null;
+  let start = `${year}-02-01`;
+  const f = frostFor(data, year);
+  if (f && f.lastFrost) {
+    const early = new Date(f.lastFrost.getTime() - 42 * DAY);
+    const iso = isoDay(early);
+    if (iso < start) start = iso;
+  }
+  if (today < start) return null;
+  const cur = hobby.currentSeason;
+  if (cur) {
+    const y = Number(String(cur.startDate || "").slice(0, 4));
+    return y && y < year ? { year, open: cur, last: null } : null;
+  }
+  const past = (hobby.archivedSeasons || []).filter(Boolean)
+    .sort((a, b) => String(b.endDate || b.startDate || "").localeCompare(String(a.endDate || a.startDate || "")));
+  if (!past.length) return null;
+  const y = Number(String(past[0].startDate || "").slice(0, 4));
+  return y && y < year ? { year, open: null, last: past[0] } : null;
+}

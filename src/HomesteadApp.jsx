@@ -107,7 +107,8 @@ import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
 import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
-import { UndoHost, showUndo } from "./newlook/UndoBar.jsx";
+import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
+import { UndoHost, showUndo, undoable } from "./newlook/UndoBar.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
 import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
 import { HobbyTabs, Legacy } from "./newlook/ui.jsx";
@@ -5442,7 +5443,22 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
     const logs = Object.values(data.entries || {}).reduce((n, arr) => n + (Array.isArray(arr) ? arr.filter((e) => e && String(e.date || "").startsWith(y)).length : 0), 0);
     return logs >= 5 ? { seen: !!w.seenAt } : null;
   })() : null;
+  // "Start your 2027 garden" from Feb 1 (see gardenNewSeasonDue).
+  const nlGardenHobby = newLook && page === "dash" ? data.hobbies.find((h) => h && h.type === "garden") : null;
+  const nlGardenDue = nlGardenHobby ? gardenNewSeasonDue(nlGardenHobby, data) : null;
   const nlNotices = newLook ? [
+    nlGardenDue && {
+      key: "gardenSeason", icon: "sprout", title: `Start your ${nlGardenDue.year} garden`,
+      sub: nlGardenDue.open
+        ? `${nlGardenDue.open.name || "Last season"} is still open. Starting ${nlGardenDue.year} closes it and carries your beds over.`
+        : `Your beds from ${nlGardenDue.last.name || "last season"} carry over, empty and ready to plant.`,
+      action: `Start ${nlGardenDue.year}`,
+      onAction: () => {
+        startNextGardenSeason(update, nlGardenHobby.id, `${nlGardenDue.year} Garden`);
+        setActiveHobby(nlGardenHobby.id); setNlHobbyTab("today"); setPage(hobbyPage(nlGardenHobby));
+      },
+      onDismiss: () => update((d) => { d.gardenSeasonPrompt = { ...(d.gardenSeasonPrompt || {}), [nlGardenDue.year]: true }; return d; }),
+    },
     nlWrapped && {
       key: "wrapped", icon: "gift",
       title: nlWrapped.seen ? `Share your ${wrappedYearNow} Wrapped` : `Your ${wrappedYearNow} Homestead Wrapped is here`,
@@ -12052,6 +12068,29 @@ function dateRangeLabel(range) {
 // deleted on close, just hidden because their seasonId no longer matched any
 // active season). If a different season is active, it's archived first so
 // nothing is lost.
+// One tap from the "Start your 2027 garden" notice: closes the open season
+// the same way Close season does (its logs move into the closed season) and
+// starts the next one with the beds carried over. Undo puts both back.
+function startNextGardenSeason(update, hobbyId, name) {
+  undoable(update, `Started ${name}`)((d) => {
+    const h = d.hobbies.find((x) => x.id === hobbyId);
+    if (!h) return d;
+    if (!d.entries[hobbyId]) d.entries[hobbyId] = [];
+    const beds = lastSeasonGardenAreas(h);
+    if (h.currentSeason) {
+      const cur = JSON.parse(JSON.stringify(h.currentSeason));
+      cur.endDate = todayStr();
+      cur.finalEntries = d.entries[hobbyId].filter((e) => e.seasonId === cur.id);
+      h.archivedSeasons = h.archivedSeasons || [];
+      h.archivedSeasons.push(cur);
+      d.entries[hobbyId] = d.entries[hobbyId].filter((e) => e.seasonId !== cur.id);
+    }
+    h.currentSeason = { id: newId(), name, startDate: todayStr() };
+    if (beds.length) h.currentSeason.gardenMap = { areas: carryForwardAreas(beds) };
+    return d;
+  });
+}
+
 function reopenGardenSeason(update, hobbyId, seasonId) {
   update((d) => {
     const h = d.hobbies.find((x) => x.id === hobbyId);
