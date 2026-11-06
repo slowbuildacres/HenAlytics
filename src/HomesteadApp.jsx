@@ -12560,8 +12560,13 @@ function computeCoopPayoff(eggEntries, infraCost, allEntries) {
   };
 }
 
-function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false, data = null }) {
-  if (!hobby) return <EmptyState text="Loading…" />;
+// Hooks must run in the same order every render, so the "no hobby yet"
+// check lives in this small wrapper instead of above the hooks.
+function EggLayersAnalytics(props) {
+  if (!props.hobby) return <EmptyState text="Loading…" />;
+  return <EggLayersAnalyticsBody {...props} />;
+}
+function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false, data = null }) {
   // Toggle: include one-time infrastructure (coops, fencing, brooders) in the
   // Cost/Egg figure. Defaults ON to preserve the historical number; turning it
   // off shows the ongoing/operating cost per egg only.
@@ -19115,12 +19120,17 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 }
 
 // Edit an existing flock-history entry. Lets the user fix typos in count, date, or cost.
-function EditFlockEntryModal({ hobby, index, update, onClose }) {
+// The entry can vanish while this is open (a farmhand's sync); close
+// instead of rendering, and keep the guard out of the body so its hooks
+// always run in the same order.
+function EditFlockEntryModal(props) {
+  const fh = (props.hobby.flockHistory || [])[props.index];
+  useEffect(() => { if (!fh) props.onClose(); }, [fh]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!fh) return null;
+  return <EditFlockEntryModalBody {...props} />;
+}
+function EditFlockEntryModalBody({ hobby, index, update, onClose }) {
   const fh = (hobby.flockHistory || [])[index];
-  if (!fh) {
-    onClose();
-    return null;
-  }
   const [count, setCount] = useState(String(fh.count || 0));
   const [date, setDate] = useState(fh.date || todayStr());
   const [cost, setCost] = useState(fh.cost ? String(fh.cost) : "");
@@ -19183,17 +19193,20 @@ function EditFlockEntryModal({ hobby, index, update, onClose }) {
 }
 
 // Edit the current meat-chicken batch. Lets you fix the name, date, count, or cost.
-function EditBatchModal({ hobby, batchId, entries = [], update, onClose }) {
+function EditBatchModal(props) {
+  const list = props.hobby.currentBatches || [];
+  const found = list.find((b) => b.id === props.batchId) || list[0];
+  useEffect(() => { if (!found) props.onClose(); }, [found]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!found) return null;
+  return <EditBatchModalBody {...props} />;
+}
+function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
   // Push 4b — find the specific batch in currentBatches[]. batchId is
   // passed in by the caller (MeatChickensSummary). For safety on stale
   // hobby data (legacy single-batch users mid-migration, etc.) we fall
   // back to the first active batch when batchId isn't found.
   const activeBatches = hobby.currentBatches || [];
   const batch = activeBatches.find((b) => b.id === batchId) || activeBatches[0];
-  if (!batch) {
-    onClose();
-    return null;
-  }
   const BIRD_TYPES_LOCAL = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const [name, setName] = useState(batch.name || "");
   // Default to Chicken for legacy batches that predate the bird-type field
@@ -19453,7 +19466,17 @@ function HatchBatchModal({ hobby, update, onClose }) {
   );
 }
 
-function ButcherModal({ hobby, batchId, entries, update, onClose }) {
+function ButcherModal(props) {
+  if (!(props.hobby.currentBatches || []).length) {
+    return (
+      <Modal open onClose={props.onClose} title="Remove from batch">
+        <div>No active batch. Hatch one first.</div>
+      </Modal>
+    );
+  }
+  return <ButcherModalBody {...props} />;
+}
+function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
   // Same cull-reason design as the flock-side modal (egg layers), adapted for
   // meat-bird batches. Default reason is butchered since that's the most
   // common reason birds leave a meat-chicken batch, but users can also log
@@ -19483,14 +19506,6 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
     return "";
   });
   const batch = activeBatches.find((b) => b.id === selectedBatchId) || null;
-
-  if (activeBatches.length === 0) {
-    return (
-      <Modal open onClose={onClose} title="Remove from batch">
-        <div>No active batch. Hatch one first.</div>
-      </Modal>
-    );
-  }
 
   const isButcher = reason === "butchered";
   const isSoftCull = ["sold", "rehomed", "given_away"].includes(reason);

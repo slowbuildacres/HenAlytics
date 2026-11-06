@@ -15,6 +15,7 @@
 // Sold bars are derived from data.sales where batchId === batch.id.
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -317,7 +318,7 @@ export default function SoapMakingPage({ hobby, data, update, setModal, nl = nul
   const year = String(new Date().getFullYear());
   const yearRevenue = sales.filter(s => s.hobbyType === "soap" && (s.date || "").startsWith(year)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
 
-  const saveBatch = (rec) => update(d => {
+  const saveBatch = (rec) => undoable(update, `Saved ${rec.name || "batch"}`)(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     if (!h) return d;
     if (!Array.isArray(h.batches)) h.batches = [];
@@ -335,19 +336,19 @@ export default function SoapMakingPage({ hobby, data, update, setModal, nl = nul
     }
     return d;
   });
-  const deleteBatch = (id) => update(d => {
+  const deleteBatch = (id) => undoable(update, "Deleted batch")(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     if (h) h.batches = (h.batches || []).filter(b => b.id !== id);
     if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => e.soapBatchId !== id);
     return d;
   });
-  const setArchived = (id, val) => update(d => {
+  const setArchived = (id, val) => undoable(update, val ? "Archived batch" : "Restored batch")(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     const b = h && (h.batches || []).find(x => x.id === id);
     if (b) b.archived = val;
     return d;
   });
-  const addSale = (sale) => update(d => {
+  const addSale = (sale) => undoable(update, "Saved sale")(d => {
     d.sales = d.sales || [];
     if (!sale.buyerId && sale.buyer) {
       d.customers = d.customers || [];
@@ -358,7 +359,7 @@ export default function SoapMakingPage({ hobby, data, update, setModal, nl = nul
     d.sales.push(sale);
     return d;
   });
-  const addUse = (batchId, use) => update(d => {
+  const addUse = (batchId, use) => undoable(update, "Saved")(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     const b = h && (h.batches || []).find(x => x.id === batchId);
     if (b) { if (!Array.isArray(b.uses)) b.uses = []; b.uses.push(use); }

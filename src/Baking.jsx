@@ -14,6 +14,7 @@
 // "Sell" action, which writes to data.sales[] with hobbyType="baking".
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -431,7 +432,8 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
 
 function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose }) {
   const [date, setDate] = useState(todayIso());
-  const [recipeId, setRecipeId] = useState(presetRecipeId || "");
+  // No saved recipes yet: start on "one-off" so the name box is right there.
+  const [recipeId, setRecipeId] = useState(presetRecipeId || ((recipes || []).some((r) => !r.archived) ? "" : "__custom"));
   const [customName, setCustomName] = useState("");
   const [qty, setQty] = useState("1");
   const [cost, setCost] = useState("");
@@ -502,8 +504,8 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
         </select>
       </Field>
       {usingCustom && (
-        <Field label="One-off name">
-          <input style={inputStyle} value={customName} onChange={e => setCustomName(e.target.value)} placeholder="What did you bake?" />
+        <Field label="What did you bake?">
+          <input style={inputStyle} value={customName} onChange={e => setCustomName(e.target.value)} placeholder="e.g. Apple pie" />
         </Field>
       )}
       <div style={{ display: "flex", gap: 10 }}>
@@ -684,7 +686,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
   const recentBakes = [...bakes].sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.created || 0) - (a.created || 0)).slice(0, 12);
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["baking"] = d.entries["baking"] || [];
       const idx = d.entries["baking"].findIndex(e => e.id === entry.id);
@@ -694,7 +696,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["baking"]) {
         d.entries["baking"] = d.entries["baking"].filter(e => e.id !== id);
       }
@@ -703,7 +705,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
   };
 
   const saveRecipe = (rec) => {
-    update(d => {
+    undoable(update, `Saved ${rec.name || "recipe"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.recipes)) h.recipes = [];
@@ -714,7 +716,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
   };
 
   const deleteRecipe = (id) => {
-    update(d => {
+    undoable(update, "Deleted recipe")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h && Array.isArray(h.recipes)) h.recipes = h.recipes.filter(r => r.id !== id);
       return d;
@@ -722,7 +724,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
   };
 
   const saveBake = (bake) => {
-    update(d => {
+    undoable(update, `Saved ${bake.item || bake.name || "bake"}`)(d => {
       if (!d.entries) d.entries = {};
       if (!Array.isArray(d.entries["baking"])) d.entries["baking"] = [];
       d.entries["baking"].push(bake);
@@ -779,7 +781,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
   };
 
   const deleteBake = (id) => {
-    update(d => {
+    undoable(update, "Deleted bake")(d => {
       if (d.entries?.["baking"]) {
         // SHARED_PANTRY: refund any deducted stock from this bake.
         const target = d.entries["baking"].find(b => b.id === id);
@@ -793,7 +795,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
   };
 
   const recordSale = (saleData) => {
-    update(d => {
+    undoable(update, "Saved sale")(d => {
       if (!Array.isArray(d.sales)) d.sales = [];
       d.sales.push({
         id: newId(),

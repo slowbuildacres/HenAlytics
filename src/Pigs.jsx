@@ -1,6 +1,7 @@
 // ============================================================================
 // PIGS — per-animal tracking, growth monitoring, FCR, litters, butcher
 // ============================================================================
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -1523,7 +1524,11 @@ export function PigsNewLook({ hobby, data, update, user, setModal: setAppModal, 
   const sp = SPECIES.pigs;
   const entries = data.entries[hobby.id] || [];
   const [local, setLocal] = useState(null);
-  const [form, setForm] = useState(null);
+  const [form, setFormRaw] = useState(null);
+  // With no pigs yet, forms that need one open "Add your first pig" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["fed","weight","health","note","bred","litter","remove"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
   const [profileId, setProfileId] = useState(null);
   const [view, setView] = useState(null);
   const [tallyOpen, setTallyOpen] = useState(false);
@@ -1582,6 +1587,7 @@ export function PigsNewLook({ hobby, data, update, user, setModal: setAppModal, 
 
   return (
     <div>
+      {needAnimal && <NeedAnimal noun="pig" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setLocal({ type: "addAnimal" }); }} />}
       <PigModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
       {f.kind === "fed" && <FedPigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
       {f.kind === "bred" && <BredPigModal {...props} />}

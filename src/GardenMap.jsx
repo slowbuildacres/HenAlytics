@@ -196,13 +196,18 @@ function migrateGardenMap(map) {
 // MAIN MODAL
 // ============================================================================
 
-export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false, /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport = null }) {
-  const hobby = data.hobbies.find((h) => h.id === "garden");
+// No garden season (or it was removed while open): close. The check lives in
+// this wrapper so the map's hooks always run in the same order.
+export default function GardenMapModal(props) {
+  const hobby = props.data.hobbies.find((h) => h.id === "garden");
   const season = hobby?.currentSeason;
-  if (!season) {
-    onClose();
-    return null;
-  }
+  useEffect(() => { if (!season) props.onClose(); }, [season]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!season) return null;
+  return <GardenMapBody {...props} />;
+}
+function GardenMapBody({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false, /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport = null }) {
+  const hobby = data.hobbies.find((h) => h.id === "garden");
+  const season = hobby.currentSeason;
 
   const map = migrateGardenMap(season.gardenMap);
   const archivedSeasons = (hobby.archivedSeasons || []).filter((s) => s.gardenMap);
@@ -1231,7 +1236,12 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], pendingPins =
 // ============================================================================
 // PIN INFO PANEL (now editable)
 // ============================================================================
-function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [], onClose }) {
+function PinInfoPanel(props) {
+  const { pin } = props;
+  if (!CROPS.find((c) => c.id === pin.cropId) && pin.cropId !== "other") return null;
+  return <PinInfoPanelBody {...props} />;
+}
+function PinInfoPanelBody({ pin, areaIdx, update, area = null, archivedSeasons = [], onClose }) {
   const crop = CROPS.find((c) => c.id === pin.cropId);
   const isCustom = pin.cropId === "other";
   const [editing, setEditing] = useState(false);
@@ -1243,9 +1253,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
 
   const companionFonts = { display: FONT_DISPLAY, body: FONT_BODY };
 
-  // Allow display for "other" pins (no crop entry in CROPS list) and for
-  // legacy/unknown cropIds (just show a placeholder rather than blank).
-  if (!crop && !isCustom) return null;
+  // Unknown crops never get here (see PinInfoPanel above).
 
   const display = pinDisplay(pin);
 

@@ -1,6 +1,7 @@
 // ============================================================================
 // COWS — per-animal tracking, dairy or beef, milk/calves/butcher logging
 // ============================================================================
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -2883,7 +2884,11 @@ export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, 
   const sp = SPECIES.cows;
   const entries = data.entries[hobby.id] || [];
   const [local, setLocal] = useState(null);
-  const [form, setForm] = useState(null);
+  const [form, setFormRaw] = useState(null);
+  // With no cows yet, forms that need one open "Add your first cow" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["milk","fed","weight","health","note","calf","breeding","heat","ai","remove"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
   const [profileId, setProfileId] = useState(null);
   const [view, setView] = useState(null);
   const [tallyOpen, setTallyOpen] = useState(false);
@@ -2954,6 +2959,7 @@ export function CowsNewLook({ hobby, data, update, user, setModal: setAppModal, 
 
   return (
     <div>
+      {needAnimal && <NeedAnimal noun="cow" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setLocal({ type: "addAnimal" }); }} />}
       <CowModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
       {f.kind === "milk" && <MilkCowModal {...props} />}
       {f.kind === "fed" && <FedCowModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}

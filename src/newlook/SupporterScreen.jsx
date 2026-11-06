@@ -115,6 +115,7 @@ export default function SupporterScreen({
         <Perk icon={Trophy} title="Homestead Standings" sub="Badges and how you compare, in Year in review" />
         <Perk icon={Award} title="Supporter badge and wall" sub="Next to your name, and in the monthly thank-you if you'd like" />
       </Card>
+      <div style={{ fontSize: 12.5, color: nl.soft, padding: "0 4px", marginTop: -4 }}>The year-end Homestead Wrapped in December stays free for everyone.</div>
 
       {isSupporter ? (
         <Card padded style={{ display: "flex", alignItems: "center", gap: 12 }}>

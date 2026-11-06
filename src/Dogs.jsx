@@ -27,6 +27,7 @@
 // Dog gestation = 58–68 days. Default expected whelp = +63 days.
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo, useEffect } from "react";
 // NEW_LOOK (3.0): shared screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -980,7 +981,7 @@ function AttackModal({ dogs, attack, onSave, onDelete, onClose }) {
 }
 
 // ============ LOG ENTRY MODAL (weight / health / note / death / sale) ============
-function LogEntryModal({ animals, action, onSave, onClose, customers = [] }) {
+function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, customers = [] }) {
   const live = animals.filter(a => !a.archived);
   const [date, setDate] = useState(todayStr());
   const [animalId, setAnimalId] = useState(live[0]?.id || "");
@@ -1082,12 +1083,19 @@ function LogEntryModal({ animals, action, onSave, onClose, customers = [] }) {
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
+      {animalRequired && live.length === 0 ? (
+        <div style={{ padding: 12, borderRadius: 10, background: palette.bgAlt, color: palette.ink, fontSize: 14, lineHeight: 1.5, marginBottom: 14 }}>
+          This is kept for each dog, so add your first dog before logging it.
+          {onAddAnimal && <div style={{ marginTop: 10 }}><Btn variant="primary" small onClick={onAddAnimal}>Add a dog</Btn></div>}
+        </div>
+      ) : (
       <Field label={animalRequired ? "Dog" : "Dog (optional)"}>
         <select style={inputStyle} value={animalId} onChange={e => setAnimalId(e.target.value)}>
           {!animalRequired && <option value="">— Whole pack —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
+      )}
       {action === "weight" && (()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shown=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
@@ -1291,7 +1299,7 @@ function HerdTallySection({ hobby, update }) {
         )}
       </div>
       {open && (
-        <Modal open onClose={() => setOpen(false)} title="Herd tally">
+        <ModalShell onClose={() => setOpen(false)} title="Herd tally">
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
             Record a head count by sex for dogs you don't want to track individually. Separate from your named animals — it doesn't affect breeding, history, or sales.
           </div>
@@ -1312,7 +1320,7 @@ function HerdTallySection({ hobby, update }) {
             <Btn variant="ghost" onClick={() => setOpen(false)}>Cancel</Btn>
             <Btn variant="accent" onClick={save}>Save tally</Btn>
           </div>
-        </Modal>
+        </ModalShell>
       )}
     </>
   );
@@ -1334,7 +1342,7 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
   const attacks = (hobby?.attacks || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
 
   const saveDog = (dog) => {
-    update(d => {
+    undoable(update, `Saved ${dog.name || "dog"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.animals)) h.animals = [];
@@ -1344,14 +1352,14 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
     });
   };
   const deleteDog = (id) => {
-    update(d => {
+    undoable(update, "Deleted")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.animals = (h.animals || []).filter(a => a.id !== id);
       return d;
     });
   };
   const archiveDog = (id, reason) => {
-    update(d => {
+    undoable(update, "Archived")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const a = (h?.animals || []).find(x => x.id === id);
       if (a) {
@@ -1363,7 +1371,7 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
     });
   };
   const saveBreeding = (b) => {
-    update(d => {
+    undoable(update, "Saved breeding")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.breedings)) h.breedings = [];
@@ -1373,14 +1381,14 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
     });
   };
   const deleteBreeding = (id) => {
-    update(d => {
+    undoable(update, "Deleted breeding")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.breedings = (h.breedings || []).filter(b => b.id !== id);
       return d;
     });
   };
   const saveLitter = (l) => {
-    update(d => {
+    undoable(update, "Saved litter")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.litters)) h.litters = [];
@@ -1390,14 +1398,14 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
     });
   };
   const deleteLitter = (id) => {
-    update(d => {
+    undoable(update, "Deleted litter")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.litters = (h.litters || []).filter(l => l.id !== id);
       return d;
     });
   };
   const saveAttack = (a) => {
-    update(d => {
+    undoable(update, "Saved")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.attacks)) h.attacks = [];
@@ -1407,14 +1415,14 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
     });
   };
   const deleteAttack = (id) => {
-    update(d => {
+    undoable(update, "Deleted")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.attacks = (h.attacks || []).filter(a => a.id !== id);
       return d;
     });
   };
   const addEntry = (entry) => {
-    update(d => {
+    undoable(update, "Saved")(d => {
       if (!d.entries) d.entries = {};
       if (!Array.isArray(d.entries[hobby.id])) d.entries[hobby.id] = [];
       d.entries[hobby.id].push(entry);
@@ -1567,6 +1575,7 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
             }
           }}
           onClose={() => setLogEntryAction(null)}
+          onAddAnimal={() => { setLogEntryAction(null); setDogModal({ open: true, dog: null }); }}
         />
       )}
         <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
@@ -1872,6 +1881,7 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
             }
           }}
           onClose={() => setLogEntryAction(null)}
+          onAddAnimal={() => { setLogEntryAction(null); setDogModal({ open: true, dog: null }); }}
         />
       )}
     </div>

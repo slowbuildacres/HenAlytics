@@ -15,6 +15,7 @@
 //     is batch.jarsRemaining.
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -543,7 +544,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
   const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["canning"] = d.entries["canning"] || [];
       const idx = d.entries["canning"].findIndex(e => e.id === entry.id);
@@ -553,7 +554,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["canning"]) {
         d.entries["canning"] = d.entries["canning"].filter(e => e.id !== id);
       }
@@ -584,7 +585,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
   }).length;
 
   const saveBatch = (b) => {
-    update(d => {
+    undoable(update, `Saved ${b.item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -626,7 +627,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
   };
 
   const deleteBatch = (id) => {
-    update(d => {
+    undoable(update, `Deleted ${(batches.find((x) => x.id === id) || {}).item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any stock that was deducted when this batch
@@ -641,7 +642,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
   };
 
   const archiveBatch = (id) => {
-    update(d => {
+    undoable(update, `Archived ${(batches.find((x) => x.id === id) || {}).item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       const target = (h.batches || []).find(b => b.id === id);
@@ -651,7 +652,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
   };
 
   const unarchiveBatch = (id) => {
-    update(d => {
+    undoable(update, `Restored ${(batches.find((x) => x.id === id) || {}).item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       const target = (h.batches || []).find(b => b.id === id);
@@ -661,7 +662,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
   };
 
   const useJars = (useData) => {
-    update(d => {
+    undoable(update, `${useData.reason === "sale" ? "Sold" : "Used"} ${useData.qty} jar${useData.qty === 1 ? "" : "s"}`)(d => {
       // Decrement remaining on the batch
       const h = d.hobbies.find(x => x.id === hobby.id);
       const target = h?.batches?.find(b => b.id === useData.batchId);

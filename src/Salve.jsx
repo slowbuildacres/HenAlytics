@@ -20,6 +20,7 @@
 //   data.sales[] (hobbyType="salve", batchId=...)
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -155,7 +156,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
     if (!name.trim() && !recipe.trim()) return;
     const id = batch?.id || newId();
     const made = Number(tinsMade) || 0;
-    update(d => {
+    undoable(update, "Saved batch")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -193,7 +194,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted batch")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       if (Array.isArray(d.sales)) d.sales = d.sales.filter(s => s.batchId !== batch.id);
@@ -293,7 +294,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     const n = Number(count);
     if (!n || n < 1 || n > max) return;
-    update(d => {
+    undoable(update, "Saved")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);

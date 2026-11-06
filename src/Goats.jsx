@@ -1,6 +1,7 @@
 // ============================================================================
 // GOATS — per-animal tracking, dairy or meat, milk logging, kid tracking
 // ============================================================================
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -1816,7 +1817,11 @@ const UNDO_WORDS = { milk: "milk", fed: "feeding", weight: "weight", health: "he
 export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onOpenJournal, onOpenCalendar }) {
   const entries = data.entries[hobby.id] || [];
   const [local, setLocal] = useState(null);           // add/edit goat, herd count
-  const [form, setForm] = useState(null);             // { kind, animalId?, breeding? }
+  const [form, setFormRaw] = useState(null);
+  // With no goats yet, forms that need one open "Add your first goat" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["milk","fed","weight","health","note","kid","breeding","remove"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
   const [profileId, setProfileId] = useState(null);
   const [view, setView] = useState(null);             // { kind: "pedigree" | "history", animal }
   const [undoCheck, setUndoCheck] = useState(null);   // ids before a log form opened
@@ -1887,6 +1892,7 @@ export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal,
 
   return (
     <div>
+      {needAnimal && <NeedAnimal noun="goat" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setLocal({ type: "addAnimal" }); }} />}
       <GoatModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
       {f.kind === "milk" && <MilkGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
       {f.kind === "fed" && <FedGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}

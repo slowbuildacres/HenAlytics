@@ -17,6 +17,7 @@
 // Sheep gestation = 145–155 days. We default expected lambing to +147 days.
 // ============================================================================
 
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -927,7 +928,7 @@ function FedLogModal({ onSave, onClose }) {
 // Animal selection is required for weight/health/death; optional for note.
 // Death also archives the animal (same pattern as butcher).
 // ============================================================================
-function LogEntryModal({ animals, action, onSave, onClose, customers = [], initialAnimalId = null }) {
+function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, customers = [], initialAnimalId = null }) {
   const live = animals.filter(a => !a.archived);
   const [date, setDate] = useState(todayStr());
   const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
@@ -1027,12 +1028,19 @@ function LogEntryModal({ animals, action, onSave, onClose, customers = [], initi
       <Field label="Date">
         <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
+      {animalRequired && live.length === 0 ? (
+        <div style={{ padding: 12, borderRadius: 10, background: palette.bgAlt, color: palette.ink, fontSize: 14, lineHeight: 1.5, marginBottom: 14 }}>
+          This is kept for each sheep, so add your first sheep before logging it.
+          {onAddAnimal && <div style={{ marginTop: 10 }}><Btn variant="primary" small onClick={onAddAnimal}>Add a sheep</Btn></div>}
+        </div>
+      ) : (
       <Field label={animalRequired ? "Sheep" : "Sheep (optional)"}>
         <select style={inputStyle} value={animalId} onChange={e => setAnimalId(e.target.value)}>
           {!animalRequired && <option value="">— Whole flock —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
+      )}
       {action === "weight" && (()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shown=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
@@ -1183,7 +1191,7 @@ function HerdTallySection({ hobby, update }) {
         )}
       </div>
       {open && (
-        <Modal open onClose={() => setOpen(false)} title="Herd tally">
+        <ModalShell onClose={() => setOpen(false)} title="Herd tally">
           <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14, lineHeight: 1.5 }}>
             Record a head count by sex for sheep you don't want to track individually. Separate from your named animals — it doesn't affect breeding, history, or sales.
           </div>
@@ -1204,7 +1212,7 @@ function HerdTallySection({ hobby, update }) {
             <Btn variant="ghost" onClick={() => setOpen(false)}>Cancel</Btn>
             <Btn variant="accent" onClick={save}>Save tally</Btn>
           </div>
-        </Modal>
+        </ModalShell>
       )}
     </>
   );
@@ -1566,6 +1574,7 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
             }
           }}
           onClose={() => setLogEntryAction(null)}
+          onAddAnimal={() => { setLogEntryAction(null); setAnimalModal({ open: true, animal: null }); }}
         />
       )}
       {butcherOpen && (
@@ -2018,7 +2027,11 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
   const sp = SPECIES.sheep;
   const entries = (data.entries && data.entries[hobby.id]) || [];
   const animals = hobby.animals || [];
-  const [form, setForm] = useState(null);
+  const [form, setFormRaw] = useState(null);
+  // With no sheeps yet, forms that need one open "Add your first sheep" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["weight","health","death","sale","breeding","move"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
   const [profileId, setProfileId] = useState(null);
   const [view, setView] = useState(null);
   const [tallyOpen, setTallyOpen] = useState(false);
@@ -2093,6 +2106,7 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
 
   return (
     <div>
+      {needAnimal && <NeedAnimal noun="sheep" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setFormRaw({ kind: "animal", animal: null }); }} />}
       {f.kind === "animal" && <AnimalModal animal={f.animal} animals={animals} paddocks={hobby.paddocks || []} onClose={() => setForm(null)} onSave={upsert("animals")} onDelete={remove("animals")} update={update} user={user} hobbyId={hobby.id} />}
       {f.kind === "paddock" && <PaddockModal paddock={f.paddock} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
       {f.kind === "move" && f.animal && <MoveSheepModal animal={f.animal} paddocks={hobby.paddocks || []} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
@@ -2110,7 +2124,7 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
               if (payload.saleData) update((d) => { d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData); return d; });
             } else addEntry(payload);
           }}
-          onClose={closeForm} />
+          onClose={closeForm} onAddAnimal={() => setForm({ kind: "animal", animal: null })} />
       )}
       <NlSheet open={removeOpen} onClose={() => setRemoveOpen(false)} label="Remove sheep" showClose>
         <h2 style={{ margin: "0 4px 10px", fontFamily: FONT_DISPLAY, fontWeight: 400, fontSize: 24 }}>What happened?</h2>

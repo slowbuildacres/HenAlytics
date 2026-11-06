@@ -23,6 +23,7 @@
 //                            defaultTempHigh, ingredients, notes }]
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -286,7 +287,7 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
-          <Btn variant="ghost" onClick={() => { if (confirm("Delete this ferment? All stage logs will be lost.")) { onDelete(ferment.id); onClose(); } }}>Delete</Btn>
+          <Btn variant="ghost" onClick={() => { onDelete(ferment.id); onClose(); }}>Delete</Btn>
         ) : <div />}
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -431,7 +432,7 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
-          <Btn variant="ghost" onClick={() => { if (confirm("Delete this recipe?")) { onDelete(recipe.id); onClose(); } }}>Delete</Btn>
+          <Btn variant="ghost" onClick={() => { onDelete(recipe.id); onClose(); }}>Delete</Btn>
         ) : <div />}
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -505,7 +506,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   const infraEntries = fermEntries.filter(e => e.action === "infrastructure");
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["fermentation"] = d.entries["fermentation"] || [];
       const idx = d.entries["fermentation"].findIndex(e => e.id === entry.id);
@@ -515,7 +516,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["fermentation"]) {
         d.entries["fermentation"] = d.entries["fermentation"].filter(e => e.id !== id);
       }
@@ -526,7 +527,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   const archived = ferments.filter(f => f.archived);
 
   const saveFerment = (ferment) => {
-    update(d => {
+    undoable(update, `Saved ${ferment.name || "ferment"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.ferments)) h.ferments = [];
@@ -560,7 +561,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   };
 
   const deleteFerment = (id) => {
-    update(d => {
+    undoable(update, "Deleted ferment")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any deducted stock.
@@ -574,7 +575,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   };
 
   const addStage = (fermentId, stage) => {
-    update(d => {
+    undoable(update, "Saved stage")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const f = (h?.ferments || []).find(x => x.id === fermentId);
       if (f) {
@@ -586,7 +587,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   };
 
   const deleteStage = (fermentId, stageIdx) => {
-    update(d => {
+    undoable(update, "Deleted stage")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const f = (h?.ferments || []).find(x => x.id === fermentId);
       if (f && Array.isArray(f.stages)) {
@@ -597,7 +598,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   };
 
   const finishFerment = (fermentId, finalNotes) => {
-    update(d => {
+    undoable(update, "Ferment finished")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const f = (h?.ferments || []).find(x => x.id === fermentId);
       if (f) {
@@ -610,7 +611,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   };
 
   const saveRecipe = (recipe) => {
-    update(d => {
+    undoable(update, `Saved ${recipe.name || "recipe"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.recipes)) h.recipes = [];
@@ -621,7 +622,7 @@ export default function FermentationPage({ hobby, data, update, setModal, nl = n
   };
 
   const deleteRecipe = (id) => {
-    update(d => {
+    undoable(update, "Deleted recipe")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.recipes = (h.recipes || []).filter(r => r.id !== id);
       return d;

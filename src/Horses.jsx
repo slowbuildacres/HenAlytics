@@ -18,6 +18,7 @@
 // Sales: writes to data.sales[] with hobbyType: "horse", crop: horse name.
 // ============================================================================
 
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3 } from "lucide-react";
 import { fmtMoney } from "./units.js";
@@ -1859,7 +1860,11 @@ const HORSE_LISTS = ["rides", "farrier", "vet", "deworming"];
 export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
   const horses = hobby.animals || [];
   const entries = (data.entries && data.entries[hobby.id]) || [];
-  const [form, setForm] = useState(null);
+  const [form, setFormRaw] = useState(null);
+  // With no horses yet, forms that need one open "Add your first horse" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["ride","care","breeding","sale","death"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
   const [profileId, setProfileId] = useState(null);
   const [view, setView] = useState(null);
   const [tallyOpen, setTallyOpen] = useState(false);
@@ -1923,6 +1928,7 @@ export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab,
 
   return (
     <div>
+      {needAnimal && <NeedAnimal noun="horse" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setFormRaw({ kind: "horse", horse: null }); }} />}
       {f.kind === "horse" && <HorseModal horse={f.horse} horses={horses} onClose={() => setForm(null)} onSave={save("animals")} onDelete={del("animals")} update={update} user={user} hobbyId={hobby.id} />}
       {f.kind === "ride" && <RideModal horses={horses} ride={f.ride || null} initialHorseId={f.horseId} onSave={save("rides")} onDelete={del("rides")} onClose={closeForm} />}
       {f.kind === "care" && <CareLogModal kind={f.careKind} horses={horses} log={null} initialHorseId={f.horseId} onSave={(k, rec) => save(k)(rec)} onDelete={(k, id) => del(k)(id)} onClose={closeForm} />}

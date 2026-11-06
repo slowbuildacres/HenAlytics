@@ -19,7 +19,7 @@
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
-import { showUndo } from "./newlook/UndoBar.jsx";
+import { showUndo, undoable } from "./newlook/UndoBar.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -249,7 +249,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
-          <Btn variant="ghost" onClick={() => { if (confirm("Delete this batch?")) { onDelete(batch.id); onClose(); } }}>Delete</Btn>
+          <Btn variant="ghost" onClick={() => { onDelete(batch.id); onClose(); }}>Delete</Btn>
         ) : <div />}
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -316,7 +316,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
   const infraEntries = dehyEntries.filter(e => e.action === "infrastructure");
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["dehydrating"] = d.entries["dehydrating"] || [];
       const idx = d.entries["dehydrating"].findIndex(e => e.id === entry.id);
@@ -326,7 +326,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["dehydrating"]) {
         d.entries["dehydrating"] = d.entries["dehydrating"].filter(e => e.id !== id);
       }
@@ -335,7 +335,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
   };
 
   const saveBatch = (batch) => {
-    update(d => {
+    undoable(update, `Saved ${batch.item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -369,7 +369,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
   };
 
   const deleteBatch = (id) => {
-    update(d => {
+    undoable(update, "Deleted batch")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any deducted stock.

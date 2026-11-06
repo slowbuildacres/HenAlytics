@@ -26,6 +26,7 @@
 // syrup AND the theoretical (so users can see boiling efficiency).
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -298,7 +299,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
   const [entryModal, setEntryModal] = useState({ open: false, action: null, entry: null });
 
   const saveSeason = (s) => {
-    update(d => {
+    undoable(update, `Saved ${s.name || "season"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.seasons)) h.seasons = [];
@@ -310,7 +311,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     });
   };
   const deleteSeason = (id) => {
-    update(d => {
+    undoable(update, "Deleted season")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       h.seasons = (h.seasons || []).filter(s => s.id !== id);
@@ -330,7 +331,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     });
   };
   const saveEntry = (entry) => {
-    update(d => {
+    undoable(update, "Saved")(d => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const idx = d.entries[hobby.id].findIndex(e => e.id === entry.id);
       if (idx >= 0) d.entries[hobby.id][idx] = entry;
@@ -339,7 +340,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     });
   };
   const deleteEntry = (id) => {
-    update(d => {
+    undoable(update, "Deleted")(d => {
       if (Array.isArray(d.entries[hobby.id])) {
         d.entries[hobby.id] = d.entries[hobby.id].filter(e => e.id !== id);
       }

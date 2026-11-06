@@ -18,7 +18,7 @@
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
-import { showUndo } from "./newlook/UndoBar.jsx";
+import { showUndo, undoable } from "./newlook/UndoBar.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, Trash2, ChevronDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
@@ -367,7 +367,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
   const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const idx = d.entries[hobby.id].findIndex(e => e.id === entry.id);
       if (idx >= 0) d.entries[hobby.id][idx] = entry;
@@ -376,7 +376,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       d.entries[hobby.id] = (d.entries[hobby.id] || []).filter(e => e.id !== id);
       return d;
     });
@@ -399,7 +399,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
 
   // Save / delete handlers
   const saveStarter = (starter) => {
-    update(d => {
+    undoable(update, `Saved ${starter.name || "starter"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.starters)) h.starters = [];
@@ -409,7 +409,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
     });
   };
   const deleteStarter = (id) => {
-    update(d => {
+    undoable(update, "Deleted starter")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.starters = (h.starters||[]).filter(s => s.id !== id);
       return d;
@@ -424,7 +424,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
     });
   };
   const saveBake = (bake) => {
-    update(d => {
+    undoable(update, `Saved ${bake.item || bake.name || "bake"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.bakes)) h.bakes = [];
@@ -457,7 +457,7 @@ export default function SourdoughPage({ hobby, data, update, setModal, nl = null
     });
   };
   const deleteBake = (id) => {
-    update(d => {
+    undoable(update, "Deleted bake")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any deducted stock.

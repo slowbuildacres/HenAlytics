@@ -21,6 +21,7 @@
 //   data.sales[] (hobbyType=tincture, batchId=...)
 // ============================================================================
 
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -235,7 +236,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
     if (!herb.trim()) return;
     const id = batch?.id || newId();
     const finalRatio = ratioPreset === "Custom" ? ratioCustom.trim() : ratioPreset;
-    update(d => {
+    undoable(update, "Saved tincture")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -275,7 +276,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted tincture")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       // Strip any sales tied to this batch too — they'd be orphaned
@@ -361,7 +362,7 @@ function StrainModal({ batch, hobbyId, update, onClose }) {
   const [strainNotes, setStrainNotes] = useState(batch.strainNotes || "");
 
   const save = () => {
-    update(d => {
+    undoable(update, "Strained")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -443,7 +444,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
       .filter(r => (Number(r.count) || 0) >= 1)
       .map(r => ({ id: r.id, size: resolveSize(r), count: Number(r.count) }));
     const made = containers.reduce((s, c) => s + c.count, 0);
-    update(d => {
+    undoable(update, `Bottled ${made}`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -539,7 +540,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     const n = Number(count);
     if (!n || n < 1 || n > max) return;
-    update(d => {
+    undoable(update, `Logged ${count}`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
