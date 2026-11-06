@@ -183,6 +183,7 @@ export default function PlantScannerModal({ onClose }) {
       if (!res.ok) throw new Error(`Quota fetch failed (${res.status})`);
       const json = await res.json();
       setQuotaStatus(json);
+      return json;
     } catch (e) {
       setError(e.message || "Could not load scan status");
     } finally {
@@ -304,8 +305,18 @@ export default function PlantScannerModal({ onClose }) {
         const productId = packSize === 10 ? IAP_PRODUCTS.SCAN_PACK_10 : IAP_PRODUCTS.SCAN_PACK_30;
         const result = await purchaseProduct(productId);
         if (result.success) {
-          // Webhook will have credited the user by now. Refresh quota.
-          await refreshQuota();
+          // The store has charged; the scans arrive when RevenueCat's webhook
+          // reaches our server, usually within seconds but sometimes up to a
+          // minute. Wait for the count to go up so nobody buys twice thinking
+          // the first one failed.
+          const before = (quotaStatus && quotaStatus.extra_remaining) || 0;
+          let credited = false;
+          for (const wait of [1500, 3000, 5000, 8000, 12000, 20000]) {
+            await new Promise((r) => setTimeout(r, wait));
+            const q = await refreshQuota();
+            if (q && (q.extra_remaining || 0) > before) { credited = true; break; }
+          }
+          if (!credited) setError("Your purchase went through. The scans can take a minute to show up; close and reopen the scanner if they're not here yet.");
           setView("home");
         } else if (!result.userCanceled) {
           throw new Error(result.error || "Purchase failed");

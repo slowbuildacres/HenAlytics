@@ -21,9 +21,10 @@
 //   - status in ('active','past_due')   (past_due = renewal retrying; they
 //                                          are still a supporter until the
 //                                          subscription actually lapses)
-//   A 'canceled' subscription does NOT count, even if canceled mid-period.
-//   (Simple and predictable. If you later want to honor the paid-through
-//   period after cancellation, that needs a period-end column to check.)
+//   A 'canceled' row does NOT count. Turning off auto-renew doesn't make a
+//   row 'canceled' until the paid month runs out: Stripe keeps it 'active'
+//   until the period ends, and revenuecat-webhook.js waits for EXPIRATION
+//   (a refund ends it right away on both).
 //
 // Security:
 //   - JWT-authed. A user can only ask about THEMSELVES — status is looked up

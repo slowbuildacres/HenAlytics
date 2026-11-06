@@ -132,6 +132,28 @@ export async function initIap(supabaseUserId) {
     return _initPromise;
   }
 
+  // Already set up for someone else (usually: opened signed out, then signed
+  // in). RevenueCat should be configured once per launch; switching accounts
+  // is logIn / logOut, which also moves purchases made before signing in.
+  if (_initialized && _purchases) {
+    try {
+      if (supabaseUserId) await _purchases.logIn({ appUserID: supabaseUserId });
+      else await _purchases.logOut();
+      _currentUserId = supabaseUserId;
+    } catch (e) {
+      console.error("[iap] switching account failed:", e);
+    }
+    return;
+  }
+  if (_initPromise) {
+    // Setup is still running for the previous account; switch once it's done.
+    const pending = _initPromise;
+    return pending.then(() => {
+      if (!_initialized && _initPromise === pending) _initPromise = null; // failed: start fresh
+      return initIap(supabaseUserId);
+    });
+  }
+
   _currentUserId = supabaseUserId;
 
   _initPromise = (async () => {
@@ -238,8 +260,8 @@ export async function purchaseProduct(productId) {
       product: products[0],
     });
     // RC returns customerInfo + productIdentifier on success. The webhook
-    // will already have credited the supporters table by the time we get
-    // here (RC sends webhooks server-to-server BEFORE returning to the app).
+    // that credits the supporters table arrives separately, usually within
+    // seconds but not guaranteed before this returns; callers keep checking.
 
     // Refresh supporter status cache so gated features (Standings, etc.)
     // unlock immediately instead of waiting for the next app launch.

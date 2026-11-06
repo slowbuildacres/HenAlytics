@@ -2505,9 +2505,10 @@ const startCheckout = async (tier) => {
         toast(`Unknown tier: ${tier}`, { kind: "error" });
         return;
       }
-      // RC handles the Apple purchase sheet, receipt validation, and webhook
-      // delivery. The webhook (api/revenuecat-webhook) fires server-to-server
-      // and updates the supporters table BEFORE this function returns.
+      // RC handles the Apple/Google purchase sheet and receipt validation.
+      // Its webhook (api/revenuecat-webhook) updates the supporters table on
+      // its own schedule, usually seconds after this returns; the
+      // henalytics-iap-success listener turns the perks on meanwhile.
       const result = await purchaseProduct(productId);
       if (!result.success) {
         if (!result.userCanceled) {
@@ -4566,11 +4567,23 @@ useEffect(() => {
       // our Stripe-path delay for consistency.
       const marker = `henalytics-iap-handled-${tier}-${Date.now()}`;
       try { sessionStorage.setItem(marker, "1"); } catch (_) {}
-      setTimeout(() => {
-        setModal({ type: "supporterName" });
-        // Turn the perks (colors, icons, monthly Wrapped) on right away.
-        supporterStatusNow().then((yes) => { if (yes) { setIsSupporter(true); setSupporterStatus("yes"); } });
-      }, 2500);
+      // A monthly membership: Apple or Google has already charged, so turn
+      // the perks (colors, icons, monthly Wrapped) on now. The server finds
+      // out through RevenueCat's webhook, which usually lands in a second or
+      // two but can take a minute; keep asking so the next launch agrees.
+      // (The one-time tip carries no perks.)
+      if (tier !== "one_time") { setIsSupporter(true); setSupporterStatus("yes"); }
+      setTimeout(() => setModal({ type: "supporterName" }), 2500);
+      if (tier !== "one_time") {
+        const waits = [2500, 6000, 15000, 30000, 60000];
+        let i = 0;
+        const check = () => supporterStatusNow().then((yes) => {
+          if (yes) return;
+          if (++i < waits.length) setTimeout(check, waits[i] - waits[i - 1]);
+          else console.warn("[iap] purchase confirmed by the store, but the server hasn't recorded it yet");
+        });
+        setTimeout(check, waits[0]);
+      }
     };
     window.addEventListener("henalytics-iap-success", onIapSuccess);
     return () => window.removeEventListener("henalytics-iap-success", onIapSuccess);

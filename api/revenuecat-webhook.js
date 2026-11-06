@@ -103,9 +103,15 @@ function isScanPackProduct(productId) {
   return Object.prototype.hasOwnProperty.call(SCAN_PACK_SCAN_COUNTS, productId);
 }
 
-// Map RC event_type → DB status
-function statusFromEventType(eventType) {
-  switch (eventType) {
+// Map RC event → DB status
+//
+// CANCELLATION means the person turned off auto-renew: they've already paid
+// for this month, so they stay a supporter until it runs out (EXPIRATION).
+// The one exception is a refund (cancel_reason CUSTOMER_SUPPORT), which ends
+// it right away. This matches the web side, where Stripe keeps a canceled
+// subscription "active" until the end of the period.
+function statusFromEvent(event) {
+  switch (event.type) {
     case 'INITIAL_PURCHASE':
     case 'RENEWAL':
     case 'UNCANCELLATION':
@@ -115,6 +121,7 @@ function statusFromEventType(eventType) {
     case 'BILLING_ISSUE':
       return 'past_due';
     case 'CANCELLATION':
+      return event.cancel_reason === 'CUSTOMER_SUPPORT' ? 'canceled' : 'active';
     case 'EXPIRATION':
       return 'canceled';
     default:
@@ -193,7 +200,7 @@ export default async function handler(req, res) {
   const priceCents = typeof event.price === 'number' ? Math.round(event.price * 100) : null;
 
   // ---- Ignore non-actionable events ----
-  const status = statusFromEventType(eventType);
+  const status = statusFromEvent(event);
   if (!status) {
     // TEST event, SUBSCRIBER_ALIAS, TRANSFER, etc.
     console.log('[rc-webhook] ignoring event type:', eventType);
