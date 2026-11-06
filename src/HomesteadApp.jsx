@@ -106,6 +106,7 @@ import HomeScreen from "./newlook/HomeScreen.jsx";
 import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
 import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
+import { nextYearProject, nextYearLabel } from "./newlook/projects/projectData.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
 import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
 import { UndoHost, showUndo, undoable } from "./newlook/UndoBar.jsx";
@@ -5417,6 +5418,19 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
     setPage(hobbyPage(entry.hobby));
   };
   // A Log picker action → the same log forms the hobby page opens.
+  // 4-H / FFA: start next program year's record from this one (Undo-able),
+  // then open it.
+  const nlContinueProject = (p) => {
+    const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    undoable(update, `Started the ${nextYearLabel(p)} record`)((d) => {
+      d.projects = Array.isArray(d.projects) ? d.projects : [];
+      const old = d.projects.find((x) => x && x.id === p.id);
+      if (old) old.continuedTo = id;
+      d.projects.push(nextYearProject(old || p, id));
+      return d;
+    });
+    setNlProjectId(id); setPage("project");
+  };
   const nlLogAction = (entry, a) => {
     const h = (a.hobbyId && data.hobbies.find((x) => x.id === a.hobbyId)) || entry.hobby;
     setLogPickerOpen(false);
@@ -6367,11 +6381,11 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             onOpen={(id) => { setNlProjectId(id); setPage("project"); }}
             onNew={(kind) => setNlProjectForm({ kind })}
             onGuide={() => { setNlProjectId(null); setPage("projectGuide"); }}
-            onInfo={setNlProjectInfo} />
+            onInfo={setNlProjectInfo} onContinue={nlContinueProject} />
         )}
         {newLook && page === "project" && (() => {
           const pj = (data.projects || []).find((x) => x.id === nlProjectId);
-          if (!pj) return <ProjectsHome data={data} onBack={() => setPage("more")} onOpen={(id) => setNlProjectId(id)} onNew={(kind) => setNlProjectForm({ kind })} onGuide={() => setPage("projectGuide")} onInfo={setNlProjectInfo} />;
+          if (!pj) return <ProjectsHome data={data} onBack={() => setPage("more")} onOpen={(id) => setNlProjectId(id)} onNew={(kind) => setNlProjectForm({ kind })} onGuide={() => setPage("projectGuide")} onInfo={setNlProjectInfo} onContinue={nlContinueProject} />;
           return (
             <ProjectRecord data={data} project={pj} toast={toast}
               onBack={() => setPage("projects")}

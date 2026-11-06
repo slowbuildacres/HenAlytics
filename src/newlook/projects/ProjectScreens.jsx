@@ -17,6 +17,7 @@ import HobbyGlyph from "../HobbyGlyph.jsx";
 import { showUndo } from "../UndoBar.jsx";
 import {
   KINDS, kindOf, SAE_TYPES, HOUR_ACTIVITIES, programYear, yearLabel, projectsOf, logsFor, projectRecord, progressLine,
+  isPastProject, nextYearDue, nextYearLabel,
   hoursThisMonth, isoDay, STORY_PROMPTS, GOAL_PROMPTS,
 } from "./projectData.js";
 import { buildProjectPdf, aetRows } from "./projectPdf.js";
@@ -61,8 +62,13 @@ function Field({ label, children, id }) {
 }
 
 // ------------------------------------------------------------------ home
-export function ProjectsHome({ data, onBack, onOpen, onNew, onGuide, onInfo }) {
-  const projects = projectsOf(data);
+export function ProjectsHome({ data, onBack, onOpen, onNew, onGuide, onInfo, onContinue }) {
+  const all = projectsOf(data);
+  // This year's records first; finished years under Past years.
+  const projects = all.filter((p) => !isPastProject(p));
+  const pastYears = all.filter((p) => isPastProject(p)).sort((a, b) => String(b.end).localeCompare(String(a.end)));
+  const due = all.filter((p) => nextYearDue(data, p));
+  const [showPast, setShowPast] = useState(false);
   const hobbies = (data.hobbies || []).filter((h) => h && !h.hidden);
   const kinds = KINDS.filter((k) => hobbies.some((h) => h.type === k.hobbyType));
   const py = programYear();
@@ -76,6 +82,20 @@ export function ProjectsHome({ data, onBack, onOpen, onNew, onGuide, onInfo }) {
           See how it works<ChevronRight size={15} strokeWidth={2.4} />
         </button>
       </div>
+
+      {due.length > 0 && onContinue && (
+        <Card padded style={{ display: "flex", flexDirection: "column", gap: 10, background: nl.yolkTint, borderColor: nl.yolkTint }}>
+          <div>
+            <div style={{ fontSize: 15, fontWeight: 600, color: nl.yolkInk }}>Time to start next year's record</div>
+            <div style={{ fontSize: 13, color: nl.quietInk, marginTop: 2, lineHeight: 1.4 }}>The member, animals and goals carry over. This year's record stays as it is, ready to print.</div>
+          </div>
+          {due.map((p) => (
+            <Button key={p.id} small onClick={() => onContinue(p)} style={{ alignSelf: "flex-start" }}>
+              Start the {nextYearLabel(p)} {p.title || kindOf(p.kind).label}{p.member ? ` (${p.member})` : ""}
+            </Button>
+          ))}
+        </Card>
+      )}
 
       {projects.length > 0 && (
         <>
@@ -99,6 +119,16 @@ export function ProjectsHome({ data, onBack, onOpen, onNew, onGuide, onInfo }) {
             );
           })}
         </>
+      )}
+
+      {pastYears.length > 0 && (
+        <Card>
+          <Row first icon={ic(Clock)} title={`Past years · ${pastYears.length}`} sub="Finished records, still here to read and print"
+            onClick={() => setShowPast((v) => !v)} trailing={<ChevronRight size={18} color={nl.soft} style={{ transform: showPast ? "rotate(90deg)" : "none" }} aria-hidden="true" />} />
+          {showPast && pastYears.map((p) => (
+            <Row key={p.id} icon={<HobbyGlyph type={kindOf(p.kind).icon} size={20} />} title={`${p.title || kindOf(p.kind).label}${p.member ? ` · ${p.member}` : ""}`} sub={yearLabel(p)} onClick={() => onOpen(p.id)} chevron />
+          ))}
+        </Card>
       )}
 
       <div>

@@ -267,3 +267,39 @@ export const GOAL_PROMPTS = [
   "Something you want to do (like show at the county fair)",
   "A number to hit (like sell 50 dozen eggs, or keep feed under $200)",
 ];
+
+// ---- next program year ------------------------------------------------------
+// From 30 days before a project's year ends (September 1 for an Oct–Sep
+// year), it offers "Start the 2027–28 record". The new record copies the
+// member, club, animals, goals and money choice into the next year; the old
+// one stays as it is under Past years, printable as before.
+const isoOf = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const addDays = (iso, n) => { const [y, m, d] = String(iso).split("-").map(Number); return isoOf(new Date(y, m - 1, d + n)); };
+
+export function isPastProject(p, today = isoOf(new Date())) {
+  return !!(p && p.end && p.end < today);
+}
+
+export function nextYearDue(data, p, today = isoOf(new Date())) {
+  if (!p || !p.end || p.continuedTo) return false;
+  if (((data && data.projects) || []).some((x) => x && x.continuedFrom === p.id)) return false;
+  return today >= addDays(p.end, -30);
+}
+
+export function nextYearLabel(p) {
+  const s = addDays(p.end, 1);
+  const y = Number(s.slice(0, 4));
+  const e = addDays(`${y + 1}${s.slice(4)}`, -1);
+  return e.slice(0, 4) !== s.slice(0, 4) ? `${y}–${e.slice(2, 4)}` : String(y);
+}
+
+// The next year's record for `p` (a new object; the caller saves it).
+export function nextYearProject(p, newId) {
+  const start = addDays(p.end, 1);
+  const end = addDays(`${Number(start.slice(0, 4)) + 1}${start.slice(4)}`, -1);
+  const age = /^\d+$/.test(String(p.age || "").trim()) ? String(Number(p.age) + 1) : (p.age || "");
+  return {
+    ...p, id: newId, createdAt: Date.now(), continuedFrom: p.id, continuedTo: null,
+    start, end, age, saleIds: [], expenseIds: [], story: "",
+  };
+}
