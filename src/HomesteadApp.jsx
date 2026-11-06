@@ -3435,6 +3435,13 @@ export default function HomesteadApp() {
   const [nlNotice, setNlNotice] = useState(null); // announcement opened from the Home card
   const [nlHobbyTab, setNlHobbyTab] = useState("today"); // rebuilt hobbies: "today" | "animals"
   const [nlYear, setNlYear] = useState(() => new Date().getFullYear());
+  // Saving on this phone failed (usually out of room); see sync.js.
+  const [localSaveFailed, setLocalSaveFailed] = useState(false);
+  useEffect(() => {
+    const on = (e) => setLocalSaveFailed(!(e && e.detail && e.detail.ok));
+    window.addEventListener("henalytics-local-save", on);
+    return () => window.removeEventListener("henalytics-local-save", on);
+  }, []);
   // Through January, Year in review opens on the year that just ended (if
   // there's anything in it); after that, on the new year.
   useEffect(() => {
@@ -5622,6 +5629,21 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           }}
         >
           📡 Offline — your changes will sync when you reconnect
+        </div>
+      )}
+
+      {localSaveFailed && (
+        <div role="alert" style={{
+          margin: "calc(8px + env(safe-area-inset-top)) 12px 0", padding: "12px 14px", borderRadius: 14,
+          background: palette.dangerBg, color: palette.ink, border: `1px solid ${palette.line}`,
+          fontFamily: "'Be Vietnam Pro', sans-serif", fontSize: 14, lineHeight: 1.45,
+          display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <strong>This phone is out of room for Henalytics</strong>
+          <span>{user
+            ? "Your latest changes couldn't be saved on this phone, but they're backed up to your account. Freeing up space on the phone will clear this."
+            : "Your latest changes couldn't be saved on this phone. Sign in to back up your records so nothing is lost, then free up some space."}</span>
+          {!user && <button type="button" onClick={() => setModal({ type: "signup" })} style={{ alignSelf: "flex-start", minHeight: 40, padding: "0 16px", borderRadius: 999, border: "none", background: palette.ink, color: palette.bg, fontWeight: 700, cursor: "pointer" }}>Sign in to back up</button>}
         </div>
       )}
 
