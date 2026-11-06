@@ -4788,10 +4788,10 @@ const nativeBack = React.useCallback(() => {
   // Forms and sheets a screen opened itself (a milk form, a canning batch, a
   // sale…) close before going back a screen, so typed-in work isn't lost.
   // If what's on top didn't close, go back a screen as usual.
-  const layer = closeTopOverlay();
-  if (layer) {
-    setTimeout(() => {
-      if (!layer.isConnected) return;
+  const closed = closeTopOverlay();
+  if (closed) {
+    if (closed.how === "layer") setTimeout(() => {
+      if (!closed.layer.isConnected) return;
       const parent = newLook ? nlParent() : (page !== "home" ? "home" : null);
       if (parent) setPage(parent);
     }, 120);

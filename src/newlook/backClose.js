@@ -8,7 +8,9 @@
 // full-screen fixed layer whose backdrop closes it (old popups: the layer
 // itself; new-look sheets: a full-size "Close" button behind the sheet).
 //
-// closeTopOverlay() returns the layer it tapped, or null when nothing is open.
+// closeTopOverlay() returns { layer, how } for what it tapped, or null when
+// nothing is open. how === "layer" means it tapped the layer itself, which
+// not every full-screen layer closes on; the caller checks it went away.
 // ============================================================================
 
 function isOverlay(el) {
@@ -40,8 +42,16 @@ export function closeTopOverlay() {
   if (!layer) return null;
   // New-look sheet: the dimmed backdrop is a full-size Close button.
   const backdrop = [...layer.children].find((c) => c.tagName === "BUTTON" && c.getAttribute("aria-label") === "Close");
-  if (backdrop) { backdrop.click(); return layer; }
+  if (backdrop) { backdrop.click(); return { layer, how: "backdrop" }; }
+  // Full-screen flows (the 3.0 welcome, tips): their own Back arrow steps
+  // back; otherwise their Close, Skip, Not now or Got it ends them.
+  const shown = (b) => b.offsetWidth > 0 && b.offsetHeight > 0 && !b.disabled;
+  const buttons = [...layer.querySelectorAll("button")].filter(shown);
+  const pick = buttons.find((b) => b.getAttribute("aria-label") === "Back")
+    || buttons.find((b) => b.getAttribute("aria-label") === "Close")
+    || buttons.find((b) => /^(skip|not now|got it|maybe later|close)\b/i.test((b.innerText || "").trim()));
+  if (pick) { pick.click(); return { layer, how: "button" }; }
   // Old popups close when the layer itself (outside the card) is tapped.
   layer.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
-  return layer;
+  return { layer, how: "layer" };
 }
