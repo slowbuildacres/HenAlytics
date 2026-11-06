@@ -93,7 +93,7 @@ import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTa
 import { useNewLook, NEW_LOOK_LAUNCHED } from "./newlook/flag.js";
 import { nl, LOOKS } from "./newlook/theme.js";
 import { useAppearance } from "./newlook/appearance.js";
-import SupporterScreen from "./newlook/SupporterScreen.jsx";
+import SupporterScreen, { SupportSheet } from "./newlook/SupporterScreen.jsx";
 import LookScreen from "./newlook/LookScreen.jsx";
 import ImportScreen from "./newlook/importer/ImportScreen.jsx";
 import { ProjectsHome, ProjectRecord, ProjectForm, SectionSheet, ProjectLogSheet, PdfGuide, AetSummary, InfoSheet } from "./newlook/projects/ProjectScreens.jsx";
@@ -3503,6 +3503,9 @@ useEffect(() => {
   const [isSupporter, setIsSupporter] = useState(false);
   // This month's running costs covered (heart button on Home, Support page).
   const nlSupport = useSupportProgress();
+  const [supportSheetOpen, setSupportSheetOpen] = useState(false);
+  const [supportScrollToOptions, setSupportScrollToOptions] = useState(false);
+  useEffect(() => { if (page !== "supporter") setSupportScrollToOptions(false); }, [page]);
   // "unknown" until the server gives a definite answer — the new look keeps a
   // supporter's chosen colors meanwhile instead of flashing Farmhouse.
   const [supporterStatus, setSupporterStatus] = useState("unknown");
@@ -6376,11 +6379,15 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             onOpenCalendar={() => setPage("calendar")}
             onOpenHobby={(e) => nlOpenEntry(e)}
             onOpenSwitcher={() => setSwitcherOpen(true)}
-onManage={() => setModal({ type: "manageHobbies" })}
-            support={nlSupport} onOpenSupport={() => setPage("supporter")}
+            onManage={() => setModal({ type: "manageHobbies" })}
+            support={nlSupport} onOpenSupport={() => setSupportSheetOpen(true)}
             onOpenMore={() => setPage("more")}
             HobbyIcon={HobbyIcon}
           />
+        )}
+        {newLook && (
+          <SupportSheet open={supportSheetOpen} onClose={() => setSupportSheetOpen(false)} support={nlSupport} isSupporter={isSupporter}
+            onSupport={() => { setSupportSheetOpen(false); setSupportScrollToOptions(!isSupporter); setPage("supporter"); }} />
         )}
         {newLook && page === "more" && (
           <MoreScreen
@@ -6413,7 +6420,7 @@ onManage={() => setModal({ type: "manageHobbies" })}
             onCheckout={(tier) => startCheckout(tier)}
             isIap={isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true}
             onRestore={restoreSupporter} onManage={() => openManageSubscriptions()} onClaim={claimWebSupporter}
-            support={nlSupport}
+            support={nlSupport} scrollToOptions={supportScrollToOptions}
             onContact={() => openExternalUrl("mailto:slowbuildacres@gmail.com")} onOpenUrl={openExternalUrl}
           />
         )}

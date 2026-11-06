@@ -8,10 +8,10 @@
 // Manage Subscription, and the Privacy Policy and Terms of Use links.
 // ============================================================================
 
-import React, { useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { ChevronLeft, Palette, Zap, Trophy, Award, Heart, Check, ChevronRight } from "lucide-react";
 import { nl, font, type } from "./theme.js";
-import { Card, Badge, Button } from "./ui.jsx";
+import { Card, Badge, Button, Sheet } from "./ui.jsx";
 import { monthName, seasonOf } from "./MonthlyRecap.jsx";
 import { progressMonthName } from "./supportProgress.js";
 
@@ -22,9 +22,43 @@ const TIERS = [
   { tier: "monthly_10", amount: 10, label: "Generous" },
 ];
 
+// Who's behind Henalytics: a few photos and a note from Riley. The kids'
+// faces are blurred in the family photo (public/riley/family.jpg), and none
+// of these copies carry location data.
+const RILEY_PHOTOS = [
+  { src: "/riley/riley-and-wife.jpg", alt: "Riley and his wife on the homestead" },
+  { src: "/riley/family.jpg", alt: "Riley's family at home" },
+  { src: "/riley/pigs.jpg", alt: "Pigs in their pen" },
+  { src: "/riley/turnip.jpg", alt: "Riley holding a big turnip from the garden" },
+  { src: "/riley/chicken-tractors.jpg", alt: "Chicken tractors out on the pasture" },
+];
+
+export function FromRiley() {
+  return (
+    <Card>
+      <div style={{ display: "flex", gap: 8, overflowX: "auto", padding: "14px 14px 0", scrollSnapType: "x mandatory", WebkitOverflowScrolling: "touch" }}>
+        {RILEY_PHOTOS.map((ph) => (
+          <img key={ph.src} src={ph.src} alt={ph.alt} loading="lazy" width={112} height={140}
+            style={{ width: 112, height: 140, objectFit: "cover", borderRadius: 14, flexShrink: 0, scrollSnapAlign: "start", background: nl.chip }} />
+        ))}
+      </div>
+      <div style={{ padding: "12px 16px 16px" }}>
+        <div style={{ fontFamily: font.display, fontSize: 22, lineHeight: 1.2 }}>Hi, I'm Riley.</div>
+        <p style={{ margin: "6px 0 0", fontSize: 14.5, lineHeight: 1.5 }}>
+          Henalytics isn't a company. It's just me: one homesteader in northeast Kansas, dad of two, running a full-time business
+          and building this on the side because I love it. I'm passionate about helping more people get into homesteading.
+        </p>
+        <p style={{ margin: "8px 0 0", fontSize: 14.5, lineHeight: 1.5 }}>
+          Anything that comes in beyond what it costs to run goes into giveaways for the community.
+        </p>
+      </div>
+    </Card>
+  );
+}
+
 // This month's running costs and how much supporters cover (after store and
 // card fees), from /api/support-progress.
-function CostsCard({ support }) {
+export function CostsCard({ support }) {
   const month = progressMonthName(support);
   if (!month) return null;
   const { goal, covered, percent, supporters } = support;
@@ -44,6 +78,7 @@ function CostsCard({ support }) {
         {supporters > 0
           ? `${done ? `$${covered.toLocaleString("en-US")} of $${goal.toLocaleString("en-US")}, covered` : "Covered"} by ${supporters.toLocaleString("en-US")} supporter${supporters === 1 ? "" : "s"}.`
           : "Nobody has chipped in yet this month. You could be the first."}
+        {done && " Anything extra goes into giveaways."}
       </div>
       <div style={{ fontSize: 12, color: nl.soft, marginTop: 6, lineHeight: 1.45 }}>
         Servers, the plant scanner, email and app store fees, after Apple, Google and card fees. It doesn't count the time that goes into building Henalytics.
@@ -76,10 +111,33 @@ function Perk({ icon: I, title, sub, isNew, onClick, first }) {
 
 const linkStyle = () => ({ background: "none", border: "none", padding: 0, color: nl.good, font: `600 13px ${font.body}`, textDecoration: "underline", cursor: "pointer" });
 
+// What the heart on Home opens: this month's costs, a button to the
+// membership and tip options, then Riley's note and photos.
+export function SupportSheet({ open, onClose, support, isSupporter, onSupport }) {
+  return (
+    <Sheet open={open} onClose={onClose} label="Support Henalytics" showClose maxHeight="90vh">
+      <div style={{ display: "flex", flexDirection: "column", gap: 12, paddingTop: 4 }}>
+        <div style={{ fontFamily: font.display, fontSize: 24, lineHeight: 1.15, paddingRight: 44 }}>{isSupporter ? "Thank you for supporting Henalytics" : "Keep Henalytics free for everyone"}</div>
+        <CostsCard support={support} />
+        <Button kind="primary" onClick={onSupport} icon={<Heart size={18} strokeWidth={2.2} fill="currentColor" aria-hidden="true" />} style={{ width: "100%" }}>
+          {isSupporter ? "Your membership and perks" : "Help support Henalytics"}
+        </Button>
+        {!isSupporter && <div style={{ fontSize: 13, color: nl.soft, textAlign: "center", marginTop: -4 }}>Monthly from $1, or a one-time tip.</div>}
+        <FromRiley />
+      </div>
+    </Sheet>
+  );
+}
+
 export default function SupporterScreen({
   isSupporter, recapKey, recapTeaser, recapReady, onBack, onOpenRecap, onLook,
-  onCheckout, isIap, onRestore, onManage, onClaim, onContact, onOpenUrl, support = null,
+  onCheckout, isIap, onRestore, onManage, onClaim, onContact, onOpenUrl, support = null, scrollToOptions = false,
 }) {
+  // Opened from the heart's "Help support" button: start at the amounts.
+  const optionsRef = useRef(null);
+  useEffect(() => {
+    if (scrollToOptions && optionsRef.current) optionsRef.current.scrollIntoView({ block: "start" });
+  }, [scrollToOptions]);
   const [claimOpen, setClaimOpen] = useState(false);
   const [email, setEmail] = useState("");
   const [claimErr, setClaimErr] = useState("");
@@ -114,8 +172,10 @@ export default function SupporterScreen({
       <p style={{ margin: "-6px 0 0", fontSize: 14, lineHeight: 1.45, color: nl.soft }}>
         {isSupporter
           ? "Thank you. You're the reason Henalytics stays free for every homestead, including the ones that can't chip in."
-          : "Henalytics is free for every homestead. It's built by one homesteader in Kansas, and supporters cover what it costs to run."}
+          : "Henalytics is free for every homestead. Supporters cover what it costs to run."}
       </p>
+
+      <FromRiley />
 
       <CostsCard support={support} />
 
@@ -161,7 +221,7 @@ export default function SupporterScreen({
         </Card>
       ) : (
         <>
-          <div>
+          <div ref={optionsRef} style={{ scrollMarginTop: 16 }}>
             <div style={{ fontSize: 11, letterSpacing: 1.4, textTransform: "uppercase", color: nl.soft, fontWeight: 600, margin: "4px 4px 12px" }}>Monthly · same perks at every amount</div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4, minmax(0, 1fr))", gap: 8 }}>
               {TIERS.map((t) => (
