@@ -18,18 +18,19 @@
 // auto-migrated to { areas: [{ name: "Garden", ... }] } on load.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useRef, useEffect } from "react";
 import { X, Trash2, Upload, ChevronLeft, ChevronRight, Plus, Edit3, Archive } from "lucide-react";
 import { CROPS, getCropFamily } from "./gardenAlmanac.js";
 import { CompanionPanel, RotationNote } from "./CompanionInfo.jsx";
 import { uploadPhoto, getPhotoUrl, deletePhoto } from "./sync.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   card: "#FAF5EA", line: "#2C181030",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -424,7 +425,7 @@ function NewAreaModal({ gridChoiceOffered, onCancel, onCreate, /* GARDEN_GRID_LO
         textAlign: "center", fontFamily: FONT_BODY,
         border: `2px solid ${mode === value ? palette.leaf : palette.line}`,
         background: mode === value ? palette.leaf : palette.card,
-        color: mode === value ? palette.bg : palette.ink,
+        color: mode === value ? palette.onColor : palette.ink,
       }}
     >
       <div style={{ fontSize: 22, marginBottom: 2 }}>{emoji}</div>
@@ -621,7 +622,7 @@ function EmptyState({ onCreateFirst, archivedSeasons, onShowArchive, /* GARDEN_G
           border: "none", borderRadius: 8, cursor: "pointer",
           fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
           display: "inline-flex", alignItems: "center", gap: 6,
-          boxShadow: "2px 2px 0 " + palette.line,
+          boxShadow: "none",
         }}
       >
         <Plus size={16} /> Add your first area
@@ -706,7 +707,7 @@ function PendingSeedlingsBanner({ pending, update }) {
   return (
     <div style={{
       padding: "10px 12px", marginBottom: 10, borderRadius: 8,
-      background: "#EAF3DD", border: `1.5px solid ${palette.leaf}`,
+      background: palette.goodBg, border: `1.5px solid ${palette.leaf}`,
     }}>
       <div style={{ fontSize: 12.5, color: palette.ink, lineHeight: 1.45, marginBottom: 8 }}>
         🌱 <strong>Seedlings ready to place.</strong> Tap a spot, then choose one from the top of the plant list — no need to type it again.
@@ -1389,7 +1390,7 @@ function PinInfoPanelBody({ pin, areaIdx, update, area = null, archivedSeasons =
               style={{
                 width: "100%", padding: "8px 10px",
                 border: `1.5px solid ${palette.line}`, borderRadius: 6,
-                fontFamily: FONT_BODY, fontSize: 13, background: "white", color: palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, background: palette.white, color: palette.ink,
                 boxSizing: "border-box",
               }}
             />
@@ -1406,7 +1407,7 @@ function PinInfoPanelBody({ pin, areaIdx, update, area = null, archivedSeasons =
               style={{
                 width: "100%", padding: "8px 10px",
                 border: `1.5px solid ${palette.line}`, borderRadius: 6,
-                fontFamily: FONT_BODY, fontSize: 13, background: "white", color: palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, background: palette.white, color: palette.ink,
                 boxSizing: "border-box",
               }}
             />
@@ -1557,7 +1558,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
           {pendingPlants.length > 0 && (
             <div style={{
               padding: "8px 10px", marginBottom: 10, borderRadius: 8,
-              background: "#EAF3DD", border: `1.5px solid ${palette.leaf}`,
+              background: palette.goodBg, border: `1.5px solid ${palette.leaf}`,
             }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: palette.ink, marginBottom: 6 }}>
                 🌱 From your seed starts — tap to place here
@@ -1571,7 +1572,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
                       onClick={() => onPick(cid || "other", cid ? null : p.plant, p)}
                       style={{
                         padding: "7px 11px", borderRadius: 999,
-                        background: palette.leaf, color: palette.card, border: "none",
+                        background: palette.leaf, color: palette.onColor, border: "none",
                         cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
                       }}
                     >
@@ -1608,7 +1609,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
                   title={conflict ? "Grew a same-family crop here recently — consider rotating" : undefined}
                   style={{
                     padding: "8px 6px",
-                    background: conflict ? "#FBE5DE" : palette.bg,
+                    background: conflict ? palette.dangerBg : palette.bg,
                     border: `1.5px solid ${conflict ? palette.accent : palette.line}`,
                     borderRadius: 8,
                     cursor: "pointer",

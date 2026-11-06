@@ -589,7 +589,7 @@ export function CelebrationCard({ celebration, onDismiss, palette }) {
         borderRadius: 14,
         padding: "16px 18px",
         margin: "12px 0",
-        boxShadow: `2px 2px 0 ${p.line}`,
+        boxShadow: "none",
         color: p.ink,
         opacity: leaving ? 0 : mounted ? 1 : 0,
         transform: leaving
@@ -894,7 +894,7 @@ export function ObservationCard({ observation, onDismiss, palette }) {
         borderRadius: 14,
         padding: "16px 18px",
         margin: "12px 0",
-        boxShadow: `2px 2px 0 ${p.line}`,
+        boxShadow: "none",
         color: p.ink,
         opacity: leaving ? 0 : mounted ? 1 : 0,
         transform: leaving ? "translateY(-4px)" : mounted ? "translateY(0)" : "translateY(6px)",

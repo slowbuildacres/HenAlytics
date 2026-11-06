@@ -106,6 +106,8 @@ export const LOOKS = {
   barn: { key: "barn", name: "Barn", blurb: "Crisp white with barn red and wheat", supporter: true, light: BARN_LIGHT, dark: BARN_DARK },
 };
 
+import { applyLegacyTheme } from "./legacyTheme.js";
+
 // The live tokens. Starts as Farmhouse light; applyLook() swaps it in place.
 export const nl = { ...FARMHOUSE_LIGHT };
 
@@ -119,6 +121,7 @@ export function applyLook(look, dark) {
   if (next.look === current.look && next.dark === current.dark) return false;
   Object.assign(nl, dark ? L.dark : L.light);
   current = next;
+  applyLegacyTheme(L.key, !!dark, nl);
   if (typeof document !== "undefined") {
     try {
       document.documentElement.style.colorScheme = dark ? "dark" : "light";

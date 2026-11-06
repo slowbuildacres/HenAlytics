@@ -10,6 +10,7 @@
 //   - ViewDayEventsModal: show all events on a single day
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import {
   ZONE_INFO, CROPS, cropsForSeason, methodsForCrop, generateCropEvents, getFrostDates, estimateZone,
@@ -19,21 +20,21 @@ import {
   HARDINESS_SYSTEMS, estimateZoneForSystem, getZoneInfo,
 } from "./hardiness.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47",
   card: "#FAF5EA", line: "#2C181030",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px",
   borderRadius: 8, border: `1.5px solid ${palette.line}`,
-  fontFamily: FONT_BODY, fontSize: 14, background: "white", color: palette.ink,
+  fontFamily: FONT_BODY, fontSize: 14, background: palette.white, color: palette.ink,
   boxSizing: "border-box",
-};
+}));
 
 const todayStr = () => {
   const d = new Date();
@@ -139,7 +140,7 @@ function Field({ label, children }) {
 function Btn({ children, onClick, variant = "primary", disabled = false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
   };
   return (
@@ -147,11 +148,11 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
       style={{
-        padding: "10px 18px", borderRadius: 8,
+        padding: "10px 18px", borderRadius: 14,
         cursor: disabled ? "wait" : "pointer",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
         opacity: disabled ? 0.7 : 1,
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...styles[variant],
       }}
     >
@@ -566,7 +567,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
           {otherError && (
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 6,
-              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               fontSize: 13, color: palette.accent,
             }}>
               {otherError}
@@ -720,7 +721,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
               {varietyError && (
                 <div style={{
                   padding: 8, marginBottom: 10, borderRadius: 6,
-                  background: "#FBE5DE", border: `1px solid ${palette.accent}`,
+                  background: palette.dangerBg, border: `1px solid ${palette.accent}`,
                   fontSize: 12, color: palette.accent,
                 }}>
                   {varietyError}
@@ -818,7 +819,7 @@ export function PlanCropModal({ data, update, onClose, onConfirm }) {
                   style={{
                     padding: "6px 10px", borderRadius: 6,
                     border: `1.5px solid ${editableDates[e.id] && editableDates[e.id] !== e.date ? palette.yolk : palette.line}`,
-                    fontFamily: "inherit", fontSize: 13, background: "white",
+                    fontFamily: "inherit", fontSize: 13, background: palette.white,
                     color: palette.ink, flexShrink: 0,
                   }}
                 />

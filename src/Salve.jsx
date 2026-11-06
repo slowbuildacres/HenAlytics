@@ -20,6 +20,7 @@
 //   data.sales[] (hobbyType="salve", batchId=...)
 // ============================================================================
 
+import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -33,11 +34,11 @@ import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -66,16 +67,16 @@ const TIN_SIZES = [
   { value: "8oz",   label: "8 oz jar" },
 ];
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
     padding: small ? "6px 12px" : "10px 18px",
-    borderRadius: 8, fontFamily: FONT_BODY,
+    borderRadius: small ? 999 : 14, fontFamily: FONT_BODY,
     fontWeight: 600, fontSize: small ? 12 : 14,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.5 : 1,
@@ -83,9 +84,9 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   };
   const variants = {
     primary: { background: palette.ink, color: palette.bg },
-    accent:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    accent:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    danger:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
   };
   return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}>{children}</button>;
 }
@@ -116,9 +117,9 @@ function Modal({ open, onClose, title, children }) {
 
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -126,8 +127,8 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -545,7 +546,7 @@ export default function SalvePage({ hobby, data, update, setModal, nl = null }) 
               ➕ Custom
             </button>
           )}
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onYolk, display: "flex", alignItems: "center", gap: 6 }}>
             <Plus size={14} />New batch
           </button>
         </div>
@@ -558,7 +559,7 @@ export default function SalvePage({ hobby, data, update, setModal, nl = null }) 
           <div style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
             Record your salve batches — what infused oils and beeswax you used, how many tins it made.
           </div>
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.ink }}>Make first salve</button>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.onYolk }}>Make first salve</button>
         </div>
       ) : (
         <>

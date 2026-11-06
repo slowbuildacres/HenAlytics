@@ -1,6 +1,7 @@
 // ============================================================================
 // INCUBATOR — tracks hatching runs by bird type with auto calendar reminders
 // ============================================================================
+import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): the rebuilt incubator screens reuse this file's forms.
 import { IncubatorToday, IncubatorHistory } from "./newlook/incubator/IncubatorScreens.jsx";
@@ -12,20 +13,20 @@ import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   honey: "#E8961A", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -85,16 +86,16 @@ const remainingInBrooder = (batch) => {
 function Btn({ children, onClick, variant="primary", small=false, style={}, disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
     <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -125,9 +126,9 @@ function Modal({ open, onClose, title, children }) {
 
 function StatCard({ label, value, sub, accent=palette.accent }) {
   return (
-    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 140px",minWidth:140,boxSizing:"border-box" }}>
+    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,flex:"1 1 140px",minWidth:140,boxSizing:"border-box" }}>
       <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>{label}</div>
-      <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1 }}>{value}</div>
+      <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.ink,lineHeight:1.1 }}>{value}</div>
       {sub && <div style={{ fontSize:11,color:palette.inkSoft,marginTop:4 }}>{sub}</div>}
     </div>
   );
@@ -135,8 +136,8 @@ function StatCard({ label, value, sub, accent=palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12 }}>
-      <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>{title}</div>
+    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,marginBottom:12 }}>
+      <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -827,7 +828,7 @@ function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
           <div style={{ fontSize: 11, color: palette.accent, marginTop: 8, lineHeight: 1.4 }}>
             ⚠️ Removes this brooder batch and its disposition history.
             {soldCount > 0
-              ? ` The ${soldCount} chick sale${soldCount === 1 ? "" : "s"} from this batch will stay in your Sales tab.`
+              ? ` The ${soldCount} chick sale${soldCount === 1 ? "" : "s"} from this batch will stay in Sales & costs.`
               : ""} This can't be undone.
           </div>
         )}
@@ -1272,7 +1273,7 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatche
           )}
 
           {isLockdown && (
-            <div style={{ background:"#FFF3CD",border:"1.5px solid "+palette.yolk,borderRadius:8,padding:"8px 12px",fontSize:13,color:palette.ink,marginBottom:10 }}>
+            <div style={{ background:palette.warnBg,border:"1.5px solid "+palette.yolk,borderRadius:8,padding:"8px 12px",fontSize:13,color:palette.ink,marginBottom:10 }}>
               ⚠️ <strong>Lockdown time!</strong> Stop turning eggs and increase humidity.
             </div>
           )}

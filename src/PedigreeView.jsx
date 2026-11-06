@@ -21,25 +21,26 @@
 // where someone bought a doe but never registered her parents in the app.
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useRef, useState } from "react";
 import { X } from "lucide-react";
 
 // Match the rest of the app's design tokens. Duplicated rather than imported
 // to avoid a circular dependency with HomesteadApp.jsx, which doesn't export
 // its palette. Keep these in sync if the main palette changes.
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 // ============================================================================
 // SireDamPicker — used inside Add/Edit Animal forms

@@ -12,6 +12,7 @@
 //   hobby.items[] = [{ id, name, costPerUnit, pricePerUnit, unit, archived }]
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -25,20 +26,20 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 const ITEM_UNITS = ["each", "lbs", "dozen", "quart", "pint", "bunch", "bag", "jar", "loaf"];
 
@@ -82,17 +83,17 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
-    leaf: { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
+    leaf: { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
     <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -100,11 +101,11 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -292,7 +293,7 @@ function QuickSellModal({ item, onSell, onClose }) {
           {tracked && (
             <div style={{
               padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:13,
-              background: overstock ? "#FBE5DE" : palette.bgAlt,
+              background: overstock ? palette.dangerBg : palette.bgAlt,
               border: `1.5px solid ${overstock ? palette.accent : palette.line}`,
               color: overstock ? palette.accent : palette.ink,
             }}>
@@ -461,7 +462,7 @@ function RestockModal({ item, onRestock, onClose }) {
           {hasBatchCost && (
             <div style={{
               padding:"10px 12px",borderRadius:8,marginBottom:12,fontSize:13,
-              background: significantDrift ? "#FBE5DE" : palette.bgAlt,
+              background: significantDrift ? palette.dangerBg : palette.bgAlt,
               border: `1.5px solid ${significantDrift ? palette.accent : palette.line}`,
               color: significantDrift ? palette.accent : palette.ink,
             }}>
@@ -496,9 +497,9 @@ function ItemCard({ item, onSell, onEdit, onRestock }) {
   // Pill colors per state — kept soft so the card doesn't scream when one item
   // is low. "Out" is the only one that uses the alarming accent red.
   const pillStyles = {
-    out:     { bg: "#FBE5DE", border: palette.accent, fg: palette.accent, label: `Out of stock` },
+    out:     { bg: palette.dangerBg, border: palette.accent, fg: palette.accent, label: `Out of stock` },
     low:     { bg: palette.yolkSoft, border: palette.yolk, fg: palette.ink, label: `Low — ${stock} left` },
-    healthy: { bg: "#E3EDD3", border: palette.leaf, fg: palette.leaf, label: `In stock — ${stock}` },
+    healthy: { bg: palette.goodBg, border: palette.leaf, fg: palette.leaf, label: `In stock — ${stock}` },
   };
   const pill = tracked ? pillStyles[stockState] : null;
 
@@ -883,7 +884,7 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
       )}
 
       {justRestocked && setModal && (
-        <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#E3EDD3",border:`1.5px solid ${palette.line}`,borderRadius:12,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:palette.goodBg,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
           <span style={{ flex:1,minWidth:180 }}>📦 <strong>{justRestocked.item.name}</strong> restocked. Let your customers know?</span>
           <Btn small onClick={() => {
             const it = justRestocked.item;
@@ -1006,7 +1007,7 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
             ))}
           </div>
           <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 8, textAlign: "center", fontStyle: "italic" }}>
-            Manage all sales from the Sales tab.
+            Manage all sales in More › Sales & costs.
           </div>
         </div>
       )}

@@ -13,27 +13,28 @@
 // read alongside data.sales for egg revenue stats (never deleted).
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses } from "./expenseFifo.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   honey: "#E8961A", honeySoft: "#F5C96A",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -56,7 +57,7 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 const thisMonthStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 
 // Hobby type colors and labels
-const HOBBY_META = {
+const HOBBY_META = legacyStyle(() => ({
   eggs:          { label: "Eggs",          emoji: "🥚", color: palette.yolk },
   honey:         { label: "Honey",         emoji: "🍯", color: palette.honey },
   meat_chickens: { label: "Meat Birds", emoji: "🍗", color: palette.feather },
@@ -81,7 +82,7 @@ const HOBBY_META = {
   cat:           { label: "Cats",          emoji: "🐈", color: palette.feather },
   maple_syrup:   { label: "Maple Syrup",   emoji: "🍁", color: palette.honey },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
-};
+}));
 
 const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Peafowl", "Other"];
 
@@ -195,16 +196,16 @@ function deriveSoldEggsRevenue(e) {
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
     <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -510,7 +511,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                     padding:"14px 10px",background:palette.card,border:`1.5px solid ${palette.line}`,
                     borderRadius:10,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
                     display:"flex",flexDirection:"column",alignItems:"center",gap:6,
-                    boxShadow:`2px 2px 0 ${palette.line}`,
+                    boxShadow:"none",
                   }}>
                     <span style={{ fontSize:28 }}>{meta.emoji}</span>
                     <span style={{ fontSize:13,fontWeight:600 }}>{meta.label}</span>
@@ -1013,7 +1014,7 @@ function ExpenseRow({ expense, hobbies, onEdit, onDelete, readOnly }) {
   const hobby = (hobbies || []).find(h => h.id === expense.hobbyId);
   const hobbyLabel = hobby ? hobby.name : "General overhead";
   return (
-    <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"#FBE5DE",border:`1.5px solid ${palette.accent}40`,borderRadius:10 }}>
+    <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:palette.dangerBg,border:`1.5px solid ${palette.accent}40`,borderRadius:10 }}>
       <div style={{ fontSize:22,flexShrink:0 }}>💸</div>
       <div style={{ flex:1,minWidth:0 }}>
         <div style={{ fontWeight:600,fontSize:14,color:palette.ink,display:"flex",alignItems:"center",gap:8 }}>
@@ -1657,7 +1658,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
       <button type="button" onClick={() => setShowYearReport(true)} style={{
         width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
         background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
-        fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+        fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:"none",
       }}>
         <span style={{ fontSize:22 }}>📄</span>
         <span style={{ flex:1 }}>
@@ -1671,7 +1672,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
         <button type="button" onClick={onPurchaseHistory} style={{
           width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
           background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
-          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:"none",
         }}>
           <span style={{ fontSize:22 }}>🧾</span>
           <span style={{ flex:1 }}>
@@ -1686,7 +1687,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
         <button type="button" onClick={onEmailCustomers} style={{
           width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
           background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
-          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:"none",
         }}>
           <span style={{ fontSize:22 }}>📧</span>
           <span style={{ flex:1 }}>
@@ -2641,7 +2642,7 @@ export function YearEndReportModal({ data, onClose }) {
           <button type="button" onClick={doPdf} disabled={!!busy} style={{ padding: 13, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.ink, color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, cursor: busy ? "wait" : "pointer", opacity: busy === "pdf" ? 0.7 : 1 }}>
             {busy === "pdf" ? "Making your PDF…" : "📄 Download PDF report"}
           </button>
-          <button type="button" onClick={doCsv} disabled={!!busy} style={{ padding: 12, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, cursor: busy ? "wait" : "pointer" }}>
+          <button type="button" onClick={doCsv} disabled={!!busy} style={{ padding: 12, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.onYolk, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, cursor: busy ? "wait" : "pointer" }}>
             📊 Download spreadsheet (CSV)
           </button>
         </div>

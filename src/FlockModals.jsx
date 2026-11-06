@@ -8,14 +8,15 @@
 // Data comes from flockTools.js (pure helpers, tested).
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useMemo, useState } from "react";
 import { brooderHistory, ageLabel, collectPurchases, lastBoughtByItem, agoLabel, isoDay } from "./flockTools.js";
 import { fmtMoney } from "./units.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31",
   leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 const fmtDate = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" }) : "");

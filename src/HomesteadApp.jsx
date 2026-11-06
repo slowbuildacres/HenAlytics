@@ -1,3 +1,4 @@
+import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect, useRef } from "react";
 
 import {
@@ -215,7 +216,7 @@ import {
 } from "./IapManager.js";
 
 // ============ DESIGN TOKENS ============
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0",         // warm parchment
   bgAlt: "#EBE0CC",      // deeper parchment
   ink: "#2C1810",        // dark coffee
@@ -230,7 +231,7 @@ const palette = {
   featherSoft: "#C9A77B",
   line: "#2C181030",
   card: "#FAF5EA",
-};
+});
 
 // ============ STORAGE HELPERS ============
 const defaultData = () => ({
@@ -1790,7 +1791,7 @@ function giveawayWeekKey(d) {
 // everyone who taps Sure gets it. We just filter who we bother with the
 // request based on engagement signals, which is the standard pattern.
 function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
-  const palette = { bg: "#F4EDE0", card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030" };
+  const palette = { bg: palette.bg, card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030" };
   const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
   const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
   return (
@@ -1813,7 +1814,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
         </div>
         <button onClick={onSure} style={{
           width: "100%", padding: "12px 16px", borderRadius: 10, border: "none",
-          background: palette.accent, color: "#fff", fontFamily: FONT_BODY,
+          background: palette.accent, color: palette.onColor, fontFamily: FONT_BODY,
           fontSize: 15, fontWeight: 600, cursor: "pointer", marginBottom: 8,
         }}>
           Sure, I'll leave a review
@@ -2895,7 +2896,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
     <div style={{
       background: palette.card,
       border: `1.5px solid ${palette.line}`,
-      borderRadius: 12,
+      borderRadius: 16,
       padding: 14,
       flex: "1 1 140px",   // grow + shrink, but never narrower than 140px
       minWidth: 140,
@@ -2911,7 +2912,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
         {label}
       </div>
       <div style={{
-        fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1,
+        fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1,
         whiteSpace: "normal", wordBreak: "break-word",
       }}>
         {value}
@@ -2986,18 +2987,18 @@ function Field({ label, children }) {
   );
 }
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 function Btn({ children, onClick, variant = "primary", style = {}, type = "button", small = false, disabled = false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
     <button
@@ -3006,14 +3007,14 @@ function Btn({ children, onClick, variant = "primary", style = {}, type = "butto
       disabled={disabled}
       style={{
         padding: small ? "6px 12px" : "10px 18px",
-        borderRadius: 8,
+        borderRadius: small ? 999 : 14,
         cursor: disabled ? "wait" : "pointer",
         fontFamily: FONT_BODY,
         fontWeight: 600,
         fontSize: small ? 13 : 14,
         opacity: disabled ? 0.7 : 1,
         ...styles[variant],
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -3029,7 +3030,7 @@ function NavTab({ active, onClick, icon: Icon, label }) {
       style={{
         flex: 1, maxWidth: 120, padding: "8px 4px",
         background: active ? palette.yolk : "transparent",
-        color: active ? palette.ink : palette.bg,
+        color: active ? palette.onYolk : palette.bg,
         border: "none", borderRadius: 10, cursor: "pointer",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
         fontWeight: 600, fontSize: 11,
@@ -3066,7 +3067,7 @@ function NavTipButton({ onClick, filled }) {
     >
       <span style={{
         background: filled ? palette.accent : "transparent",
-        color: filled ? "#FFFFFF" : palette.bg,
+        color: filled ? palette.onColor : palette.bg,
         width: 36, height: 36, borderRadius: 18,
         border: filled ? "none" : `2px solid ${palette.bg}`,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -5521,7 +5522,7 @@ useNativeBackButton(React.useCallback(() => {
           data-no-keyboard-shift
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 199,
-            background: palette.feather, color: "#FAF5EA",
+            background: palette.feather, color: palette.onColor,
             padding: "12px 20px",
             paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -5547,7 +5548,7 @@ useNativeBackButton(React.useCallback(() => {
           }}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 198,
-            background: "#3E7C5A", color: "#FAF5EA",
+            background: "#3E7C5A", color: palette.onColor,
             padding: "12px 20px",
             paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -5583,7 +5584,7 @@ useNativeBackButton(React.useCallback(() => {
           }}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
-            background: "#C84B31", color: "#FAF5EA",
+            background: "#C84B31", color: palette.onColor,
             padding: "12px 20px",
             paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -5647,8 +5648,8 @@ useNativeBackButton(React.useCallback(() => {
                 style={{
                   padding: "10px 16px", borderRadius: 8, background: palette.accent,
                   border: `1.5px solid ${palette.ink}`, cursor: "pointer",
-                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg,
-                  boxShadow: `2px 2px 0 ${palette.line}`,
+                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.onColor,
+                  boxShadow: "none",
                 }}
               >
                 Refresh &amp; load newer
@@ -5985,7 +5986,7 @@ useNativeBackButton(React.useCallback(() => {
                 <span style={{
                   display: "inline-flex", alignItems: "center", gap: 3,
                   fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700,
-                  color: palette.bg, background: palette.leaf,
+                  color: palette.onColor, background: palette.leaf,
                   border: `1.5px solid ${palette.ink}`,
                   borderRadius: 999, padding: "3px 9px",
                   marginBottom: 3, whiteSpace: "nowrap",
@@ -6067,7 +6068,7 @@ useNativeBackButton(React.useCallback(() => {
               background: palette.card, border: `1.5px solid ${palette.ink}`,
               display: "flex", alignItems: "center", justifyContent: "space-between",
               cursor: "pointer", fontSize: 16, fontWeight: 600, color: palette.ink,
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -7553,7 +7554,7 @@ function JournalScrapbook({ data, hobbyFilter }) {
               padding: "8px 12px 8px 8px", borderRadius: 999,
               background: palette.card, border: `1.5px solid ${palette.line}`,
               cursor: "pointer", fontFamily: FONT_BODY, color: palette.ink,
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             <ScrapbookCircle animal={animal} />
@@ -7778,7 +7779,7 @@ function JournalPage({ data, update, setModal }) {
                 border: `1.5px solid ${palette.line}`,
                 borderRadius: 12,
                 overflow: "hidden",
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
               }}
             >
               <button
@@ -8362,13 +8363,13 @@ function PlantScannerSection({ setModal }) {
               padding: "8px 16px",
               borderRadius: 8,
               background: palette.leaf,
-              color: palette.bg,
+              color: palette.onColor,
               border: `1.5px solid ${palette.leaf}`,
               fontFamily: FONT_BODY,
               fontWeight: 600,
               fontSize: 14,
               cursor: "pointer",
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
@@ -9696,7 +9697,7 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
           : status === "archived" ? palette.line
           : status === "ready_to_transplant" ? palette.leafSoft
           : palette.bgAlt,
-        color: status === "failed" ? palette.bg : palette.ink,
+        color: status === "failed" ? palette.onColor : palette.ink,
         fontSize: 11, fontWeight: 600, marginBottom: 12,
       }}>
         {status === "failed" ? "Failed"
@@ -9904,7 +9905,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
                     style={{
                       flexShrink: 0, padding: "6px 12px", borderRadius: 8,
                       border: `1.5px solid ${palette.leaf}`, background: palette.leaf,
-                      color: "#fff", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
+                      color: palette.onColor, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
                     }}
                   >
                     ↩ Reopen
@@ -10332,7 +10333,7 @@ function GardenTodayCard({ hobby, data, update, entries, setModal, setPage, onOp
             style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "9px 10px", borderRadius: 10,
-              background: r.tone === "warn" ? "#FBE5DE" : palette.bg,
+              background: r.tone === "warn" ? palette.dangerBg : palette.bg,
               border: `1px solid ${r.tone === "warn" ? palette.accent : palette.line}`,
               cursor: r.onTap ? "pointer" : "default",
               opacity: r.tone === "quiet" ? 0.85 : 1,
@@ -10482,7 +10483,7 @@ function BragCardArt({ card, layout = "portrait", innerRef }) {
         {chips.length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : tall ? 16 : 12 }}>
             {chips.map((c, i) => (
-              <span key={i} style={{ fontSize: wide ? 14 : tall ? 12 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
+              <span key={i} style={{ fontSize: wide ? 14 : tall ? 12 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : palette.onYolk }}>{c}</span>
             ))}
           </div>
         )}
@@ -10584,7 +10585,7 @@ function BragShareModal({ card, user, onClose, onSignIn, children }) {
         }}>{busy === "link" ? "Making your link…" : user ? "🔗 Share a link (best for Facebook)" : "🔗 Sign in to share a link"}</button>
         <button type="button" onClick={shareImage} disabled={!!busy} style={{
           width: "100%", padding: "12px", borderRadius: 10, cursor: busy ? "wait" : "pointer",
-          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink,
+          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.onYolk,
           fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, opacity: busy === "image" ? 0.7 : 1,
         }}>{busy === "image" ? "Preparing image…" : canShareImageFiles() ? "📸 Share the picture" : "📸 Save the picture"}</button>
       </div>
@@ -10684,7 +10685,7 @@ function EggInsightCard({ data, entries }) {
   const tone = {
     calm: { bg: "#EEF3E4", border: palette.leaf, fg: palette.ink },
     good: { bg: "#EEF3E4", border: palette.leaf, fg: palette.ink },
-    check: { bg: "#FBE5DE", border: palette.accent, fg: palette.accent },
+    check: { bg: palette.dangerBg, border: palette.accent, fg: palette.accent },
   }[insight.tone] || {};
   return (
     <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 14px", marginBottom: 12, borderRadius: 12, background: tone.bg, border: `1.5px solid ${tone.border}` }}>
@@ -10849,8 +10850,8 @@ function GardenValueModal({ hobby, data, update, onClose, onShare }) {
       {value.total > 0 && onShare && (
         <button type="button" onClick={onShare} style={{
           width: "100%", marginTop: 12, padding: "12px", borderRadius: 10, cursor: "pointer",
-          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink,
-          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, boxShadow: "2px 2px 0 " + palette.line,
+          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.onYolk,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, boxShadow: "none",
         }}>📤 Share what my garden grew</button>
       )}
       <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.45 }}>
@@ -11319,7 +11320,7 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
           <div style={{ fontSize: 48, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>{count}</div>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{count === 0 ? (todayLogged ? `✓ logged today` : "tap + to collect") : `egg${count===1?"":"s"} so far today`}</div>
         </div>
-        <button onClick={inc} style={{ width: 52, height: 52, borderRadius: 26, fontSize: 28, fontWeight: 700, border: `2px solid ${palette.ink}`, background: palette.yolk, cursor: "pointer", color: palette.ink, boxShadow: "2px 2px 0 " + palette.line, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
+        <button onClick={inc} style={{ width: 52, height: 52, borderRadius: 26, fontSize: 28, fontWeight: 700, border: `2px solid ${palette.ink}`, background: palette.yolk, cursor: "pointer", color: palette.onYolk, boxShadow: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
       </div>
 
       {/* This flock's eggs: today (incl. the basket), last 7 and 30 days. */}
@@ -12038,7 +12039,7 @@ function ReopenSeasonModal({ hobby, update, onClose }) {
 
   const rowBtn = {
     flexShrink: 0, padding: "6px 12px", borderRadius: 8,
-    border: `1.5px solid ${palette.leaf}`, background: palette.leaf, color: "#fff",
+    border: `1.5px solid ${palette.leaf}`, background: palette.leaf, color: palette.onColor,
     fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
   };
   const ghostBtn = {
@@ -12188,7 +12189,7 @@ function GardenAnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilte
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       onClick={() => { reopenGardenSeason(update, hobby.id, archivedSel.id); setConfirmReopen(false); setSeasonFilter(archivedSel.id); }}
-                      style={{ ...reopenBtnStyle, background: palette.leaf, color: "#fff", borderColor: palette.leaf }}
+                      style={{ ...reopenBtnStyle, background: palette.leaf, color: palette.onColor, borderColor: palette.leaf }}
                     >
                       Yes, reopen
                     </button>
@@ -12718,7 +12719,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
         const onHand = invEnabled ? computeEggsOnHand(hobby, allEntries || entries, (data && data.sales) || []) : null;
         return (
           <>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, margin: "4px 0 10px" }}>🧺 Egg use</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, margin: "4px 0 10px" }}>Egg use</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               {invEnabled && <StatCard label="On hand now" value={onHand} sub={`counted ${hobby.eggInventory.startDate}`} accent={palette.yolk} />}
               {(byType.ate || 0) > 0 && <StatCard label="Eaten" value={byType.ate} accent={palette.leaf} />}
@@ -12959,7 +12960,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
       )}
       {/* Revenue nudge */}
       <div style={{ padding: "10px 14px", background: palette.yolkSoft, borderRadius: 8, fontSize: 13, color: palette.ink, lineHeight: 1.5, marginTop: 8 }}>
-        💰 Track egg sales revenue in the <strong>Sales tab</strong> — log by bird type, eating vs hatching, customer, and more.
+        Track egg sales in <strong>More › Sales &amp; costs</strong>: by bird type, eating vs hatching, customer and more.
       </div>
 
       {entries.length === 0 && <EmptyState text="No egg layer entries yet for this view." />}
@@ -13289,7 +13290,7 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode, /* ADV_A
               }}>
                 <div>
                   <strong>{b.name}</strong>
-                  {b.isActive && <span style={{ background: palette.yolk, color: palette.ink, fontSize: 10, padding: "2px 6px", borderRadius: 4, marginLeft: 8 }}>ACTIVE</span>}
+                  {b.isActive && <span style={{ background: palette.yolk, color: palette.onYolk, fontSize: 10, padding: "2px 6px", borderRadius: 4, marginLeft: 8 }}>ACTIVE</span>}
                   <div style={{ fontSize: 12, color: palette.inkSoft }}>
                     Started {fmtDate(b.startDate)} · {b.startCount} birds
                   </div>
@@ -13310,11 +13311,11 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode, /* ADV_A
 function ChartCard({ title, children }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, marginBottom: 12,
     }}>
       <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>
-        {title}
+        {plainTitle(title)}
       </div>
       {children}
     </div>
@@ -13954,7 +13955,7 @@ function InviteErrorModal({ message, onClose }) {
   return (
     <Modal open onClose={onClose} title="Invitation problem">
       <div style={{
-        padding: 12, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+        padding: 12, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
         borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
         display: "flex", alignItems: "flex-start", gap: 8,
       }}>
@@ -13976,7 +13977,7 @@ function SectionBtn({ icon: Icon, label, sub, onClick, accent = palette.ink }) {
         background: palette.card, border: `1.5px solid ${palette.line}`,
         borderRadius: 10, cursor: "pointer", textAlign: "left",
         display: "flex", alignItems: "center", gap: 12,
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
       }}
     >
       <div style={{
@@ -14165,7 +14166,7 @@ function ManageHobbiesSection({ data, update }) {
                   borderRadius: 6,
                   border: `1.5px solid ${palette.line}`,
                   background: h.hidden ? palette.bgAlt : palette.leaf,
-                  color: h.hidden ? palette.inkSoft : palette.bg,
+                  color: h.hidden ? palette.inkSoft : palette.onColor,
                   fontFamily: FONT_BODY,
                   fontWeight: 600,
                   fontSize: 12,
@@ -14477,7 +14478,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
             background: palette.card, border: `1.5px solid ${palette.line}`,
             borderRadius: 10,
             display: "flex", alignItems: "center", gap: 12,
-            boxShadow: "2px 2px 0 " + palette.line,
+            boxShadow: "none",
           }}>
             <div style={{
               width: 36, height: 36, borderRadius: 8, background: palette.leafSoft,
@@ -14664,8 +14665,8 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       />}
       <SectionBtn
         icon={Sparkles}
-        label="Show the new look tour again"
-        sub="The welcome screens and the three tips"
+        label="Show the 3.0 welcome again"
+        sub="What changed in 3.0, plus the three tips"
         accent={palette.leaf}
         onClick={() => { update((d) => { d.newLookWelcomeSeen = false; d.newLookTips = {}; return d; }); onClose(); }}
       />
@@ -14673,7 +14674,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       <SectionBtn
         icon={Lightbulb}
         label="What's new 🌾"
-        sub="See the latest features added to HenAlytics"
+        sub="See the latest features added to Henalytics"
         accent={palette.yolk}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "whatsNew" }), 0); }}
       />
@@ -14681,7 +14682,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       <SectionBtn
         icon={Lightbulb}
         label="Take the tour 🌾"
-        sub="A quick walkthrough of HenAlytics features"
+        sub="A quick walkthrough of Henalytics"
         accent={palette.leaf}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "tutorial" }), 0); }}
       />
@@ -14698,16 +14699,16 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       {/* TABS SECTION */}
       <div style={{ marginTop: 16, marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
-          Tabs
+          Show in More
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>💰 Sales tab</div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>Sales &amp; costs</div>
             <div style={{ fontSize: 11, color: palette.inkSoft }}>Track what you sell across all hobbies</div>
           </div>
           <button
             onClick={() => update(d => { d.salesHidden = !d.salesHidden; return d; })}
-            style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: data.salesHidden ? palette.bgAlt : palette.leaf, color: data.salesHidden ? palette.inkSoft : palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+            style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: data.salesHidden ? palette.bgAlt : palette.leaf, color: data.salesHidden ? palette.inkSoft : palette.onColor, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
           >
             {data.salesHidden ? "Hidden" : "Visible"}
           </button>
@@ -15129,12 +15130,12 @@ function SupportModal({ onClose }) {
                 borderRadius: 12,
                 border: `2px solid ${palette.ink}`,
                 background: t.featured ? palette.leaf : palette.card,
-                color: t.featured ? palette.bg : palette.ink,
+                color: t.featured ? palette.onColor : palette.ink,
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
                 cursor: "pointer",
                 position: "relative",
               }}
@@ -15142,7 +15143,7 @@ function SupportModal({ onClose }) {
               {t.featured && (
                 <div style={{
                   position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
-                  background: palette.yolk, color: palette.ink, fontSize: 10, fontWeight: 700,
+                  background: palette.yolk, color: palette.onYolk, fontSize: 10, fontWeight: 700,
                   letterSpacing: 0.5, padding: "2px 8px", borderRadius: 999,
                   border: `1.5px solid ${palette.ink}`, textTransform: "uppercase",
                 }}>
@@ -15177,12 +15178,12 @@ function SupportModal({ onClose }) {
             borderRadius: 10,
             border: `1.5px solid ${palette.ink}`,
             background: palette.yolk,
-            color: palette.ink,
+            color: palette.onYolk,
             textAlign: "center",
             fontFamily: FONT_BODY,
             fontWeight: 700,
             fontSize: 14,
-            boxShadow: "2px 2px 0 " + palette.line,
+            boxShadow: "none",
             cursor: "pointer",
           }}
         >
@@ -15565,7 +15566,7 @@ function SupporterNamePromptModal({ user, onClose }) {
 
               {error && (
                 <div style={{
-                  padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+                  padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
                   borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 12,
                   lineHeight: 1.4,
                 }}>
@@ -15582,7 +15583,7 @@ function SupporterNamePromptModal({ user, onClose }) {
                   border: `1.5px solid ${palette.ink}`, background: palette.ink,
                   color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
                   cursor: (working || !name.trim()) ? "wait" : "pointer",
-                  boxShadow: "2px 2px 0 " + palette.line,
+                  boxShadow: "none",
                   opacity: (working || !name.trim()) ? 0.6 : 1,
                   marginBottom: 8,
                 }}
@@ -15674,7 +15675,7 @@ function FirstSignInModal({ user, localData, onClose, onFreshStart }) {
           background: palette.ink, color: palette.bg,
           border: `1.5px solid ${palette.ink}`, borderRadius: 10,
           cursor: working ? "wait" : "pointer", textAlign: "left",
-          boxShadow: "2px 2px 0 " + palette.line,
+          boxShadow: "none",
           fontFamily: FONT_BODY,
         }}
       >
@@ -15694,7 +15695,7 @@ function FirstSignInModal({ user, localData, onClose, onFreshStart }) {
           background: palette.card, color: palette.ink,
           border: `1.5px solid ${palette.line}`, borderRadius: 10,
           cursor: working ? "wait" : "pointer", textAlign: "left",
-          boxShadow: "2px 2px 0 " + palette.line,
+          boxShadow: "none",
           fontFamily: FONT_BODY,
         }}
       >
@@ -16130,7 +16131,7 @@ function PantryModal({ data, update, onClose, setModal }) {
             style={{
               alignSelf: "flex-start",
               background: pct < 20 ? palette.accent : "transparent",
-              color: pct < 20 ? palette.bg : palette.ink,
+              color: pct < 20 ? palette.onColor : palette.ink,
               border: `1.5px solid ${pct < 20 ? palette.accent : palette.line}`,
               borderRadius: 6,
               padding: "4px 10px",
@@ -16464,7 +16465,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
 
       {!isEdit && (
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, marginBottom: 10, lineHeight: 1.5, padding: 10, background: palette.bgAlt, borderRadius: 6 }}>
-          Adding this also logs a ${parseFloat(purchaseCost || 0).toFixed(2)} expense in the Sales tab (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
+          Adding this also logs a ${parseFloat(purchaseCost || 0).toFixed(2)} expense in Sales & costs (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
         </div>
       )}
 
@@ -16484,7 +16485,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           ) : (
             <button
               onClick={handleDelete}
-              style={{ padding: "9px 14px", borderRadius: 8, background: palette.accent, border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}
+              style={{ padding: "9px 14px", borderRadius: 8, background: palette.accent, border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onColor }}
             >
               Confirm delete
             </button>
@@ -16832,7 +16833,7 @@ function LocationModal({ data, update, onClose }) {
 
       {error && (
         <div style={{
-          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginTop: 8,
           display: "flex", alignItems: "flex-start", gap: 8,
         }}>
@@ -16964,7 +16965,7 @@ function WeatherSourceSettings({ data, update }) {
           {testMsg && (
             <div style={{
               marginTop: 8, fontSize: 12, lineHeight: 1.5, padding: 8, borderRadius: 6,
-              background: testMsg.ok ? palette.leafSoft : "#FBE5DE",
+              background: testMsg.ok ? palette.leafSoft : palette.dangerBg,
               color: testMsg.ok ? palette.ink : palette.accent,
             }}>{testMsg.text}</div>
           )}
@@ -17519,7 +17520,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
 
       {error && !isRateLimit && (
         <div style={{
-          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
           display: "flex", alignItems: "flex-start", gap: 8,
         }}>
@@ -17556,7 +17557,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "8px 12px", borderRadius: 8, textDecoration: "none",
                 fontSize: 12, fontWeight: 600,
-                background: palette.yolk, color: palette.ink,
+                background: palette.yolk, color: palette.onYolk,
                 border: `1.5px solid ${palette.ink}`,
               }}
             >
@@ -19111,7 +19112,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
-            <button onClick={doMove} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Move</button>
+            <button onClick={doMove} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onYolk }}>Move</button>
           </div>
         </>
       )}
@@ -19711,14 +19712,14 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
               background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
               fontSize: 12, color: palette.ink, lineHeight: 1.5,
             }}>
-              💡 This logs the count reduction. To record sale revenue, also add a sale on the Sales tab.
+              💡 This logs the count reduction. To record sale revenue, also add a sale in Sales & costs.
             </div>
           )}
 
           {validationError && (
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 6,
-              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               fontSize: 13, color: palette.accent,
             }}>
               {validationError}
@@ -20448,7 +20449,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       {validationError && (
         <div style={{
           padding: 10, marginBottom: 12, borderRadius: 6,
-          background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           fontSize: 13, color: palette.accent,
         }}>
           {validationError}
@@ -20464,7 +20465,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
           background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
           fontSize: 12, color: palette.ink, lineHeight: 1.5,
         }}>
-          💡 This logs the count reduction. To record the sale revenue, also add a sale on the Sales tab.
+          💡 This logs the count reduction. To record the sale revenue, also add a sale in Sales & costs.
         </div>
       )}
 
@@ -20852,7 +20853,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
           {validationError && (
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 6,
-              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               fontSize: 13, color: palette.accent,
             }}>
               {validationError}
@@ -22532,7 +22533,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                     style={{
                       position: "absolute", top: -4, right: -4,
                       width: 22, height: 22, borderRadius: 11,
-                      background: palette.accent, color: "white",
+                      background: palette.accent, color: palette.onColor,
                       border: "none", cursor: "pointer", fontSize: 12, lineHeight: 1,
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}
@@ -22653,7 +22654,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {validationError && (
         <div style={{
           padding: 10, marginBottom: 12, borderRadius: 6,
-          background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           fontSize: 13, color: palette.accent,
         }}>
           {validationError}
@@ -24296,7 +24297,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           <button
             onClick={handleShare}
             disabled={shareStatus === "sharing"}
-            style={{ width:"100%",padding:"13px",borderRadius:10,border:`2px solid ${palette.ink}`,background:shareStatus==="done"?palette.leaf:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:shareStatus==="sharing"?"wait":"pointer",boxShadow:"2px 2px 0 "+palette.line,opacity:shareStatus==="sharing"?0.7:1 }}
+            style={{ width:"100%",padding:"13px",borderRadius:10,border:`2px solid ${palette.ink}`,background:shareStatus==="done"?palette.leaf:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:shareStatus==="sharing"?"wait":"pointer",boxShadow:"none",opacity:shareStatus==="sharing"?0.7:1 }}
           >
             {btnLabel()}
           </button>
@@ -24304,7 +24305,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
             <button
               onClick={handleShareLink}
               disabled={linkBusy}
-              style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.ink,fontFamily:FONT_BODY,fontWeight:700,fontSize:14,cursor:linkBusy?"wait":"pointer",opacity:linkBusy?0.7:1 }}
+              style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.onYolk,fontFamily:FONT_BODY,fontWeight:700,fontSize:14,cursor:linkBusy?"wait":"pointer",opacity:linkBusy?0.7:1 }}
             >
               {linkBusy ? "Making your link…" : "🔗 Share a link (best for Facebook groups)"}
             </button>
@@ -24327,102 +24328,67 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 // ============================================================================
 // TUTORIAL MODAL — 12-slide feature walkthrough
 // ============================================================================
+// The tour (More › All settings › Take the tour), written for the 3.0 layout.
 const TUTORIAL_SLIDES = [
   {
     emoji: "🌾",
     title: "Welcome to Henalytics",
-    body: "Henalytics is the homestead notebook you actually want to use. Track eggs, harvests, livestock, costs, sales — anything you log on your homestead — without spreadsheets or forms. This quick tour covers the essentials.",
+    body: "Henalytics is the homestead notebook you actually want to use. Track eggs, harvests, livestock, costs and sales without spreadsheets. This quick tour covers the essentials.",
     tip: null,
   },
   {
-    emoji: "🔧",
-    title: "Enable the hobbies you do",
-    body: "You only see what's relevant to you. Hide meat birds if you don't raise them. Enable Goats, Pigs, Rabbits, Horses, Bees, Canning, and more when you're ready — there are 18+ hobbies to pick from.",
-    tip: "Tap 'More hobbies?' on the home screen, or go to ⚙️ Settings. You can also hide the Sales tab there if you don't sell anything.",
+    emoji: "🏡",
+    title: "Home: the hobbies you keep",
+    body: "Home has a tile for each hobby you keep, with today's numbers on it. Tap Manage hobbies at the bottom of Home to add goats, bees, canning and more, or hide the ones you don't do.",
+    tip: "Tap a hobby's name at the top of its page to jump straight to another one.",
   },
   {
-    emoji: "👆",
-    title: "Logging is one tap",
-    body: "Every hobby has a grid of quick-log tiles. Watered the garden? Tap 💧. Fed the meat birds? Tap 🍖 and pick lbs or cups. Sold eggs? Tap 💵. Most actions take 2-3 seconds, weather and date auto-attach.",
-    tip: "Logs are time-stamped from your phone. Attach photos to any note, harvest, or issue entry for visual history.",
+    emoji: "➕",
+    title: "Log anything from anywhere",
+    body: "The round + in the middle of the bottom bar logs anything: pick the hobby, then what you did. Most logs take two or three taps, and the date and weather fill in on their own.",
+    tip: "Changed your mind? Every save shows an Undo button for a few seconds.",
   },
   {
     emoji: "🥚",
-    title: "The egg basket",
-    body: "Tap + each time you collect an egg during your rounds. When you're done, hit 'Done — log N eggs' to save it to your records.",
-    tip: "The basket resets automatically each day. Each flock has its own basket.",
-  },
-  {
-    emoji: "🐔",
-    title: "Name your birds",
-    body: "Track favorites by name and band color in any flock. Optionally pick the breed — chicken, duck, turkey, quail, goose, guinea, and peafowl breeds are all in the picker. Great for breeding stock, broody hens, or birds with quirks worth remembering.",
-    tip: "Tap '+ Name a bird' on any flock to start. Multiple flock types: chickens, ducks, turkeys, quail, geese, guineas, peafowl all run separately with their own baskets and stats.",
-  },
-  {
-    emoji: "💵",
-    title: "Track what your birds cost",
-    body: "When you add a flock, log the cost and where you bought them — hatchery name, feed store, or a neighbor. Pairs with feed costs (lbs OR cups) to give you real cost-per-egg numbers later.",
-    tip: "Already added a flock? Tap it on the home screen to edit and add the cost + source.",
-  },
-  {
-    emoji: "🍗",
-    title: "Meat birds: multiple batches at once",
-    body: "Running broilers and turkeys side by side? Each batch is independent — its own feed logs, mortality, butcher records, even feed conversion ratio (FCR). When you're done with a batch, hit 'Finalize' and it moves to your Past batches archive.",
-    tip: "Past batches are tucked at the bottom of the Meat Birds home page. Full per-batch records always live in the Stats tab.",
-  },
-  {
-    emoji: "❄️",
-    title: "Butcher any bird",
-    body: "It's not just for meat birds. Process a few quail, an extra rooster, a duck — any bird from any flock can go to the freezer log with date, count, and average weight.",
-    tip: "Tap a flock on the Egg Layers home tab and choose 'Butcher' to send some birds to the freezer log.",
-  },
-  {
-    emoji: "🐐",
-    title: "Animals: pedigree & history",
-    body: "Goats, cows, pigs, sheep, rabbits, dogs, horses — each animal has its own profile, pedigree tree (sire/dam linkage), breeding records, and chronological 📜 History view of everything ever logged for them.",
-    tip: "Adding a calf, kid, lamb, or kit through the breeding flow auto-links them to the dam so the pedigree builds itself.",
-  },
-  {
-    emoji: "🐎",
-    title: "Horses: rides + apply care to many",
-    body: "Log rides with duration, type (trail, arena, lesson), and notes. Track farrier, vet, and dewormer visits — and when one visit applies to multiple horses (the whole barn got their shots), tap each horse it covers or 'Select all' to log once.",
-    tip: "Each horse's 📜 History combines rides, vet, farrier, dewormer, breeding, and sales — everything in one timeline.",
-  },
-  {
-    emoji: "🚜",
-    title: "Move the chicken tractor",
-    body: "Egg layers and meat birds have a Move Tractor tile. First move asks roughly how far you move it each time; after that it's one tap. Year-in-review tells you fun facts about your total distance moved — about football fields, marathons, even how many Rhode Islands.",
-    tip: "Your chickens have moved more than you'd think.",
-  },
-  {
-    emoji: "🗺️",
-    title: "Garden map",
-    body: "Start a garden season, then tap 'Garden Map' to upload a photo of your garden. Drop pins exactly where things grow — each pin tracks what's planted there.",
-    tip: "Use any photo: overhead photo, hand-drawn sketch, or satellite screenshot.",
+    title: "The egg counter",
+    body: "On Egg Layers › Today, tap + each time you collect eggs on your rounds. It saves to today as you go, and each flock keeps its own count.",
+    tip: "Name your favorite hens, add breeds and band colors, and log birds you bought on the Birds tab.",
   },
   {
     emoji: "📅",
-    title: "Calendar & planting dates",
-    body: "Tap the Calendar tab and plan a crop. Henalytics calculates suggested planting dates based on your hardiness zone and last frost date.",
-    tip: "All dates are editable — adjust any of them before adding to your calendar. Add custom calendar events for vet visits, hatch days, anything.",
+    title: "Each hobby has three tabs",
+    body: "Today is for logging and what needs doing. The middle tab holds your birds, animals, plants or batches. Stats shows charts, costs and fun facts, and All the numbers has every detail.",
+    tip: "Tap the share button on any fun fact to make a picture for Facebook or your story.",
   },
   {
-    emoji: "💰",
-    title: "Sales + customer directory",
-    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat birds, rabbits, garden produce. Build a customer directory and see which buyers come back. Track revenue over time with full breakdowns.",
-    tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically. Don't sell anything? Hide this tab in ⚙️ Settings.",
+    emoji: "🐐",
+    title: "Animals: profiles and family trees",
+    body: "Goats, cows, pigs, sheep, rabbits, horses, dogs and cats each get a profile with breeding, health, weights and a history of everything you've logged for them.",
+    tip: "Babies added through a birth or litter are linked to their mother, so the family tree builds itself.",
   },
   {
-    emoji: "📊",
-    title: "Stats tab + share cards",
-    body: "Every hobby has a Stats tab with charts, cost breakdowns, and trends. Filter by time range — today, week, 30/60/90 days, custom, or all-time. Hit 'Share Stats' to generate a shareable image with your homestead's numbers.",
-    tip: "Active batches and seasons show up in time-windowed views even if they started earlier — so feed you logged this week shows up under 'Past 7 days' even on a 35-day-old batch.",
+    emoji: "🌱",
+    title: "Garden: plants, plan and map",
+    body: "Log what you plant and harvest, then see what your garden was worth at grocery prices. The Plan tab has your garden map, seed box and what to start for your zone.",
+    tip: "Calendar shows your frost dates and suggests planting dates for each crop.",
+  },
+  {
+    emoji: "💵",
+    title: "Sales, costs and customers",
+    body: "More › Sales & costs keeps every sale and expense in one place, with a customer list and what each hobby earns after costs.",
+    tip: "Don't sell anything? Hide Sales & costs in More › All settings.",
+  },
+  {
+    emoji: "✨",
+    title: "Year in review and Wrapped",
+    body: "More › Year in review shows your year so far at any time. Every December your Homestead Wrapped tells the year as a story you can share with family.",
+    tip: "Got old records in a spreadsheet? More › Bring in old records adds them in a few taps.",
   },
   {
     emoji: "🏚",
-    title: "Barn, farmhands, Year in Review",
-    body: "Tap the 🏚 barn in the top-right to invite a farmhand (share with your partner or family in real time), set your location, and manage photos. Tap ✨ Year in Review any time to see a live summary of your year. The ❤️ next to the barn is a tip jar — leave a tip if Henalytics has saved you time.",
-    tip: "Farmhands see the same data live — great for couples running the homestead together. Want a weekly Sunday recap by email? Turn it on in ⚙️ Settings.",
+    title: "Farmhands and your homestead",
+    body: "More › Homestead details is where you set your location and zone and invite farmhands, so your partner or family can log from their own phones and see the same records.",
+    tip: "Want your week's chores or a homestead summary by email each week? Turn them on in More › All settings.",
   },
 ];
 
@@ -24520,7 +24486,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
             )}
             <button
               onClick={() => isLast ? onClose() : setSlide(slide + 1)}
-              style={{ padding: "10px 20px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg, cursor: "pointer", boxShadow: "2px 2px 0 " + palette.line }}
+              style={{ padding: "10px 20px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg, cursor: "pointer", boxShadow: "none" }}
             >
               {isLast ? "Let's go! 🌾" : "Next →"}
             </button>
@@ -24568,7 +24534,7 @@ export function TutorialPrompt({ onStart, onSkip }) {
               padding: "12px 20px", borderRadius: 10, border: `2px solid ${palette.ink}`,
               background: palette.ink, color: palette.bg, fontFamily: FONT_BODY,
               fontWeight: 700, fontSize: 15, cursor: "pointer",
-              boxShadow: "3px 3px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             Let's go! 🌾
@@ -24905,7 +24871,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
             background: palette.ink, color: palette.bg,
             border: `1.5px solid ${palette.ink}`, cursor: "pointer",
             fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
-            boxShadow: "2px 2px 0 " + palette.line, marginBottom: 10,
+            boxShadow: "none", marginBottom: 10,
           }}
         >
           Create account
@@ -24993,13 +24959,13 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
       gap: 10, padding: "10px 12px", borderRadius: 10,
-      border: `1.5px solid ${palette.line}`, background: "#fff", marginBottom: 8,
+      border: `1.5px solid ${palette.line}`, background: palette.white, marginBottom: 8,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{
           fontSize: 13, fontWeight: 700,
           color: done ? palette.leaf : palette.inkSoft,
-          background: done ? "#EAF1DD" : "#EFE8DC", borderRadius: 8,
+          background: done ? palette.goodBg : "#EFE8DC", borderRadius: 8,
           padding: "2px 8px", whiteSpace: "nowrap",
         }}>{done ? "✓" : "1 of 2"}</span>
         <span style={{ fontSize: 13.5, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
@@ -25008,7 +24974,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
         <span style={{ fontSize: 13, fontWeight: 700, color: palette.leaf, whiteSpace: "nowrap" }}>Done ✓</span>
       ) : (
         <button onClick={onClick} style={{
-          border: "none", background: palette.leaf, color: "#fff", fontFamily: FONT_BODY,
+          border: "none", background: palette.leaf, color: palette.onColor, fontFamily: FONT_BODY,
           fontSize: 13, fontWeight: 600, borderRadius: 8, padding: "6px 12px",
           cursor: "pointer", whiteSpace: "nowrap",
         }}>{cta}</button>
@@ -25036,7 +25002,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
         }}>×</button>
 
         {/* Prize images — both prizes go to one winner */}
-        <div style={{ background: "#EAF1DD", padding: "18px 16px 14px", textAlign: "center" }}>
+        <div style={{ background: palette.goodBg, padding: "18px 16px 14px", textAlign: "center" }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6, color: palette.leaf, textTransform: "uppercase", marginBottom: 4 }}>
             🍂 {GIVEAWAY.headline}
           </div>
@@ -25069,7 +25035,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
 
           {!user && (
             <div style={{
-              fontSize: 13, color: palette.accent, background: "#FBEAE3",
+              fontSize: 13, color: palette.accent, background: palette.dangerBg,
               border: `1.5px solid ${palette.accentSoft}`, borderRadius: 10,
               padding: "8px 10px", marginBottom: 12,
             }}>
@@ -25098,7 +25064,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
 
           {/* Always tappable, even once the follow step is done */}
           <button onClick={doVisitPost} style={{
-            width: "100%", background: "#fff", border: `1.5px solid ${palette.line}`,
+            width: "100%", background: palette.white, border: `1.5px solid ${palette.line}`,
             color: palette.ink, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
             borderRadius: 10, padding: "9px 12px", cursor: "pointer", marginBottom: 8,
           }}>📘 See the giveaway post on Facebook</button>
@@ -25113,7 +25079,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
               Once someone is entered, this becomes the main call to action. */}
           {isEntered ? (
             <div style={{
-              background: "#EAF1DD", border: `1.5px solid ${palette.leaf}`,
+              background: palette.goodBg, border: `1.5px solid ${palette.leaf}`,
               borderRadius: 12, padding: "12px 12px 10px", marginTop: 4,
             }}>
               <p style={{ fontSize: 12.5, lineHeight: 1.5, color: palette.ink, margin: "0 0 9px", textAlign: "center" }}>
@@ -25121,7 +25087,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
                 app is what pays for the prizes — it never changes your odds.
               </p>
               <button onClick={onSupport} style={{
-                width: "100%", background: palette.leaf, border: "none", color: "#fff",
+                width: "100%", background: palette.leaf, border: "none", color: palette.onColor,
                 fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, borderRadius: 10,
                 padding: "10px 12px", cursor: "pointer",
               }}>💚 Donate to keep awesome giveaways happening</button>
@@ -25287,7 +25253,7 @@ function AppStoreLaunchModal({ onClose, webOS }) {
           {/* App icon — bird + book + leaf, recreated as SVG */}
           <div style={{
             width: 104, height: 104, margin: "0 auto 12px",
-            borderRadius: 24, background: "#F4EDE0",
+            borderRadius: 24, background: palette.bg,
             border: `2px solid ${palette.ink}`,
             boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -25476,7 +25442,7 @@ function WhatsNewModal({ onClose }) {
               width:"100%",padding:"12px",borderRadius:10,
               border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,
               fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",
-              boxShadow:"2px 2px 0 "+palette.line,
+              boxShadow:"none",
             }}
           >
             Got it — let's go! 🌾
@@ -25513,7 +25479,7 @@ function WhatsNewModal({ onClose }) {
 function MilestoneModal({ config, userCount, milestone, onClose, onOpenSupport }) {
   if (!config) return null;
   const palette_local = {
-    bg: "#F4EDE0", ink: "#2C1810", inkSoft: "#5C4530",
+    bg: palette.bg, ink: "#2C1810", inkSoft: "#5C4530",
     accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547",
     card: "#FAF5EA", line: "#2C181020",
   };
@@ -25813,12 +25779,12 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
                 borderRadius: 12,
                 border: `2px solid ${palette.ink}`,
                 background: palette.yolk,
-                color: palette.ink,
+                color: palette.onYolk,
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
                 display: "block",
                 cursor: "pointer",
               }}
@@ -25837,12 +25803,12 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
                 borderRadius: 12,
                 border: `2px solid ${palette.ink}`,
                 background: palette.leaf,
-                color: palette.bg,
+                color: palette.onColor,
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
                 display: "block",
                 cursor: "pointer",
               }}

@@ -15,6 +15,7 @@
 //     is batch.jarsRemaining.
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
@@ -44,11 +45,11 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -75,11 +76,11 @@ const daysUntil = (iso) => {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 };
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 const JAR_TYPES = ["Half-pint", "Pint", "Quart", "Half-gallon", "Other"];
 
@@ -99,8 +100,8 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   const variants = {
     primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
     ghost: { bg: palette.bgAlt, color: palette.ink, border: palette.line },
-    leaf: { bg: palette.leaf, color: "#fff", border: palette.leaf },
-    danger: { bg: palette.accent, color: "#fff", border: palette.accent },
+    leaf: { bg: palette.leaf, color: palette.onColor, border: palette.leaf },
+    danger: { bg: palette.accent, color: palette.onColor, border: palette.accent },
   };
   const v = variants[variant] || variants.primary;
   return (
@@ -111,10 +112,10 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
       style={{
         padding: small ? "6px 12px" : "10px 18px",
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
-        borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+        borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 12 : 14,
         opacity: disabled ? 0.6 : 1,
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -126,11 +127,11 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box",
     }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -452,7 +453,7 @@ function UseJarsModal({ batch, onUse, onClose }) {
 
       {exceedsStock && (
         <div style={{
-          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
           display: "flex", alignItems: "flex-start", gap: 8,
         }}>
@@ -837,7 +838,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
                       <div style={{ fontWeight: 600, fontSize: 15, color: palette.ink }}>{b.item}</div>
                       <div style={{
                         fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                        background: exp.state === "expired" ? "#FBE5DE" : exp.state === "soon" ? palette.yolkSoft : palette.bgAlt,
+                        background: exp.state === "expired" ? palette.dangerBg : exp.state === "soon" ? palette.yolkSoft : palette.bgAlt,
                         color: exp.color, textTransform: "uppercase", letterSpacing: 0.5,
                       }}>
                         {exp.label || "No eat-by"}

@@ -17,6 +17,7 @@
 // so we don't surface countdown UI).
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
@@ -45,11 +46,11 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -67,10 +68,10 @@ const todayIso = () => {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, type = "button", disabled = false }) {
   const variants = {
     primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
-    leaf: { bg: palette.leaf, color: "#FAF5EA", border: palette.leaf },
-    accent: { bg: palette.accent, color: "#FAF5EA", border: palette.accent },
+    leaf: { bg: palette.leaf, color: palette.onColor, border: palette.leaf },
+    accent: { bg: palette.accent, color: palette.onColor, border: palette.accent },
     ghost: { bg: "transparent", color: palette.ink, border: palette.line },
-    danger: { bg: palette.accent, color: palette.bg, border: palette.accent },
+    danger: { bg: palette.accent, color: palette.onColor, border: palette.accent },
   };
   const v = variants[variant] || variants.primary;
   return (
@@ -78,10 +79,10 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
       type={type} disabled={disabled} onClick={onClick}
       style={{
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
-        borderRadius: 10, padding: small ? "8px 12px" : "10px 16px",
+        borderRadius: small ? 999 : 14, padding: small ? "8px 12px" : "10px 16px",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14,
         cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-        boxShadow: variant === "ghost" ? "none" : "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -95,10 +96,10 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
     <div style={{
       flex: 1, minWidth: 100, padding: "12px 14px",
       background: palette.card, border: `1.5px solid ${palette.line}`,
-      borderRadius: 12,
+      borderRadius: 16,
     }}>
       <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: accent, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -140,11 +141,11 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 // ============================================================================
 // BATCH MODAL — create/edit a freeze-drying batch

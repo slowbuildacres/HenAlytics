@@ -18,24 +18,25 @@
 //   data.tutorialsSeen.stockEmails = true once the tutorial's been shown
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { getActiveHomesteadId, compressImage } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { buildStockEmail, defaultSubject, stockFromName, STOCK_EMAIL_LIMITS } from "./stockEmail.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 const newId = () => Math.random().toString(36).slice(2, 10);
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -119,7 +120,7 @@ const btn = (variant = "primary", disabled = false) => ({
   color: variant === "primary" ? palette.bg : palette.ink, textAlign: "center",
 });
 const Label = ({ children }) => <div style={{ fontSize: 12, color: palette.inkSoft, margin: "12px 0 6px", fontWeight: 700 }}>{children}</div>;
-const linkBtn = { background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY, fontSize: 13 };
+const linkBtn = legacyStyle(() => ({ background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY, fontSize: 13 }));
 
 // ---- Tutorial ---------------------------------------------------------------
 const TUTORIAL = [
@@ -426,13 +427,13 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
               <button type="button" onClick={sendTest} disabled={!user || !canCompose || !!busy} style={{ ...btn("yolk", !user || !canCompose || !!busy), flex: 1 }}>{busy === "test" ? "Sending…" : "📨 Send me a test"}</button>
             </div>
             {showPreview && canCompose && (
-              <div style={{ marginTop: 10, border: `1.5px solid ${palette.line}`, borderRadius: 12, overflow: "hidden", background: "#F4EDE0" }}>
+              <div style={{ marginTop: 10, border: `1.5px solid ${palette.line}`, borderRadius: 12, overflow: "hidden", background: palette.bg }}>
                 <div style={{ fontSize: 12, padding: "8px 10px", background: palette.card, borderBottom: `1px solid ${palette.line}` }}><strong>Subject:</strong> {preview.subject}</div>
                 <iframe title="Email preview" srcDoc={preview.html} sandbox="" style={{ width: "100%", height: 520, border: 0, display: "block" }} />
               </div>
             )}
 
-            {msg && <div style={{ marginTop: 10, fontSize: 13, padding: "9px 12px", borderRadius: 10, background: msg.kind === "ok" ? "#E3EDD3" : "#FBE5DE", color: msg.kind === "ok" ? palette.leaf : palette.accent, fontWeight: 600 }}>{msg.text}</div>}
+            {msg && <div style={{ marginTop: 10, fontSize: 13, padding: "9px 12px", borderRadius: 10, background: msg.kind === "ok" ? palette.goodBg : palette.dangerBg, color: msg.kind === "ok" ? palette.leaf : palette.accent, fontWeight: 600 }}>{msg.text}</div>}
 
             <div style={{ marginTop: 12 }}>
               {!confirm ? (

@@ -1,3 +1,4 @@
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { X, Camera as CameraIcon, Image as ImageIcon, Leaf, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { supabase } from "./supabase";
@@ -29,7 +30,7 @@ import { purchaseProduct, restorePurchases } from "./IapManager.js";
 //   - Web: Stripe Checkout via /api/create-scan-pack-checkout → redirect
 // ============================================================================
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
@@ -37,7 +38,7 @@ const palette = {
   warn: "#D97706", warnSoft: "#FED7AA",
   danger: "#B91C1C", dangerSoft: "#FECACA",
   success: "#15803D", successSoft: "#BBF7D0",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -49,17 +50,17 @@ const isNative = () => {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, type = "button", disabled = false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
-    leaf:    { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
+    leaf:    { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
     <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }

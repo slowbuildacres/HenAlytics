@@ -8,7 +8,7 @@
 
 import React, { useEffect } from "react";
 import { ChevronRight, X } from "lucide-react";
-import { nl, font, type, radius, currentLook } from "./theme.js";
+import { nl, font, type, radius } from "./theme.js";
 
 export function Card({ children, style, padded = false, onClick, as = "div", ...rest }) {
   const Tag = onClick ? "button" : as;
@@ -191,16 +191,11 @@ export function RoundButton({ kind = "plus", size = 52, onClick, label, disabled
   );
 }
 
-// Screens and sections still drawn in the old design (Calendar, Journal,
-// Games, the detailed numbers…) only know light colors. In dark mode they sit
-// on a light panel so their text stays readable; in light mode this is a no-op.
+// Screens built before 3.0 (some forms, "All the numbers", Games…). Their
+// colors now follow the look and dark mode (see legacyTheme.js), so this is
+// just a pass-through kept so callers don't change.
 export function Legacy({ children }) {
-  if (!currentLook().dark) return children;
-  return (
-    <div style={{ background: "#F6F1E7", color: "#2A1A12", borderRadius: radius.card, padding: "12px 10px", colorScheme: "light" }}>
-      {children}
-    </div>
-  );
+  return children;
 }
 
 export function ScreenTitle({ children, right, sub }) {

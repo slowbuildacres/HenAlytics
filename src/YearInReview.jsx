@@ -2,6 +2,7 @@
 // YEAR IN REVIEW — updated to respect hidden hobbies + rabbits support
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
@@ -22,12 +23,12 @@ import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs } from "./analy
 // so this static import does not form a cycle.
 import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES, countryFlag } from "./games.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -551,7 +552,7 @@ function Card({ children, accent = palette.card, ...rest }) {
         border: `1.5px solid ${palette.line}`,
         borderRadius: 14,
         padding: 22,
-        boxShadow: "3px 3px 0 " + palette.line,
+        boxShadow: "none",
         ...(rest.style || {}),
       }}
     >
@@ -1518,11 +1519,11 @@ export function StandingsLockedCard({ onOpenSupport }) {
               marginTop: 12,
               display: "inline-flex", alignItems: "center", gap: 7,
               padding: "9px 14px", borderRadius: 9,
-              background: palette.accent, color: palette.bg,
+              background: palette.accent, color: palette.onColor,
               fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
               border: `1.5px solid ${palette.accent}`,
               cursor: onOpenSupport ? "pointer" : "default",
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             🌾 Become a monthly Supporter to unlock
@@ -1597,7 +1598,7 @@ export function BadgesCard({ stats }) {
                   <div
                     style={{
                       fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
-                      textTransform: "uppercase", color: palette.ink,
+                      textTransform: "uppercase", color: palette.onYolk,
                       background: palette.yolk, borderRadius: 6,
                       padding: "4px 8px", border: `1.5px solid ${palette.line}`,
                     }}

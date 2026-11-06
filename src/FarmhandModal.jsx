@@ -1,3 +1,4 @@
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle, MailCheck, MailX } from 'lucide-react';
 import {
@@ -6,19 +7,19 @@ import {
   updateMemberChoreEmails,
 } from './sync.js';
 
-const palette = {
-  bg: '#F4EDE0', bgAlt: '#EBE0CC', ink: '#2C1810', inkSoft: '#5C4530',
+const palette = legacyPalette({
+  bg: "#F4EDE0", bgAlt: '#EBE0CC', ink: '#2C1810', inkSoft: '#5C4530',
   accent: '#C84B31', leaf: '#5A7A3C', leafSoft: '#A8C078',
   yolk: '#E8B547', yolkSoft: '#F2D58A', feather: '#8B6F47',
   line: '#2C181030', card: '#FAF5EA',
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: '100%', padding: '10px 12px', borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: 'border-box',
-};
+}));
 
 export default function FarmhandModal({ user, homesteadName, role, onClose }) {
   const [members, setMembers] = useState([]);
@@ -192,7 +193,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
                     border: `1.5px solid ${palette.ink}`,
                     cursor: busy ? 'wait' : 'pointer',
                     fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
-                    boxShadow: '2px 2px 0 ' + palette.line,
+                    boxShadow: "none",
                     opacity: busy || !inviteEmail.trim() ? 0.6 : 1,
                     display: 'flex', alignItems: 'center', gap: 6,
                     flexShrink: 0,
@@ -209,7 +210,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
 
           {error && (
             <div style={{
-              padding: 10, background: '#FBE5DE', border: `1.5px solid ${palette.accent}`,
+              padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               borderRadius: 8, fontSize: 12, color: palette.accent, marginBottom: 14,
               display: 'flex', alignItems: 'flex-start', gap: 8, lineHeight: 1.5,
             }}>

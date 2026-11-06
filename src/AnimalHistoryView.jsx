@@ -28,14 +28,15 @@
 // The component is the modal shell itself (mirrors PedigreeView's contract).
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import { X, Trash2, Save, Edit3 } from "lucide-react";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", feather: "#8B6F47",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -685,7 +686,7 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
                     onClick={handleDelete}
                     style={{
                       padding: "6px 12px", borderRadius: 6, border: "none",
-                      background: palette.accent, color: "#FFFFFF",
+                      background: palette.accent, color: palette.onColor,
                       fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12,
                       cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
                     }}

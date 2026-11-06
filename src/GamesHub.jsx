@@ -14,6 +14,7 @@
 // via dynamic import so they live in their own chunks, not the main bundle.
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Trophy, MapPin, Pencil } from "lucide-react";
 import {
@@ -24,12 +25,12 @@ import {
 // component, same supporter gating, same computeStats source of truth.
 import { BadgesCard, StandingsLockedCard, computeStats } from "./YearInReview.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -40,11 +41,11 @@ const RIBBON = [
   { fill: "#C98A5B", edge: "#8B5A2B", label: "3rd" },
 ];
 
-const selectStyle = {
+const selectStyle = legacyStyle(() => ({
   width: "100%", padding: "11px 12px", borderRadius: 10,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 function Card({ children, accent, style }) {
   return (
@@ -276,7 +277,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
           disabled={saving}
           style={{
             width: "100%", padding: "13px 0", borderRadius: 12, border: "none",
-            background: palette.leaf, color: palette.card, fontFamily: FONT_BODY,
+            background: palette.leaf, color: palette.onColor, fontFamily: FONT_BODY,
             fontWeight: 700, fontSize: 15, cursor: saving ? "default" : "pointer",
             opacity: saving ? 0.7 : 1,
           }}
@@ -299,7 +300,7 @@ function Pill({ active, onClick, children }) {
         padding: "7px 13px", borderRadius: 999, whiteSpace: "nowrap",
         border: `1.5px solid ${active ? palette.leaf : palette.line}`,
         background: active ? palette.leaf : palette.card,
-        color: active ? palette.card : palette.ink,
+        color: active ? palette.onColor : palette.ink,
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
       }}
     >
@@ -333,7 +334,7 @@ function LevelSeg({ level, onChange }) {
           <button key={o.key} onClick={() => onChange(o.key)} style={{
             flex: 1, padding: "8px 4px", borderRadius: 9, border: "none",
             background: on ? palette.leaf : "transparent",
-            color: on ? palette.card : palette.inkSoft,
+            color: on ? palette.onColor : palette.inkSoft,
             fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13,
             cursor: "pointer", whiteSpace: "nowrap",
           }}>
@@ -431,7 +432,7 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold, l
             fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
             maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             background: chip.good ? palette.leaf : palette.bgAlt,
-            color: chip.good ? palette.card : palette.inkSoft,
+            color: chip.good ? palette.onColor : palette.inkSoft,
             border: chip.good ? "none" : `1px solid ${palette.line}`,
           }}>
             {myName ? `${myName} · ${chip.text}` : chip.text}
@@ -732,7 +733,7 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
             onClick={() => setShowRegionModal(true)}
             style={{
               width: "100%", padding: "12px 0", borderRadius: 12, border: "none",
-              background: palette.leaf, color: palette.card, fontWeight: 700,
+              background: palette.leaf, color: palette.onColor, fontWeight: 700,
               fontFamily: FONT_BODY, fontSize: 15, cursor: "pointer",
             }}
           >
@@ -756,7 +757,7 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
                   onClick={dismissAutoJoin}
                   style={{
                     flex: 1, padding: "9px 0", borderRadius: 10, border: "none",
-                    background: palette.leaf, color: palette.card,
+                    background: palette.leaf, color: palette.onColor,
                     fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13, cursor: "pointer",
                   }}
                 >

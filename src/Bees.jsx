@@ -1,3 +1,4 @@
+import { legacyPalette, legacyStyle, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from "react";
 // NEW_LOOK (3.0): the rebuilt bee screens reuse this file's forms.
 import { BeeToday, BeeHives, BeeHive, HivePicker } from "./newlook/bees/BeeScreens.jsx";
@@ -12,21 +13,21 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
   honey: "#E8961A", honeySoft: "#F5C96A",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = legacyStyle(() => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+}));
 
 const HIVE_TYPES = ["Langstroth", "Top Bar", "Warré", "Flow Hive", "Long Langstroth", "Other"];
 const HIVE_SOURCES = ["Package", "Nucleus (nuc)", "Swarm", "Split", "Purchased colony", "Other"];
@@ -45,17 +46,17 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
     honey: { background: palette.honey, color: palette.bg, border: `1.5px solid ${palette.honey}` },
   };
   return (
     <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -63,11 +64,11 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{value}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -75,8 +76,8 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -398,7 +399,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
               <input style={inputStyle} type="number" min={0} step="0.1" value={varroaCount} onChange={e=>setVarroaCount(e.target.value)} placeholder="e.g. 2 = 2 mites per 100 bees" />
             </label>
             {Number(varroaCount) >= 3 && (
-              <div style={{ padding:"10px 12px",background:palette.accent,color:palette.bg,borderRadius:8,fontSize:13,fontWeight:600,lineHeight:1.5 }}>
+              <div style={{ padding:"10px 12px",background:palette.accent,color:palette.onColor,borderRadius:8,fontSize:13,fontWeight:600,lineHeight:1.5 }}>
                 ⚠️ {Number(varroaCount).toFixed(1)} mites/100 bees is at or above the 3% treatment threshold. Most beekeepers recommend treating soon to protect the hive heading into winter.
               </div>
             )}
@@ -511,7 +512,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
               <button onClick={() => setConfirmingDelete(true)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4 }} title="Delete hive"><Trash2 size={16}/></button>
             ) : (
               <div style={{ display:"flex",gap:6,alignItems:"center" }}>
-                <button onClick={onDelete} style={{ background:palette.accent,color:palette.bg,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,fontFamily:FONT_BODY }}>Confirm delete</button>
+                <button onClick={onDelete} style={{ background:palette.accent,color:palette.onColor,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,fontFamily:FONT_BODY }}>Confirm delete</button>
                 <button onClick={() => setConfirmingDelete(false)} style={{ background:"rgba(255,255,255,0.15)",color:palette.bg,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontFamily:FONT_BODY }}>Cancel</button>
               </div>
             )}
@@ -521,7 +522,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
 
       {showHighMiteAlert && (
         <div style={{
-          background:palette.accent, color:palette.bg,
+          background:palette.accent, color:palette.onColor,
           border:`1.5px solid ${palette.ink}`, borderRadius:10,
           padding:"12px 14px", marginBottom:12, fontSize:13, lineHeight:1.5,
         }}>
@@ -825,7 +826,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
               <div key={h.name} style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6 }}>
                 <div>
                   <strong>{h.name}</strong>
-                  {h.dead && <span style={{ background:palette.accent,color:palette.bg,fontSize:10,padding:"2px 6px",borderRadius:4,marginLeft:8 }}>LOST</span>}
+                  {h.dead && <span style={{ background:palette.accent,color:palette.onColor,fontSize:10,padding:"2px 6px",borderRadius:4,marginLeft:8 }}>LOST</span>}
                   <div style={{ fontSize:12,color:palette.inkSoft }}>{h.inspections} inspection{h.inspections!==1?"s":""}</div>
                 </div>
                 <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"right" }}>
@@ -980,7 +981,7 @@ export default function BeesPage({ hobby, data, update, setModal }) {
                       <div style={{ display:"flex",gap:10,marginTop:4,flexWrap:"wrap" }}>
                         {totalLbs > 0 && <span style={{ fontSize:11,background:palette.honeySoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍯 {totalLbs.toFixed(1)} lbs</span>}
                         {lastInspect && <span style={{ fontSize:11,background:palette.bgAlt,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🔍 {daysSinceInspect}d ago</span>}
-                        {isDead && <span style={{ fontSize:11,background:palette.accent,color:palette.bg,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>Lost</span>}
+                        {isDead && <span style={{ fontSize:11,background:palette.accent,color:palette.onColor,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>Lost</span>}
                         {daysSinceInspect !== null && daysSinceInspect > 14 && !isDead && <span style={{ fontSize:11,background:palette.yolkSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>⚠️ Due for inspection</span>}
                       </div>
                     </div>
@@ -1061,7 +1062,7 @@ export function BeesNewLook({ hobby, data, update, setModal, tab, onTab, onOpenJ
       {f.kind === "hive" && <HiveModal hive={f.hive} onSave={saveHive} onClose={() => setForm(null)} />}
       {f.kind === "log" && formHive && <LogEntryModal hive={formHive} action={f.action} onSave={(entry) => update((d) => { if (!d.entries[hobby.id]) d.entries[hobby.id] = []; d.entries[hobby.id].push(entry); return d; })} onClose={closeForm} />}
       {f.kind === "edit" && formHive && <LogEntryModal hive={formHive} action={f.action} existingEntry={f.entry} onSave={(entry) => update((d) => { const i = (d.entries[hobby.id] || []).findIndex((e) => e.id === entry.id); if (i !== -1) d.entries[hobby.id][i] = entry; return d; })} onClose={() => setForm(null)} />}
-      <HivePicker open={!!pick} onClose={() => setPick(null)} hives={hives} entries={entries} action={pick} onPick={(id) => { const a = pick; setPick(null); startLog(a, id); }} />
+      <HivePicker open={!!pick} onClose={() => setPick(null)} hives={hives} entries={entries} action={pick} onPick={(id) => { const a = pick; setPick(null); startLog(a, id); }} onAddHive={() => { setPick(null); act.addHive(); }} />
       {tab === "animals" ? (
         hive ? <BeeHive hobby={hobby} data={data} hive={hive} act={act} onBack={() => setHiveId(null)} /> : <BeeHives hobby={hobby} data={data} act={act} />
       ) : (

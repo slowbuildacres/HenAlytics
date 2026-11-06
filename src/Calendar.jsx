@@ -11,6 +11,7 @@
 // (frost dates) are computed from the user's zone, not stored.
 // ============================================================================
 
+import { legacyPalette, legacyStyle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
 import {
   Calendar as CalendarIcon, Plus, ChevronLeft, ChevronRight,
@@ -25,12 +26,12 @@ import {
 } from "./hardiness.js";
 import { getUserFrostDates } from "./CalendarModals.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   card: "#FAF5EA", line: "#2C181030",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -82,7 +83,7 @@ export default function CalendarPage({ data, update, setModal }) {
         marginBottom: 14, flexWrap: "wrap", gap: 10,
       }}>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: 0, color: palette.ink }}>
-          calendar
+          Calendar
         </h2>
         <div style={{ display: "flex", gap: 6 }}>
           <ToggleBtn active={view === "timeline"} onClick={() => setView("timeline")}>Timeline</ToggleBtn>
@@ -504,7 +505,7 @@ function MonthView({ events, update, setModal, userEvents }) {
   );
 }
 
-const navBtnStyle = {
+const navBtnStyle = legacyStyle(() => ({
   background: palette.card,
   border: `1.5px solid ${palette.line}`,
   borderRadius: 8,
@@ -512,7 +513,7 @@ const navBtnStyle = {
   cursor: "pointer",
   display: "flex", alignItems: "center", justifyContent: "center",
   color: palette.ink,
-};
+}));
 
 // ============================================================================
 // HELPERS

@@ -172,8 +172,21 @@ export function BeeToday({ hobby, data, setModal, act, onOpenJournal }) {
 }
 
 // "Which hive?" when a log is started without one.
-export function HivePicker({ open, onClose, hives, entries, action, onPick }) {
+export function HivePicker({ open, onClose, hives, entries, action, onPick, onAddHive }) {
   const today = isoDay();
+  if (open && !(hives || []).length) {
+    // No hives yet: logs are kept per hive, so offer to add the first one.
+    return (
+      <Sheet open onClose={onClose} label="Add a hive first" showClose>
+        <div style={{ padding: "4px", display: "flex", flexDirection: "column", gap: 12 }}>
+          <h2 style={{ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: 22 }}>Add your first hive</h2>
+          <div style={{ fontSize: 15, color: nl.soft, lineHeight: 1.5 }}>Inspections, mite tests and harvests are kept for each hive, so add a hive first. It only takes a name.</div>
+          {onAddHive && <Button onClick={onAddHive}>Add a hive</Button>}
+          <Button kind="quiet" onClick={onClose}>Not now</Button>
+        </div>
+      </Sheet>
+    );
+  }
   return (
     <Sheet open={open} onClose={onClose} label="Which hive?" showClose>
       <h2 style={{ margin: "0 4px 10px", fontFamily: font.display, fontWeight: 400, fontSize: 24 }}>{LABEL[action] || "Log"}: which hive?</h2>
