@@ -1418,7 +1418,7 @@ function FunFactsCard({ stats }) {
   if (stats.lastEntryDate && stats.lastEntryDate !== stats.firstEntryDate) facts.push({ emoji: "📅", label: "Most recent entry", value: shortDate(stats.lastEntryDate) });
   if (stats.heaviestDayCount > 1) facts.push({ emoji: "🔥", label: "Most active day", value: `${shortDate(stats.heaviestDay)} · ${stats.heaviestDayCount} entries` });
   if (stats.gardenWaterCount > 0) facts.push({ emoji: "💧", label: "Garden waterings", value: stats.gardenWaterCount });
-  if (stats.totalFeedLbs > 0) facts.push({ emoji: "🌾", label: "Feed bought", value: `${Math.round(stats.totalFeedLbs)} lbs` });
+  if (stats.totalFeedLbs > 0) facts.push({ emoji: "🌾", label: "Feed bought", value: fmtWeight(stats.totalFeedLbs, { decimals: 0, forceBig: true }) });
   if (stats.totalFeedCost > 0) facts.push({ emoji: "💸", label: "Spent on feed", value: fmtMoney(stats.totalFeedCost) });
   if (stats.freeRangeCount > 0) facts.push({ emoji: "🌳", label: "Free-range days", value: stats.freeRangeCount });
   if (stats.photosCount > 0) facts.push({ emoji: "📷", label: "Photos taken", value: stats.photosCount });

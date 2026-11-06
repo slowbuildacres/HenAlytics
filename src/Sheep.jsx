@@ -22,7 +22,7 @@ import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, flozFromInput, currencySymbol } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 // NEW_LOOK (3.0): the shared livestock screens reuse this file's log forms.
@@ -457,7 +457,7 @@ function AnimalModal({ animal, animals, paddocks, onSave, onDelete, onClose, upd
         </div>
       </div>
       <Field label="Purchase cost (optional)">
-        <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+        <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Where purchased (optional)">
         <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, auction, neighbor" />
@@ -818,7 +818,7 @@ function MilkLogModal({ animals, onSave, onClose, initialAnimalId = null }) {
   const handleSave = () => {
     const ozNum = parseFloat(oz);
     if (!ozNum) return;
-    onSave({ id: newId(), date, action: "milk", animalId: animalId || null, oz: ozNum, notes: notes.trim(), created: Date.now() });
+    onSave({ id: newId(), date, action: "milk", animalId: animalId || null, oz: flozFromInput(ozNum), notes: notes.trim(), created: Date.now() });
     onClose();
   };
 
@@ -833,10 +833,10 @@ function MilkLogModal({ animals, onSave, onClose, initialAnimalId = null }) {
           {milkers.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
-      <Field label="Ounces">
+      <Field label={getCurrentVolumeUnit() === "L" ? "Milliliters" : "Ounces"}>
         <input type="number" step="0.1" style={inputStyle()} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus />
         {oz && getCurrentVolumeUnit() === "L" && (
-          <div style={{ fontSize:12, color:palette.inkSoft, marginTop:4 }}>{fmtVolume(Number(oz)/128)}</div>
+          <div style={{ fontSize:12, color:palette.inkSoft, marginTop:4 }}>{fmtVolume(flozFromInput(oz)/128)}</div>
         )}
       </Field>
       <Field label="Notes (optional)">
@@ -860,7 +860,7 @@ function ButcherLogModal({ animals, onSave, onClose }) {
   const handleSave = () => {
     if (!animalId) return;
     onSave({
-      entry: { id: newId(), date, action: "butcher", animalId, weight: parseFloat(weight) || 0, notes: notes.trim(), created: Date.now() },
+      entry: { id: newId(), date, action: "butcher", animalId, weight: lbsFromInput(weight), notes: notes.trim(), created: Date.now() },
       animalId,
     });
     onClose();
@@ -876,7 +876,7 @@ function ButcherLogModal({ animals, onSave, onClose }) {
           {live.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
         </select>
       </Field>
-      <Field label="Hanging weight (lbs)">
+      <Field label={`Hanging weight (${weightUnitLabel()})`}>
         <input type="number" step="0.1" style={inputStyle()} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" />
       </Field>
       <Field label="Notes (optional)">
@@ -907,7 +907,7 @@ function FedLogModal({ onSave, onClose }) {
         const shown=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
         return <Field label={isMetricW?"Kilograms fed (optional)":"Pounds fed (optional)"}><input type="number" step="0.1" style={inputStyle()} value={shown} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} /></Field>;
       })()}
-      <Field label="Cost (optional)"><input type="number" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" /></Field>
+      <Field label="Cost (optional)"><input type="number" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}`} /></Field>
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -1088,8 +1088,8 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
             )}
           </Field>
           {saleType !== "rehomed" && (
-            <Field label="Price ($)">
-              <input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder="$0.00" />
+            <Field label={`Price (${currencySymbol()})`}>
+              <input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
             </Field>
           )}
         </>

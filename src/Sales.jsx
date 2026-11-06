@@ -17,7 +17,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { fmtMoney, fmtMoneyWhole } from "./units.js";
+import { fmtMoney, fmtMoneyWhole, perLbToInput, perLbFromInput, perWeightLabel, lbsToInput, lbsFromInput, weightUnitLabel, fmtWeight, currencySymbol } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
 
 const palette = legacyPalette({
@@ -257,8 +257,11 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   // Meat / rabbits
   const [saleForm, setSaleForm] = useState(existingSale?.saleForm || "Whole bird");
   const [pricingMethod, setPricingMethod] = useState(existingSale?.pricingMethod || "per_bird");
-  const [pricePerLb, setPricePerLb] = useState(existingSale?.pricePerLb != null ? String(existingSale.pricePerLb) : "");
-  const [avgWeightLbs, setAvgWeightLbs] = useState(existingSale?.avgWeightLbs != null ? String(existingSale.avgWeightLbs) : "");
+  // Meat sold by weight is typed in lbs or kg (and price per lb or kg);
+  // stored per lb. For other sales pricePerLb holds a cost per unit.
+  const byWeight = existingSale?.pricingMethod === "per_lb";
+  const [pricePerLb, setPricePerLb] = useState(existingSale?.pricePerLb != null ? (byWeight ? perLbToInput(existingSale.pricePerLb) : String(existingSale.pricePerLb)) : "");
+  const [avgWeightLbs, setAvgWeightLbs] = useState(existingSale?.avgWeightLbs != null ? lbsToInput(existingSale.avgWeightLbs) : "");
 
   // Garden
   const [crop, setCrop] = useState(existingSale?.crop || "");
@@ -358,8 +361,8 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       sale = { ...sale, honeyForm, honeyContainer, pricePerUnit: Number(pricePerUnit) || 0 };
     } else if (hobbyType === "meat_chickens" || hobbyType === "rabbits") {
       sale = { ...sale, saleForm, pricingMethod,
-        pricePerLb: Number(pricePerLb) || 0,
-        avgWeightLbs: Number(avgWeightLbs) || 0,
+        pricePerLb: pricingMethod === "per_lb" ? perLbFromInput(pricePerLb) : Number(pricePerLb) || 0,
+        avgWeightLbs: lbsFromInput(avgWeightLbs),
         pricePerUnit: Number(pricePerUnit) || 0,
         flatPrice: Number(flatPrice) || 0,
       };
@@ -573,7 +576,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1,minWidth:120 }}>
                     <Field label={unit === "dozen" ? "Price / dozen" : "Price / dozen (equiv)"}>
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -605,7 +608,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Price per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -631,25 +634,25 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 {pricingMethod === "per_lb" && <>
                   <div style={{ display:"flex",gap:12 }}>
                     <div style={{ flex:1 }}>
-                      <Field label="Avg weight (lbs)">
+                      <Field label={`Avg weight (${weightUnitLabel()})`}>
                         <input type="number" min={0} step="0.1" style={inputStyle()} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
                       </Field>
                     </div>
                     <div style={{ flex:1 }}>
-                      <Field label="Price / lb">
-                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <Field label={`Price / ${perWeightLabel()}`}>
+                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                       </Field>
                     </div>
                   </div>
                 </>}
                 {pricingMethod === "per_bird" && (
                   <Field label="Price / bird">
-                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
                 {pricingMethod === "flat" && (
-                  <Field label="Total price ($)">
-                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                  <Field label={`Total price (${currencySymbol()})`}>
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
               </>}
@@ -674,25 +677,25 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 {pricingMethod === "per_lb" && (
                   <div style={{ display:"flex",gap:12 }}>
                     <div style={{ flex:1 }}>
-                      <Field label="Avg weight (lbs)">
+                      <Field label={`Avg weight (${weightUnitLabel()})`}>
                         <input type="number" min={0} step="0.1" style={inputStyle()} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
                       </Field>
                     </div>
                     <div style={{ flex:1 }}>
-                      <Field label="Price / lb">
-                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <Field label={`Price / ${perWeightLabel()}`}>
+                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                       </Field>
                     </div>
                   </div>
                 )}
                 {pricingMethod === "per_bird" && (
                   <Field label="Price / rabbit">
-                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
                 {pricingMethod === "flat" && (
-                  <Field label="Total price ($)">
-                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                  <Field label={`Total price (${currencySymbol()})`}>
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
               </>}
@@ -717,7 +720,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1,minWidth:110 }}>
                     <Field label={`Price / ${gardenUnit}`}>
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -745,12 +748,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1 }}>
                     <Field label="Your cost per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -772,12 +775,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per loaf (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per loaf">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -799,12 +802,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per item (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per item">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -826,12 +829,12 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per jar (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per jar">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -879,7 +882,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </select>
                 </Field>
                 <Field label="Sale / lease price">
-                  <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                  <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                 </Field>
                 {selectedAnimalId && (
                   <div style={{ fontSize:12, color:palette.inkSoft, marginBottom:10, padding:"8px 10px", background:palette.bgAlt, borderRadius:6, lineHeight:1.5 }}>
@@ -904,7 +907,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Price per chick">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -927,8 +930,8 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
-                    <Field label="Total price ($)">
-                      <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                    <Field label={`Total price (${currencySymbol()})`}>
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -1061,7 +1064,7 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.qty} × ${sale.honeyContainer} · ${sale.honeyForm}`;
   } else if (sale.hobbyType === "meat_chickens" || sale.hobbyType === "rabbits") {
     detail = `${sale.qty} ${sale.saleForm || ""}`;
-    if (sale.pricingMethod === "per_lb" && sale.avgWeightLbs) detail += ` · ${sale.avgWeightLbs} lbs avg`;
+    if (sale.pricingMethod === "per_lb" && sale.avgWeightLbs) detail += ` · ${fmtWeight(sale.avgWeightLbs, { forceBig: true })} avg`;
   } else if (sale.hobbyType === "farmstand") {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit||""} @ ${fmtMoney(sale.pricePerUnit||0)}/unit`;
   } else if (sale.hobbyType === "sourdough") {
@@ -1343,7 +1346,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
         <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
-      <Field label="Amount ($)">
+      <Field label={`Amount (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"

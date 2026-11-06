@@ -23,7 +23,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, ExternalLink, Star } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import {
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
   PANTRY_UNIT_LABELS, pantryItemCostForUsage, computeRecipeCost,
@@ -518,7 +518,7 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Cost ($)">
+          <Field label={`Cost (${currencySymbol()})`}>
             <input
               type="number"
               step="0.01"
@@ -597,7 +597,7 @@ function SellBakeModal({ bake, onSell, onClose }) {
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Price per unit ($)">
+          <Field label={`Price per unit (${currencySymbol()})`}>
             <input type="number" step="0.01" min="0" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} autoFocus />
           </Field>
         </div>
@@ -653,8 +653,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
       <Field label="What was built / repaired / bought?">
         <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. stand mixer, new oven, baking sheets" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />

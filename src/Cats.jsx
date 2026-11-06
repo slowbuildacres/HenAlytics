@@ -35,7 +35,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Wheat as NlWheat, Scale as NlScale, Shield as NlShield, Heart as NlHeart, Baby as NlBaby, DollarSign as NlDollar, Archive as NlArchive } from "lucide-react";
 import { X, Edit3, Plus, Trash2, Shield } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
-import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
+import { fmtMoney, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, currencySymbol } from "./units.js";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
@@ -484,7 +484,7 @@ function DogModal({ cat, cats, onSave, onDelete, onClose, update, user, hobbyId 
 
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Purchase cost ($)">
+          <Field label={`Purchase cost (${currencySymbol()})`}>
             <input type="number" step="0.01" min={0} style={inputStyle()} value={purchaseCost} onChange={(e) => setPurchaseCost(e.target.value)} placeholder="0.00" />
           </Field>
         </div>
@@ -826,7 +826,7 @@ function LitterModal({ animals, breedings, litter, onSave, onDelete, onClose }) 
                   <div style={{ display: "flex", gap: 8, marginBottom: 6 }}>
                     <input style={{ ...inputStyle(), flex: 2 }} value={p.placedTo} onChange={(e) => updatePuppy(idx, { placedTo: e.target.value })} placeholder="Placed with" />
                     {p.status === "sold" && (
-                      <input type="number" step="0.01" min={0} style={{ ...inputStyle(), flex: 1 }} value={p.placePrice} onChange={(e) => updatePuppy(idx, { placePrice: e.target.value })} placeholder="$" />
+                      <input type="number" step="0.01" min={0} style={{ ...inputStyle(), flex: 1 }} value={p.placePrice} onChange={(e) => updatePuppy(idx, { placePrice: e.target.value })} placeholder={`${currencySymbol()}`} />
                     )}
                   </div>
                   <input type="date" style={inputStyle()} value={p.placeDate} onChange={(e) => updatePuppy(idx, { placeDate: e.target.value })} />
@@ -1159,7 +1159,7 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
               style={inputStyle()}
               value={feedCost}
               onChange={e => setFeedCost(e.target.value)}
-              placeholder="$0.00"
+              placeholder={`${currencySymbol()}0.00`}
             />
           </Field>
         </>
@@ -1194,8 +1194,8 @@ function LogEntryModal({ animals, action, onSave, onClose, onAddAnimal = null, c
             )}
           </Field>
           {saleType !== "rehomed" && (
-            <Field label="Price ($)">
-              <input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder="$0.00" />
+            <Field label={`Price (${currencySymbol()})`}>
+              <input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e => setSalePrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
             </Field>
           )}
         </>

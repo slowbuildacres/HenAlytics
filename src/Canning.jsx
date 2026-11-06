@@ -20,7 +20,7 @@ import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
@@ -437,7 +437,7 @@ function UseJarsModal({ batch, onUse, onClose }) {
       </Field>
       {reason === "sale" && (
         <>
-          <Field label="Price per jar ($)">
+          <Field label={`Price per jar (${currencySymbol()})`}>
             <input type="number" step="0.01" min="0" style={inputStyle()} value={pricePerJar} onChange={e => setPricePerJar(e.target.value)} placeholder="0.00" />
           </Field>
           <div style={{
@@ -513,8 +513,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
       <Field label="What was built / repaired / bought?">
         <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. pressure canner, jar storage shelves" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />

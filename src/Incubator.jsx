@@ -10,7 +10,7 @@ import { undoable } from "./newlook/UndoBar.jsx";
 import { X, Edit3, Trash2, Plus, Calendar } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { groupDigits } from "./numFmt.js";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
@@ -1077,7 +1077,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
         <>
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <Field label="Price each ($)">
+              <Field label={`Price each (${currencySymbol()})`}>
                 <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerBird} onChange={e => setPricePerBird(e.target.value)} placeholder="0.00" inputMode="decimal" />
               </Field>
             </div>

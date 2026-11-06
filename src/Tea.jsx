@@ -30,7 +30,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, ozToInput, ozFromInput, smallWeightLabel, currencySymbol, fmtSmallWeight } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -143,7 +143,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const isEdit = !!batch;
   const [name, setName] = useState(batch?.name || "");
   const [ingredients, setIngredients] = useState(batch?.ingredients || "");
-  const [totalWeightOz, setTotalWeightOz] = useState(batch?.totalWeightOz ? String(batch.totalWeightOz) : "");
+  const [totalWeightOz, setTotalWeightOz] = useState(batch?.totalWeightOz ? ozToInput(batch.totalWeightOz) : "");
   const [packaging, setPackaging] = useState(batch?.packaging || "bulk");
   const [sachetsMade, setSachetsMade] = useState(batch?.sachetsMade ? String(batch.sachetsMade) : "");
   const [sachetSize, setSachetSize] = useState(batch?.sachetSize || "1tsp");
@@ -155,7 +155,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     if (!name.trim()) return;
     const id = batch?.id || newId();
-    const weight = Number(totalWeightOz) || 0;
+    const weight = ozFromInput(totalWeightOz);
     const sachets = Number(sachetsMade) || 0;
     undoable(update, "Saved blend")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
@@ -178,7 +178,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         madeDate,
         ingredientsCost: Number(ingredientsCost) || 0,
         notes: notes.trim(),
-        events: batch?.events || [{ id: newId(), kind: "made", date: madeDate, note: packaging === "bulk" ? `${weight} oz` : `${sachets} × ${sachetSize}` }],
+        events: batch?.events || [{ id: newId(), kind: "made", date: madeDate, note: packaging === "bulk" ? fmtSmallWeight(weight) : `${sachets} × ${sachetSize}` }],
         archived: batch?.archived || false,
         created: batch?.created || Date.now(),
       };
@@ -240,7 +240,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         </div>
       </Field>
       {packaging === "bulk" ? (
-        <Field label="Total weight (oz)">
+        <Field label={`Total weight (${smallWeightLabel()})`}>
           <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
         </Field>
       ) : (
@@ -259,14 +259,14 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
               </Field>
             </div>
           </div>
-          <Field label="Total weight (oz, optional)">
+          <Field label={`Total weight (${smallWeightLabel()}, optional)`}>
             <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
             <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, lineHeight: 1.3 }}>For analytics. The grand total of all your sachets combined.</div>
           </Field>
         </>
       )}
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
@@ -376,7 +376,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Price per ${unitLabel}`}>
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </div>
       </div>
@@ -442,7 +442,7 @@ function BatchCard({ batch, hobbyId, sales, update, setLocalModal }) {
           {isBulk ? (
             <div>
               <strong>{batch.totalWeightOz}</strong> oz blend
-              {remaining < made && <span style={{ color: palette.inkSoft }}> · {remaining.toFixed(1)} oz remaining</span>}
+              {remaining < made && <span style={{ color: palette.inkSoft }}> · {fmtSmallWeight(remaining)} remaining</span>}
             </div>
           ) : (
             <div>
@@ -538,7 +538,7 @@ export default function TeaPage({ hobby, data, update, setModal, nl = null }) {
     const oz = active.filter(bulk).reduce((s, b) => s + leftOf(b), 0);
     const ctx = {
       key: "tea", tabs: nl.tabs,
-      summary: { big: sachets || `${Math.round(oz)} oz`, small: sachets ? `sachet${sachets === 1 ? "" : "s"} on the shelf` : "of loose tea on the shelf", line: sachets && oz ? `plus ${Math.round(oz)} oz loose` : active.length ? `${active.length} blend${active.length === 1 ? "" : "s"}` : "" },
+      summary: { big: sachets || fmtSmallWeight(oz), small: sachets ? `sachet${sachets === 1 ? "" : "s"} on the shelf` : "of loose tea on the shelf", line: sachets && oz ? `plus ${Math.round(oz)} oz loose` : active.length ? `${active.length} blend${active.length === 1 ? "" : "s"}` : "" },
       newLabel: "Make a blend", onNew: () => setLocalModal({ type: "addBatch" }),
       shelfTitle: "Blends", shelfEmpty: "No blends yet. Make one and it shows up here.",
       shelf: active.map((b) => ({ id: b.id, title: b.name || "Tea blend", left: Math.round(leftOf(b)), unit: bulk(b) ? "oz" : "sachets",
@@ -633,13 +633,13 @@ export function teaStats(hobby, data, range = "year") {
   const oz = bs.reduce((s, b) => s + (Number(b.totalWeightOz) || 0), 0);
   const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
   const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "tea" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
-  const rows = bs.map((b) => ({ key: b.id, name: b.name || "Blend", value: Number(b.totalWeightOz) || Number(b.sachetsMade) || 0, label: b.packaging === "bulk" ? `${b.totalWeightOz || 0} oz` : `${b.sachetsMade || 0} sachets` })).sort((a, b) => b.value - a.value).slice(0, 8);
+  const rows = bs.map((b) => ({ key: b.id, name: b.name || "Blend", value: Number(b.totalWeightOz) || Number(b.sachetsMade) || 0, label: b.packaging === "bulk" ? fmtSmallWeight(b.totalWeightOz || 0) : `${b.sachetsMade || 0} sachets` })).sort((a, b) => b.value - a.value).slice(0, 8);
   const facts = [];
   if (sachets >= 10) facts.push({ key: "cups", icon: "drop", big: String(sachets), line: "cups of tea from our blends", title: `${sachets} cups of tea`, sub: "One sachet, one cup." });
-  if (oz >= 4) facts.push({ key: "oz", icon: "leaf", big: `${Math.round(oz)} oz`, line: "of loose tea blended", title: `${Math.round(oz)} oz of tea blended`, sub: `About ${Math.round(oz * 14)} cups at 2 g a cup.` });
+  if (oz >= 4) facts.push({ key: "oz", icon: "leaf", big: fmtSmallWeight(oz), line: "of loose tea blended", title: `${fmtSmallWeight(oz)} of tea blended`, sub: `About ${Math.round(oz * 14)} cups at 2 g a cup.` });
   return {
     cards: [
-      { label: "Blends", value: bs.length, sub: [sachets ? `${sachets} sachets` : null, oz ? `${Math.round(oz)} oz` : null].filter(Boolean).join(" · ") || "" },
+      { label: "Blends", value: bs.length, sub: [sachets ? `${sachets} sachets` : null, oz ? fmtSmallWeight(oz) : null].filter(Boolean).join(" · ") || "" },
       ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Tea sales" }] : []),
       ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: "Herbs and packaging" }] : []),
     ],
@@ -678,7 +678,7 @@ export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessCo
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Total blends" value={totalBatches} accent={palette.leaf} />
-        {totalWeightOz > 0 && <StatCard label="Total weight" value={`${totalWeightOz.toFixed(1)} oz`} accent={palette.yolk} />}
+        {totalWeightOz > 0 && <StatCard label="Total weight" value={fmtSmallWeight(totalWeightOz)} accent={palette.yolk} />}
         {totalSachetsMade > 0 && <StatCard label="Sachets made" value={totalSachetsMade} accent={palette.feather} />}
         {totalCost > 0 && <StatCard label="Ingredients spent" value={fmtMoney(totalCost)} accent={palette.accent} />}
       </div>
@@ -713,7 +713,7 @@ export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessCo
             <BarChart data={chart}>
               <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
               <YAxis stroke={palette.inkSoft} fontSize={11} />
-              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={(v) => `${v} oz`} />
+              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={(v) => fmtSmallWeight(v)} />
               <Bar dataKey="oz" fill={palette.leaf} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

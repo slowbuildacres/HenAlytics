@@ -1715,7 +1715,7 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { useSupportProgress } from "./newlook/supportProgress.js";
 import { tidyData } from "./tidyData.js";
@@ -12498,7 +12498,8 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
     const p = h.plant || "Unknown";
     byPlant[p] = (byPlant[p] || 0) + w;
   });
-  const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value }));
+  // Shown in the homestead's unit (lbs or kg).
+  const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value: Math.round(weightFromLbs(value) * 10) / 10 }));
 
   // Full per-plant breakdown across ALL units — used by the "Harvest by
   // plant" list below the bar chart so users see cucumbers/squash/etc.
@@ -12619,7 +12620,7 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
       </div>
 
       {plantData.length > 0 && (
-        <ChartCard title="Harvest by crop">
+        <ChartCard title={`Harvest by crop (${weightUnitLabel()})`}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={plantData}>
               <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
@@ -16580,7 +16581,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
         </Field>
       </div>
 
-      <Field label="Purchase cost ($)">
+      <Field label={`Purchase cost (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"
@@ -16815,7 +16816,7 @@ function RefillPantryModal({ data, update, item, onClose }) {
         />
       </Field>
 
-      <Field label="New purchase cost ($)">
+      <Field label={`New purchase cost (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"
@@ -18290,7 +18291,7 @@ function AddFlockModal({ hobbyId, update, onClose }) {
         <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Where purchased (optional)">
         <input style={inputStyle()} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
@@ -19145,7 +19146,7 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
         <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Total cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Where purchased (optional)">
         <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
@@ -19387,7 +19388,7 @@ function EditFlockEntryModalBody({ hobby, index, update, onClose }) {
         <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -19579,7 +19580,7 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
         <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Btn variant="primary" onClick={save}>Save changes</Btn>
       {/* Finalize / Delete row — separated visually from the primary save
@@ -19785,7 +19786,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
       return false;
     }
     const n = parseInt(count);
-    const w = parseFloat(avgWeight);
+    const w = isNaN(parseFloat(avgWeight)) ? NaN : lbsFromInput(avgWeight);
     if (!count || isNaN(n) || n <= 0) {
       setValidationError(`Enter the number of birds (must be greater than 0).`);
       return false;
@@ -19880,7 +19881,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
           {/* Weight is required only for butcher; optional but useful for sold/rehomed
               if user wants to track average growth. */}
           {isButcher ? (
-            <Field label="Average weight (lbs)">
+            <Field label={`Average weight (${weightUnitLabel()})`}>
               <input
                 type="number" inputMode="decimal"
                 step="0.01"
@@ -19891,7 +19892,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
               />
             </Field>
           ) : (
-            <Field label="Average weight (lbs, optional)">
+            <Field label={`Average weight (${weightUnitLabel()}, optional)`}>
               <input
                 type="number" inputMode="decimal"
                 step="0.01"
@@ -20002,7 +20003,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
                 return;
               }
               const n = parseInt(count);
-              const w = parseFloat(avgWeight);
+              const w = isNaN(parseFloat(avgWeight)) ? NaN : lbsFromInput(avgWeight);
               const entryId = newId();
               const wantImmediate = alsoFinalize && willEmptyBatch;
               update((d) => {
@@ -20142,7 +20143,8 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
   const [cupsPerLb, setCupsPerLb] = useState(String((ft && ft.cupsPerLb) || 4));
   const [warnDays, setWarnDays] = useState(String((ft && ft.warnDays) || 5));
   const status = enabled ? computeFeedStatus(hobby, entries) : null;
-  const lbsNum = parseFloat(lbs);
+  // Typed in lbs or kg; stored in lbs.
+  const lbsNum = isNaN(parseFloat(lbs)) ? NaN : lbsFromInput(lbs);
   const lbsOk = !isNaN(lbsNum) && lbsNum >= 0;
 
   const patchTracker = (fn) => {
@@ -20214,7 +20216,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
         <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, marginBottom: 14 }}>
           Tell Henalytics how much feed you have, and your regular feed logs do the rest — it learns how fast you go through it, shows days remaining, estimates the empty date, and drops a heads-up on your calendar (and weekly chore email) about {(Number(warnDays) || 5)} days before you run out. A standard bag is 50 lbs.
         </div>
-        <Field label="Feed on hand right now (lbs)">
+        <Field label={`Feed on hand right now (${weightUnitLabel()})`}>
           <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 75" autoFocus />
         </Field>
         <Btn variant="accent" onClick={startTracking} disabled={!lbsOk} style={{ width: "100%" }}>Start tracking</Btn>
@@ -20235,8 +20237,8 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
     <Modal open onClose={onClose} title="🌾 Feed supply">
       {status && (
         <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-          <strong style={{ color: palette.ink }}>{Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand</strong>
-          {status.state !== "learning" && <> · ~{status.dailyBurnLbs.toFixed(1)} lbs/day · empty ~{status.runOutDate}</>}
+          <strong style={{ color: palette.ink }}>{fmtWeight(Math.max(0, status.remainingLbs), { decimals: 0, forceBig: true })} on hand</strong>
+          {status.state !== "learning" && <> · ~{fmtWeight(status.dailyBurnLbs, { forceBig: true })}/day · empty ~{status.runOutDate}</>}
           {status.state === "learning" && <> · still learning your burn rate</>}
         </div>
       )}
@@ -20248,7 +20250,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
 
       {mode === "add" && (
         <>
-          <Field label="Feed added (lbs)">
+          <Field label={`Feed added (${weightUnitLabel()})`}>
             <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 50" autoFocus />
           </Field>
           <Field label="Cost (optional — logs a Feed expense)">
@@ -20263,7 +20265,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
           <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
             If the estimate has drifted from what's actually in the bin, set the real number and the tracker re-anchors from now.
           </div>
-          <Field label="Feed on hand right now (lbs)">
+          <Field label={`Feed on hand right now (${weightUnitLabel()})`}>
             <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 60" />
           </Field>
           <Btn variant="accent" onClick={recount} disabled={!lbsOk} style={{ width: "100%" }}>Save recount</Btn>
@@ -20651,12 +20653,12 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       {/* Average weight only matters for butcher (freezer log) and is optional
           for everything else. Keep it accessible for sold-for-meat scenarios. */}
       {isButcher && (
-        <Field label="Average weight (lbs)">
+        <Field label={`Average weight (${weightUnitLabel()})`}>
           <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
         </Field>
       )}
       {!isButcher && (
-        <Field label="Average weight (lbs, optional)">
+        <Field label={`Average weight (${weightUnitLabel()}, optional)`}>
           <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
         </Field>
       )}
@@ -20705,7 +20707,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
             return;
           }
           const n = parseInt(count);
-          const w = parseFloat(avgWeight);
+          const w = isNaN(parseFloat(avgWeight)) ? NaN : lbsFromInput(avgWeight);
           if (!count || isNaN(n) || n < 1) {
             setValidationError("Enter the number of birds (must be greater than 0).");
             return;
@@ -22449,13 +22451,13 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               placeholder="0"
             />
           </Field>
-          <Field label="Average weight (lbs)">
+          <Field label={`Average weight (${weightUnitLabel()})`}>
             <input
               type="number" inputMode="decimal"
               step="0.01"
               style={inputStyle()}
-              value={fields.avgWeight || ""}
-              onChange={(e) => set("avgWeight", e.target.value)}
+              value={fields.avgWeight ? lbsToInput(fields.avgWeight) : ""}
+              onChange={(e) => set("avgWeight", e.target.value === "" ? "" : String(lbsFromInput(e.target.value)))}
               placeholder="0.0"
             />
           </Field>
@@ -22539,7 +22541,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           <Field label="Number of units">
             <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.unitQty || ""} onChange={(e) => set("unitQty", e.target.value)} placeholder="how many" />
           </Field>
-          <Field label="Price per unit ($)">
+          <Field label={`Price per unit (${currencySymbol()})`}>
             <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
           </Field>
           {/* Customer picker — mirrors the Sales tab. Pick an existing
@@ -22677,7 +22679,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           <Field label="What was built / repaired / bought?">
             <input style={inputStyle()} value={fields.item || ""} onChange={(e) => set("item", e.target.value)} placeholder="new coop, run extension, fencing..." />
           </Field>
-          <Field label="Cost ($)">
+          <Field label={`Cost (${currencySymbol()})`}>
             <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
           <Field label="Notes (optional)">

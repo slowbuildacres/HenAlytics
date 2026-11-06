@@ -171,6 +171,34 @@ export function lbsFromInput(n) {
   return _currentWeightUnit === "kg" ? v * LBS_PER_KG : v;
 }
 
+// ---- Form fields -------------------------------------------------------------
+// A stored value written in the person's unit for an input box (rounded for
+// typing, "" when empty), and the typed value back in storage units.
+const r2 = (n) => Math.round(n * 100) / 100;
+const blank = (v) => v === null || v === undefined || v === "" || isNaN(Number(v));
+export function lbsToInput(lbs) { return blank(lbs) ? "" : String(r2(weightFromLbs(lbs))); }
+// Prices per weight (meat sold by the pound): per lb or per kg.
+export function perWeightLabel() { return _currentWeightUnit === "kg" ? "kg" : "lb"; }
+export function perLbToInput(p) { return blank(p) ? "" : String(r2(_currentWeightUnit === "kg" ? Number(p) * LBS_PER_KG : Number(p))); }
+export function perLbFromInput(v) { const n = Number(v) || 0; return _currentWeightUnit === "kg" ? n / LBS_PER_KG : n; }
+// Small weights stored in ounces (salve wax, tea, dried output): oz or g.
+const G_PER_OZ = 28.3495;
+export function smallWeightLabel() { return _currentWeightUnit === "kg" ? "g" : "oz"; }
+export function ozToInput(oz) { return blank(oz) ? "" : String(_currentWeightUnit === "kg" ? Math.round(Number(oz) * G_PER_OZ) : r2(Number(oz))); }
+export function ozToKg(oz) { return (Number(oz) || 0) * G_PER_OZ / 1000; }
+export function ozFromInput(v) { const n = Number(v) || 0; return _currentWeightUnit === "kg" ? n / G_PER_OZ : n; }
+// Show a small weight stored in ounces: "12 oz" / "1.5 lb" (US), "340 g" / "1.2 kg".
+export function fmtSmallWeight(oz) {
+  const n = Number(oz) || 0;
+  if (_currentWeightUnit === "kg") { const g = n * G_PER_OZ; return Math.abs(g) >= 1000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`; }
+  return Math.abs(n) >= 16 ? `${(n / 16).toFixed(1)} lb` : `${Math.round(n * 10) / 10} oz`;
+}
+// Liquids stored in fluid ounces (milk, tinctures, oils): fl oz or ml.
+const ML_PER_FLOZ = 29.5735;
+export function flozLabel() { return _currentVolumeUnit === "L" ? "ml" : "fl oz"; }
+export function flozToInput(fl) { return blank(fl) ? "" : String(_currentVolumeUnit === "L" ? Math.round(Number(fl) * ML_PER_FLOZ) : r2(Number(fl))); }
+export function flozFromInput(v) { const n = Number(v) || 0; return _currentVolumeUnit === "L" ? n / ML_PER_FLOZ : n; }
+
 // ============================================================================
 // VOLUME
 // ----------------------------------------------------------------------------
@@ -215,6 +243,8 @@ export function volumeFromGal(gal) {
   const n = Number(gal) || 0;
   return _currentVolumeUnit === "L" ? n * L_PER_GAL : n;
 }
+
+export function galToInput(gal) { return gal === null || gal === undefined || gal === "" || isNaN(Number(gal)) ? "" : String(Math.round(volumeFromGal(gal) * 100) / 100); }
 
 export function galFromInput(n) {
   const v = Number(n) || 0;

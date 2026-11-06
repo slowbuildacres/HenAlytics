@@ -33,7 +33,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, flozToInput, flozFromInput, flozLabel, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -309,7 +309,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         </div>
       </div>
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
@@ -403,7 +403,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
     }
     return [{ id: newId(), sizeSel: "4oz", customSize: "", count: "" }];
   });
-  const [totalYieldOz, setTotalYieldOz] = useState(batch.totalYieldOz ? String(batch.totalYieldOz) : "");
+  const [totalYieldOz, setTotalYieldOz] = useState(batch.totalYieldOz ? flozToInput(batch.totalYieldOz) : "");
 
   const resolveSize = (r) => (r.sizeSel === "custom" ? (r.customSize.trim() || "custom") : r.sizeSel);
   const totalMade = rows.reduce((s, r) => s + (Number(r.count) || 0), 0);
@@ -433,7 +433,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
         b.bottlesMade = made;
         b.bottlesRemaining = Math.max(0, made - soldSoFar);
         b.bottleSize = containers.length === 1 ? containers[0].size : "mixed";
-        b.totalYieldOz = Number(totalYieldOz) || 0;
+        b.totalYieldOz = flozFromInput(totalYieldOz);
         b.status = "bottled";
         b.events = b.events || [];
         b.events.push({
@@ -483,7 +483,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
           Mix sizes freely — e.g. a few 4 oz bottles plus a 16 oz jar. Total: <strong>{totalMade}</strong> container{totalMade === 1 ? "" : "s"}.
         </div>
       </Field>
-      <Field label="Total yield in fl oz (optional)">
+      <Field label={`Total yield in ${flozLabel()} (optional)`}>
         <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 16.5" />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
           For analytics. Helps track recovery rate per batch. Decimals are fine (e.g. 5.5).
@@ -569,7 +569,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per bottle">
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerBottle} onChange={e => setPricePerBottle(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerBottle} onChange={e => setPricePerBottle(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </div>
       </div>

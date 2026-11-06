@@ -14,7 +14,7 @@ import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/lives
 import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
 import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
-import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, fmtMoney as fmtMoneyIntl } from "./units.js";
+import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, fmtMoney as fmtMoneyIntl, flozLabel, flozFromInput, currencySymbol } from "./units.js";
 import { photosOf, profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
@@ -413,7 +413,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         <div style={{flex:1}}><Field label="Sex"><select style={inputStyle()} value={sex} onChange={e=>setSex(e.target.value)}>{GOAT_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
       </div>
       <Field label="Date of birth (optional)"><input type="date" style={inputStyle()} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
-      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, ear tag, any notes..."/></Field>
 
       {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers
@@ -638,7 +638,7 @@ function FedGoatModal({ hobby, hobbyId, update, onClose }) {
           </Field>
         );
       })()}
-      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -788,7 +788,7 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose, initialAnimalId = null
       d.entries[hobbyId].push({
         id: newId(), date, action: "milk",
         animalId, animalName: a?.name || "",
-        oz: Number(oz) || 0,
+        oz: flozFromInput(oz),
         notes: notes.trim(),
         created: Date.now(),
       });
@@ -810,12 +810,12 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose, initialAnimalId = null
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.purpose?` · ${a.purpose}`:""}</option>)}
         </select>
       </Field>
-      <Field label="Milk collected (oz)">
+      <Field label={`Milk collected (${flozLabel()})`}>
         <input type="number" min={0} step="0.1" style={inputStyle()} value={oz}
           onChange={e=>setOz(e.target.value)} placeholder="0" inputMode="decimal"/>
         {oz && (
           <div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>
-            {isMetricV ? fmtVolume(Number(oz)/128) : `${(Number(oz)/128).toFixed(2)} gallons`}
+            {isMetricV ? fmtVolume(flozFromInput(oz)/128) : `${(Number(oz)/128).toFixed(2)} gallons`}
           </div>
         )}
       </Field>
@@ -1059,7 +1059,7 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
               <input type="number" min={0} step="0.1" style={inputStyle()} value={shownW}
                 onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
             </Field>
-            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+            <Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
           </>
         );
       })()}
@@ -1067,7 +1067,7 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
       {reason === "sold" && (
         <>
           <Field label="Buyer (optional)"><input style={inputStyle()} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
-          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
         </>
       )}
 
@@ -1125,7 +1125,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const[saleType,setSaleType]=useState("sold");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
-    if(action==="milk")entry.oz=Number(oz)||0;
+    if(action==="milk")entry.oz=flozFromInput(oz);
     if(action==="fed"){entry.lbs=Number(lbs)||0;entry.cost=Number(cost)||0;}
     if(action==="kid")entry.count=Number(count)||1;
     if(action==="weight"||action==="butcher")entry.weight=Number(weight)||0;
@@ -1192,12 +1192,12 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
         // gallons hint. The input value stays in oz (canonical) — only the
         // helper text adapts. (oz → mL ≈ ×29.5735)
         const isMetricV=getCurrentVolumeUnit()==="L";
-        return <Field label="Milk collected (oz)"><input type="number" min={0} step="0.1" style={inputStyle()} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus/>{oz&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{isMetricV?fmtVolume(Number(oz)/128):`${(Number(oz)/128).toFixed(2)} gallons`}</div>}</Field>;
+        return <Field label={`Milk collected (${flozLabel()})`}><input type="number" min={0} step="0.1" style={inputStyle()} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus/>{oz&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{isMetricV?fmtVolume(flozFromInput(oz)/128):`${(Number(oz)/128).toFixed(2)} gallons`}</div>}</Field>;
       })()}
       {action==="fed"&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
-        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></div></div>;
       })()}
       {action==="kid"&&<Field label="Kids born (count)"><input type="number" min={1} style={inputStyle()} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
       {(action==="weight"||action==="butcher")&&(()=>{
@@ -1205,7 +1205,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
         return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
       })()}
-      {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
+      {action==="butcher"&&<Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>}
       {isDeath&&<Field label="Cause (optional)"><input style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
         <Field label="Type"><select style={inputStyle()} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
@@ -1230,7 +1230,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
             </div>
           )}
         </Field>
-        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+        {saleType!=="rehomed"&&<Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>}
       </>}
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list. You can restore from there if this was a mistake.</div>}

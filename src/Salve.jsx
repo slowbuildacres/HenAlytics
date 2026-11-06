@@ -28,7 +28,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, ozToInput, ozFromInput, flozToInput, flozFromInput, smallWeightLabel, flozLabel, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -143,13 +143,13 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const [name, setName] = useState(batch?.name || "");
   const [recipe, setRecipe] = useState(batch?.recipe || "");
   const [infusedOilUsed, setInfusedOilUsed] = useState(batch?.infusedOilUsed || "");
-  const [beeswaxOz, setBeeswaxOz] = useState(batch?.beeswaxOz ? String(batch.beeswaxOz) : "");
-  const [butterOz, setButterOz] = useState(batch?.butterOz ? String(batch.butterOz) : "");
+  const [beeswaxOz, setBeeswaxOz] = useState(batch?.beeswaxOz ? ozToInput(batch.beeswaxOz) : "");
+  const [butterOz, setButterOz] = useState(batch?.butterOz ? ozToInput(batch.butterOz) : "");
   const [essentialOils, setEssentialOils] = useState(batch?.essentialOils || "");
   const [pouredDate, setPouredDate] = useState(batch?.pouredDate || todayIso());
   const [tinsMade, setTinsMade] = useState(batch?.tinsMade ? String(batch.tinsMade) : "");
   const [tinSize, setTinSize] = useState(batch?.tinSize || "1oz");
-  const [totalYieldOz, setTotalYieldOz] = useState(batch?.totalYieldOz ? String(batch.totalYieldOz) : "");
+  const [totalYieldOz, setTotalYieldOz] = useState(batch?.totalYieldOz ? flozToInput(batch.totalYieldOz) : "");
   const [ingredientsCost, setIngredientsCost] = useState(batch?.ingredientsCost ? String(batch.ingredientsCost) : "");
   const [notes, setNotes] = useState(batch?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -167,8 +167,8 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         name: name.trim() || recipe.trim(),
         recipe: recipe.trim(),
         infusedOilUsed: infusedOilUsed.trim(),
-        beeswaxOz: Number(beeswaxOz) || 0,
-        butterOz: Number(butterOz) || 0,
+        beeswaxOz: ozFromInput(beeswaxOz),
+        butterOz: ozFromInput(butterOz),
         essentialOils: essentialOils.trim(),
         pouredDate,
         tinsMade: made,
@@ -176,7 +176,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
           ? batch.tinsRemaining + (made - (batch?.tinsMade || 0))
           : made,
         tinSize,
-        totalYieldOz: Number(totalYieldOz) || 0,
+        totalYieldOz: flozFromInput(totalYieldOz),
         ingredientsCost: Number(ingredientsCost) || 0,
         notes: notes.trim(),
         events: batch?.events || [{ id: newId(), kind: "poured", date: pouredDate, note: made > 0 ? `${made} × ${tinSize}` : "" }],
@@ -218,12 +218,12 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Beeswax (oz)">
+          <Field label={`Beeswax (${smallWeightLabel()})`}>
             <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={beeswaxOz} onChange={e => setBeeswaxOz(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Butters (oz)">
+          <Field label={`Butters (${smallWeightLabel()})`}>
             <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={butterOz} onChange={e => setButterOz(e.target.value)} placeholder="0" />
             <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, lineHeight: 1.3 }}>Shea, cocoa, mango, etc.</div>
           </Field>
@@ -249,11 +249,11 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
           </Field>
         </div>
       </div>
-      <Field label="Total yield in fl oz (optional)">
+      <Field label={`Total yield in ${flozLabel()} (optional)`}>
         <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 8" />
       </Field>
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
@@ -355,7 +355,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per tin">
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerTin} onChange={e => setPricePerTin(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerTin} onChange={e => setPricePerTin(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </div>
       </div>

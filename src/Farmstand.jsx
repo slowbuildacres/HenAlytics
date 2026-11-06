@@ -19,7 +19,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney, fmtMoneyWhole } from "./units.js";
+import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -173,12 +173,12 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
           <div style={{ display:"flex",gap:12 }}>
             <div style={{ flex:1 }}>
               <Field label="Cost to make / per unit">
-                <input type="number" step="0.01" min={0} style={inputStyle()} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} placeholder="$0.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
               </Field>
             </div>
             <div style={{ flex:1 }}>
               <Field label="Sale price / per unit">
-                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
               </Field>
             </div>
           </div>
@@ -599,8 +599,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
           <Field label="What was built / repaired / bought?">
             <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. roadside stand, signage, payment box" autoFocus />
           </Field>
-          <Field label="Cost ($)">
-            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+          <Field label={`Cost (${currencySymbol()})`}>
+            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
           <Field label="Notes (optional)">
             <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />

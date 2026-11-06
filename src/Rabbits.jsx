@@ -45,7 +45,7 @@ import { RabbitToday, RabbitHerd, RabbitProfile } from "./newlook/rabbits/Rabbit
 import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
 import { showUndo } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
-import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, fmtMoney as fmtMoneyIntl } from "./units.js";
+import { fmtWeight, fmtCups, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, fmtMoney as fmtMoneyIntl, lbsToInput, currencySymbol } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 import { groupDigits } from "./numFmt.js";
 
@@ -440,7 +440,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
       <Field label="Birthdate (optional)"><input type="date" style={inputStyle()} value={birthdate} onChange={e=>setBirthdate(e.target.value)}/></Field>
       <Field label="Hutch / location (optional)"><input style={inputStyle()} value={hutch} onChange={e=>setHutch(e.target.value)} placeholder="e.g. Hutch 1, East run, Colony A"/></Field>
       <div style={{display:"flex",gap:12}}>
-        <div style={{flex:1}}><Field label="Purchase cost (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$"/></Field></div>
+        <div style={{flex:1}}><Field label="Purchase cost (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}`}/></Field></div>
         <div style={{flex:1}}><Field label="Purchased from (optional)"><input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, friend, etc"/></Field></div>
       </div>
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, temperament..."/></Field>
@@ -666,7 +666,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
               return <input type="number" min={0} step="0.1" style={inputStyle()} value={shown} onChange={e=>{const r=e.target.value;if(isCups){setLbs(r);return;}if(r===""){setLbs("");return;}setLbs(metricW?String(lbsFromInput(r)):r);}} placeholder={ph} autoFocus/>;
             })()}
           </Field>
-          <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
           {/* FEAT6-FED: log this feeding for the whole herd instead of
               just this animal. */}
           <Field label="Who is this for?">
@@ -711,8 +711,8 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
       )}
       {action==="butcher" && (
         <>
-          <Field label="Hanging weight (lbs)"><input type="number" min={0} step="0.1" style={inputStyle()} value={weight} onChange={e=>setWeight(e.target.value)} placeholder="0" autoFocus/></Field>
-          <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label={`Hanging weight (${weightUnitLabel()})`}><input type="number" min={0} step="0.1" style={inputStyle()} value={weight===""?"":lbsToInput(weight)} onChange={e=>{const r=e.target.value;setWeight(r===""?"":String(lbsFromInput(r)));}} placeholder="0" autoFocus/></Field>
+          <Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
         </>
       )}
       {action==="death" && (
@@ -732,7 +732,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
             </select>
           </Field>
           <Field label="Buyer / new home (optional)"><input style={inputStyle()} value={saleBuyer} onChange={e=>setSaleBuyer(e.target.value)} placeholder="Name of buyer" autoFocus/></Field>
-          {saleType!=="rehomed" && <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+          {saleType!=="rehomed" && <Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>}
         </>
       )}
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
@@ -907,7 +907,7 @@ function FedRabbitModal({ hobby, hobbyId, update, onClose }) {
           return <input type="number" min={0} step="0.1" style={inputStyle()} value={shown} onChange={e=>{const r=e.target.value;if(isCups){setLbs(r);return;}if(r===""){setLbs("");return;}setLbs(metricW?String(lbsFromInput(r)):r);}} placeholder={ph}/>;
         })()}
       </Field>
-      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+      <Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -1355,7 +1355,7 @@ function RemoveRabbitModal({ hobby, hobbyId, update, onClose }) {
               <input type="number" min={0} step="0.1" style={inputStyle()} value={shownW}
                 onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
             </Field>
-            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+            <Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
           </>
         );
       })()}
@@ -1363,7 +1363,7 @@ function RemoveRabbitModal({ hobby, hobbyId, update, onClose }) {
       {reason === "sold" && (
         <>
           <Field label="Buyer (optional)"><input style={inputStyle()} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
-          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
         </>
       )}
 

@@ -6,7 +6,7 @@ import { showUndo } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { X, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -144,7 +144,7 @@ function HiveModal({ hive, onSave, onClose }) {
           <div style={{ display:"flex",gap:12 }}>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive cost (optional)</div>
-              <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+              <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}`} />
             </label>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Where from (optional)</div>
@@ -333,7 +333,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Revenue (optional)</div>
-              <input style={inputStyle()} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder="$0.00" />
+              <input style={inputStyle()} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
@@ -354,7 +354,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
                 <input style={inputStyle()} type="number" min={0} step="0.1" value={feedQty} onChange={e=>setFeedQty(e.target.value)} placeholder="0" />
               </label>
               <label style={{ flex:1 }}>
-                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
+                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ({currencySymbol()})</div>
                 <input style={inputStyle()} type="number" min={0} step="0.01" value={feedCost} onChange={e=>setFeedCost(e.target.value)} placeholder="0.00" />
               </label>
             </div>
@@ -373,7 +373,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
                 <input style={inputStyle()} type="number" min={0} step="0.1" value={miteCount} onChange={e=>setMiteCount(e.target.value)} placeholder="0" />
               </label>
               <label style={{ flex:1 }}>
-                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
+                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ({currencySymbol()})</div>
                 <input style={inputStyle()} type="number" min={0} step="0.01" value={treatmentCost} onChange={e=>setTreatmentCost(e.target.value)} placeholder="0.00" />
               </label>
             </div>
@@ -420,7 +420,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
               <input style={inputStyle()} value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. New super, frames, hive stand..." />
             </label>
             <label style={{ display:"block" }}>
-              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ({currencySymbol()})</div>
               <input style={inputStyle()} type="number" min={0} step="0.01" value={infraCost} onChange={e=>setInfraCost(e.target.value)} placeholder="0.00" />
             </label>
           </>}

@@ -22,7 +22,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3 } from "lucide-react";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, lbsFromInput, weightUnitLabel, currencySymbol } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 // NEW_LOOK (3.0): the rebuilt horse screens reuse this file's forms.
@@ -454,7 +454,7 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Purchase cost (optional)">
-            <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+            <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}`} />
           </Field>
         </div>
         <div style={{ flex:1 }}>
@@ -646,7 +646,7 @@ function HorseFeedModal({ onSave, onClose }) {
       <Field label="Date">
         <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
-      <Field label="Feed amount (lbs — hay, grain, or both)">
+      <Field label={`Feed amount (${weightUnitLabel()}, hay, grain or both)`}>
         <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 40" autoFocus />
       </Field>
       <Field label="Cost (optional)">
@@ -664,7 +664,7 @@ function HorseFeedModal({ onSave, onClose }) {
               id: newId(),
               date,
               action: "fed",
-              lbs: lbsNum,
+              lbs: lbsFromInput(lbsNum),
               cost: parseFloat(cost) || 0,
               notes: notes.trim(),
               created: Date.now(),
@@ -802,7 +802,7 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose, initialHor
         </Field>
       )}
       <Field label="Cost (optional)">
-        <input type="number" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+        <input type="number" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle(),minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Observations, follow-up needed..." />
@@ -983,8 +983,8 @@ function HorseSaleModal({ horse, horses, onClose, onSave, customers = [] }) {
         )}
       </Field>
       {saleType !== "rehomed" && (
-        <Field label="Price ($)">
-          <input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder="$0.00" />
+        <Field label={`Price (${currencySymbol()})`}>
+          <input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
         </Field>
       )}
       <Field label="Notes (optional)">

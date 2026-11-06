@@ -22,7 +22,7 @@ import React, { useState } from "react";
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Tag as NlTag, DollarSign as NlDollar } from "lucide-react";
 import { X } from "lucide-react";
-import { fmtMoney, fmtWeight } from "./units.js";
+import { fmtMoney, fmtWeight, lbsToInput, lbsFromInput, weightUnitLabel, currencySymbol, perWeightLabel, perLbToInput } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 
@@ -139,8 +139,8 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
   const [tagId, setTagId] = useState(harvest?.tagId || "");
   const [weapon, setWeapon] = useState(harvest?.weapon || "Rifle");
   const [location, setLocation] = useState(harvest?.location || "");
-  const [fieldDressedLbs, setFieldDressedLbs] = useState(harvest?.fieldDressedLbs ? String(harvest.fieldDressedLbs) : "");
-  const [meatLbs, setMeatLbs] = useState(harvest?.meatLbs ? String(harvest.meatLbs) : "");
+  const [fieldDressedLbs, setFieldDressedLbs] = useState(harvest?.fieldDressedLbs ? lbsToInput(harvest.fieldDressedLbs) : "");
+  const [meatLbs, setMeatLbs] = useState(harvest?.meatLbs ? lbsToInput(harvest.meatLbs) : "");
   const [processingCost, setProcessingCost] = useState(harvest?.processingCost ? String(harvest.processingCost) : "");
   const [processedBy, setProcessedBy] = useState(harvest?.processedBy || "self");
   const [notes, setNotes] = useState(harvest?.notes || "");
@@ -149,8 +149,8 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
     onSave({
       id: harvest?.id || newId(), date, species, sex, tagId: tagId || null, weapon,
       location: location.trim(),
-      fieldDressedLbs: parseFloat(fieldDressedLbs) || 0,
-      meatLbs: parseFloat(meatLbs) || 0,
+      fieldDressedLbs: lbsFromInput(fieldDressedLbs),
+      meatLbs: lbsFromInput(meatLbs),
       processingCost: parseFloat(processingCost) || 0,
       processedBy, notes: notes.trim(),
       created: harvest?.created || Date.now(),
@@ -189,8 +189,8 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
       </Field>
       <Field label="Location (optional)"><input style={inputStyle()} value={location} onChange={e => setLocation(e.target.value)} placeholder="Back 40, public land unit 12…" /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Field-dressed lbs"><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={fieldDressedLbs} onChange={e => setFieldDressedLbs(e.target.value)} placeholder="optional" /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Meat packaged (lbs)"><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={meatLbs} onChange={e => setMeatLbs(e.target.value)} placeholder="can add later" /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Field-dressed ${weightUnitLabel()}`}><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={fieldDressedLbs} onChange={e => setFieldDressedLbs(e.target.value)} placeholder="optional" /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Meat packaged (${weightUnitLabel()})`}><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={meatLbs} onChange={e => setMeatLbs(e.target.value)} placeholder="can add later" /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Processed by">
@@ -198,7 +198,7 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
             <option value="self">Myself</option><option value="processor">Processor</option>
           </select>
         </Field></div>
-        <div style={{ flex: 1 }}><Field label="Processing cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={processingCost} onChange={e => setProcessingCost(e.target.value)} placeholder="0" /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Processing cost (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={processingCost} onChange={e => setProcessingCost(e.target.value)} placeholder="0" /></Field></div>
       </div>
       <Field label="Notes (optional)"><textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Points, conditions, cuts you got…" /></Field>
       <DeleteRow canDelete={!!harvest} onDelete={() => { onDelete(harvest.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!date} />
@@ -232,7 +232,7 @@ function TagModal({ tag, onSave, onDelete, onClose }) {
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Season"><input style={inputStyle()} value={seasonYear} onChange={e => setSeasonYear(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Cost (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Bought"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} /></Field></div>
@@ -259,7 +259,7 @@ function GearModal({ item, onSave, onDelete, onClose }) {
       <Field label="Item"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tree stand, box of .308, game bags" autoFocus /></Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Category"><select style={inputStyle()} value={category} onChange={e => setCategory(e.target.value)}>{GEAR_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Cost (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
       </div>
       <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field>
       <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
@@ -489,7 +489,7 @@ export function huntingStats(hobby, data, range = "year") {
       { label: "Harvests", value: t.harvests.length, sub: rows.map((r) => r.name).slice(0, 3).join(", ") },
       { label: "Meat", value: t.meatLbs ? fmtWeight(t.meatLbs) : "—", sub: t.meatLbs ? `store value ${fmtMoney(t.storeValue)}` : "" },
       { label: "Spent", value: fmtMoney(t.totalCost), sub: "Tags, gear, processing" },
-      { label: "Cost per lb", value: t.meatLbs ? fmtMoney(t.costPerLb) : "—", sub: `vs. ${fmtMoney(t.valuePerLb)} at the store` },
+      { label: `Cost per ${perWeightLabel()}`, value: t.meatLbs ? fmtMoney(perLbToInput(t.costPerLb)) : "—", sub: `vs. ${fmtMoney(perLbToInput(t.valuePerLb))} at the store` },
     ],
     bars: rows.length ? { title: "Meat by species", right: range === "all" ? "All time" : year, rows } : null,
     facts, emoji: "🦌", kicker: "Our hunt",

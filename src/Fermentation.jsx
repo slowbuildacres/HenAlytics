@@ -32,7 +32,7 @@ import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus a
 import { X, Plus, Trash2 } from "lucide-react";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
-import { fmtMoney, tempFromF, fFromInput, tempUnitLabel, tempHint, fmtTemp } from "./units.js";
+import { fmtMoney, tempFromF, fFromInput, tempUnitLabel, tempHint, fmtTemp, currencySymbol } from "./units.js";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -475,8 +475,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
       <Field label="What was built / repaired / bought?">
         <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. fermentation crocks, airlocks, weights" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />

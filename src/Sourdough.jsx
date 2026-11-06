@@ -23,7 +23,7 @@ import { showUndo, undoable } from "./newlook/UndoBar.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, Trash2, ChevronDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
 import { groupDigits } from "./numFmt.js";
@@ -341,8 +341,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
       <Field label="What was built / repaired / bought?">
         <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. proofing cabinet, new oven, banneton set" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />

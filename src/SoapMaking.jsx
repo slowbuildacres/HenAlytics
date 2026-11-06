@@ -22,7 +22,7 @@ import React, { useState } from "react";
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, DollarSign as NlDollar, Gift as NlGift } from "lucide-react";
 import { X, Trash2 } from "lucide-react";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 
 const palette = legacyPalette({
@@ -190,7 +190,7 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
             <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} value={i.name} onChange={e => setIng(i.id, "name", e.target.value)} placeholder="Olive oil" />
             <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} value={i.amount} onChange={e => setIng(i.id, "amount", e.target.value)} placeholder="Amt" />
             <select style={{ ...inputStyle(), padding: "8px 4px", fontSize: 13 }} value={i.unit} onChange={e => setIng(i.id, "unit", e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
-            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder="$" />
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder={`${currencySymbol()}`} />
             <button onClick={() => setIngredients(arr => arr.filter(x => x.id !== i.id))} aria-label="Remove ingredient" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 2 }}><Trash2 size={15} /></button>
           </div>
         ))}
@@ -274,7 +274,7 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
       </div>
       {mode === "sell" ? (
         <>
-          <Field label="Price per bar ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 7.00" /></Field>
+          <Field label={`Price per bar (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 7.00" /></Field>
           <Field label="Customer (optional)">
             <select style={inputStyle()} value={buyerId} onChange={e => { setBuyerId(e.target.value); setBuyer(""); }}>
               <option value="">— No customer / new below —</option>
