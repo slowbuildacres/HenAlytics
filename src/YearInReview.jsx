@@ -23,6 +23,7 @@ import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs, harvestLbs } f
 // so this static import does not form a cycle.
 import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES, countryFlag } from "./games.js";
 import { groupDigits } from "./numFmt.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -372,8 +373,8 @@ function GoalsCard({ data, update, year }) {
     cancelEdit();
   };
 
-  const deleteGoal = (goalId) => {
-    if (!confirm("Delete this goal?")) return;
+  const deleteGoal = async (goalId) => {
+    if (!(await askConfirm({ title: "Delete this goal?", confirmLabel: "Delete" }))) return;
     update(d => {
       d.goals = (d.goals || []).filter(x => x.id !== goalId);
       return d;

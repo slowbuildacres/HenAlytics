@@ -55,7 +55,7 @@ const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
 const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
-const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000)); /* PIGS_UNIFY_V1 */
+const addDays=(dateStr,days)=>{const d=parseLocalDate(dateStr);return localDateStr(new Date(d.getFullYear(),d.getMonth(),d.getDate()+days));}; /* PIGS_UNIFY_V1; calendar days, so a time change can't shift the date */
 
 const PIG_BREEDS=["Berkshire","Duroc","Hampshire","Yorkshire","Landrace","Tamworth","Spotted","Mangalitsa","Kunekune","Chester White","Poland China","American Guinea Hog","Mixed","Other"];
 const PIG_SEXES=["Sow","Boar","Barrow","Gilt","Piglet"];

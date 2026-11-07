@@ -23,6 +23,7 @@ import { farrierDue, rideTotals } from "./horses/horseData.js";
 import { hiveFacts } from "./bees/BeeScreens.jsx";
 import { runState, remaining as broodLeft } from "./incubator/IncubatorScreens.jsx";
 import { isoDay } from "./eggs/eggFacts.js";
+import { plusDays } from "../dayMath.js";
 
 const DAY = 86400000;
 const parseDay = (s) => { const p = String(s || "").split("-").map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); };
@@ -80,7 +81,7 @@ export function tileStat(entry, data, today) {
     // Farrier overdue first, then rides this week.
     const due = farrierDue(entry.hobby, today).filter((x) => x.left != null && x.left <= 7).sort((a, b) => a.left - b.left)[0];
     if (due) return { big: null, small: `${due.horse.name}'s feet ${due.left < 0 ? "are overdue" : "are due this week"}` };
-    const n = rideTotals(entry.hobby, isoDay(new Date(parseDay(today).getTime() - 6 * 86400000)), today).count;
+    const n = rideTotals(entry.hobby, isoDay(plusDays(parseDay(today), -6)), today).count;
     if (n) return { big: String(n), small: n === 1 ? "ride this week" : "rides this week" };
   }
   if (entry.type === "incubator") {

@@ -13,6 +13,7 @@ import { collectGardenHarvests, totalHarvestLbs, harvestLbs } from "../../analyt
 import { computeHarvestValue } from "../../gardenValue.js";
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
 import { fmtMoneyWhole, fmtWeight, weightUnitLabel } from "../../units.js";
+import { plusDays } from "../../dayMath.js";
 
 const key = (s) => String(s || "").trim().toLowerCase();
 const UNIT = { lbs: "lbs", oz: "oz", kg: "kg", g: "g", each: "each", count: "", cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches", quart: "quarts", pint: "pints" };
@@ -90,13 +91,13 @@ export function plantingWindows(data, today = isoDay(), limit = 3) {
   const t = parseDay(today);
   let f = frostFor(data, t.getFullYear());
   if (!f) return null;
-  if (f.lastFrost < new Date(t.getTime() - 60 * DAY)) f = frostFor(data, t.getFullYear() + 1);
+  if (f.lastFrost < plusDays(t, -60)) f = frostFor(data, t.getFullYear() + 1);
   const jobs = [];
   for (const c of CROPS) {
     const m = c.methods || {};
     const short = String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim();
-    if (m.indoor && m.indoor.weeksBeforeLastFrost != null) jobs.push({ when: new Date(f.lastFrost.getTime() - m.indoor.weeksBeforeLastFrost * 7 * DAY), verb: "Start indoors", crop: short });
-    else if (m.direct && m.direct.weeksRelativeToLastFrost != null) jobs.push({ when: new Date(f.lastFrost.getTime() + m.direct.weeksRelativeToLastFrost * 7 * DAY), verb: "Sow outside", crop: short });
+    if (m.indoor && m.indoor.weeksBeforeLastFrost != null) jobs.push({ when: plusDays(f.lastFrost, -(m.indoor.weeksBeforeLastFrost * 7)), verb: "Start indoors", crop: short });
+    else if (m.direct && m.direct.weeksRelativeToLastFrost != null) jobs.push({ when: plusDays(f.lastFrost, m.direct.weeksRelativeToLastFrost * 7), verb: "Sow outside", crop: short });
   }
   const groups = new Map();
   for (const j of jobs) {
@@ -169,7 +170,7 @@ export function gardenNewSeasonDue(hobby, data, today = isoDay()) {
   let start = `${year}-02-01`;
   const f = frostFor(data, year);
   if (f && f.lastFrost) {
-    const early = new Date(f.lastFrost.getTime() - 42 * DAY);
+    const early = plusDays(f.lastFrost, -42);
     const iso = isoDay(early);
     if (iso < start) start = iso;
   }

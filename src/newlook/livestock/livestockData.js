@@ -13,6 +13,7 @@
 
 import { isoDay, parseDay, prettyDay, DAY, costRows } from "../eggs/eggFacts.js";
 import { fmtVolume, volumeUnitLabel, fmtMoney, fmtMoneyWhole } from "../../units.js";
+import { plusDays } from "../../dayMath.js";
 
 export const SPECIES = {
   goats: {
@@ -101,7 +102,7 @@ export function milkText(o) {
   if (volumeUnitLabel() === "L" || v >= 128) return fmtVolume(v / 128);
   return `${Math.round(v)} oz`;
 }
-const addDays = (s, n) => isoDay(new Date(parseDay(s).getTime() + n * DAY));
+const addDays = (s, n) => isoDay(plusDays(parseDay(s), n));
 export const daysFrom = (a, b) => Math.round((parseDay(b) - parseDay(a)) / DAY);
 const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
 

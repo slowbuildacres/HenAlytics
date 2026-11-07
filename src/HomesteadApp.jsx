@@ -109,7 +109,8 @@ import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
 import { nextYearProject, nextYearLabel } from "./newlook/projects/projectData.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
 import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
-import { UndoHost, showUndo, undoable } from "./newlook/UndoBar.jsx";
+import { UndoHost, showUndo, undoable, UNDO_MS } from "./newlook/UndoBar.jsx";
+import { ConfirmHost, askConfirm } from "./newlook/ConfirmHost.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
 import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
 import { HobbyTabs, Legacy } from "./newlook/ui.jsx";
@@ -7041,6 +7042,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           )}
           <InfoSheet which={nlProjectInfo} onClose={() => setNlProjectInfo(null)} />
           <UndoHost />
+          <ConfirmHost />
           <HobbySwitcherSheet
             open={switcherOpen} onClose={() => setSwitcherOpen(false)}
             hobbies={data.hobbies} activeKey={activeEntry ? activeEntry.key : null}
@@ -7447,9 +7449,11 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
               hobbyType={hobby.type}
               onEdit={() => setModal({ type: "log", action: e.action, existingEntry: e })}
               onDelete={() => {
-                // Best-effort: clean up ALL photos from storage if there were any.
-                getEntryPhotos(e).forEach((p) => deletePhoto(p).catch(() => {}));
-                update((d) => {
+                // One tap, so Undo; photos leave storage only once Undo is gone.
+                const photos = getEntryPhotos(e);
+                let undone = false;
+                if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
+                undoable(update, `Deleted ${deletedLogName(e)}`, { onUndo: () => { undone = true; } })((d) => {
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
                   // For butcher entries, also remove the matching record from
                   // currentBatch.butchered (so remaining-birds math recovers)
@@ -7862,8 +7866,12 @@ function JournalPage({ data, update, setModal }) {
   // Also handles entries that live in archived batches' finalEntries
   // snapshot — the Journal surfaces those now, so deletion must reach them.
   const deleteEntry = (entry, hobby) => {
-    getEntryPhotos(entry).forEach((p) => deletePhoto(p).catch(() => {}));
-    update((d) => {
+    // Deleting is one tap, so it comes with Undo. The log's photos are only
+    // removed from storage once the Undo bar has gone without a tap.
+    const photos = getEntryPhotos(entry);
+    let undone = false;
+    if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
+    undoable(update, `Deleted ${deletedLogName(entry)}`, { onUndo: () => { undone = true; } })((d) => {
       // Wherever it lives: the live log, a finished batch or a closed season.
       removeEntryEverywhere(d, hobby.id, entry.id);
       if (entry.action === "butcher") {
@@ -8853,8 +8861,8 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
   // planted entries), we add a tombstone key to hobby.deletedAnnualKeys.
   // The tombstone is cleared automatically the next time the user logs a
   // planting under this name+season, so re-planting brings the annual back.
-  const deleteAnnual = () => {
-    if (!confirm(`Delete "${annual.name}" from your annuals list?\n\nYour plantings and harvests for this plant will stay in Recent Activity — only the annual list entry is removed.`)) return;
+  const deleteAnnual = async () => {
+    if (!(await askConfirm({ title: `Delete "${annual.name}" from your annuals list?`, message: "Your plantings and harvests for this plant stay in your logs. Only the list entry is removed.", confirmLabel: "Delete" }))) return;
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
@@ -8877,10 +8885,11 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
     setModal({ type: "log", action: entry.action, existingEntry: entry, hobbyIdOverride: hobbyId });
   };
   const deletePlantingOrHarvest = (entry) => {
-    if (!confirm(`Delete this ${entry.action === "planted" ? "planting" : "harvest"}?`)) return;
-    // Best-effort: clean up photos if any.
-    try { getEntryPhotos(entry).forEach(p => deletePhoto(p).catch(() => {})); } catch (_) {}
-    update(d => {
+    // Undo instead of "Are you sure?"; photos go once the Undo bar is gone.
+    let photos = []; try { photos = getEntryPhotos(entry); } catch (_) {}
+    let undone = false;
+    if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
+    undoable(update, `Deleted ${entry.action === "planted" ? "planting" : "harvest"}`, { onUndo: () => { undone = true; } })(d => {
       if (d.entries && Array.isArray(d.entries.garden)) {
         d.entries.garden = d.entries.garden.filter(x => x.id !== entry.id);
       }
@@ -9807,8 +9816,8 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
   const transplantRate = batch.germinated > 0
     ? Math.round((transplantedTotal / batch.germinated) * 100) : null;
 
-  const markFailed = () => {
-    if (!confirm("Mark this batch as failed? It will be archived.")) return;
+  const markFailed = async () => {
+    if (!(await askConfirm({ title: "Mark this batch as failed?", message: "It will be archived.", confirmLabel: "Mark failed" }))) return;
     update((d) => {
       const gh = d.hobbies.find((h) => h.id === hobbyId);
       if (!gh) return d;
@@ -9833,8 +9842,8 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
     });
   };
 
-  const deleteBatch = () => {
-    if (!confirm("Delete this seed-start batch? Transplants you've already logged will stay (they're real planting records now).")) return;
+  const deleteBatch = async () => {
+    if (!(await askConfirm({ title: "Delete this seed-start batch?", message: "Transplants you've already logged stay (they're real planting records now).", confirmLabel: "Delete" }))) return;
     update((d) => {
       const gh = d.hobbies.find((h) => h.id === hobbyId);
       if (!gh) return d;
@@ -11642,9 +11651,8 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      const msg = `Restore "${b.name}" to active batches? Any logged entries for this batch will come back too.`;
-                      if (typeof window !== "undefined" && window.confirm && !window.confirm(msg)) return;
+                    onClick={async () => {
+                      if (!(await askConfirm({ title: `Restore "${b.name}" to active batches?`, message: "Any logged entries for this batch come back too.", confirmLabel: "Restore", danger: false }))) return;
                       restorePastBatch(b.id);
                     }}
                     style={{
@@ -11734,6 +11742,15 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
       {pastBatchesSection}
     </div>
   );
+}
+
+// "Deleted egg log" — what the Undo bar calls a deleted log.
+function deletedLogName(e) {
+  const a = (e && e.action) || "";
+  const words = { eggs: "egg log", eggs_laid: "egg log", fed: "feeding", watered: "watering", harvested: "harvest", planted: "planting",
+    note: "note", death: "loss", butcher: "butcher log", sold_eggs: "egg sale", used_eggs: "egg log", milk: "milking", weight: "weight",
+    infrastructure: "build cost", bedding: "bedding log", issue: "issue", fertilized: "fertilizing" };
+  return words[a] || "log";
 }
 
 // ============ ACTIVITY ROW ============
@@ -11932,21 +11949,24 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
           </div>
         );
       })()}
+      {/* 44px targets: these sit at the edge of a row and get tapped with a thumb. */}
       {onEdit && (
         <button
+          type="button"
           onClick={onEdit}
-          style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
-          title="Edit"
+          style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, width: 44, height: 44, margin: "-8px -6px -8px 0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          title="Edit" aria-label="Edit"
         >
-          <Edit3 size={16} />
+          <Edit3 size={17} />
         </button>
       )}
       <button
+        type="button"
         onClick={onDelete}
-        style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
-        title="Delete"
+        style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, width: 44, height: 44, margin: "-8px -10px -8px 0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+        title="Delete" aria-label="Delete"
       >
-        <Trash2 size={16} />
+        <Trash2 size={17} />
       </button>
     </div>
   );
@@ -14800,7 +14820,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
                 if (granted) {
                   update((d) => { d.localRemindersOptIn = true; return d; });
                 } else {
-                  alert("Notifications are turned off for Henalytics. Turn them on in your device Settings to get reminders.");
+                  toast("Notifications are turned off for Henalytics. Turn them on in your phone's Settings to get reminders.", { kind: "error" });
                 }
               });
             }

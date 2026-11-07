@@ -2,6 +2,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle, MailCheck, MailX } from 'lucide-react';
 import { friendlyError } from "./friendlyError.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 import {
   listMembers, listPendingInvites, createInvite, cancelInvite,
   removeMember, sendFarmhandInvite, getActiveHomesteadId,
@@ -76,7 +77,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
   };
 
   const removeFarmhand = async (member) => {
-    if (!confirm(`Remove this farmhand from your homestead?`)) return;
+    if (!(await askConfirm({ title: "Remove this farmhand from your homestead?", confirmLabel: "Remove" }))) return;
     setBusy(true);
     try {
       await removeMember(getActiveHomesteadId(), member.user_id);

@@ -28,6 +28,7 @@ import { fmtMoney, tempFromF, fFromInput, tempUnitLabel, tempHint, fmtTemp, ozTo
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
 import { groupDigits } from "./numFmt.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -494,7 +495,7 @@ export default function DehydratingPage({ hobby, data, update, setModal, nl = nu
                 </div>
                 {b.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{b.notes}</div>}
               </div>
-              <button onClick={(e) => { e.stopPropagation(); if (confirm("Archive this batch?")) archiveBatch(b.id); }} style={{
+              <button onClick={async (e) => { e.stopPropagation(); if (await askConfirm({ title: "Archive this batch?", confirmLabel: "Archive", danger: false })) archiveBatch(b.id); }} style={{
                 background: "none", border: "none", color: palette.inkSoft, cursor: "pointer", fontSize: 11, padding: 4,
               }}>Archive</button>
             </div>

@@ -23,6 +23,7 @@ import { Avatar } from "../eggs/EggBirds.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers } from "../StatsParts.jsx";
 import { fmtWeight, fmtMoney } from "../../units.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
+import { plusDays } from "../../dayMath.js";
 import {
   FARRIER_WEEKS, liveHorses, careIds, CARE, SEX_LABEL, careFor, ridesFor, farrierDue, openFoaling, horseStatus,
   ageText, rideTotals, careCost, hoursText, daysFrom,
@@ -66,7 +67,7 @@ export function HorseToday({ hobby, data, update, setModal, act, tallyTotal = 0,
     );
   }
 
-  const weekStart = isoDay(new Date(parseDay(today).getTime() - 6 * DAY));
+  const weekStart = isoDay(plusDays(parseDay(today), -6));
   const week = rideTotals(hobby, weekStart, today);
   const riders = live.filter((h) => h.sex !== "foal");
   const due = farrierDue(hobby, today).filter((x) => x.left != null && x.left <= 14).sort((a, b) => a.left - b.left);
@@ -231,7 +232,7 @@ export function HorseProfile({ hobby, horse: h, act, onBack }) {
   const today = isoDay();
   const st = horseStatus(hobby, h, today);
   const rides = ridesFor(hobby, h.id);
-  const month = rideTotals(hobby, isoDay(new Date(parseDay(today).getTime() - 29 * DAY)), today, h.id);
+  const month = rideTotals(hobby, isoDay(plusDays(parseDay(today), -29)), today, h.id);
   const fd = farrierDue(hobby, today).find((x) => x.horse.id === h.id);
   const foal = h.sex === "mare" ? openFoaling(hobby, h.id, today)[0] : null;
   const foaled = ((hobby.breedings || []).filter((b) => b && b.mareId === h.id && b.foaledDate)).sort((a, b) => (a.foaledDate < b.foaledDate ? 1 : -1));
@@ -315,7 +316,7 @@ export function HorseStats({ hobby, data, setModal, allNumbers }) {
   const today = isoDay();
   const [rk, setRk] = useState("year");
   const year = today.slice(0, 4);
-  const start = rk === "year" ? `${year}-01-01` : rk === "30d" ? isoDay(new Date(parseDay(today).getTime() - 29 * DAY)) : null;
+  const start = rk === "year" ? `${year}-01-01` : rk === "30d" ? isoDay(plusDays(parseDay(today), -29)) : null;
   const t = useMemo(() => rideTotals(hobby, start, today), [hobby, start, today]);
   const care = careCost(hobby, start, today);
   const entries = (data.entries && data.entries[hobby.id]) || [];

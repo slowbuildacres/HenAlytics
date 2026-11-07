@@ -10,12 +10,13 @@
 import { expandRecurringExpenses } from "../../Sales.jsx";
 import { daylightHours, fmtHours } from "../../eggInsights.js";
 import { fmtMoneyWhole } from "../../units.js";
+import { plusDays } from "../../dayMath.js";
 
 export const DAY = 86400000;
 const pad = (n) => String(n).padStart(2, "0");
 export const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 export const parseDay = (s) => { const p = String(s || "").split("-").map(Number); return new Date(p[0], (p[1] || 1) - 1, p[2] || 1); };
-const addDays = (s, n) => isoDay(new Date(parseDay(s).getTime() + n * DAY));
+const addDays = (s, n) => isoDay(plusDays(parseDay(s), n));
 const isEgg = (e) => e && (e.action === "eggs" || e.action === "eggs_laid");
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 const WEEKDAYS = ["Sundays", "Mondays", "Tuesdays", "Wednesdays", "Thursdays", "Fridays", "Saturdays"];

@@ -9,10 +9,11 @@
 // ============================================================================
 
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
+import { plusDays } from "../../dayMath.js";
 
 export const FARRIER_WEEKS = 6;  // most horses are trimmed every 6–8 weeks
 export const daysFrom = (a, b) => Math.round((parseDay(b) - parseDay(a)) / DAY);
-const addDays = (s, n) => isoDay(new Date(parseDay(s).getTime() + n * DAY));
+const addDays = (s, n) => isoDay(plusDays(parseDay(s), n));
 export const liveHorses = (hobby) => ((hobby && hobby.animals) || []).filter((a) => a && !a.archived);
 export const careIds = (r) => (Array.isArray(r && r.horseIds) && r.horseIds.length ? r.horseIds : r && r.horseId ? [r.horseId] : []);
 const desc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : 0);

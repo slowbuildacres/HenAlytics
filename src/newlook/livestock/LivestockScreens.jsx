@@ -27,6 +27,7 @@ import { Avatar } from "../eggs/EggBirds.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers, MonthBars } from "../StatsParts.jsx";
 import { fmtWeight, fmtMoney } from "../../units.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
+import { plusDays } from "../../dayMath.js";
 import {
   liveAnimals, milkers, showsMilk, milkOz, animalStatus, ageText, upcomingBirths, birthHistory, latest,
   lastBirth, openBreeding, allBreedings, sexOf, dobOf, groupFieldOf, groupListOf, milkByMonth, statsRange, herdSummary, milkByAnimal, herdFunFacts, isDairy, isFemale, milkText,
@@ -79,7 +80,7 @@ export function LivestockToday({ sp, hobby, data, update, setModal, act, tallyTo
 
   const ms = showsMilk(hobby, sp) ? milkers(sp, hobby) : [];
   const todayOz = milkOz(sp, entries, { from: today, to: today });
-  const weekStart = isoDay(new Date(parseDay(today).getTime() - 6 * DAY));
+  const weekStart = isoDay(plusDays(parseDay(today), -6));
   const weekOz = milkOz(sp, entries, { from: weekStart, to: today });
   const inMilk = ms.filter((a) => { const s = animalStatus(sp, hobby, entries, a, today); return s && s.tone === "good"; }).length;
   const coming = upcomingBirths(sp, hobby, today, 3, entries);

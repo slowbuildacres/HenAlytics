@@ -31,6 +31,7 @@ import {
 } from "./pantry.js";
 import { applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { groupDigits } from "./numFmt.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
@@ -991,7 +992,7 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 <Btn small variant="leaf" onClick={() => setSellingBake(b)}>Sell</Btn>
                 <button aria-label="Close"
-                  onClick={() => { if (window.confirm("Delete this bake entry?")) deleteBake(b.id); }}
+                  onClick={async () => { if (await askConfirm({ title: "Delete this bake?", confirmLabel: "Delete" })) deleteBake(b.id); }}
                   style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4 }}
                   title="Delete entry"
                 >

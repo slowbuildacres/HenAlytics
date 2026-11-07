@@ -724,7 +724,10 @@ export function migrateObservationState(data) {
 // Days between an ISO date string (YYYY-MM-DD or full ISO) and now.
 function daysSince(dateStr) {
   if (!dateStr) return Infinity;
-  const then = new Date(dateStr);
+  // "2026-11-06" is a local calendar day; new Date() would read it as UTC
+  // midnight (the evening before, in the Americas).
+  const ymd = typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr.split("-").map(Number) : null;
+  const then = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(dateStr);
   if (isNaN(then.getTime())) return Infinity;
   const ms = Date.now() - then.getTime();
   return Math.floor(ms / (1000 * 60 * 60 * 24));

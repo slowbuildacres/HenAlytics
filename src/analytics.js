@@ -19,6 +19,7 @@
 //   localDateStr()              — local YYYY-MM-DD (matches HomesteadApp's).
 // ============================================================================
 import React from "react";
+import { plusDays } from "./dayMath.js";
 
 // One flag gates ALL advanced analytics across every hobby. A single
 // earlyAccessConfig.features.advancedAnalytics edit controls the whole rollout.
@@ -88,7 +89,7 @@ export function priorDateRange(range) {
   if (isNaN(startMs) || isNaN(endMs) || endMs < startMs) return null;
   const spanDays = Math.round((endMs - startMs) / 86400000);
   const priorEnd = new Date(startMs - 86400000);
-  const priorStart = new Date(priorEnd.getTime() - spanDays * 86400000);
+  const priorStart = plusDays(priorEnd, -spanDays);
   return { start: localDateStr(priorStart), end: localDateStr(priorEnd) };
 }
 

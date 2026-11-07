@@ -66,7 +66,7 @@ const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("
 const ageInMonths=(birthdate)=>{if(!birthdate)return null;const b=parseLocalDate(birthdate);if(!b)return null;const n=new Date();return(n.getFullYear()-b.getFullYear())*12+(n.getMonth()-b.getMonth());};
 const fmtAge=(birthdate)=>{const m=ageInMonths(birthdate);if(m==null)return"";if(m<12)return`${m}mo`;const y=Math.floor(m/12);const mm=m%12;return mm===0?`${y}y`:`${y}y ${mm}mo`;};
 const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
-const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000));
+const addDays=(dateStr,days)=>{const d=parseLocalDate(dateStr);return localDateStr(new Date(d.getFullYear(),d.getMonth(),d.getDate()+days));}; // calendar days (time changes)
 
 const RABBIT_BREEDS=[
   "New Zealand","Californian","Rex","Holland Lop","Mini Rex",

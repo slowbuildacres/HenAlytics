@@ -24,6 +24,8 @@ import { X, Trash2, Upload, ChevronLeft, ChevronRight, Plus, Edit3, Archive } fr
 import { CROPS, getCropFamily } from "./gardenAlmanac.js";
 import { CompanionPanel, RotationNote } from "./CompanionInfo.jsx";
 import { uploadPhoto, getPhotoUrl, deletePhoto } from "./sync.js";
+import { plusDays } from "./dayMath.js";
+import { askConfirm, askText } from "./newlook/ConfirmHost.jsx";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -150,7 +152,7 @@ function gardenGridGateState(config, isSupporter, now) {
   if (f.supporterEarlyAccess !== true) return "hidden";
   const days = Number(f.earlyAccessDays);
   const windowDays = (Number.isFinite(days) && days > 0) ? days : 7;
-  const earlyAt = new Date(publicAt.getTime() - windowDays * 86400000);
+  const earlyAt = plusDays(publicAt, -windowDays);
   if (today.getTime() < earlyAt.getTime()) return "hidden";
   return isSupporter ? "supporter" : "early-locked";
 }
@@ -329,8 +331,8 @@ function GardenMapBody({ data, update, user, onClose, /* GARDEN_GRID */ earlyAcc
             update={update}
             archivedSeasons={archivedSeasons}
             pendingPins={pendingPins}
-            onRenameArea={() => {
-              const name = prompt("Rename area:", activeArea.name);
+            onRenameArea={async () => {
+              const name = await askText({ title: "Rename area", value: activeArea.name });
               if (!name?.trim()) return;
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === "garden");
@@ -339,8 +341,8 @@ function GardenMapBody({ data, update, user, onClose, /* GARDEN_GRID */ earlyAcc
                 return d;
               });
             }}
-            onDeleteArea={() => {
-              if (!confirm(`Delete area "${activeArea.name}" and all its pins?`)) return;
+            onDeleteArea={async () => {
+              if (!(await askConfirm({ title: `Delete area "${activeArea.name}" and all its pins?`, confirmLabel: "Delete" }))) return;
               const oldPath = activeArea.photoPath;
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === "garden");
@@ -1121,20 +1123,20 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], pendingPins =
     setShowCropPicker(null);
   };
 
-  const resizeGrid = () => {
-    const r = parseInt(window.prompt("Rows? (1-20)", String(rows)), 10);
-    if (!Number.isFinite(r) || r < 1 || r > 20) { window.alert("Rows must be 1-20."); return; }
-    const c = parseInt(window.prompt("Columns? (1-20)", String(cols)), 10);
-    if (!Number.isFinite(c) || c < 1 || c > 20) { window.alert("Columns must be 1-20."); return; }
+  const resizeGrid = async () => {
+    const rt = await askText({ title: "How many rows?", message: "1 to 20", value: String(rows), inputMode: "numeric", confirmLabel: "Next" });
+    if (rt == null) return;
+    const r = parseInt(rt, 10);
+    if (!Number.isFinite(r) || r < 1 || r > 20) { await askConfirm({ title: "Rows must be 1 to 20", confirmLabel: "OK", danger: false }); return; }
+    const ct = await askText({ title: "How many columns?", message: "1 to 20", value: String(cols), inputMode: "numeric" });
+    if (ct == null) return;
+    const c = parseInt(ct, 10);
+    if (!Number.isFinite(c) || c < 1 || c > 20) { await askConfirm({ title: "Columns must be 1 to 20", confirmLabel: "OK", danger: false }); return; }
     if (r === rows && c === cols) return;
     // Warn-and-discard: any planted cell outside the new bounds is removed.
     const orphaned = pins.filter((p) => p.row >= r || p.col >= c);
     if (orphaned.length > 0) {
-      const ok = window.confirm(
-        "Resizing to " + r + " x " + c + " will remove " + orphaned.length + " " +
-        (orphaned.length === 1 ? "planting" : "plantings") +
-        " that fall outside the new grid. Continue?"
-      );
+      const ok = await askConfirm({ title: `Resize to ${r} × ${c}?`, message: `This removes ${orphaned.length} ${orphaned.length === 1 ? "planting" : "plantings"} outside the new grid.`, confirmLabel: "Resize" });
       if (!ok) return;
     }
     update((d) => {
@@ -1268,7 +1270,7 @@ function PinInfoPanelBody({ pin, areaIdx, update, area = null, archivedSeasons =
   const plantedDate = new Date(date + "T12:00");
   // Custom plants don't have a known daysToHarvest, so no auto harvest date.
   const harvestDate = (crop && crop.daysToHarvest)
-    ? new Date(plantedDate.getTime() + crop.daysToHarvest * 86400000)
+    ? plusDays(plantedDate, crop.daysToHarvest)
     : null;
   const fmtDate = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   const today = new Date(); today.setHours(0, 0, 0, 0);

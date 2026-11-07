@@ -17,6 +17,7 @@ import { Card, CardHeader, Row, Badge, Button } from "../ui.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers } from "../StatsParts.jsx";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
 import { fmtTemp } from "../../units.js";
+import { plusDays } from "../../dayMath.js";
 
 export const BIRD_INCUBATION = {
   Chicken: { lockdown: 18, hatch: 21 }, Duck: { lockdown: 25, hatch: 28 }, Turkey: { lockdown: 25, hatch: 28 },
@@ -32,8 +33,8 @@ const eggsIn = (r) => (r.candledCount != null && r.discardedAfterCandle ? r.cand
 export function runState(r, today = isoDay()) {
   const inc = BIRD_INCUBATION[r.birdType] || BIRD_INCUBATION.Chicken;
   const day = r.dateSet ? Math.max(0, daysFrom(r.dateSet, today)) : 0;
-  const hatchDate = r.hatchDate || (r.dateSet ? isoDay(new Date(parseDay(r.dateSet).getTime() + inc.hatch * DAY)) : null);
-  const lockdownDate = r.lockdownDate || (r.dateSet ? isoDay(new Date(parseDay(r.dateSet).getTime() + inc.lockdown * DAY)) : null);
+  const hatchDate = r.hatchDate || (r.dateSet ? isoDay(plusDays(parseDay(r.dateSet), inc.hatch)) : null);
+  const lockdownDate = r.lockdownDate || (r.dateSet ? isoDay(plusDays(parseDay(r.dateSet), inc.lockdown)) : null);
   let tone = "quiet", text, todo;
   if (day > inc.hatch + 2) { tone = "alert"; text = "Past hatch day"; todo = "Log how many hatched, or close the run if they didn't."; }
   else if (day >= inc.hatch - 1) { tone = "ready"; text = "Hatch day"; todo = "Keep the lid closed while they zip. Log the hatch when they're dry."; }

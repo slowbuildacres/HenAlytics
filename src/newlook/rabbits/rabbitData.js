@@ -8,10 +8,11 @@
 // ============================================================================
 
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
+import { plusDays } from "../../dayMath.js";
 
 export const KINDLE_DAYS = 31;
 export const daysFrom = (a, b) => Math.round((parseDay(b) - parseDay(a)) / DAY);
-const addDays = (s, n) => isoDay(new Date(parseDay(s).getTime() + n * DAY));
+const addDays = (s, n) => isoDay(plusDays(parseDay(s), n));
 export const liveRabbits = (hobby) => ((hobby && hobby.animals) || []).filter((a) => a && !a.archived);
 const byDateDesc = (a, b) => (a.date < b.date ? 1 : a.date > b.date ? -1 : (b.created || 0) - (a.created || 0));
 

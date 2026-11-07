@@ -88,7 +88,8 @@ function restoreSave(d, s) {
   return d;
 }
 
-export function undoable(update, message) {
+// Optional third argument: { onUndo } runs after Undo puts things back.
+export function undoable(update, message, hooks = {}) {
   return (mutator, opts) => {
     let saved = null;
     update((d) => {
@@ -99,9 +100,11 @@ export function undoable(update, message) {
       return out;
     }, opts);
     // The save runs on React's next render; Undo can only be tapped after.
-    showUndo(typeof message === "function" ? message() : message, () => { if (saved) update((d) => restoreSave(d, saved)); });
+    showUndo(typeof message === "function" ? message() : message, () => { if (saved) update((d) => restoreSave(d, saved)); if (hooks.onUndo) hooks.onUndo(); });
   };
 }
+// How long the Undo bar stays up (for work that should wait until it's gone).
+export const UNDO_MS = SHOW_MS;
 
 // For forms that save on their own (the older livestock forms): take a
 // snapshot when the form opens, then offer Undo for what changed by the time

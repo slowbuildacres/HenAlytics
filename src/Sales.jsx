@@ -19,6 +19,7 @@ import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney, fmtMoneyWhole, perLbToInput, perLbFromInput, perWeightLabel, lbsToInput, lbsFromInput, weightUnitLabel, fmtWeight, currencySymbol } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
+import { askConfirm, askChoice } from "./newlook/ConfirmHost.jsx";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1324,9 +1325,9 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   // Default action button — used when not editing a virtual instance.
   const save = saveSeries;
 
-  const remove = () => {
+  const remove = async () => {
     if (!isEdit) return;
-    if (!confirm("Delete this expense?")) return;
+    if (!(await askConfirm({ title: "Delete this expense?", confirmLabel: "Delete" }))) return;
     update((d) => {
       d.expenses = (d.expenses || []).filter(e => e.id !== existingExpense.id);
       return d;
@@ -2047,22 +2048,23 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
                     setEditingOccurrenceDate(null);
                   }
                 }}
-                onDelete={() => {
+                onDelete={async () => {
                   const parentId = row.item._parentId;
                   if (!parentId) {
                     // Non-recurring expense — simple delete.
-                    if (!confirm("Delete this expense?")) return;
+                    if (!(await askConfirm({ title: "Delete this expense?", confirmLabel: "Delete" }))) return;
                     update(d => {
                       d.expenses = (d.expenses || []).filter(e => e.id !== row.item.id);
                       return d;
                     });
                     return;
                   }
-                  // Virtual instance from a recurring template — offer two options
-                  // via chained confirms. "OK" on first prompt = skip this occurrence
-                  // only. Cancel → second prompt offers full-series delete.
+                  // One of a repeating expense's months: skip just this one, or
+                  // delete the whole series.
                   const occurrenceDateText = fmtDate(row.item.date);
-                  if (confirm(`Delete just the ${occurrenceDateText} occurrence?\n\nClick OK to skip this occurrence only.\nClick Cancel to see the option to delete the whole series.`)) {
+                  const pick = await askChoice({ title: "Delete a repeating expense", message: `This expense repeats. Delete just the ${occurrenceDateText} one, or every one?`,
+                    choices: [{ label: `Just ${occurrenceDateText}`, value: "one", danger: true }, { label: "The whole series", value: "all", danger: true }] });
+                  if (pick === "one") {
                     update(d => {
                       const parent = (d.expenses || []).find(e => e.id === parentId);
                       if (!parent) return d;
@@ -2073,7 +2075,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
                     });
                     return;
                   }
-                  if (confirm("Delete the entire recurring series instead? This removes all occurrences.")) {
+                  if (pick === "all") {
                     update(d => {
                       d.expenses = (d.expenses || []).filter(e => e.id !== parentId);
                       return d;

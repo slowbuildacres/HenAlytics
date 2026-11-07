@@ -1,3 +1,4 @@
+import { plusDays } from "./dayMath.js";
 // ============================================================================
 // Feed supply estimate (moved out of HomesteadApp.jsx for 3.0)
 // ============================================================================
@@ -26,7 +27,7 @@ export function computeFeedStatus(hobby, entries) {
     return new Date(p[0], (p[1] || 1) - 1, p[2] || 1);
   };
   const todayDate = toLocalDate(today);
-  const windowStart = new Date(todayDate.getTime() - (FEED_BURN_WINDOW_DAYS - 1) * 86400000);
+  const windowStart = plusDays(todayDate, -((FEED_BURN_WINDOW_DAYS - 1)));
 
   let consumedLbs = 0;   // since the last count — drains the on-hand pile
   let windowLbs = 0;     // burn-rate window
@@ -52,7 +53,7 @@ export function computeFeedStatus(hobby, entries) {
   const spanDays = Math.max(1, Math.min(FEED_BURN_WINDOW_DAYS, Math.round((todayDate - earliestWindowDate) / 86400000) + 1));
   const dailyBurnLbs = windowLbs / spanDays;
   const daysLeft = remainingLbs > 0 ? remainingLbs / dailyBurnLbs : 0;
-  const runOut = new Date(todayDate.getTime() + Math.floor(daysLeft) * 86400000);
+  const runOut = plusDays(todayDate, Math.floor(daysLeft));
   const pad = (n) => String(n).padStart(2, "0");
   const runOutDate = `${runOut.getFullYear()}-${pad(runOut.getMonth() + 1)}-${pad(runOut.getDate())}`;
   const state = remainingLbs <= 0 ? "out" : (daysLeft <= warnDays ? "low" : "ok");
