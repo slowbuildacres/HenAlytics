@@ -63,7 +63,7 @@ const GESTATION_DAYS=114; // pig gestation: "three months, three weeks, three da
 
 function Btn({children,onClick,variant="primary",small=false,style={},disabled=false}){
   const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.onColor,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.onYolk,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.onColor,border:`1.5px solid ${palette.leaf}`}}; /* PIGS_UNIFY_V1 — leaf variant */
-  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",borderRadius:small ? 999 : 14,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"none",...styles[variant],...style}}>{children}</button>;
+  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, padding:small?"6px 12px":"10px 18px",borderRadius:small ? 999 : 14,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"none",...styles[variant],...style}}>{children}</button>;
 }
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
 function Modal({open,onClose,title,children}){
@@ -426,7 +426,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
 
 function pillStyleP(active) {
   return {
-    padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+    minHeight:36,padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
     border: active ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
     background: active ? palette.ink : palette.bgAlt,
     color: active ? palette.bg : palette.ink,

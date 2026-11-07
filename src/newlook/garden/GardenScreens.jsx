@@ -72,10 +72,14 @@ function GardenWeek({ data, update, setModal, onTab, onMap }) {
             return (
               <div key={it.key} style={{ display: "flex", alignItems: "flex-start", gap: 12, padding: "11px 14px", borderTop: `1px solid ${nl.rule}` }}>
                 <button type="button" aria-pressed={on} aria-label={on ? `Undo: ${it.text}` : `Done: ${it.text}`} onClick={() => toggle(it.key)} style={{
-                  width: 28, height: 28, borderRadius: 14, flexShrink: 0, boxSizing: "border-box", cursor: "pointer",
+                  // A 28px circle in a 44px tap area.
+                  width: 44, height: 44, margin: "-8px", padding: 0, border: "none", background: "transparent", flexShrink: 0, cursor: "pointer",
+                  display: "flex", alignItems: "center", justifyContent: "center",
+                }}><span style={{
+                  width: 28, height: 28, borderRadius: 14, boxSizing: "border-box",
                   border: on ? "none" : `1.5px solid ${nl.navIdle}`, background: on ? nl.good : "transparent",
                   display: "flex", alignItems: "center", justifyContent: "center",
-                }}>{on && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}</button>
+                }}>{on && <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="3" strokeLinecap="round" aria-hidden="true"><path d="M5 12.5l4.5 4.5L19 7.5" /></svg>}</span></button>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: type.body, fontWeight: 600, textDecoration: on ? "line-through" : "none", color: on ? nl.soft : nl.ink }}>{it.text}</div>
                   {!on && <div style={{ fontSize: type.small, color: nl.soft }}>{it.sub}</div>}
@@ -343,7 +347,7 @@ export function GardenStats({ hobby, data, setModal, spent, allNumbers, closed }
                   <I size={14} strokeWidth={2} aria-hidden="true" />Fun fact
                   <span style={{ marginLeft: "auto", letterSpacing: 0, textTransform: "none", fontWeight: 600 }}>{i + 1} of {facts.length}</span>
                   <button type="button" aria-label={`Share: ${f.title}`} onClick={() => setModal({ type: "shareCard", card: { kind: `garden_fact_${f.key}`, emoji: "🌱", kicker: data.homesteadName || "Our garden", big: f.big, line: f.line, chips: [], list: [], title: `${f.title} 🌱`, subtitle: f.sub, stats: [] } })}
-                    style={{ width: 32, height: 32, marginLeft: 2, border: "none", borderRadius: 16, background: "rgba(255,253,248,0.6)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.yolkInk }}><Share2 size={16} strokeWidth={2} /></button>
+                    style={{ width: 40, height: 40, marginLeft: 2, border: "none", borderRadius: 16, background: "rgba(255,253,248,0.6)", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "center", color: nl.yolkInk }}><Share2 size={16} strokeWidth={2} /></button>
                 </div>
                 <div style={{ fontFamily: font.display, fontSize: 20, lineHeight: 1.15 }}>{f.title}</div>
                 <div style={{ fontSize: 12, lineHeight: 1.35, color: nl.quietInk }}>{f.sub}</div>

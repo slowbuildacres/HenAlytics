@@ -79,7 +79,7 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   return (
     <button
       type={type} disabled={disabled} onClick={onClick}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
         borderRadius: small ? 999 : 14, padding: small ? "8px 12px" : "10px 16px",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14,

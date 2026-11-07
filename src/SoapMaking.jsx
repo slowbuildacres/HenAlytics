@@ -85,7 +85,7 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
     accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
-    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{
+    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
       padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
       fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
       boxShadow: "none", ...v[variant], ...style,
@@ -191,7 +191,7 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
             <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} value={i.amount} onChange={e => setIng(i.id, "amount", e.target.value)} placeholder="Amt" />
             <select style={{ ...inputStyle(), padding: "8px 4px", fontSize: 13 }} value={i.unit} onChange={e => setIng(i.id, "unit", e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
             <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder={`${currencySymbol()}`} />
-            <button onClick={() => setIngredients(arr => arr.filter(x => x.id !== i.id))} aria-label="Remove ingredient" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 2 }}><Trash2 size={15} /></button>
+            <button onClick={() => setIngredients(arr => arr.filter(x => x.id !== i.id))} aria-label="Remove ingredient" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Trash2 size={15} /></button>
           </div>
         ))}
       </div>

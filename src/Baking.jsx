@@ -88,7 +88,7 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
       type={type}
       onClick={onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         padding: small ? "6px 12px" : "10px 18px",
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
         borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
@@ -164,16 +164,19 @@ function Modal({ open, onClose, title, children }) {
 
 function StarRating({ value, onChange, readOnly = false }) {
   return (
-    <div style={{ display: "flex", gap: 4 }}>
+    <div role="group" aria-label="Rating" style={{ display: "flex", gap: 0 }}>
       {[1, 2, 3, 4, 5].map(n => (
         <button
           key={n}
           type="button"
+          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          aria-pressed={n <= value}
           onClick={readOnly ? undefined : () => onChange(n === value ? 0 : n)}
           style={{
-            background: "none", border: "none", padding: 2,
+            background: "none", border: "none", padding: 0, width: 40, height: 40,
+            display: "flex", alignItems: "center", justifyContent: "center",
             cursor: readOnly ? "default" : "pointer",
-            color: n <= value ? palette.yolk : palette.line,
+            color: n <= value ? palette.yolk : palette.inkSoft,
           }}
         >
           <Star size={20} fill={n <= value ? palette.yolk : "none"} />
@@ -329,8 +332,8 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                     <button
                       type="button"
                       onClick={() => removeIngredient(ing.id)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4, fontSize: 11 }}
-                      title="Remove"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, width: 40, height: 40, flexShrink: 0, fontSize: 13 }}
+                      title="Remove" aria-label="Remove ingredient"
                     >
                       ✕
                     </button>

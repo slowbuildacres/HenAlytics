@@ -42,7 +42,7 @@ export default function AnnouncementCard({ notices }) {
             <>
               <span style={{ marginLeft: "auto", fontSize: 12, color: nl.soft }}>{Math.min(i, n - 1) + 1} of {n}</span>
               <button type="button" aria-label="Next announcement" onClick={() => setI((i + 1) % n)} style={{
-                width: 32, height: 32, border: "none", background: "none", cursor: "pointer", color: nl.good,
+                width: 40, height: 40, border: "none", background: "none", cursor: "pointer", color: nl.good,
                 display: "flex", alignItems: "center", justifyContent: "center",
               }}><ChevronRight size={18} strokeWidth={2.2} /></button>
             </>
@@ -50,7 +50,7 @@ export default function AnnouncementCard({ notices }) {
         </div>
       </div>
       <button type="button" aria-label={`Dismiss: ${cur.title}`} onClick={cur.onDismiss} style={{
-        width: 32, height: 32, margin: "-6px -8px 0 0", border: "none", background: "none", cursor: "pointer",
+        width: 40, height: 40, margin: "-10px -12px 0 0", border: "none", background: "none", cursor: "pointer",
         color: nl.soft, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
       }}><X size={18} strokeWidth={2} /></button>
     </section>

@@ -109,7 +109,7 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
     leaf: { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
       padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,

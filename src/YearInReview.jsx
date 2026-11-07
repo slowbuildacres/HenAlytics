@@ -456,7 +456,7 @@ function GoalsCard({ data, update, year }) {
         {!adding && (
           <button
             onClick={() => setAdding(true)}
-            style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            style={{ background: palette.ink, color: palette.bg, border: "none", minHeight: 36, padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
           >
             + Add goal
           </button>
@@ -490,7 +490,7 @@ function GoalsCard({ data, update, year }) {
             >Cancel</button>
             <button
               onClick={addGoal}
-              style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+              style={{ background: palette.ink, color: palette.bg, border: "none", minHeight: 36, padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
             >Add goal</button>
           </div>
         </div>

@@ -84,7 +84,7 @@ export function Button({ kind = "primary", children, onClick, icon, style, small
     dark: { background: nl.ink, color: nl.paper, border: "none" },
     outline: { background: "transparent", color: nl.ink, border: `1.5px solid ${nl.ink}` },
     quiet: { background: "transparent", color: nl.ink, border: `1.5px solid ${nl.field}` },
-    link: { background: "transparent", color: nl.good, border: "none", padding: 0, minHeight: 32 },
+    link: { background: "transparent", color: nl.good, border: "none", padding: "0 2px", minHeight: 40, minWidth: 40 },
   };
   return (
     <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{ ...base, ...kinds[kind], ...style }} {...rest}>

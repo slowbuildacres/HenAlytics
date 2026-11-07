@@ -44,7 +44,7 @@ export function FactCarousel({ facts, icons = {}, onShare, label = "Fun facts, s
               <span style={{ marginLeft: "auto", letterSpacing: 0, textTransform: "none", fontWeight: 600 }}>{i + 1} of {facts.length}</span>
               {onShare && (
                 <button type="button" aria-label={`Share: ${f.title}`} onClick={() => onShare(f)} style={{
-                  width: 32, height: 32, marginLeft: 2, border: "none", borderRadius: 16, background: "rgba(255,253,248,0.6)", cursor: "pointer",
+                  width: 40, height: 40, marginLeft: 2, border: "none", borderRadius: 16, background: "rgba(255,253,248,0.6)", cursor: "pointer",
                   display: "flex", alignItems: "center", justifyContent: "center", color: nl.yolkInk,
                 }}><Share2 size={16} strokeWidth={2} /></button>
               )}

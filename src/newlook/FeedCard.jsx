@@ -36,7 +36,7 @@ export default function FeedCard({ hobby, entries, update, setModal, eatWord = "
     <Card>
       <Row first icon={<Wheat size={20} strokeWidth={1.8} />} title="Track your feed supply" sub="Get a heads-up before you run out"
         trailing={<span style={{ display: "flex", alignItems: "center", gap: 2 }}><Button kind="link" onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })}>Set up</Button><button type="button" aria-label="Dismiss feed tracking" onClick={(e) => { e.stopPropagation(); update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h.feedTracker = { ...(h.feedTracker || {}), enabled: false, promptDismissed: true }; return d; }); }}
-          style={{ width: 32, height: 32, border: "none", background: "none", cursor: "pointer", color: nl.soft, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={18} /></button></span>} />
+          style={{ width: 40, height: 40, border: "none", background: "none", cursor: "pointer", color: nl.soft, display: "flex", alignItems: "center", justifyContent: "center" }}><X size={18} /></button></span>} />
     </Card>
   );
 }

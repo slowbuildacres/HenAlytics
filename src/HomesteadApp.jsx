@@ -3030,7 +3030,7 @@ function Btn({ children, onClick, variant = "primary", style = {}, type = "butto
       type={type}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         padding: small ? "6px 12px" : "10px 18px",
         borderRadius: small ? 999 : 14,
         cursor: disabled ? "wait" : "pointer",
@@ -8046,8 +8046,10 @@ function JournalPage({ data, update, setModal }) {
 function PillButton({ active, onClick, children }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       style={{
+        minHeight: 36,
         padding: "6px 12px",
         borderRadius: 999,
         border: `1.5px solid ${active ? palette.ink : palette.line}`,
@@ -12087,7 +12089,7 @@ function AnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilter, dat
           <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
             View
           </div>
-          <button onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
+          <button type="button" onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,minHeight:36,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
             <Share2 size={13} /> Share stats
           </button>
         </div>
@@ -12383,7 +12385,7 @@ function GardenAnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilte
           <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
             View
           </div>
-          <button onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
+          <button type="button" onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,minHeight:36,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
             <Share2 size={13} /> Share stats
           </button>
         </div>
@@ -22053,7 +22055,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           type="button"
           onClick={() => setWxOpen((o) => !o)}
           style={{
-            background: "none", border: "none", padding: 0, cursor: "pointer",
+            background: "none", border: "none", padding: 0, cursor: "pointer", minHeight: 36,
             fontSize: 12, color: palette.inkSoft, fontFamily: "inherit", textDecoration: "underline",
           }}
         >
@@ -23753,7 +23755,7 @@ function AnalyticsShareWrapper({ hobby, entries, data, children, /* ADV_ANALYTIC
             onClick={() => setShowShare(true)}
             style={{
               display:"flex",alignItems:"center",gap:6,
-              padding:"6px 12px",borderRadius:8,
+              minHeight:36,padding:"6px 12px",borderRadius:8,
               border:`1.5px solid ${palette.line}`,background:palette.card,
               fontFamily:FONT_BODY,fontWeight:600,fontSize:12,
               color:palette.ink,cursor:"pointer",

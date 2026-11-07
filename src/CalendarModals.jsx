@@ -148,7 +148,7 @@ function Btn({ children, onClick, variant = "primary", disabled = false }) {
     <button
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: 44, 
         padding: "10px 18px", borderRadius: 14,
         cursor: disabled ? "wait" : "pointer",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,

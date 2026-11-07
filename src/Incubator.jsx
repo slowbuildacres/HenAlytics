@@ -95,7 +95,7 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, disa
     accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
       padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
@@ -642,7 +642,7 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
               key={t}
               onClick={() => setBirdType(t)}
               style={{
-                padding: "6px 12px", borderRadius: 8,
+                minHeight: 36, padding: "6px 12px", borderRadius: 8,
                 border: `1.5px solid ${birdType === t ? palette.ink : palette.line}`,
                 background: birdType === t ? palette.ink : palette.card,
                 color: birdType === t ? palette.bg : palette.ink,

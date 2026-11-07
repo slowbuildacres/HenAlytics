@@ -110,7 +110,7 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
       type={type}
       onClick={onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         padding: small ? "6px 12px" : "10px 18px",
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
         borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",

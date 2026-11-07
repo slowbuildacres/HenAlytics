@@ -155,7 +155,7 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
     danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
   };
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{minHeight: small ? 36 : 44,  ...base, ...variants[variant], ...style }}>{children}</button>;
 }
 
 function Field({ label, children }) {

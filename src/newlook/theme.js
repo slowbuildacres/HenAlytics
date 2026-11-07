@@ -148,6 +148,9 @@ export function applyLook(look, dark) {
           // The first and last axis labels are centered on the chart's edge;
           // let them draw into the card's padding instead of being cut off.
           "svg.recharts-surface{overflow:visible}",
+          // The older forms' ✕ buttons were about 30px; give every one a
+          // 44px tap target (sheet backdrops, which fill the screen, aren't affected).
+          "button[aria-label='Close']{min-width:44px;min-height:44px;display:inline-flex;align-items:center;justify-content:center}",
         ].join("\n");
         document.head.appendChild(st);
       }
