@@ -1235,30 +1235,33 @@ const HARVEST_UNIT_LABELS = {
 // Returns a map of { unit: totalQuantity } for the given harvest entries.
 // Accepts both `quantity` (annual garden entries) and `qty` (perennial
 // harvest records) as the amount field.
+// Weights (lbs, oz, kg, g) all add up under "lbs" (in pounds), so a person
+// who switched units sees one total in their own units.
 function harvestTotalsByUnit(harvestEntries) {
   const totals = {};
   (harvestEntries || []).forEach((e) => {
     const unit = e && e.unit ? e.unit : "lbs";
     const raw = e && (e.quantity != null ? e.quantity : e.qty);
     const qty = Number(raw) || 0;
-    totals[unit] = (totals[unit] || 0) + qty;
+    const asLbs = harvestAmountLbs(qty, unit);
+    if (asLbs != null) totals.lbs = (totals.lbs || 0) + asLbs;
+    else totals[unit] = (totals[unit] || 0) + qty;
   });
   return totals;
+}
+function harvestPart(unit, n) {
+  if (unit === "lbs") return fmtWeight(n, { forceBig: n >= 1 || n === 0 });
+  const label = HARVEST_UNIT_LABELS[unit] || unit;
+  const isWhole = unit === "each" || unit === "count" || unit === "bunch";
+  return `${isWhole ? Math.round(n) : Number(n.toFixed(1))} ${label}`;
 }
 
 // Returns a human display string like "12.5 lbs · 8 each · 3 cups".
 // Falls back to "0 lbs" when there are no harvests.
 function harvestSummary(harvestEntries) {
   const totals = harvestTotalsByUnit(harvestEntries);
-  const parts = Object.keys(totals).map((unit) => {
-    const n = totals[unit];
-    const label = HARVEST_UNIT_LABELS[unit] || unit;
-    // Whole numbers for count-like units, one decimal for weight/volume.
-    const isWhole = unit === "each" || unit === "count" || unit === "bunch";
-    const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
-    return `${num} ${label}`;
-  });
-  return parts.length ? parts.join(" · ") : "0 lbs";
+  const parts = Object.keys(totals).map((unit) => harvestPart(unit, totals[unit]));
+  return parts.length ? parts.join(" · ") : fmtWeight(0);
 }
 
 // Returns a per-plant breakdown of harvests as an array of:
@@ -1272,21 +1275,12 @@ function harvestBreakdownByPlant(harvestEntries) {
   (harvestEntries || []).forEach((e) => {
     if (!e) return;
     const plant = (e.plant || "Unknown").toString().trim() || "Unknown";
-    const unit = e.unit || "lbs";
-    const raw = e.quantity != null ? e.quantity : e.qty;
-    const qty = Number(raw) || 0;
-    if (!byPlant[plant]) byPlant[plant] = {};
-    byPlant[plant][unit] = (byPlant[plant][unit] || 0) + qty;
+    if (!byPlant[plant]) byPlant[plant] = [];
+    byPlant[plant].push(e);
   });
   const rows = Object.keys(byPlant).map((plant) => {
-    const totals = byPlant[plant];
-    const parts = Object.keys(totals).map((unit) => {
-      const n = totals[unit];
-      const label = HARVEST_UNIT_LABELS[unit] || unit;
-      const isWhole = unit === "each" || unit === "count" || unit === "bunch";
-      const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
-      return `${num} ${label}`;
-    });
+    const totals = harvestTotalsByUnit(byPlant[plant]);
+    const parts = Object.keys(totals).map((unit) => harvestPart(unit, totals[unit]));
     // Sort key: lbs first, then any other unit max. Lets the list rank
     // "Tomatoes — 24 lbs" above "Lettuce — 6 lbs" above "Basil — 6 bunches".
     const sortValue = totals.lbs != null
@@ -1716,7 +1710,7 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput, fmtWeightWhole, fmtWeight1, harvestAmountLbs } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { useSupportProgress } from "./newlook/supportProgress.js";
 import { tidyData } from "./tidyData.js";
@@ -11153,7 +11147,7 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
         type: "feed_low",
         notes: status.state === "out"
           ? "Feed tracker shows you're out. Log a feed purchase when you restock."
-          : `About ${Math.max(0, Math.round(status.daysLeft))} day${Math.round(status.daysLeft) === 1 ? "" : "s"} of feed left (~${status.remainingLbs.toFixed(0)} lbs). Estimated empty ${status.runOutDate}.`,
+          : `About ${Math.max(0, Math.round(status.daysLeft))} day${Math.round(status.daysLeft) === 1 ? "" : "s"} of feed left (~${fmtWeightWhole(status.remainingLbs)}). Estimated empty ${status.runOutDate}.`,
       });
       return d;
     });
@@ -11191,7 +11185,7 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
   const stateColor = status.state === "ok" ? palette.leaf : (status.state === "learning" ? palette.inkSoft : palette.accent);
   let headline, sub;
   if (status.state === "learning") {
-    headline = `${Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand`;
+    headline = `${fmtWeightWhole(Math.max(0, status.remainingLbs))} on hand`;
     sub = `Log ${Math.max(0, 3 - status.windowCount)} more feeding${3 - status.windowCount === 1 ? "" : "s"} with amounts and I'll estimate your run-out date`;
   } else if (status.state === "out") {
     headline = "Out of feed";
@@ -11199,7 +11193,7 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
   } else {
     const days = Math.max(0, Math.round(status.daysLeft));
     headline = `~${days} day${days === 1 ? "" : "s"} of feed left`;
-    sub = `${Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand · ~${status.dailyBurnLbs.toFixed(1)} lbs/day · empty ~${status.runOutDate}`;
+    sub = `${fmtWeightWhole(Math.max(0, status.remainingLbs))} on hand · ~${fmtWeight1(status.dailyBurnLbs)} a day · empty ~${status.runOutDate}`;
   }
   return (
     <div style={{
@@ -20202,7 +20196,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
           amount: costNum,
           category: "Feed",
           hobbyId: hobby.id,
-          note: `Feed purchase: ${lbsNum} lbs`,
+          note: `Feed purchase: ${fmtWeight1(lbsNum)}`,
           created: Date.now(),
           _feedTracker: true, // traceability tag
         });

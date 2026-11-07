@@ -6,7 +6,7 @@ import { showUndo } from "./newlook/UndoBar.jsx";
 import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { X, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney, currencySymbol } from "./units.js";
+import { fmtMoney, currencySymbol, fmtWeight, fmtWeight1, weightFromLbs, weightUnitLabel, lbsToInput, lbsFromInput } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -185,7 +185,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
   const [supersedureCells, setSupersedureCells] = useState(!!e.supersedureCells);
   const [swarmCells, setSwarmCells] = useState(!!e.swarmCells);
   // Harvest fields
-  const [harvestLbs, setHarvestLbs] = useState(e.lbs != null ? String(e.lbs) : "");
+  const [harvestLbs, setHarvestLbs] = useState(e.lbs != null ? lbsToInput(e.lbs) : "");
   const [harvestJars, setHarvestJars] = useState(e.jars != null ? String(e.jars) : "");
   const [harvestRevenue, setHarvestRevenue] = useState(e.revenue != null ? String(e.revenue) : "");
   // Feed fields
@@ -217,7 +217,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
     if (action === "inspect") {
       entry = { ...entry, queenSeen, broodPattern, temperament, honeyStores, population, supersedureCells, swarmCells, note };
     } else if (action === "harvest") {
-      entry = { ...entry, lbs: Number(harvestLbs)||0, jars: Number(harvestJars)||0, revenue: Number(harvestRevenue)||0, note };
+      entry = { ...entry, lbs: harvestLbs === "" ? 0 : lbsFromInput(harvestLbs), jars: Number(harvestJars)||0, revenue: Number(harvestRevenue)||0, note };
     } else if (action === "feed") {
       entry = { ...entry, feedType, qty: Number(feedQty)||0, cost: Number(feedCost)||0 };
     } else if (action === "treatment") {
@@ -323,7 +323,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
           {action === "harvest" && <>
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
-                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Pounds harvested</div>
+                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>{weightUnitLabel() === "kg" ? "Kilos harvested" : "Pounds harvested"}</div>
                 <input style={inputStyle()} type="number" min={0} step="0.1" value={harvestLbs} onChange={e=>setHarvestLbs(e.target.value)} placeholder="0.0" />
               </label>
               <label style={{ flex:1 }}>
@@ -548,7 +548,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
         <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
           {totalHarvestLbs > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
             <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Honey</div>
-            <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.honey }}>{totalHarvestLbs.toFixed(1)} lbs</div>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.honey }}>{fmtWeight1(totalHarvestLbs)}</div>
             <div style={{ fontSize:11,color:palette.inkSoft }}>{totalJars} jars</div>
           </div>}
           {totalInspections > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
@@ -675,7 +675,7 @@ function BeeEntryRow({ entry, onDelete, onEdit }) {
     if (entry.temperament && entry.temperament !== "Calm") bits.push(entry.temperament);
     detail = bits.join(" · ");
   } else if (entry.action==="harvest") {
-    detail = `${entry.lbs||0} lbs · ${entry.jars||0} jars${entry.revenue>0?" · "+fmtMoney(entry.revenue):""}`;
+    detail = `${fmtWeight(Number(entry.lbs)||0, { forceBig: true })} · ${entry.jars||0} jars${entry.revenue>0?" · "+fmtMoney(entry.revenue):""}`;
   } else if (entry.action==="feed") {
     detail = `${entry.feedType||""} · ${fmtMoney(entry.cost)}`;
   } else if (entry.action==="treatment") {
@@ -747,7 +747,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
       harvestByMonth[key] = (harvestByMonth[key]||0) + (Number(e.lbs)||0);
     }
   });
-  const harvestChart = Object.entries(harvestByMonth).sort().map(([month,lbs]) => ({ month: month.slice(5), lbs: parseFloat(lbs.toFixed(1)) }));
+  const harvestChart = Object.entries(harvestByMonth).sort().map(([month,lbs]) => ({ month: month.slice(5), lbs: Number(weightFromLbs(lbs).toFixed(1)) }));
 
   // Per-hive breakdown
   const hiveStats = hives.map(h => {
@@ -771,7 +771,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
     <div>
       <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink }}>honey production</h3>
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
-        <StatCard label="Total Harvested" value={`${totalHarvestLbs.toFixed(1)} lbs`} accent={palette.honey} />
+        <StatCard label="Total Harvested" value={fmtWeight1(totalHarvestLbs)} accent={palette.honey} />
         <StatCard label="Total Jars" value={totalJars} sub="filled" accent={palette.honey} />
         {totalRevenue > 0 && <StatCard label="Honey Revenue" value={fmtMoney(totalRevenue)} accent={palette.leaf} />}
         <StatCard label="Inspections" value={allInspections.length} accent={palette.feather} />
@@ -784,7 +784,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
               <XAxis dataKey="month" stroke={palette.inkSoft} fontSize={11} />
               <YAxis stroke={palette.inkSoft} fontSize={11} />
               <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} />
-              <Bar dataKey="lbs" fill={palette.honey} radius={[6,6,0,0]} name="lbs honey" />
+              <Bar dataKey="lbs" fill={palette.honey} radius={[6,6,0,0]} name={`${weightUnitLabel()} honey`} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -831,7 +831,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
                   <div style={{ fontSize:12,color:palette.inkSoft }}>{h.inspections} inspection{h.inspections!==1?"s":""}</div>
                 </div>
                 <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"right" }}>
-                  {h.lbs > 0 && <div>{h.lbs.toFixed(1)} lbs honey</div>}
+                  {h.lbs > 0 && <div>{fmtWeight1(h.lbs)} honey</div>}
                   {h.cost > 0 && <div>{fmtMoney(h.cost)} spent</div>}
                   {h.lbs===0 && h.cost===0 && <div style={{ fontStyle:"italic" }}>No data yet</div>}
                 </div>
@@ -849,7 +849,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
         if (advHarvests.length === 0) return null;
         const honeyMonthlyRaw = monthlySeries(advHarvests, e => e.date, e => Number(e.lbs) || 0);
         const honeyMonthly = honeyMonthlyRaw.map(p => ({
-          month: p.month, lbs: Number(p.value.toFixed(1)),
+          month: p.month, lbs: Number(weightFromLbs(p.value).toFixed(1)),
           label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
         }));
         const honeyRecord = personalRecord(honeyMonthlyRaw);
@@ -862,11 +862,11 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
           <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
             <div>
               <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
-                {honeyRecord && <StatCard label="Best harvest month" value={`${honeyRecord.value.toFixed(1)} lbs`} sub={honeyRecord.label} accent={palette.honey} />}
+                {honeyRecord && <StatCard label="Best harvest month" value={fmtWeight1(honeyRecord.value)} sub={honeyRecord.label} accent={palette.honey} />}
                 {honeyDelta && (
                   <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
                     <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Harvest vs. prior period</div>
-                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.honey,lineHeight:1.1 }}>{totalHarvestLbs.toFixed(1)} lbs</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.honey,lineHeight:1.1 }}>{fmtWeight1(totalHarvestLbs)}</div>
                     <div style={{ marginTop:4 }}><StatTrend delta={honeyDelta} palette={palette} fonts={pFonts} /></div>
                   </div>
                 )}
@@ -877,7 +877,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
                     <LineChart data={honeyMonthly}>
                       <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
                       <YAxis stroke={palette.inkSoft} fontSize={11} />
-                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} lbs`, "Honey"]} />
+                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} ${weightUnitLabel()}`, "Honey"]} />
                       <Line type="monotone" dataKey="lbs" stroke={palette.honey} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -980,7 +980,7 @@ export default function BeesPage({ hobby, data, update, setModal }) {
                         {hive.type} · {hive.source} · since {fmtDate(hive.installDate)}
                       </div>
                       <div style={{ display:"flex",gap:10,marginTop:4,flexWrap:"wrap" }}>
-                        {totalLbs > 0 && <span style={{ fontSize:11,background:palette.honeySoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍯 {totalLbs.toFixed(1)} lbs</span>}
+                        {totalLbs > 0 && <span style={{ fontSize:11,background:palette.honeySoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍯 {fmtWeight1(totalLbs)}</span>}
                         {lastInspect && <span style={{ fontSize:11,background:palette.bgAlt,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🔍 {daysSinceInspect}d ago</span>}
                         {isDead && <span style={{ fontSize:11,background:palette.accent,color:palette.onColor,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>Lost</span>}
                         {daysSinceInspect !== null && daysSinceInspect > 14 && !isDead && <span style={{ fontSize:11,background:palette.yolkSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>⚠️ Due for inspection</span>}

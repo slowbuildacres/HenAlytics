@@ -22,7 +22,7 @@ import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, flozFromInput, currencySymbol } from "./units.js";
+import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, flozFromInput, currencySymbol, volumeFromGal, volumeUnitLabel } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
 // NEW_LOOK (3.0): the shared livestock screens reuse this file's log forms.
@@ -1971,7 +1971,7 @@ export function SheepAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ allEnt
         if (advMilk.length === 0) return null;
         const milkMonthlyRaw = monthlySeries(advMilk, e => e.date, e => Number(e.oz) || 0);
         const milkMonthly = milkMonthlyRaw.map(p => ({
-          month: p.month, gal: Number((p.value / 128).toFixed(2)),
+          month: p.month, gal: Number(volumeFromGal(p.value / 128).toFixed(2)),
           label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
         }));
         const milkRecord = personalRecord(milkMonthlyRaw);
@@ -2001,7 +2001,7 @@ export function SheepAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ allEnt
                     <LineChart data={milkMonthly}>
                       <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
                       <YAxis stroke={palette.inkSoft} fontSize={11} />
-                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} gal`, "Milk"]} />
+                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} ${volumeUnitLabel()}`, "Milk"]} />
                       <Line type="monotone" dataKey="gal" stroke={palette.leaf} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
                     </LineChart>
                   </ResponsiveContainer>

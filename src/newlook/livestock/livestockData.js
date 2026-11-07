@@ -12,7 +12,7 @@
 // ============================================================================
 
 import { isoDay, parseDay, prettyDay, DAY, costRows } from "../eggs/eggFacts.js";
-import { fmtVolume, volumeUnitLabel, fmtMoney, fmtMoneyWhole } from "../../units.js";
+import { fmtVolume, volumeUnitLabel, fmtMoney, fmtMoneyWhole, platesLine, fmtVolumeBig } from "../../units.js";
 import { plusDays } from "../../dayMath.js";
 
 export const SPECIES = {
@@ -282,7 +282,7 @@ export function herdFunFacts(sp, { data, hobby, range, milkPrice = 0 }) {
   if (total >= 64) {
     const glasses = Math.round(total / 8);
     facts.push({ key: "glasses", icon: "milk", big: glasses.toLocaleString("en-US"), line: `glasses of milk from our ${sp.plural}`,
-      title: `That's ${glasses.toLocaleString("en-US")} glasses of milk`, sub: "At 8 oz a glass." });
+      title: `That's ${glasses.toLocaleString("en-US")} glasses of milk`, sub: volumeUnitLabel() === "L" ? "At about 240 ml a glass." : "At 8 oz a glass." });
   }
   if (total >= 128 && milkPrice > 0) {
     const v = (total / 128) * milkPrice;
@@ -292,14 +292,14 @@ export function herdFunFacts(sp, { data, hobby, range, milkPrice = 0 }) {
   const top = milkByAnimal(sp, entries, hobby, range);
   if (top.length > 1 && top[0].oz > 0) {
     facts.push({ key: "topmilker", icon: "trophy", big: top[0].name, line: "our top milker",
-      title: `${top[0].name} is your top milker`, sub: `${(top[0].oz / 128).toFixed(1)} gallons, ${Math.round((top[0].oz / total) * 100)}% of the herd's milk.` });
+      title: `${top[0].name} is your top milker`, sub: `${fmtVolumeBig(top[0].oz / 128)}, ${Math.round((top[0].oz / total) * 100)}% of the herd's milk.` });
   }
   const byDay = new Map();
   for (const e of entries) if (inR(e) && e.action === "milk") byDay.set(e.date, (byDay.get(e.date) || 0) + sp.milkOz(e));
   if (byDay.size >= 5) {
     const [d, v] = [...byDay.entries()].sort((a, b) => b[1] - a[1])[0];
-    facts.push({ key: "bestday", icon: "calendar", big: `${(v / 128).toFixed(1)} gal`, line: `our best milking day, ${prettyDay(d)}`,
-      title: `Best day: ${(v / 128).toFixed(1)} gal on ${prettyDay(d)}`, sub: `Your biggest milking day${range.start ? " in this range" : ""}.` });
+    facts.push({ key: "bestday", icon: "calendar", big: fmtVolumeBig(v / 128), line: `our best milking day, ${prettyDay(d)}`,
+      title: `Best day: ${fmtVolumeBig(v / 128)} on ${prettyDay(d)}`, sub: `Your biggest milking day${range.start ? " in this range" : ""}.` });
   }
   const young = entries.filter((e) => inR(e) && e.action === sp.birthAction).reduce((s, e) => s + youngOf(sp, e), 0);
   if (young >= 2) facts.push({ key: "young", icon: "kid", big: String(young), line: `${sp.youngPlural} born on our homestead`,
@@ -307,6 +307,6 @@ export function herdFunFacts(sp, { data, hobby, range, milkPrice = 0 }) {
   const butchered = entries.filter((e) => inR(e) && e.action === "butcher");
   const lbs = butchered.reduce((s, e) => s + (Number(e.weight) || 0), 0);
   if (lbs >= 50) facts.push({ key: "meals", icon: "meals", big: Math.round(lbs * 2).toLocaleString("en-US"), line: `family dinners from our ${sp.plural}`,
-    title: `About ${Math.round(lbs * 2).toLocaleString("en-US")} family dinners`, sub: `${Math.round(lbs)} lbs at roughly half a pound a plate.` });
+    title: `About ${Math.round(lbs * 2).toLocaleString("en-US")} family dinners`, sub: platesLine(lbs) });
   return facts;
 }

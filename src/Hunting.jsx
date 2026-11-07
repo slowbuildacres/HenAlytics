@@ -22,7 +22,7 @@ import React, { useState } from "react";
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Tag as NlTag, DollarSign as NlDollar } from "lucide-react";
 import { X } from "lucide-react";
-import { fmtMoney, fmtWeight, lbsToInput, lbsFromInput, weightUnitLabel, currencySymbol, perWeightLabel, perLbToInput } from "./units.js";
+import { fmtMoney, fmtWeight, lbsToInput, lbsFromInput, weightUnitLabel, currencySymbol, perWeightLabel, perLbToInput, fmtWeightWhole, platesLine } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 
@@ -480,10 +480,10 @@ export function huntingStats(hobby, data, range = "year") {
   const year = String(new Date().getFullYear());
   const t = huntingTotals(hobby, (d) => range === "all" || (d || "").startsWith(year));
   const by = new Map(); for (const h of t.harvests) { const k = h.species || "Other"; by.set(k, (by.get(k) || 0) + (Number(h.meatLbs) || 0)); }
-  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([name, v]) => ({ key: name, name, value: v, label: `${Math.round(v)} lbs` }));
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([name, v]) => ({ key: name, name, value: v, label: fmtWeightWhole(v) }));
   const facts = [];
-  if (t.meatLbs >= 10) facts.push({ key: "meals", icon: "trophy", big: String(Math.round(t.meatLbs * 2)), line: "family dinners we hunted", title: `About ${Math.round(t.meatLbs * 2)} family dinners`, sub: `${Math.round(t.meatLbs)} lbs at half a pound a plate.` });
-  if (t.meatLbs && t.storeValue > t.totalCost) facts.push({ key: "saved", icon: "money", big: fmtMoney(t.storeValue - t.totalCost), line: "less than buying it at the store", title: `${fmtMoney(t.storeValue - t.totalCost)} less than the store`, sub: `At ${fmtMoney(t.valuePerLb)} a lb.` });
+  if (t.meatLbs >= 10) facts.push({ key: "meals", icon: "trophy", big: String(Math.round(t.meatLbs * 2)), line: "family dinners we hunted", title: `About ${Math.round(t.meatLbs * 2)} family dinners`, sub: platesLine(t.meatLbs) });
+  if (t.meatLbs && t.storeValue > t.totalCost) facts.push({ key: "saved", icon: "money", big: fmtMoney(t.storeValue - t.totalCost), line: "less than buying it at the store", title: `${fmtMoney(t.storeValue - t.totalCost)} less than the store`, sub: `At ${fmtMoney(perLbToInput(t.valuePerLb))} a ${perWeightLabel() === "kg" ? "kilo" : "lb"}.` });
   return {
     cards: [
       { label: "Harvests", value: t.harvests.length, sub: rows.map((r) => r.name).slice(0, 3).join(", ") },

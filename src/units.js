@@ -149,6 +149,37 @@ export function fmtWeight(lbs, opts = {}) {
   return `${n.toFixed(decimals == null ? 1 : decimals)} lbs`;
 }
 
+// A total stored in pounds as a whole number in the person's big unit, with
+// thousands grouped: "1,204 lbs" / "546 kg".
+export function fmtWeightWhole(lbs) {
+  const n = Math.round(weightFromLbs(lbs));
+  return `${n.toLocaleString("en-US")} ${weightUnitLabel()}`;
+}
+// Same, one decimal: "18.5 lbs" / "8.4 kg".
+export function fmtWeight1(lbs) {
+  return `${Number(weightFromLbs(lbs).toFixed(1)).toLocaleString("en-US")} ${weightUnitLabel()}`;
+}
+// "40 lbs at roughly half a pound a plate." in the person's units.
+export function platesLine(lbs) {
+  return _currentWeightUnit === "kg" ? `${fmtWeightWhole(lbs)} at roughly 225 g a plate.` : `${fmtWeightWhole(lbs)} at roughly half a pound a plate.`;
+}
+// A harvest's amount in pounds, from whatever unit it was logged in, or null
+// for counts, bunches and jars.
+export function harvestAmountLbs(qty, unit) {
+  const n = Number(qty) || 0;
+  switch (String(unit || "lbs").toLowerCase()) {
+    case "lbs": case "lb": return n;
+    case "oz": return n / OZ_PER_LB;
+    case "kg": return n * LBS_PER_KG;
+    case "g": return n / G_PER_LB;
+    default: return null;
+  }
+}
+// A volume total stored in gallons, whole or one decimal: "12 gal" / "45.4 L".
+export function fmtVolumeBig(gal, decimals = 1) {
+  return `${Number(volumeFromGal(gal).toFixed(decimals)).toLocaleString("en-US")} ${volumeUnitLabel()}`;
+}
+
 // Just the unit label (no number). Useful for placeholders in forms.
 // Returns "lbs" or "kg" depending on user preference.
 export function weightUnitLabel() {

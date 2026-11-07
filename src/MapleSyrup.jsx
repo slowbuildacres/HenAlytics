@@ -666,11 +666,11 @@ export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyA
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>🍁 Syrup yield by year</div>
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={perSeason}>
+              <BarChart data={perSeason.map((s) => ({ ...s, syrupShown: Number(volumeFromGal(s.syrup).toFixed(2)) }))}>
                 <XAxis dataKey="year" style={{ fontSize: 11 }} />
                 <YAxis style={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => [`${v} gal`, "Syrup"]} />
-                <Bar dataKey="syrup" fill={palette.maple} radius={[6, 6, 0, 0]} />
+                <Tooltip formatter={(v) => [`${v} ${volumeUnitLabel()}`, "Syrup"]} />
+                <Bar dataKey="syrupShown" fill={palette.maple} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -732,9 +732,9 @@ export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyA
               <div key={s.id} style={{ padding: "10px 12px", background: palette.bgAlt, borderRadius: 8, fontSize: 13 }}>
                 <div style={{ fontWeight: 700, color: palette.ink, marginBottom: 4 }}>{s.name}</div>
                 <div style={{ color: palette.inkSoft, fontSize: 12 }}>
-                  {s.taps} taps · {s.sap} gal sap → {s.syrup} gal syrup
+                  {s.taps} taps · {fmtVolume(s.sap, { forceBig: true })} sap → {fmtVolume(s.syrup, { forceBig: true, decimals: 2 })} syrup
                   {s.cost > 0 && ` · ${fmtMoney(s.cost)} cost`}
-                  {s.syrupPerTap > 0 && ` · ${s.syrupPerTap} gal/tap`}
+                  {s.syrupPerTap > 0 && ` · ${fmtVolume(s.syrupPerTap)} a tap`}
                 </div>
               </div>
             ))}

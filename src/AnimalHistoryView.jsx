@@ -31,7 +31,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import { X, Trash2, Save, Edit3 } from "lucide-react";
-import { fmtMoney as fmtMoneyIntl } from "./units.js";
+import { fmtMoney as fmtMoneyIntl, fmtWeight, fmtVolume } from "./units.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -87,23 +87,23 @@ const actionMeta = (action) => ACTION_META[action] || { emoji: "•", label: act
 // ----------------------------------------------------------------------------
 const detailForEntry = (e) => {
   const bits = [];
-  if (e.action === "milk" && e.gallons != null) bits.push(`${e.gallons} gal`);
+  if (e.action === "milk" && e.gallons != null) bits.push(fmtVolume(Number(e.gallons) || 0));
   if (e.action === "fed") {
     // Newer entries store feedAmount + feedUnit; legacy entries only have lbs.
     if (e.feedUnit === "cups" && e.feedAmount != null) {
       bits.push(`${e.feedAmount} cups`);
     } else if (e.lbs != null && Number(e.lbs) > 0) {
-      bits.push(`${e.lbs} lbs`);
+      bits.push(fmtWeight(Number(e.lbs), { forceBig: true }));
     } else if (e.feedAmount != null && Number(e.feedAmount) > 0) {
       // Defensive fallback: feedAmount present but feedUnit missing — default to lbs
-      bits.push(`${e.feedAmount} lbs`);
+      bits.push(fmtWeight(Number(e.feedAmount), { forceBig: true }));
     }
     if (e.cost > 0) bits.push(fmtMoney(e.cost));
   }
-  if (e.action === "weight" && e.weight != null) bits.push(`${e.weight} lbs`);
+  if (e.action === "weight" && e.weight != null) bits.push(fmtWeight(Number(e.weight), { forceBig: true }));
   if (e.action === "butcher") {
-    if (e.weight != null) bits.push(`${e.weight} lbs`);
-    else if (e.count != null && e.avgWeight != null) bits.push(`${e.count} × ${e.avgWeight} lbs`);
+    if (e.weight != null) bits.push(fmtWeight(Number(e.weight), { forceBig: true }));
+    else if (e.count != null && e.avgWeight != null) bits.push(`${e.count} × ${fmtWeight(Number(e.avgWeight), { forceBig: true })}`);
     if (e.cost > 0) bits.push(fmtMoney(e.cost));
   }
   if (e.action === "death" && e.cause) bits.push(e.cause);
@@ -263,7 +263,7 @@ function collectEvents({ animal, hobby, entries, sales, species }) {
   if (species === "sheep") {
     (hobby.shearings || []).filter(s => s.animalId === animalId).forEach(s => {
       const bits = [];
-      if (s.woolLbs) bits.push(`${s.woolLbs} lbs wool`);
+      if (s.woolLbs) bits.push(`${fmtWeight(Number(s.woolLbs), { forceBig: true })} wool`);
       if (s.woolGrade) bits.push(s.woolGrade);
       if (s.notes) bits.push(s.notes);
       out.push({

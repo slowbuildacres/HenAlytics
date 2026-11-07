@@ -23,7 +23,7 @@ import { computeHarvestValue } from "../../gardenValue.js";
 import { SPECIES, liveAnimals, milkOz, birthHistory } from "../livestock/livestockData.js";
 import { rabbitSummary } from "../rabbits/rabbitData.js";
 import { rideTotals } from "../horses/horseData.js";
-import { fmtMoneyWhole, fmtWeight } from "../../units.js";
+import { fmtMoneyWhole, fmtWeight, fmtWeight1, fmtVolumeBig } from "../../units.js";
 
 const pad = (n) => String(n).padStart(2, "0");
 export const isoDay = (d = new Date()) => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
@@ -147,12 +147,12 @@ export function production(data, p) {
     } else if (k.hobbyType === "rabbits") {
       const s = rabbitSummary(ents, r);
       out.push({ label: "Kits born alive", value: s.kits, text: `${s.kits} kits in ${s.litters} litters` });
-      if (s.lbs > 0) out.push({ label: "Meat", value: s.lbs, text: `${r1(s.lbs)} lbs` });
+      if (s.lbs > 0) out.push({ label: "Meat", value: s.lbs, text: fmtWeight1(s.lbs) });
     } else if (["goats", "cows", "sheep", "pigs"].includes(k.hobbyType)) {
       const sp = SPECIES[k.hobbyType];
       if (sp && sp.milk !== false) {
         const oz = milkOz(sp, ents, { from: p.start, to: p.end });
-        if (oz > 0) out.push({ label: "Milk", value: oz, text: `${r1(oz / 128)} gallons` });
+        if (oz > 0) out.push({ label: "Milk", value: oz, text: fmtVolumeBig(oz / 128) });
       }
       if (sp) {
         const born = birthHistory(sp, h, ents).filter((b) => inR(b.date, p)).reduce((t, b) => t + (Number(b.count) || 0), 0);
@@ -165,7 +165,7 @@ export function production(data, p) {
       out.push({ label: "Rides", value: t.count, text: `${t.count} rides · ${r1(t.minutes / 60)} hours` });
     } else if (k.hobbyType === "bees") {
       const lbs = ents.filter((e) => e.action === "harvest" && inR(e.date, p)).reduce((t, e) => t + (Number(e.lbs) || 0), 0);
-      out.push({ label: "Honey", value: lbs, text: `${r1(lbs)} lbs` });
+      out.push({ label: "Honey", value: lbs, text: fmtWeight1(lbs) });
     } else if (k.hobbyType === "meat_chickens") {
       const inv = inventory(data, p);
       out.push({ label: "Birds raised", value: inv.count, text: `${inv.count} birds` });

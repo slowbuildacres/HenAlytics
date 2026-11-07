@@ -22,7 +22,7 @@ import { Card, CardHeader, Row, Badge, Button, Sheet } from "../ui.jsx";
 import { winterSeason, WINTER_ITEMS } from "../../winterChecklist.js";
 import { getWeeklyPrecip } from "../../weather.js";
 import { needsBuying, seedViability } from "../../SeedInventory.jsx";
-import { fmtMoney } from "../../units.js";
+import { fmtMoney, fmtWeightWhole } from "../../units.js";
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
 import { annualRows, perennialRows, seedStartRows, plantingWindows, seasonHarvests, harvestByCrop, gardenFunFacts } from "./gardenData.js";
 import { computeHarvestValue } from "../../gardenValue.js";
@@ -334,7 +334,7 @@ export function GardenStats({ hobby, data, setModal, spent, allNumbers, closed }
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={{ fontSize: type.small, color: nl.soft }}>{hobby.currentSeason ? `${hobby.currentSeason.name}${closed ? ", closed" : ""}` : "This season"}</div>
       <div style={{ display: "grid", gridTemplateColumns: "repeat(2, minmax(0, 1fr))", gap: 10 }}>
-        <Card padded><div style={{ fontSize: type.small, color: nl.soft }}>Harvested</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{Math.round(lbs).toLocaleString("en-US")} lbs</div><div style={{ fontSize: 12, color: nl.soft }}>{harvests.length} harvest{harvests.length === 1 ? "" : "s"} logged</div></Card>
+        <Card padded><div style={{ fontSize: type.small, color: nl.soft }}>Harvested</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{fmtWeightWhole(lbs)}</div><div style={{ fontSize: 12, color: nl.soft }}>{harvests.length} harvest{harvests.length === 1 ? "" : "s"} logged</div></Card>
         <Card padded onClick={closed ? undefined : () => setModal({ type: "gardenValue", hobbyId: hobby.id })}><div style={{ fontSize: type.small, color: nl.soft }}>Food grown</div><div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1, color: nl.good }}>{money0(total)}</div><div style={{ fontSize: 12, color: nl.soft }}>{spent > 0 ? `Spent ${money0(spent)} · ${total >= spent ? `${money0(total - spent)} ahead` : `${money0(spent - total)} to go`}` : "At grocery prices"}</div></Card>
       </div>
       {facts.length > 0 && (
@@ -362,7 +362,7 @@ export function GardenStats({ hobby, data, setModal, spent, allNumbers, closed }
           <div key={c.plant} style={{ display: "flex", alignItems: "center", gap: 10, fontSize: 13, marginTop: i ? 10 : 0 }}>
             <span style={{ width: 92, flexShrink: 0, fontWeight: 600, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{c.plant}</span>
             <span style={{ flex: 1, height: 14, borderRadius: 7, background: nl.chip, overflow: "hidden" }}><span style={{ display: "block", height: "100%", width: `${Math.max(4, ((c.value || c.lbs) / maxV) * 100)}%`, background: COLORS[i % COLORS.length], borderRadius: 7 }} /></span>
-            <span style={{ width: 64, textAlign: "right", color: nl.soft, flexShrink: 0 }}>{c.value ? money0(c.value) : `${Math.round(c.lbs)} lbs`}</span>
+            <span style={{ width: 64, textAlign: "right", color: nl.soft, flexShrink: 0 }}>{c.value ? money0(c.value) : fmtWeightWhole(c.lbs)}</span>
           </div>
         )) : <div style={{ fontSize: 14, color: nl.soft }}>Log a harvest to see what your garden grows best.</div>}
       </Card>

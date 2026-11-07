@@ -20,7 +20,7 @@ import { Card, CardHeader, Row, Button, Sheet, Badge } from "../ui.jsx";
 import FeedCard from "../FeedCard.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers } from "../StatsParts.jsx";
 import { batchAlive, batchAgeDays, batchTotals, restorePastBatch } from "../../meatBatches.js";
-import { fmtWeight, fmtMoney } from "../../units.js";
+import { fmtWeight, fmtMoney, platesLine } from "../../units.js";
 import { isoDay, prettyDay } from "../eggs/eggFacts.js";
 import { showUndo } from "../UndoBar.jsx";
 
@@ -218,7 +218,7 @@ export function MeatStats({ hobby, data, setModal, allNumbers }) {
   const done = batches.filter((x) => x.t.lbs > 0);
 
   const facts = [];
-  if (lbs >= 10) facts.push({ key: "meals", icon: "meals", big: Math.round(lbs * 2).toLocaleString("en-US"), line: "family dinners in our freezer", title: `About ${Math.round(lbs * 2).toLocaleString("en-US")} family dinners`, sub: `${Math.round(lbs)} lbs at roughly half a pound a plate.` });
+  if (lbs >= 10) facts.push({ key: "meals", icon: "meals", big: Math.round(lbs * 2).toLocaleString("en-US"), line: "family dinners in our freezer", title: `About ${Math.round(lbs * 2).toLocaleString("en-US")} family dinners`, sub: platesLine(lbs) });
   if (done.length > 1) {
     const best = done.slice().sort((a, b) => (a.t.cost / a.t.lbs) - (b.t.cost / b.t.lbs))[0];
     if (best.t.cost > 0) facts.push({ key: "best", icon: "trophy", big: best.b.name, line: "our cheapest batch per pound", title: `${best.b.name} was your best batch`, sub: `${fmtMoney(best.t.cost / best.t.lbs)} a pound, all costs in.` });

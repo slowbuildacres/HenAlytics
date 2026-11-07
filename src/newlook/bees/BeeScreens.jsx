@@ -19,7 +19,7 @@ import {
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, Badge, Button, Sheet } from "../ui.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers } from "../StatsParts.jsx";
-import { fmtMoney, fmtWeight } from "../../units.js";
+import { fmtMoney, fmtWeight, fmtWeightWhole, weightFromLbs, getCurrentWeightUnit } from "../../units.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
 
 const ic = (I) => <I size={20} strokeWidth={1.8} />;
@@ -317,8 +317,12 @@ export function BeeStats({ hobby, data, setModal, allNumbers }) {
   const byHive = hives.map((h) => ({ h, lbs: entries.filter((e) => inR(e) && e.hiveId === h.id && e.action === "harvest").reduce((t, e) => t + (Number(e.lbs) || 0), 0) })).filter((x) => x.lbs > 0).sort((a, b) => b.lbs - a.lbs);
   const top = Math.max(1, ...byHive.map((x) => x.lbs));
   const facts = [];
-  if (s.lbs >= 1) facts.push({ key: "miles", icon: "plane", big: `${Math.round(s.lbs * 55000).toLocaleString("en-US")} mi`, line: "flown by our bees for this honey", title: `Your bees flew about ${Math.round(s.lbs * 55000).toLocaleString("en-US")} miles`, sub: "Bees fly roughly 55,000 miles for each pound of honey." });
-  if (s.lbs >= 5) facts.push({ key: "jars", icon: "jar", big: String(s.jars || Math.round(s.lbs)), line: s.jars ? "jars of our own honey" : "pounds of our own honey", title: s.jars ? `${s.jars} jars of honey` : `${Math.round(s.lbs)} lbs of honey`, sub: "Straight from your hives." });
+  if (s.lbs >= 1) {
+    const km = getCurrentWeightUnit() === "kg";
+    const dist = Math.round(s.lbs * 55000 * (km ? 1.609 : 1)).toLocaleString("en-US");
+    facts.push({ key: "miles", icon: "plane", big: `${dist} ${km ? "km" : "mi"}`, line: "flown by our bees for this honey", title: `Your bees flew about ${dist} ${km ? "kilometers" : "miles"}`, sub: km ? "Bees fly roughly 195,000 km for each kilo of honey." : "Bees fly roughly 55,000 miles for each pound of honey." });
+  }
+  if (s.lbs >= 5) facts.push({ key: "jars", icon: "jar", big: String(s.jars || Math.round(weightFromLbs(s.lbs))), line: s.jars ? "jars of our own honey" : (getCurrentWeightUnit() === "kg" ? "kilos of our own honey" : "pounds of our own honey"), title: s.jars ? `${s.jars} jars of honey` : `${fmtWeightWhole(s.lbs)} of honey`, sub: "Straight from your hives." });
   if (byHive.length > 1) facts.push({ key: "top", icon: "trophy", big: byHive[0].h.name, line: "our best hive", title: `${byHive[0].h.name} made the most honey`, sub: `${fmtWeight(byHive[0].lbs)} of the total.` });
   if (s.tests.length >= 3) facts.push({ key: "tests", icon: "bug", big: String(s.tests.length), line: "mite tests done", title: `${s.tests.length} mite tests`, sub: "Testing is the best thing you can do for your bees." });
 

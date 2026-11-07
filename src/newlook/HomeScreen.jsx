@@ -15,7 +15,7 @@ import { switcherEntries } from "./hobbies.js";
 import HobbyGlyph from "./HobbyGlyph.jsx";
 import { computeHarvestValue } from "../gardenValue.js";
 import { collectGardenHarvests } from "../analytics.js";
-import { fmtMoney } from "../units.js";
+import { fmtMoney, fmtWeightWhole } from "../units.js";
 import { SPECIES, milkOz, upcomingBirths, milkText } from "./livestock/livestockData.js";
 import { batchAlive, batchAgeDays } from "../meatBatches.js";
 import { upcomingKindles } from "./rabbits/rabbitData.js";
@@ -98,7 +98,7 @@ export function tileStat(entry, data, today) {
     if (mites) return { big: null, small: `${mites} hive${mites === 1 ? "" : "s"} with high mites` };
     if (due) return { big: null, small: `${due} hive${due === 1 ? "" : "s"} due a look` };
     const lbs = ents.filter((e) => e && e.action === "harvest" && String(e.date).startsWith(today.slice(0, 4))).reduce((s, e) => s + (Number(e.lbs) || 0), 0);
-    if (lbs) return { big: `${Math.round(lbs)} lbs`, small: "honey this year" };
+    if (lbs) return { big: fmtWeightWhole(lbs), small: "honey this year" };
   }
   if (entry.type === "rabbits") {
     const next = upcomingKindles(entry.hobby, ents, today)[0];

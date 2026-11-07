@@ -12,23 +12,30 @@ import { autoDetectHardiness } from "../../hardiness.js";
 import { collectGardenHarvests, totalHarvestLbs, harvestLbs } from "../../analytics.js";
 import { computeHarvestValue } from "../../gardenValue.js";
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
-import { fmtMoneyWhole, fmtWeight, weightUnitLabel } from "../../units.js";
+import { fmtMoneyWhole, fmtWeight, weightUnitLabel, harvestAmountLbs } from "../../units.js";
 import { plusDays } from "../../dayMath.js";
 
 const key = (s) => String(s || "").trim().toLowerCase();
 const UNIT = { lbs: "lbs", oz: "oz", kg: "kg", g: "g", each: "each", count: "", cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches", quart: "quarts", pint: "pints" };
 
 export function harvestText(harvests) {
+  // Weights (lbs, oz, kg, g) add up into one total in the person's units;
+  // counts, bunches and jars are listed as logged.
   const t = {};
+  let lbs = 0, anyWeight = false;
   for (const h of harvests || []) {
     const u = (h && h.unit) || "lbs";
-    t[u] = (t[u] || 0) + (Number(h.quantity != null ? h.quantity : h.qty) || 0);
+    const q = Number(h.quantity != null ? h.quantity : h.qty) || 0;
+    const asLbs = harvestAmountLbs(q, u);
+    if (asLbs != null) { lbs += asLbs; anyWeight = true; continue; }
+    t[u] = (t[u] || 0) + q;
   }
-  return Object.keys(t).map((u) => {
+  const weight = anyWeight ? [fmtWeight(lbs, { forceBig: lbs >= 1 })] : [];
+  return weight.concat(Object.keys(t).map((u) => {
     const whole = ["each", "count", "bunch"].includes(u);
     const n = whole ? Math.round(t[u]) : Number(t[u].toFixed(1));
     return `${n}${UNIT[u] ? " " + UNIT[u] : ""}`;
-  }).join(" · ");
+  })).join(" · ");
 }
 
 // This season's annuals with planted date, harvest so far and a status.

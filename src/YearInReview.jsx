@@ -6,7 +6,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel } from "./units.js";
 import { huntingTotals } from "./Hunting.jsx";
 import { soapBatchStats } from "./SoapMaking.jsx";
 import { getYearWeather } from "./weather.js";
@@ -586,9 +586,9 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
-  if (gardenEnabled) items.push({ icon: "🌱", number: Math.round(stats.totalHarvestLbs), label: `lb${Math.round(stats.totalHarvestLbs) === 1 ? "" : "s"} harvested`, accent: palette.leaf });
+  if (gardenEnabled) items.push({ icon: "🌱", number: Math.round(weightFromLbs(stats.totalHarvestLbs)), label: `${weightUnitLabel()} harvested`, accent: palette.leaf });
   if (rabbitsEnabled) items.push({ icon: "🐇", number: stats.totalKitsAlive || 0, label: `kits born`, accent: palette.leaf });
-  if (beesEnabled && stats.honeyHarvestedLbs > 0) items.push({ icon: "🍯", number: Math.round(stats.honeyHarvestedLbs), label: `lbs honey harvested`, accent: palette.yolk });
+  if (beesEnabled && stats.honeyHarvestedLbs > 0) items.push({ icon: "🍯", number: Math.round(weightFromLbs(stats.honeyHarvestedLbs)), label: `${weightUnitLabel()} honey harvested`, accent: palette.yolk });
   if (goatsEnabled && stats.goatMilkOz > 0) items.push({ icon: "🐐", number: Math.round(stats.goatMilkOz / 128), label: `gal goat milk`, accent: palette.leaf });
   if (cowsEnabled && stats.cowMilkGal > 0) items.push({ icon: "🐄", number: Math.round(stats.cowMilkGal), label: `gal cow milk`, accent: palette.leaf });
   if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
@@ -793,7 +793,7 @@ function GardenCard({ stats }) {
                 <div style={{ flex: 1, height: 14, background: palette.bgAlt, borderRadius: 7, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${(p.lbs / maxLbs) * 100}%`, background: palette.leaf, borderRadius: 7 }} />
                 </div>
-                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>{p.lbs.toFixed(1)} lbs</div>
+                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>{fmtWeight1(p.lbs)}</div>
               </div>
             ))}
           </div>
@@ -818,7 +818,7 @@ function MeatChickensCard({ stats }) {
       </div>
       {birdsButchered > 0 ? (
         <>
-          <CountUp number={Math.round(totalMeatLbs)} suffix="lbs in the freezer" big />
+          <CountUp number={Math.round(weightFromLbs(totalMeatLbs))} suffix={`${weightUnitLabel()} in the freezer`} big />
           <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
             From <strong style={{ color: palette.ink }}>{birdsButchered}</strong> bird{birdsButchered === 1 ? "" : "s"} butchered
             {birdsRaised > 0 && <> · started with <strong style={{ color: palette.ink }}>{birdsRaised}</strong></>}
@@ -934,7 +934,7 @@ function RabbitsCard({ stats }) {
       {totalRabbitsButchered > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
           <Stat big={totalRabbitsButchered} label="rabbits butchered" accent={palette.feather} />
-          {rabbitTotalMeatLbs > 0 && <Stat big={`${rabbitTotalMeatLbs.toFixed(1)} lbs`} label="in the freezer" accent={palette.leaf} />}
+          {rabbitTotalMeatLbs > 0 && <Stat big={fmtWeight1(rabbitTotalMeatLbs)} label="in the freezer" accent={palette.leaf} />}
           {rabbitCostPerRabbit > 0 && <Stat big={fmtMoney(rabbitCostPerRabbit)} label="cost per rabbit" accent={palette.yolk} />}
         </div>
       )}
@@ -955,7 +955,7 @@ function BeesCard({ stats }) {
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🍯 Bees</div>
-      {honeyHarvestedLbs > 0 && <CountUp number={Math.round(honeyHarvestedLbs)} suffix="lbs of honey harvested" big />}
+      {honeyHarvestedLbs > 0 && <CountUp number={Math.round(weightFromLbs(honeyHarvestedLbs))} suffix={`${weightUnitLabel()} of honey harvested`} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {hiveInspections > 0 && <Stat big={hiveInspections} label="hive inspections" accent={palette.yolk}/>}
         {hiveTreatments > 0 && <Stat big={hiveTreatments} label="treatments" accent={palette.feather}/>}
@@ -985,13 +985,13 @@ function GoatsCard({ stats }) {
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐐 Goats</div>
-      {goatMilkOz > 0 && <CountUp number={Math.round(goatMilkOz/128)} suffix={`gallons of milk (${goatMilkOz.toFixed(0)} oz)`} big />}
+      {goatMilkOz > 0 && <CountUp number={Math.round(volumeFromGal(goatMilkOz/128))} suffix={volumeUnitLabel() === "L" ? "liters of milk" : `gallons of milk (${goatMilkOz.toFixed(0)} oz)`} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {goatCount > 0 && <Stat big={goatCount} label="goats in herd" accent={palette.leaf}/>}
         {goatKids > 0 && <Stat big={goatKids} label="kids born" accent={palette.yolk}/>}
         {goatFeedCost > 0 && <Stat big={fmtMoney(goatFeedCost)} label="feed cost" accent={palette.feather}/>}
         {goatButchered > 0 && <Stat big={goatButchered} label="butchered" accent={palette.accent}/>}
-        {goatMeatLbs > 0 && <Stat big={`${goatMeatLbs.toFixed(0)} lbs`} label="in the freezer" accent={palette.leaf}/>}
+        {goatMeatLbs > 0 && <Stat big={fmtWeightWhole(goatMeatLbs)} label="in the freezer" accent={palette.leaf}/>}
       </div>
     </Card>
   );
@@ -1003,13 +1003,13 @@ function CowsCard({ stats }) {
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐄 Cows</div>
-      {cowMilkGal > 0 && <CountUp number={Math.round(cowMilkGal)} suffix="gallons of milk" big />}
+      {cowMilkGal > 0 && <CountUp number={Math.round(volumeFromGal(cowMilkGal))} suffix={volumeUnitLabel() === "L" ? "liters of milk" : "gallons of milk"} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {cowCount > 0 && <Stat big={cowCount} label="cattle" accent={palette.leaf}/>}
         {cowCalves > 0 && <Stat big={cowCalves} label="calves born" accent={palette.yolk}/>}
         {cowFeedCost > 0 && <Stat big={fmtMoney(cowFeedCost)} label="feed cost" accent={palette.feather}/>}
         {cowButchered > 0 && <Stat big={cowButchered} label="butchered" accent={palette.accent}/>}
-        {cowMeatLbs > 0 && <Stat big={`${cowMeatLbs.toFixed(0)} lbs`} label="in the freezer" accent={palette.leaf}/>}
+        {cowMeatLbs > 0 && <Stat big={fmtWeightWhole(cowMeatLbs)} label="in the freezer" accent={palette.leaf}/>}
       </div>
     </Card>
   );
@@ -1044,9 +1044,9 @@ function SheepCard({ stats }) {
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {sheepCount > 0 && <Stat big={sheepCount} label="live sheep" accent={palette.leaf}/>}
         {lambSurvival !== null && <Stat big={`${lambSurvival}%`} label="lamb survival" accent={lambSurvival >= 80 ? palette.leaf : palette.accent}/>}
-        {sheepMilkGal > 0 && <Stat big={sheepMilkGal.toFixed(1)} label="gal milk" accent={palette.leafSoft}/>}
-        {sheepWoolLbs > 0 && <Stat big={sheepWoolLbs.toFixed(1)} label="lbs wool" accent={palette.yolk}/>}
-        {sheepMeatLbs > 0 && <Stat big={Math.round(sheepMeatLbs)} label="lbs meat" accent={palette.feather}/>}
+        {sheepMilkGal > 0 && <Stat big={fmtVolumeBig(sheepMilkGal)} label="milk" accent={palette.leafSoft}/>}
+        {sheepWoolLbs > 0 && <Stat big={fmtWeight1(sheepWoolLbs)} label="wool" accent={palette.yolk}/>}
+        {sheepMeatLbs > 0 && <Stat big={fmtWeightWhole(sheepMeatLbs)} label="meat" accent={palette.feather}/>}
         {sheepButchered > 0 && <Stat big={sheepButchered} label="butchered" accent={palette.accent}/>}
       </div>
     </Card>
@@ -1183,7 +1183,7 @@ function FreezerCard({ stats }) {
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>❄️ Freezer log</div>
       <CountUp number={freezerBirds} suffix={`bird${freezerBirds===1?"":"s"} to the freezer`} big />
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
-        {freezerLbs > 0 && <Stat big={freezerLbs.toFixed(1)} label="lbs total" accent={palette.feather} />}
+        {freezerLbs > 0 && <Stat big={fmtWeight1(freezerLbs)} label="total" accent={palette.feather} />}
       </div>
       <div style={{ marginTop:10,fontSize:12,color:palette.inkSoft,fontStyle:"italic" }}>
         Includes any bird butchered from your flocks — chickens, ducks, quail, geese, and more.
@@ -1236,7 +1236,7 @@ function MapleSyrupCard({ stats }) {
       {mapleSyrupGal > 0 && <CountUp number={Number(mapleSyrupGal.toFixed(2))} suffix="gallons of syrup made" big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {mapleTapsSet > 0 && <Stat big={mapleTapsSet} label="taps set" accent={palette.feather}/>}
-        {mapleSapGal > 0 && <Stat big={`${mapleSapGal.toFixed(0)} gal`} label="sap collected" accent={palette.leaf}/>}
+        {mapleSapGal > 0 && <Stat big={fmtVolumeBig(mapleSapGal, 0)} label="sap collected" accent={palette.leaf}/>}
         {ratio && <Stat big={`${ratio}:1`} label="sap to syrup" accent={palette.yolk}/>}
         {mapleTotalCost > 0 && <Stat big={fmtMoney(mapleTotalCost)} label="invested" accent={palette.accent}/>}
       </div>

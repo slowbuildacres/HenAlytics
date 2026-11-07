@@ -12,6 +12,7 @@ import { nl } from "./theme.js";
 import { Card, Row, Button } from "./ui.jsx";
 import { computeFeedStatus } from "../feedSupply.js";
 import { prettyDay } from "./eggs/eggFacts.js";
+import { fmtWeightWhole } from "../units.js";
 
 export default function FeedCard({ hobby, entries, update, setModal, eatWord = "they eat" }) {
   const feed = computeFeedStatus(hobby, entries || []);
@@ -24,8 +25,8 @@ export default function FeedCard({ hobby, entries, update, setModal, eatWord = "
           icon={<Wheat size={20} strokeWidth={1.8} />} iconBg={low ? nl.alertChip : undefined}
           title={feed.state === "learning" ? `Learning how fast ${eatWord}` : feed.state === "out" ? "Out of feed" : `About ${Math.max(1, Math.round(feed.daysLeft))} days of feed left`}
           sub={feed.state === "learning"
-            ? `${Math.max(0, Math.round(feed.remainingLbs))} lbs on hand · a few more feedings to estimate`
-            : `${Math.max(0, Math.round(feed.remainingLbs))} lbs on hand${feed.runOutDate ? ` · runs out around ${prettyDay(feed.runOutDate)}` : ""}`}
+            ? `${fmtWeightWhole(Math.max(0, feed.remainingLbs))} on hand · a few more feedings to estimate`
+            : `${fmtWeightWhole(Math.max(0, feed.remainingLbs))} on hand${feed.runOutDate ? ` · runs out around ${prettyDay(feed.runOutDate)}` : ""}`}
           trailing={<Button kind="link" onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })}>Update</Button>} />
         <Row icon={<History size={20} strokeWidth={1.8} />} title="When did I last buy feed?" onClick={() => setModal({ type: "purchases" })} chevron />
       </Card>

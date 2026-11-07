@@ -22,7 +22,7 @@ import { collectGardenHarvests } from "./analytics.js";
 import { computeHarvestValue } from "./gardenValue.js";
 import { buildYearReport } from "./Sales.jsx";
 import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES } from "./games.js";
-import { fmtMoney, weightFromLbs, weightUnitLabel } from "./units.js";
+import { fmtMoney, weightFromLbs, weightUnitLabel, volumeFromGal, volumeUnitLabel } from "./units.js";
 import { renderNodeToBlob, canShareFiles, createShareLink, shareUrl } from "./shareCard.js";
 
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
@@ -91,11 +91,11 @@ export function moreFacts(s) {
   const f = [];
   const add = (cond, emoji, big, label) => { if (cond) f.push({ emoji, big, label }); };
   add(s.incubatorEggsHatched > 0, "🐣", int(s.incubatorEggsHatched), plural(s.incubatorEggsHatched, "chick") + " hatched");
-  add(s.honeyHarvestedLbs > 0, "🍯", one(s.honeyHarvestedLbs), "lbs of honey");
+  add(s.honeyHarvestedLbs > 0, "🍯", one(weightFromLbs(s.honeyHarvestedLbs)), `${weightUnitLabel()} of honey`);
   const goatGal = (Number(s.goatMilkOz) || 0) / 128;
-  add(goatGal >= 1, "🐐", one(goatGal), "gallons of goat milk");
-  add(s.cowMilkGal > 0, "🐄", one(s.cowMilkGal), "gallons of milk");
-  add(s.totalMeatLbs > 0, "🍗", one(s.totalMeatLbs), "lbs of home-raised chicken");
+  add(goatGal >= 1, "🐐", one(volumeFromGal(goatGal)), volumeUnitLabel() === "L" ? "liters of goat milk" : "gallons of goat milk");
+  add(s.cowMilkGal > 0, "🐄", one(volumeFromGal(s.cowMilkGal)), volumeUnitLabel() === "L" ? "liters of milk" : "gallons of milk");
+  add(s.totalMeatLbs > 0, "🍗", one(weightFromLbs(s.totalMeatLbs)), `${weightUnitLabel()} of home-raised chicken`);
   add(s.totalKitsAlive > 0, "🐇", int(s.totalKitsAlive), "rabbit " + plural(s.totalKitsAlive, "kit"));
   const babies = (Number(s.goatKids) || 0) + (Number(s.cowCalves) || 0) + (Number(s.sheepLambsAlive) || 0);
   add(babies > 0, "🍼", int(babies), "goat kids, calves & lambs");

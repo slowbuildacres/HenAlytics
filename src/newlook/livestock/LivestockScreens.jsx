@@ -25,7 +25,7 @@ import HobbyGlyph from "../HobbyGlyph.jsx";
 import FeedCard from "../FeedCard.jsx";
 import { Avatar } from "../eggs/EggBirds.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers, MonthBars } from "../StatsParts.jsx";
-import { fmtWeight, fmtMoney } from "../../units.js";
+import { fmtWeight, fmtMoney, perLbToInput, perWeightLabel, volumeUnitLabel, volumeFromGal } from "../../units.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
 import { plusDays } from "../../dayMath.js";
 import {
@@ -443,12 +443,12 @@ export function LivestockStats({ sp, hobby, data, setModal, allNumbers }) {
           <Card padded>
             <div style={{ fontSize: type.small, color: nl.soft }}>Meat</div>
             <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{fmtWeight(s.meatLbs)}</div>
-            <div style={{ fontSize: 12, color: nl.soft }}>{s.cost > 0 ? `${fmtMoney(s.cost / s.meatLbs)} a pound, all costs in` : `${s.butchered} butchered`}</div>
+            <div style={{ fontSize: 12, color: nl.soft }}>{s.cost > 0 ? `${fmtMoney(perLbToInput(s.cost / s.meatLbs))} a ${perWeightLabel() === "kg" ? "kilo" : "pound"}, all costs in` : `${s.butchered} butchered`}</div>
           </Card>
         ) : (
           <Card padded>
-            <div style={{ fontSize: type.small, color: nl.soft }}>{anyMilk ? "Cost per gallon" : "Spent"}</div>
-            <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{anyMilk ? (s.perGal != null ? fmtMoney(s.perGal) : "—") : fmtMoney(s.cost)}</div>
+            <div style={{ fontSize: type.small, color: nl.soft }}>{anyMilk ? (volumeUnitLabel() === "L" ? "Cost per liter" : "Cost per gallon") : "Spent"}</div>
+            <div style={{ fontFamily: font.display, fontSize: type.big, lineHeight: 1.1 }}>{anyMilk ? (s.perGal != null ? fmtMoney(volumeUnitLabel() === "L" ? s.perGal / volumeFromGal(1) : s.perGal) : "—") : fmtMoney(s.cost)}</div>
             <div style={{ fontSize: 12, color: nl.soft }}>
               {anyMilk ? (s.cost > 0 ? `${fmtMoney(s.cost)} on feed and supplies` : "Log feed costs to see this") : "Feed, supplies and expenses"}
             </div>
