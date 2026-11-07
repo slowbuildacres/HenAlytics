@@ -16,14 +16,15 @@ import HobbyGlyph from "./HobbyGlyph.jsx";
 export function HobbyTitle({ name, onOpen, right }) {
   return (
     <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 8 }}>
+      {/* A long name wraps; whatever sits on the right keeps its size. */}
       <button type="button" data-tip="hobby-title" onClick={onOpen} aria-label={`Switch hobby, currently ${name}`} style={{
         display: "flex", alignItems: "center", gap: 8, minHeight: 44, padding: 0, background: "none",
-        border: "none", cursor: "pointer", color: nl.ink, textAlign: "left",
+        border: "none", cursor: "pointer", color: nl.ink, textAlign: "left", minWidth: 0, flex: "1 1 auto",
       }}>
-        <span style={{ fontFamily: font.display, fontSize: type.title, lineHeight: 1.1 }}>{name}</span>
-        <ChevronDown size={18} strokeWidth={2} aria-hidden="true" />
+        <span style={{ fontFamily: font.display, fontSize: type.title, lineHeight: 1.1, minWidth: 0, overflowWrap: "anywhere" }}>{name}</span>
+        <ChevronDown size={18} strokeWidth={2} aria-hidden="true" style={{ flexShrink: 0 }} />
       </button>
-      {right}
+      {right && <div style={{ flexShrink: 0 }}>{right}</div>}
     </div>
   );
 }

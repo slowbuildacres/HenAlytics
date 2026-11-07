@@ -76,26 +76,42 @@ function valid(y, mo, d) {
   const dt = new Date(y, mo - 1, d);
   return dt.getMonth() === mo - 1 ? iso(dt) : null;
 }
+// Numbers as people type them: "$1,234.56", "€ 3,00", "1.234,56", "2,5 kg",
+// "1 234,50", "(12.50)". A comma followed by 1-2 digits (or after the last
+// dot) is a decimal comma, as European spreadsheets write it; "1,234" is a
+// thousands separator.
 export function toNum(v) {
   if (typeof v === "number") return isFinite(v) ? v : null;
-  const s = String(v == null ? "" : v).replace(/[$€£,\s]/g, "").replace(/[a-z]+$/i, "");
+  let s = String(v == null ? "" : v).trim();
+  let neg = false;
+  if (/^\(.*\)$/.test(s)) { neg = true; s = s.slice(1, -1); }
+  s = s.replace(/[$€£¥₹\s\u00a0']/g, "").replace(/[a-z]+\.?$/i, "");
   if (!s) return null;
+  const comma = s.includes(","), dot = s.includes(".");
+  if (comma && dot) s = s.lastIndexOf(",") > s.lastIndexOf(".") ? s.replace(/\./g, "").replace(",", ".") : s.replace(/,/g, "");
+  else if (comma) s = /^-?\d{1,3}(,\d{3})+$/.test(s) ? s.replace(/,/g, "") : s.replace(",", ".");
+  else if (/^-?\d{1,3}(\.\d{3}){2,}$/.test(s)) s = s.replace(/\./g, "");
   const n = Number(s);
-  return isFinite(n) ? n : null;
+  if (!isFinite(n)) return null;
+  return neg ? -n : n;
 }
 
 // Do slashed dates look day-first (13/04/2026)? Look for a first part > 12.
 export function looksDayFirst(rows, col) {
-  let dayFirst = 0, monthFirst = 0;
+  let dayFirst = 0, monthFirst = 0, dotted = 0, seen = 0;
   for (const r of rows.slice(0, 200)) {
-    const m = String(r[col] == null ? "" : r[col]).trim().match(/^(\d{1,2})[-/.](\d{1,2})[-/.]\d{2,4}$/);
+    const m = String(r[col] == null ? "" : r[col]).trim().match(/^(\d{1,2})([-/.])(\d{1,2})[-/.]\d{2,4}$/);
     if (!m) continue;
+    seen++;
+    if (m[2] === ".") dotted++;
     if (+m[1] > 12) dayFirst++;
-    if (+m[2] > 12) monthFirst++;
+    if (+m[3] > 12) monthFirst++;
   }
-  // One odd row shouldn't flip a whole US-style sheet: need a few clear
-  // day-first dates and no clear month-first ones.
-  return monthFirst === 0 && dayFirst >= 2;
+  if (monthFirst > 0) return false;
+  // One odd row shouldn't flip a whole US-style sheet: a few clear day-first
+  // dates, or dates written with dots (05.08.2026 — European; US sheets never
+  // use dots), or a clear one in a very small file.
+  return dayFirst >= 2 || (seen > 0 && dotted >= seen / 2) || (dayFirst >= 1 && seen <= 5);
 }
 
 // ---- columns --------------------------------------------------------------------
@@ -108,13 +124,13 @@ export const KIND_FIELDS = {
   harvest: [
     { key: "date", label: "Date", need: true, re: /date|day|when/i },
     { key: "crop", label: "Crop", need: true, re: /crop|plant|veg|item|what|produce|variety/i },
-    { key: "qty", label: "Amount", need: true, re: /lb|pound|weight|oz|qty|quantity|amount|count|harvest/i },
+    { key: "qty", label: "Amount", need: true, re: /lb|pound|weight|oz|kg|kilo|gram|qty|quantity|amount|count|harvest|menge|poids|peso/i },
     { key: "unit", label: "Unit (lbs, oz, each…)", re: /^unit|units/i },
     { key: "note", label: "Notes", re: /note|comment/i },
   ],
   sales: [
     { key: "date", label: "Date", need: true, re: /date|day|when/i },
-    { key: "amount", label: "Total ($)", need: true, re: /total|amount|revenue|\$|price|paid|income|sold for|money/i },
+    { key: "amount", label: "Total", need: true, re: /total|amount|revenue|\$|price|paid|income|sold for|money/i },
     { key: "item", label: "What sold", re: /item|what|product|crop|description|sold/i },
     { key: "qty", label: "How many", re: /qty|quantity|count|dozen|how many|#/i },
     { key: "buyer", label: "Buyer", re: /buyer|customer|who|sold to|name/i },
@@ -142,7 +158,10 @@ export function guessColumns(kind, rows, hasHeader) {
   const body = hasHeader ? rows.slice(1) : rows;
   const used = new Set();
   const out = {};
-  const dateCol = names.findIndex((_, i) => body.slice(0, 20).filter((r) => toDate(r[i])).length >= Math.min(3, body.length));
+  // Either order counts here ("19.08.2026" is only a date day-first); which
+  // order the column uses is worked out when the rows are built.
+  const anyDate = (v) => toDate(v) || toDate(v, true);
+  const dateCol = names.findIndex((_, i) => body.slice(0, 20).filter((r) => anyDate(r[i])).length >= Math.min(3, body.length));
   for (const f of KIND_FIELDS[kind]) {
     if (f.key === "date") { out.date = dateCol; if (dateCol >= 0) used.add(dateCol); continue; }
     const byName = names.map((n, i) => (f.re.test(n) && !used.has(i) ? i : -1)).filter((i) => i >= 0);
@@ -170,6 +189,8 @@ export function guessColumns(kind, rows, hasHeader) {
 // ---- building records -------------------------------------------------------------
 const unitOf = (u, header) => {
   const s = String(u || header || "").toLowerCase();
+  if (/\bkgs?\b|kilo/.test(s)) return "kg";
+  if (/\bg\b|\bgr\b|grams?\b/.test(s)) return "g";
   if (/oz|ounce/.test(s)) return "oz";
   if (/each|count|ea\b|pcs|piece/.test(s)) return "each";
   if (/bunch/.test(s)) return "bunch";

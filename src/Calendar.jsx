@@ -233,6 +233,12 @@ function TimelineView({ events, update, setModal, userEvents }) {
   });
 
   const months = Object.keys(byMonth).sort();
+  // Earlier months fold away so the timeline opens on this month; they're
+  // one tap away. (If everything is in the past, show it all.)
+  const thisMonth = todayStr.slice(0, 7);
+  const pastMonths = months.filter((m) => m < thisMonth);
+  const [showPast, setShowPast] = useState(false);
+  const shownMonths = showPast || pastMonths.length === months.length ? months : months.filter((m) => m >= thisMonth);
 
   if (events.length === 0) {
     return (
@@ -245,7 +251,7 @@ function TimelineView({ events, update, setModal, userEvents }) {
           No events yet
         </div>
         <div style={{ fontSize: 13 }}>
-          Tap "Plan a crop" or "Custom event" to get started.
+          Tap "Plan a crop" or "Plan an event" to get started.
         </div>
       </div>
     );
@@ -253,7 +259,13 @@ function TimelineView({ events, update, setModal, userEvents }) {
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 18 }}>
-      {months.map((m) => {
+      {pastMonths.length > 0 && pastMonths.length < months.length && (
+        <button type="button" onClick={() => setShowPast((v) => !v)} style={{
+          alignSelf: "flex-start", minHeight: 40, padding: "0 14px", borderRadius: 999, cursor: "pointer",
+          border: `1.5px solid ${palette.line}`, background: palette.card, color: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+        }}>{showPast ? "Hide earlier months" : `Show earlier (${pastMonths.length} month${pastMonths.length === 1 ? "" : "s"})`}</button>
+      )}
+      {shownMonths.map((m) => {
         const [y, mo] = m.split("-");
         const isPast = m < todayStr.slice(0, 7);
         return (
