@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 3.0 Farmhouse palette for the home-screen widgets (src/newlook/theme.js).
+     values-night/widget_colors.xml has the dark versions. -->
+<resources>
+    <color name="hen_paper">#F6F1E7</color>
+    <color name="hen_card">#FFFDF8</color>
+    <color name="hen_line">#E3D8C6</color>
+    <color name="hen_ink">#2A1A12</color>
+    <color name="hen_soft">#6B5646</color>
+    <color name="hen_yolk">#E3A92B</color>
+    <color name="hen_on_yolk">#2A1A12</color>
+    <color name="hen_alert">#B4472E</color>
+    <color name="hen_alert_tint">#FBEDE8</color>
+</resources>

@@ -2,10 +2,11 @@
 // YEAR IN REVIEW — updated to respect hidden hobbies + rabbits support
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp, fmtWeight } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel } from "./units.js";
 import { huntingTotals } from "./Hunting.jsx";
 import { soapBatchStats } from "./SoapMaking.jsx";
 import { getYearWeather } from "./weather.js";
@@ -16,18 +17,20 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 // rows that the old reducer was incorrectly summing as if they were lbs).
 // Imported under an alias so the existing `totalHarvestLbs` local-variable
 // name downstream can be reused without collision.
-import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs } from "./analytics.js";
+import { collectGardenHarvests, totalHarvestLbs as sumHarvestLbs, harvestLbs } from "./analytics.js";
 // HOMESTEAD_GAMES — closing-ceremony card reads the same pre-aggregated
 // region_stats the trophy hub uses. games.js imports THIS module dynamically,
 // so this static import does not form a cycle.
 import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES, countryFlag } from "./games.js";
+import { groupDigits } from "./numFmt.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -124,7 +127,9 @@ const fmtTractorDistance = (totalFeet) => {
     : `${miles.toLocaleString(undefined, { maximumFractionDigits: 0 })} mi`;
 };
 
-export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport, onScrolled }) {
+// In the new look the page sits under Year in review's own header, which
+// picks the year (`year`) and shows the title; `embedded` hides the old ones.
+export default function YearInReviewPage({ data, update, isSupporter = false, onOpenSupport, onScrolled, year: yearProp, embedded = false }) {
   // STEP3_REVIEW_PROMPT: notify the parent when the user has scrolled
   // the YIR page. Parent uses this signal to decide whether to show the
   // review prompt when the user leaves the page. Threshold is 200px so
@@ -152,11 +157,12 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
 
   const currentYear = new Date().getFullYear();
   const availableYears = useMemo(() => collectYears(data), [data]);
-  const [year, setYear] = useState(() => {
+  const [ownYear, setYear] = useState(() => {
     if (availableYears.includes(currentYear)) return currentYear;
     if (availableYears.length > 0) return availableYears[0];
     return currentYear;
   });
+  const year = yearProp != null ? yearProp : ownYear;
 
   const stats = useMemo(() => computeStats(data, year), [data, year]);
 
@@ -221,12 +227,12 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
 
   return (
     <div>
-      <div style={{
+      {!embedded && <div style={{
         display: "flex", alignItems: "center", justifyContent: "space-between",
         marginBottom: 18, flexWrap: "wrap", gap: 10,
       }}>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: 0, color: palette.ink }}>
-          year in review
+          Year in review
         </h2>
         {availableYears.length > 0 && (
           <select
@@ -244,7 +250,7 @@ export default function YearInReviewPage({ data, update, isSupporter = false, on
             ))}
           </select>
         )}
-      </div>
+      </div>}
 
       {/* Homestead Standings — locked teaser shown to non-supporters at the
           very top. This is intentionally NOT gating anything necessary: the
@@ -367,8 +373,8 @@ function GoalsCard({ data, update, year }) {
     cancelEdit();
   };
 
-  const deleteGoal = (goalId) => {
-    if (!confirm("Delete this goal?")) return;
+  const deleteGoal = async (goalId) => {
+    if (!(await askConfirm({ title: "Delete this goal?", confirmLabel: "Delete" }))) return;
     update(d => {
       d.goals = (d.goals || []).filter(x => x.id !== goalId);
       return d;
@@ -450,7 +456,7 @@ function GoalsCard({ data, update, year }) {
         {!adding && (
           <button
             onClick={() => setAdding(true)}
-            style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+            style={{ background: palette.ink, color: palette.bg, border: "none", minHeight: 36, padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
           >
             + Add goal
           </button>
@@ -484,7 +490,7 @@ function GoalsCard({ data, update, year }) {
             >Cancel</button>
             <button
               onClick={addGoal}
-              style={{ background: palette.ink, color: palette.bg, border: "none", padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
+              style={{ background: palette.ink, color: palette.bg, border: "none", minHeight: 36, padding: "6px 12px", borderRadius: 6, fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600, cursor: "pointer" }}
             >Add goal</button>
           </div>
         </div>
@@ -551,7 +557,7 @@ function Card({ children, accent = palette.card, ...rest }) {
         border: `1.5px solid ${palette.line}`,
         borderRadius: 14,
         padding: 22,
-        boxShadow: "3px 3px 0 " + palette.line,
+        boxShadow: "none",
         ...(rest.style || {}),
       }}
     >
@@ -570,7 +576,7 @@ function CoverCard({ year, stats }) {
         {year}
       </div>
       <div style={{ fontSize: 14, color: palette.inkSoft, fontStyle: "italic" }}>
-        {stats.totalEntries} {stats.totalEntries === 1 ? "entry" : "entries"} logged · {stats.activeDays} active {stats.activeDays === 1 ? "day" : "days"}
+        {groupDigits(stats.totalEntries)} {stats.totalEntries === 1 ? "entry" : "entries"} logged · {stats.activeDays} active {stats.activeDays === 1 ? "day" : "days"}
       </div>
     </Card>
   );
@@ -580,9 +586,9 @@ function HeadlinesCard({ stats, eggLayersEnabled, gardenEnabled, meatChickensEna
   const items = [];
   if (eggLayersEnabled) items.push({ icon: "🥚", number: stats.eggsCollected, label: `egg${stats.eggsCollected === 1 ? "" : "s"} laid`, accent: palette.yolk });
   if (meatChickensEnabled) items.push({ icon: "🍗", number: Math.max(stats.birdsSurvived, stats.birdsButchered), label: `meat bird${stats.birdsSurvived === 1 ? "" : "s"} raised`, accent: palette.feather });
-  if (gardenEnabled) items.push({ icon: "🌱", number: Math.round(stats.totalHarvestLbs), label: `lb${Math.round(stats.totalHarvestLbs) === 1 ? "" : "s"} harvested`, accent: palette.leaf });
+  if (gardenEnabled) items.push({ icon: "🌱", number: Math.round(weightFromLbs(stats.totalHarvestLbs)), label: `${weightUnitLabel()} harvested`, accent: palette.leaf });
   if (rabbitsEnabled) items.push({ icon: "🐇", number: stats.totalKitsAlive || 0, label: `kits born`, accent: palette.leaf });
-  if (beesEnabled && stats.honeyHarvestedLbs > 0) items.push({ icon: "🍯", number: Math.round(stats.honeyHarvestedLbs), label: `lbs honey harvested`, accent: palette.yolk });
+  if (beesEnabled && stats.honeyHarvestedLbs > 0) items.push({ icon: "🍯", number: Math.round(weightFromLbs(stats.honeyHarvestedLbs)), label: `${weightUnitLabel()} honey harvested`, accent: palette.yolk });
   if (goatsEnabled && stats.goatMilkOz > 0) items.push({ icon: "🐐", number: Math.round(stats.goatMilkOz / 128), label: `gal goat milk`, accent: palette.leaf });
   if (cowsEnabled && stats.cowMilkGal > 0) items.push({ icon: "🐄", number: Math.round(stats.cowMilkGal), label: `gal cow milk`, accent: palette.leaf });
   if (pigsEnabled && stats.pigsButchered > 0) items.push({ icon: "🐷", number: stats.pigMeatLbs, label: `lbs pork`, accent: palette.feather });
@@ -662,8 +668,8 @@ function EggsCard({ stats }) {
       </div>
       <CountUp number={eggsCollected} suffix="eggs collected" big />
       <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 12 }}>
-        That's <strong style={{ color: palette.ink }}>{dozensCollected.toFixed(1)} dozen</strong>
-        {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{(eggsSold / 12).toFixed(1)} dozen</strong></>}
+        That's <strong style={{ color: palette.ink }}>{groupDigits(dozensCollected.toFixed(1))} dozen</strong>
+        {eggsSold > 0 && <> · You sold <strong style={{ color: palette.ink }}>{groupDigits((eggsSold / 12).toFixed(1))} dozen</strong></>}
       </div>
 
       {(eggLayerTotalCost > 0 && dozensCollected > 0) && (
@@ -686,7 +692,7 @@ function EggsCard({ stats }) {
             {eggLayerInfraCost > 0 && <div>🔨 Infrastructure · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerInfraCost)}</strong></div>}
             {eggLayerBirdCost > 0 && <div>🐔 Bird purchases · <strong style={{ color: palette.ink }}>{fmtMoney(eggLayerBirdCost)}</strong></div>}
             <div style={{ marginTop: 6, fontSize: 11, fontStyle: "italic" }}>
-              Buying {dozensCollected.toFixed(1)} dozen pasture-raised at the grocery store would have cost {fmtMoney(groceryStoreEquivalent)}.
+              Buying {groupDigits(dozensCollected.toFixed(1))} dozen pasture-raised at the grocery store would have cost {fmtMoney(groceryStoreEquivalent)}.
             </div>
           </div>
         </div>
@@ -720,7 +726,7 @@ function EggsCard({ stats }) {
                 <div style={{ flex: 1 }}>
                   <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, color: palette.inkSoft, marginBottom: 2 }}>
                     <span>{r.label}</span>
-                    <strong style={{ color: palette.ink }}>{r.n} egg{r.n === 1 ? "" : "s"}</strong>
+                    <strong style={{ color: palette.ink }}>{groupDigits(r.n)} egg{r.n === 1 ? "" : "s"}</strong>
                   </div>
                   <div style={{ height: 6, background: palette.card, borderRadius: 3, overflow: "hidden" }}>
                     <div style={{ width: `${(r.n / maxN) * 100}%`, height: "100%", background: r.color, borderRadius: 3 }} />
@@ -771,7 +777,7 @@ function GardenCard({ stats }) {
       <div style={{ fontSize: 11, letterSpacing: 2, color: palette.inkSoft, textTransform: "uppercase", marginBottom: 6 }}>
         🌱 Garden
       </div>
-      <CountUp number={Math.round(totalHarvestLbs)} suffix="lbs harvested" big />
+      <CountUp number={Math.round(weightFromLbs(totalHarvestLbs))} suffix={`${weightUnitLabel()} harvested`} big />
       <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
         From <strong style={{ color: palette.ink }}>{harvestsCount}</strong> harvest{harvestsCount === 1 ? "" : "s"}
         {plantingsCount > 0 && <> · {plantingsCount} planting{plantingsCount === 1 ? "" : "s"}</>}
@@ -787,7 +793,7 @@ function GardenCard({ stats }) {
                 <div style={{ flex: 1, height: 14, background: palette.bgAlt, borderRadius: 7, overflow: "hidden" }}>
                   <div style={{ height: "100%", width: `${(p.lbs / maxLbs) * 100}%`, background: palette.leaf, borderRadius: 7 }} />
                 </div>
-                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>{p.lbs.toFixed(1)} lbs</div>
+                <div style={{ minWidth: 50, textAlign: "right", fontSize: 12, color: palette.inkSoft }}>{fmtWeight1(p.lbs)}</div>
               </div>
             ))}
           </div>
@@ -812,7 +818,7 @@ function MeatChickensCard({ stats }) {
       </div>
       {birdsButchered > 0 ? (
         <>
-          <CountUp number={Math.round(totalMeatLbs)} suffix="lbs in the freezer" big />
+          <CountUp number={Math.round(weightFromLbs(totalMeatLbs))} suffix={`${weightUnitLabel()} in the freezer`} big />
           <div style={{ fontSize: 14, color: palette.inkSoft, marginBottom: 14 }}>
             From <strong style={{ color: palette.ink }}>{birdsButchered}</strong> bird{birdsButchered === 1 ? "" : "s"} butchered
             {birdsRaised > 0 && <> · started with <strong style={{ color: palette.ink }}>{birdsRaised}</strong></>}
@@ -928,7 +934,7 @@ function RabbitsCard({ stats }) {
       {totalRabbitsButchered > 0 && (
         <div style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 12 }}>
           <Stat big={totalRabbitsButchered} label="rabbits butchered" accent={palette.feather} />
-          {rabbitTotalMeatLbs > 0 && <Stat big={`${rabbitTotalMeatLbs.toFixed(1)} lbs`} label="in the freezer" accent={palette.leaf} />}
+          {rabbitTotalMeatLbs > 0 && <Stat big={fmtWeight1(rabbitTotalMeatLbs)} label="in the freezer" accent={palette.leaf} />}
           {rabbitCostPerRabbit > 0 && <Stat big={fmtMoney(rabbitCostPerRabbit)} label="cost per rabbit" accent={palette.yolk} />}
         </div>
       )}
@@ -949,7 +955,7 @@ function BeesCard({ stats }) {
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🍯 Bees</div>
-      {honeyHarvestedLbs > 0 && <CountUp number={Math.round(honeyHarvestedLbs)} suffix="lbs of honey harvested" big />}
+      {honeyHarvestedLbs > 0 && <CountUp number={Math.round(weightFromLbs(honeyHarvestedLbs))} suffix={`${weightUnitLabel()} of honey harvested`} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {hiveInspections > 0 && <Stat big={hiveInspections} label="hive inspections" accent={palette.yolk}/>}
         {hiveTreatments > 0 && <Stat big={hiveTreatments} label="treatments" accent={palette.feather}/>}
@@ -979,13 +985,13 @@ function GoatsCard({ stats }) {
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐐 Goats</div>
-      {goatMilkOz > 0 && <CountUp number={Math.round(goatMilkOz/128)} suffix={`gallons of milk (${goatMilkOz.toFixed(0)} oz)`} big />}
+      {goatMilkOz > 0 && <CountUp number={Math.round(volumeFromGal(goatMilkOz/128))} suffix={volumeUnitLabel() === "L" ? "liters of milk" : `gallons of milk (${goatMilkOz.toFixed(0)} oz)`} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {goatCount > 0 && <Stat big={goatCount} label="goats in herd" accent={palette.leaf}/>}
         {goatKids > 0 && <Stat big={goatKids} label="kids born" accent={palette.yolk}/>}
         {goatFeedCost > 0 && <Stat big={fmtMoney(goatFeedCost)} label="feed cost" accent={palette.feather}/>}
         {goatButchered > 0 && <Stat big={goatButchered} label="butchered" accent={palette.accent}/>}
-        {goatMeatLbs > 0 && <Stat big={`${goatMeatLbs.toFixed(0)} lbs`} label="in the freezer" accent={palette.leaf}/>}
+        {goatMeatLbs > 0 && <Stat big={fmtWeightWhole(goatMeatLbs)} label="in the freezer" accent={palette.leaf}/>}
       </div>
     </Card>
   );
@@ -997,13 +1003,13 @@ function CowsCard({ stats }) {
   return (
     <Card accent={palette.card}>
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>🐄 Cows</div>
-      {cowMilkGal > 0 && <CountUp number={Math.round(cowMilkGal)} suffix="gallons of milk" big />}
+      {cowMilkGal > 0 && <CountUp number={Math.round(volumeFromGal(cowMilkGal))} suffix={volumeUnitLabel() === "L" ? "liters of milk" : "gallons of milk"} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {cowCount > 0 && <Stat big={cowCount} label="cattle" accent={palette.leaf}/>}
         {cowCalves > 0 && <Stat big={cowCalves} label="calves born" accent={palette.yolk}/>}
         {cowFeedCost > 0 && <Stat big={fmtMoney(cowFeedCost)} label="feed cost" accent={palette.feather}/>}
         {cowButchered > 0 && <Stat big={cowButchered} label="butchered" accent={palette.accent}/>}
-        {cowMeatLbs > 0 && <Stat big={`${cowMeatLbs.toFixed(0)} lbs`} label="in the freezer" accent={palette.leaf}/>}
+        {cowMeatLbs > 0 && <Stat big={fmtWeightWhole(cowMeatLbs)} label="in the freezer" accent={palette.leaf}/>}
       </div>
     </Card>
   );
@@ -1038,9 +1044,9 @@ function SheepCard({ stats }) {
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {sheepCount > 0 && <Stat big={sheepCount} label="live sheep" accent={palette.leaf}/>}
         {lambSurvival !== null && <Stat big={`${lambSurvival}%`} label="lamb survival" accent={lambSurvival >= 80 ? palette.leaf : palette.accent}/>}
-        {sheepMilkGal > 0 && <Stat big={sheepMilkGal.toFixed(1)} label="gal milk" accent={palette.leafSoft}/>}
-        {sheepWoolLbs > 0 && <Stat big={sheepWoolLbs.toFixed(1)} label="lbs wool" accent={palette.yolk}/>}
-        {sheepMeatLbs > 0 && <Stat big={Math.round(sheepMeatLbs)} label="lbs meat" accent={palette.feather}/>}
+        {sheepMilkGal > 0 && <Stat big={fmtVolumeBig(sheepMilkGal)} label="milk" accent={palette.leafSoft}/>}
+        {sheepWoolLbs > 0 && <Stat big={fmtWeight1(sheepWoolLbs)} label="wool" accent={palette.yolk}/>}
+        {sheepMeatLbs > 0 && <Stat big={fmtWeightWhole(sheepMeatLbs)} label="meat" accent={palette.feather}/>}
         {sheepButchered > 0 && <Stat big={sheepButchered} label="butchered" accent={palette.accent}/>}
       </div>
     </Card>
@@ -1177,7 +1183,7 @@ function FreezerCard({ stats }) {
       <div style={{ fontSize:11,letterSpacing:2,color:palette.inkSoft,textTransform:"uppercase",marginBottom:6 }}>❄️ Freezer log</div>
       <CountUp number={freezerBirds} suffix={`bird${freezerBirds===1?"":"s"} to the freezer`} big />
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
-        {freezerLbs > 0 && <Stat big={freezerLbs.toFixed(1)} label="lbs total" accent={palette.feather} />}
+        {freezerLbs > 0 && <Stat big={fmtWeight1(freezerLbs)} label="total" accent={palette.feather} />}
       </div>
       <div style={{ marginTop:10,fontSize:12,color:palette.inkSoft,fontStyle:"italic" }}>
         Includes any bird butchered from your flocks — chickens, ducks, quail, geese, and more.
@@ -1230,7 +1236,7 @@ function MapleSyrupCard({ stats }) {
       {mapleSyrupGal > 0 && <CountUp number={Number(mapleSyrupGal.toFixed(2))} suffix="gallons of syrup made" big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {mapleTapsSet > 0 && <Stat big={mapleTapsSet} label="taps set" accent={palette.feather}/>}
-        {mapleSapGal > 0 && <Stat big={`${mapleSapGal.toFixed(0)} gal`} label="sap collected" accent={palette.leaf}/>}
+        {mapleSapGal > 0 && <Stat big={fmtVolumeBig(mapleSapGal, 0)} label="sap collected" accent={palette.leaf}/>}
         {ratio && <Stat big={`${ratio}:1`} label="sap to syrup" accent={palette.yolk}/>}
         {mapleTotalCost > 0 && <Stat big={fmtMoney(mapleTotalCost)} label="invested" accent={palette.accent}/>}
       </div>
@@ -1413,7 +1419,7 @@ function FunFactsCard({ stats }) {
   if (stats.lastEntryDate && stats.lastEntryDate !== stats.firstEntryDate) facts.push({ emoji: "📅", label: "Most recent entry", value: shortDate(stats.lastEntryDate) });
   if (stats.heaviestDayCount > 1) facts.push({ emoji: "🔥", label: "Most active day", value: `${shortDate(stats.heaviestDay)} · ${stats.heaviestDayCount} entries` });
   if (stats.gardenWaterCount > 0) facts.push({ emoji: "💧", label: "Garden waterings", value: stats.gardenWaterCount });
-  if (stats.totalFeedLbs > 0) facts.push({ emoji: "🌾", label: "Feed bought", value: `${Math.round(stats.totalFeedLbs)} lbs` });
+  if (stats.totalFeedLbs > 0) facts.push({ emoji: "🌾", label: "Feed bought", value: fmtWeight(stats.totalFeedLbs, { decimals: 0, forceBig: true }) });
   if (stats.totalFeedCost > 0) facts.push({ emoji: "💸", label: "Spent on feed", value: fmtMoney(stats.totalFeedCost) });
   if (stats.freeRangeCount > 0) facts.push({ emoji: "🌳", label: "Free-range days", value: stats.freeRangeCount });
   if (stats.photosCount > 0) facts.push({ emoji: "📷", label: "Photos taken", value: stats.photosCount });
@@ -1438,7 +1444,7 @@ function FunFactsCard({ stats }) {
         {facts.map((f, i) => (
           <div key={i} style={{ padding: "10px 12px", background: palette.bgAlt, borderRadius: 8, border: `1px solid ${palette.line}` }}>
             <div style={{ fontSize: 16, marginBottom: 2 }}>{f.emoji}</div>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>{f.value}</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1, marginBottom: 2 }}>{groupDigits(f.value)}</div>
             <div style={{ fontSize: 10, color: palette.inkSoft }}>{f.label}</div>
           </div>
         ))}
@@ -1518,11 +1524,11 @@ export function StandingsLockedCard({ onOpenSupport }) {
               marginTop: 12,
               display: "inline-flex", alignItems: "center", gap: 7,
               padding: "9px 14px", borderRadius: 9,
-              background: palette.accent, color: palette.bg,
+              background: palette.accent, color: palette.onColor,
               fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
               border: `1.5px solid ${palette.accent}`,
               cursor: onOpenSupport ? "pointer" : "default",
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             🌾 Become a monthly Supporter to unlock
@@ -1597,7 +1603,7 @@ export function BadgesCard({ stats }) {
                   <div
                     style={{
                       fontSize: 10, fontWeight: 700, letterSpacing: 0.6,
-                      textTransform: "uppercase", color: palette.ink,
+                      textTransform: "uppercase", color: palette.onYolk,
                       background: palette.yolk, borderRadius: 6,
                       padding: "4px 8px", border: `1.5px solid ${palette.line}`,
                     }}
@@ -1997,7 +2003,7 @@ function CountUp({ number, suffix, big }) {
 
   return (
     <div style={{ fontFamily: FONT_DISPLAY, fontSize: big ? 56 : 36, color: palette.ink, lineHeight: 1, marginBottom: 4 }}>
-      {shown.toLocaleString()} <span style={{ fontSize: big ? 16 : 14, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>{suffix}</span>
+      {shown.toLocaleString()} <span style={{ fontSize: big ? 16 : 14, color: palette.inkSoft, fontFamily: FONT_BODY, fontWeight: 500 }}>{groupDigits(suffix)}</span>
     </div>
   );
 }
@@ -2005,7 +2011,7 @@ function CountUp({ number, suffix, big }) {
 function Stat({ big, label, accent = palette.ink }) {
   return (
     <div style={{ flex: "1 1 110px", padding: 14, borderRadius: 10, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, borderLeft: `4px solid ${accent}` }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>{big}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 28, color: palette.ink, lineHeight: 1 }}>{groupDigits(big)}</div>
       <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{label}</div>
     </div>
   );
@@ -2396,9 +2402,14 @@ function standingFor(value, band) {
 
 // Exported for games.js (Homestead Games) — single source of truth for the
 // per-year stats both surfaces report.
+// `year` can also be a month ("2026-10") — the supporter monthly recap uses
+// the same numbers as Year in Review, just for one month.
 export function computeStats(data, year) {
   const yearStr = String(year);
   const inYear = (e) => e.date && e.date.startsWith(yearStr);
+  const isMonth = yearStr.length > 4;
+  const periodStart = isMonth ? `${yearStr}-01` : `${yearStr}-01-01`;
+  const periodEnd = isMonth ? `${yearStr}-31` : `${yearStr}-12-31`;
 
   const allEntries = [];
   (data.hobbies || []).forEach((h) => {
@@ -2538,7 +2549,7 @@ export function computeStats(data, year) {
   // only lbs-unit records. topPlants likewise only counts lbs (other units
   // can't be ranked against each other meaningfully).
   const allGardenHarvests = collectGardenHarvests(data, {
-    range: { start: `${yearStr}-01-01`, end: `${yearStr}-12-31` },
+    range: { start: periodStart, end: periodEnd },
   });
   const harvestEntries = allGardenHarvests; // kept name for legacy downstream refs
   const totalHarvestLbs = sumHarvestLbs(allGardenHarvests);
@@ -2546,10 +2557,11 @@ export function computeStats(data, year) {
   const plantingsCount = allEntries.filter((e) => e.action === "planted").length;
   const plantTotals = {};
   allGardenHarvests.forEach((h) => {
-    if (h.unit !== "lbs") return;
+    const w = harvestLbs(h);
+    if (w == null) return;
     const name = (h.plant || "Unknown").trim();
     if (!name) return;
-    plantTotals[name] = (plantTotals[name] || 0) + (Number(h.quantity) || 0);
+    plantTotals[name] = (plantTotals[name] || 0) + w;
   });
   const topPlants = Object.entries(plantTotals).map(([plant, lbs]) => ({ plant, lbs })).sort((a, b) => b.lbs - a.lbs);
 
@@ -2638,8 +2650,8 @@ export function computeStats(data, year) {
   const pigCount = (pigsHobby?.animals||[]).length;
 
   // Farmstand — sales for this year tagged as farmstand
-  const yearStart = `${year}-01-01`;
-  const yearEnd = `${year}-12-31`;
+  const yearStart = periodStart;
+  const yearEnd = periodEnd;
   const farmstandSales = (data.sales || []).filter(s =>
     s.hobbyType === "farmstand" && s.date >= yearStart && s.date <= yearEnd
   );

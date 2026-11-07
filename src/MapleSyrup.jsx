@@ -26,27 +26,35 @@
 // syrup AND the theoretical (so users can see boiling efficiency).
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
+import { Sheet, Button as NlButton } from "./newlook/ui.jsx";
+import { font as NL_FONT } from "./newlook/theme.js";
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Plus, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, galToInput, galFromInput, volumeUnitLabel, fmtVolume, volumeFromGal, currencySymbol } from "./units.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import { personalRecord, LockedStatOverlay } from "./analytics.js";
+import { groupDigits } from "./numFmt.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   maple: "#B85518", mapleSoft: "#E89968",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -63,16 +71,16 @@ const SAP_TO_SYRUP_RATIO = 40;
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.maple, color: palette.bg, border: `1.5px solid ${palette.maple}` },
-    leaf:    { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent:  { background: palette.maple, color: palette.onColor, border: `1.5px solid ${palette.maple}` },
+    leaf:    { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
       fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14,
-      opacity: disabled ? 0.6 : 1, boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      opacity: disabled ? 0.6 : 1, boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -86,9 +94,9 @@ function Field({ label, children }) {
 }
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -103,7 +111,7 @@ function Modal({ open, onClose, title, children }) {
       <div onClick={e => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
         maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`,
-        boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY,
       }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
@@ -146,34 +154,34 @@ function SeasonModal({ season, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={season ? "Edit season" : "New season"}>
       <Field label="Season name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. 2026 season" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. 2026 season" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Year">
-            <input type="number" min={2000} max={2100} style={inputStyle} value={year} onChange={e => setYear(e.target.value)} />
+            <input type="number" min={2000} max={2100} style={inputStyle()} value={year} onChange={e => setYear(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Total taps set">
-            <input type="number" min={0} style={inputStyle} value={totalTaps} onChange={e => setTotalTaps(e.target.value)} placeholder="0" />
+            <input type="number" min={0} style={inputStyle()} value={totalTaps} onChange={e => setTotalTaps(e.target.value)} placeholder="0" />
           </Field>
         </div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="End date (optional)">
-            <input type="date" style={inputStyle} value={endDate} onChange={e => setEndDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={endDate} onChange={e => setEndDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Weather notes, tree count, sugarbush conditions..." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Weather notes, tree count, sugarbush conditions..." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {season && onDelete && (
@@ -192,9 +200,9 @@ function SeasonModal({ season, onSave, onDelete, onClose }) {
 // Single modal that handles all entry types via the `action` prop.
 function LogEntryModal({ action, season, entry, onSave, onClose }) {
   const [date, setDate] = useState(entry?.date || todayStr());
-  const [sapGal, setSapGal] = useState(entry?.sapGal != null ? String(entry.sapGal) : "");
-  const [syrupGal, setSyrupGal] = useState(entry?.syrupGal != null ? String(entry.syrupGal) : "");
-  const [gallons, setGallons] = useState(entry?.gallons != null ? String(entry.gallons) : "");
+  const [sapGal, setSapGal] = useState(entry?.sapGal != null ? galToInput(entry.sapGal) : "");
+  const [syrupGal, setSyrupGal] = useState(entry?.syrupGal != null ? galToInput(entry.syrupGal) : "");
+  const [gallons, setGallons] = useState(entry?.gallons != null ? galToInput(entry.gallons) : "");
   const [count, setCount] = useState(entry?.count != null ? String(entry.count) : "");
   const [cost, setCost] = useState(entry?.cost != null ? String(entry.cost) : "");
   const [item, setItem] = useState(entry?.item || "");
@@ -208,8 +216,8 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
       created: entry?.created || Date.now(),
       note: note.trim(),
     };
-    if (action === "sap_collected") out.gallons = parseFloat(gallons) || 0;
-    if (action === "boil") { out.sapGal = parseFloat(sapGal) || 0; out.syrupGal = parseFloat(syrupGal) || 0; }
+    if (action === "sap_collected") out.gallons = galFromInput(gallons);
+    if (action === "boil") { out.sapGal = galFromInput(sapGal); out.syrupGal = galFromInput(syrupGal); }
     if (action === "tap_set") out.count = parseInt(count) || 0;
     if (action === "supplies" || action === "infrastructure") { out.cost = parseFloat(cost) || 0; out.item = item.trim(); }
     onSave(out);
@@ -228,49 +236,49 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
   return (
     <Modal open onClose={onClose} title={titles[action] || "Log"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       {action === "sap_collected" && (
-        <Field label="Sap collected (gallons)">
-          <input type="number" min={0} step="0.1" style={inputStyle} value={gallons} onChange={e => setGallons(e.target.value)} placeholder="0" autoFocus />
+        <Field label={`Sap collected (${volumeUnitLabel() === "L" ? "liters" : "gallons"})`}>
+          <input type="number" min={0} step="0.1" style={inputStyle()} value={gallons} onChange={e => setGallons(e.target.value)} placeholder="0" autoFocus />
         </Field>
       )}
       {action === "boil" && (
         <div style={{ display: "flex", gap: 12 }}>
           <div style={{ flex: 1 }}>
-            <Field label="Sap boiled (gal)">
-              <input type="number" min={0} step="0.1" style={inputStyle} value={sapGal} onChange={e => setSapGal(e.target.value)} placeholder="0" autoFocus />
+            <Field label={`Sap boiled (${volumeUnitLabel()})`}>
+              <input type="number" min={0} step="0.1" style={inputStyle()} value={sapGal} onChange={e => setSapGal(e.target.value)} placeholder="0" autoFocus />
             </Field>
           </div>
           <div style={{ flex: 1 }}>
-            <Field label="Syrup produced (gal)">
-              <input type="number" min={0} step="0.01" style={inputStyle} value={syrupGal} onChange={e => setSyrupGal(e.target.value)} placeholder="0" />
+            <Field label={`Syrup produced (${volumeUnitLabel()})`}>
+              <input type="number" min={0} step="0.01" style={inputStyle()} value={syrupGal} onChange={e => setSyrupGal(e.target.value)} placeholder="0" />
             </Field>
           </div>
         </div>
       )}
       {action === "boil" && Number(sapGal) > 0 && (
         <div style={{ padding: "8px 12px", background: palette.bgAlt, borderRadius: 6, fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-          Industry rule of thumb: 40 gal sap → 1 gal syrup. Your boil ratio: {Number(syrupGal) > 0 ? `${(Number(sapGal) / Number(syrupGal)).toFixed(1)}:1` : "—"}
+          Rule of thumb: about 40 parts sap make 1 part syrup. Your boil ratio: {Number(syrupGal) > 0 ? `${(Number(sapGal) / Number(syrupGal)).toFixed(1)}:1` : "—"}
         </div>
       )}
       {action === "tap_set" && (
         <Field label="Taps set today">
-          <input type="number" min={0} style={inputStyle} value={count} onChange={e => setCount(e.target.value)} placeholder="0" autoFocus />
+          <input type="number" min={0} style={inputStyle()} value={count} onChange={e => setCount(e.target.value)} placeholder="0" autoFocus />
         </Field>
       )}
       {(action === "supplies" || action === "infrastructure") && (
         <>
           <Field label={action === "supplies" ? "What was purchased?" : "What was built / bought?"}>
-            <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder={action === "supplies" ? "e.g. spiles, filters, bottles" : "e.g. evaporator, sugar shack, RO machine"} autoFocus />
+            <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder={action === "supplies" ? "e.g. spiles, filters, bottles" : "e.g. evaporator, sugar shack, RO machine"} autoFocus />
           </Field>
-          <Field label="Cost ($)">
-            <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+          <Field label={`Cost (${currencySymbol()})`}>
+            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </>
       )}
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} />
+        <textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} />
       </Field>
       <Btn onClick={handleSave}>Save</Btn>
     </Modal>
@@ -278,7 +286,7 @@ function LogEntryModal({ action, season, entry, onSave, onClose }) {
 }
 
 // ============ MAIN PAGE ============
-export default function MapleSyrupPage({ hobby, data, update, setModal }) {
+export default function MapleSyrupPage({ hobby, data, update, setModal, nl = null }) {
   const seasons = (hobby.seasons || []).slice().sort((a, b) => (b.year || 0) - (a.year || 0));
   const allEntries = data.entries[hobby.id] || [];
 
@@ -291,23 +299,25 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
     return seasons.find(s => !s.archived) || seasons[0] || null;
   }, [seasons, hobby.currentSeasonId]);
 
+  const [askSeason, setAskSeason] = useState(false);
   const [seasonModal, setSeasonModal] = useState({ open: false, season: null });
   const [entryModal, setEntryModal] = useState({ open: false, action: null, entry: null });
 
   const saveSeason = (s) => {
-    update(d => {
+    undoable(update, `Saved ${s.name || "season"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.seasons)) h.seasons = [];
       const idx = h.seasons.findIndex(x => x.id === s.id);
       if (idx >= 0) h.seasons[idx] = s; else h.seasons.push(s);
-      // If this is the very first season, auto-mark it as current.
-      if (h.seasons.length === 1) h.currentSeasonId = s.id;
+      // A season you just started becomes the current one (it used to only
+      // when it was the first, so a new year's logs kept going to last year).
+      if (idx < 0 || h.seasons.length === 1) h.currentSeasonId = s.id;
       return d;
     });
   };
   const deleteSeason = (id) => {
-    update(d => {
+    undoable(update, "Deleted season")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       h.seasons = (h.seasons || []).filter(s => s.id !== id);
@@ -327,7 +337,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
     });
   };
   const saveEntry = (entry) => {
-    update(d => {
+    undoable(update, "Saved")(d => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const idx = d.entries[hobby.id].findIndex(e => e.id === entry.id);
       if (idx >= 0) d.entries[hobby.id][idx] = entry;
@@ -336,7 +346,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteEntry = (id) => {
-    update(d => {
+    undoable(update, "Deleted")(d => {
       if (Array.isArray(d.entries[hobby.id])) {
         d.entries[hobby.id] = d.entries[hobby.id].filter(e => e.id !== id);
       }
@@ -373,6 +383,82 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
     if (!stats) return [];
     return stats.entries.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).slice(0, 30);
   }, [stats]);
+
+  if (nl) {
+    const LABEL = { sap_collected: "Sap collected", boil: "Boil", tap_set: "Taps set", supplies: "Supplies", infrastructure: "Equipment", note: "Note" };
+    const open = (action, entry = null) => setEntryModal({ open: true, action, entry });
+    const st = stats;
+    // From January 15 through April, if the current season is from a past
+    // year: offer the new year's season (taps carried over) before logging.
+    const todayIso = todayStr();
+    const thisYear = Number(todayIso.slice(0, 4));
+    const md = todayIso.slice(5);
+    const curYear = currentSeason ? (Number(currentSeason.year) || Number(String(currentSeason.startDate || "").slice(0, 4))) : null;
+    const seasonDue = !!(currentSeason && curYear && curYear < thisYear && md >= "01-15" && md <= "04-30" && !((hobby.seasonPrompt || {})[thisYear]));
+    const taps = (st && st.effectiveTaps) || currentSeason?.totalTaps || 0;
+    const startNewSeason = () => undoable(update, `Started the ${thisYear} season`)((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (!h) return d;
+      if (!Array.isArray(h.seasons)) h.seasons = [];
+      const prev = h.seasons.find((x) => x.id === h.currentSeasonId);
+      if (prev && !prev.endDate) prev.endDate = todayIso;
+      const ns = { id: newId(), name: `${thisYear} season`, year: thisYear, startDate: todayIso, endDate: null, totalTaps: taps, notes: "", created: Date.now(), archived: false };
+      h.seasons.push(ns);
+      h.currentSeasonId = ns.id;
+      return d;
+    });
+    const ctx = {
+      key: "maple_syrup",
+      summary: currentSeason
+        ? { big: `${fmtVolume((st.totalSyrupGal || 0), { forceBig: true, decimals: 1 })}`, small: `of syrup in ${currentSeason.name || currentSeason.year || "this season"}`, line: [st.totalSapGal ? `${fmtVolume(st.totalSapGal, { forceBig: true, decimals: 0 })} of sap` : null, st.effectiveTaps ? `${st.effectiveTaps} taps` : null, st.boilEfficiency ? `${st.boilEfficiency.toFixed(0)} to 1 sap to syrup` : null].filter(Boolean).join(" · ") }
+        : { big: "0", small: "seasons yet", line: "Start a season when you tap your trees." },
+      notice: seasonDue ? {
+        title: `Start the ${thisYear} sugaring season`,
+        sub: `New logs still go to ${currentSeason.name || curYear}. Start ${thisYear}${taps ? ` with your ${taps} taps carried over` : ""}.`,
+        action: `Start ${thisYear}`, onAction: startNewSeason,
+        onDismiss: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h.seasonPrompt = { ...(h.seasonPrompt || {}), [thisYear]: true }; return d; }),
+      } : null,
+      newLabel: currentSeason ? "Log sap collected" : "Start a season", onNew: () => (currentSeason ? (seasonDue ? setAskSeason(true) : open("sap_collected")) : setSeasonModal({ open: true, season: null })),
+      goingTitle: "This season",
+      going: currentSeason ? [{ id: currentSeason.id, title: currentSeason.name || String(currentSeason.year || "Season"), onOpen: () => setSeasonModal({ open: true, season: currentSeason }),
+        sub: [`${(st.totalSapBoiled || 0).toFixed(0)} of ${fmtVolume((st.totalSapGal || 0), { forceBig: true, decimals: 0 })} of sap boiled`, st.expectedSyrup ? `about ${fmtVolume(st.expectedSyrup, { forceBig: true, decimals: 1 })} of syrup in what you've collected` : null].filter(Boolean).join(" · "),
+        pct: st.totalSapGal ? (st.totalSapBoiled / st.totalSapGal) * 100 : null,
+        actions: [{ label: "Boil", primary: st.totalSapGal > st.totalSapBoiled, run: () => open("boil") }, { label: "Set taps", run: () => open("tap_set") }] }] : [],
+      shelfTitle: "Logs this season", shelfEmpty: currentSeason ? "Nothing logged this season yet." : "Start a season to log sap and boils.",
+      shelf: recentEntries.map((e) => ({ id: e.id, title: LABEL[e.action] || e.customLabel || "Log", onOpen: () => open(e.action, e),
+        sub: [e.date ? new Date(e.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric" }) : "", e.action === "sap_collected" ? `${fmtVolume(e.gallons, { forceBig: true })} sap` : e.action === "boil" ? `${fmtVolume(e.sapGal, { forceBig: true })} sap to ${fmtVolume(e.syrupGal, { forceBig: true })} syrup` : e.action === "tap_set" ? `${e.count} taps` : e.cost ? `${fmtMoney(Number(e.cost))}${e.item ? ` · ${e.item}` : ""}` : null, e.note || null].filter(Boolean).join(" · ") })),
+      past: seasons.filter((x) => !currentSeason || x.id !== currentSeason.id).map((x) => ({ id: x.id, title: x.name || String(x.year || "Season"), sub: "Tap to make this the current season", onOpen: () => setCurrentSeason(x.id) })),
+      pastTitle: "Other seasons", pastSub: "Tap one to switch to it.",
+      extras: [
+        ...(currentSeason ? [
+          { key: "supplies", label: "Supplies cost", sub: "Buckets, filters, bottles", icon: NlBasket, run: () => open("supplies") },
+          { key: "infra", label: "Equipment", sub: "Evaporators, tubing, the sugar shack", icon: NlHammer, run: () => open("infrastructure") },
+          { key: "note", label: "Note", icon: NlNote, run: () => open("note") },
+        ] : []),
+        { key: "season", label: "Start a new season", icon: NlPlus, run: () => setSeasonModal({ open: true, season: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {seasonModal.open && <SeasonModal season={seasonModal.season} onSave={saveSeason} onDelete={deleteSeason} onClose={() => setSeasonModal({ open: false, season: null })} />}
+        {askSeason && (
+          <Sheet open onClose={() => setAskSeason(false)} label="Which season?" showClose>
+            <div style={{ padding: 4, display: "flex", flexDirection: "column", gap: 12 }}>
+              <div style={{ fontFamily: NL_FONT.display, fontSize: 22 }}>Start the {thisYear} season?</div>
+              <div style={{ fontSize: 15, lineHeight: 1.5 }}>The current season is {currentSeason.name || curYear}.{taps ? ` Your ${taps} taps carry over.` : ""}</div>
+              <NlButton onClick={() => { setAskSeason(false); startNewSeason(); open("sap_collected"); }}>Start {thisYear} and log sap</NlButton>
+              <NlButton kind="quiet" onClick={() => { setAskSeason(false); open("sap_collected"); }}>Log to {currentSeason.name || curYear}</NlButton>
+            </div>
+          </Sheet>
+        )}
+        {entryModal.open && <LogEntryModal action={entryModal.action} season={currentSeason} entry={entryModal.entry} onSave={saveEntry} onClose={() => setEntryModal({ open: false, action: null, entry: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 80 }}>
@@ -412,7 +498,7 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
           {seasons.length > 1 && (
             <div style={{ marginBottom: 14 }}>
               <select
-                style={inputStyle}
+                style={inputStyle()}
                 value={currentSeason.id}
                 onChange={e => setCurrentSeason(e.target.value)}
               >
@@ -443,8 +529,8 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
           {stats && (
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
               <StatCard label="Taps set" value={stats.effectiveTaps} accent={palette.feather} />
-              <StatCard label="Sap collected" value={`${stats.totalSapGal.toFixed(1)} gal`} accent={palette.leaf} />
-              <StatCard label="Syrup made" value={`${stats.totalSyrupGal.toFixed(2)} gal`} sub={stats.expectedSyrup > 0 ? `expected: ${stats.expectedSyrup.toFixed(2)} gal` : null} accent={palette.maple} />
+              <StatCard label="Sap collected" value={`${fmtVolume(stats.totalSapGal, { forceBig: true, decimals: 1 })}`} accent={palette.leaf} />
+              <StatCard label="Syrup made" value={`${fmtVolume(stats.totalSyrupGal, { forceBig: true, decimals: 2 })}`} sub={stats.expectedSyrup > 0 ? `expected: ${fmtVolume(stats.expectedSyrup, { forceBig: true, decimals: 2 })}` : null} accent={palette.maple} />
               {stats.totalCost > 0 && <StatCard label="Costs" value={fmtMoney(stats.totalCost)} sub={stats.infraCost > 0 ? `${fmtMoney(stats.infraCost)} infra` : null} accent={palette.accent} />}
               {stats.boilEfficiency && <StatCard label="Boil ratio" value={`${stats.boilEfficiency.toFixed(1)}:1`} sub="sap : syrup" accent={palette.feather} />}
             </div>
@@ -467,8 +553,8 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
               <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                 {recentEntries.map(e => {
                   let detail = "";
-                  if (e.action === "sap_collected") detail = `💧 ${e.gallons} gal sap`;
-                  else if (e.action === "boil") detail = `🔥 ${e.sapGal} gal sap → ${e.syrupGal} gal syrup`;
+                  if (e.action === "sap_collected") detail = `💧 ${fmtVolume(e.gallons, { forceBig: true })} sap`;
+                  else if (e.action === "boil") detail = `🔥 ${fmtVolume(e.sapGal, { forceBig: true })} sap → ${fmtVolume(e.syrupGal, { forceBig: true })} syrup`;
                   else if (e.action === "tap_set") detail = `🪵 ${e.count} taps set`;
                   else if (e.action === "supplies") detail = `🧰 ${e.item || "supplies"} · ${fmtMoney(e.cost)}`;
                   else if (e.action === "infrastructure") detail = `🏗️ ${e.item || "infrastructure"} · ${fmtMoney(e.cost)}`;
@@ -500,6 +586,30 @@ export default function MapleSyrupPage({ hobby, data, update, setModal }) {
 }
 
 // ============ ANALYTICS ============
+// 3.0 Stats: syrup and sap by season.
+export function mapleStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const seasons = (hobby && hobby.seasons) || [];
+  const ents = ((data.entries && data.entries[hobby.id]) || []).filter((e) => range === "all" || String(e.date || "").startsWith(year));
+  const syrup = ents.filter((e) => e.action === "boil").reduce((t, e) => t + (Number(e.syrupGal) || 0), 0);
+  const sap = ents.filter((e) => e.action === "sap_collected").reduce((t, e) => t + (Number(e.gallons) || 0), 0);
+  const boiled = ents.filter((e) => e.action === "boil").reduce((t, e) => t + (Number(e.sapGal) || 0), 0);
+  const cost = ents.filter((e) => e.action === "supplies" || e.action === "infrastructure").reduce((t, e) => t + (Number(e.cost) || 0), 0);
+  const rows = seasons.map((x) => { const v = ((data.entries && data.entries[hobby.id]) || []).filter((e) => e.seasonId === x.id && e.action === "boil").reduce((t, e) => t + (Number(e.syrupGal) || 0), 0); return { key: x.id, name: x.name || String(x.year || "Season"), value: v, label: `${fmtVolume(v, { forceBig: true, decimals: 1 })}` }; }).filter((r) => r.value > 0);
+  const facts = [];
+  if (syrup >= 0.5) facts.push({ key: "pancakes", icon: "drop", big: String(Math.round(syrup * 128 / 2)), line: "pancake breakfasts of our own syrup", title: `About ${Math.round(syrup * 128 / 2)} pancake breakfasts`, sub: "At 2 oz of syrup a plate." });
+  if (sap >= 40) facts.push({ key: "sap", icon: "leaf", big: `${fmtVolume(sap, { forceBig: true, decimals: 0 })}`, line: "of sap carried from our trees", title: `${fmtVolume(sap, { forceBig: true, decimals: 0 })} of sap`, sub: "Every drop carried by hand or tubing." });
+  return {
+    cards: [
+      { label: "Syrup", value: `${fmtVolume(syrup, { forceBig: true, decimals: 1 })}`, sub: boiled && syrup ? `${(boiled / syrup).toFixed(0)} to 1 sap to syrup` : "" },
+      { label: "Sap", value: `${fmtVolume(sap, { forceBig: true, decimals: 0 })}`, sub: `${fmtVolume(boiled, { forceBig: true, decimals: 0 })} boiled` },
+      ...(cost ? [{ label: "Spent", value: fmtMoney(cost), sub: syrup ? `${fmtMoney(cost / volumeFromGal(syrup))} a ${volumeUnitLabel() === "L" ? "liter" : "gallon"} of syrup` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "Syrup by season", right: "", rows } : null,
+    facts, emoji: "🍁", kicker: "Our sugarbush",
+  };
+}
+
 export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const seasons = (hobby.seasons || []).slice().sort((a, b) => (a.year || 0) - (b.year || 0));
   const allEntries = entries || [];
@@ -545,8 +655,8 @@ export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyA
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
         <StatCard label="Seasons tracked" value={totals.seasons} accent={palette.leaf} />
-        <StatCard label="Lifetime sap" value={`${totals.sap.toFixed(0)} gal`} accent={palette.leafSoft} />
-        <StatCard label="Lifetime syrup" value={`${totals.syrup.toFixed(2)} gal`} accent={palette.maple} />
+        <StatCard label="Lifetime sap" value={`${fmtVolume(totals.sap, { forceBig: true, decimals: 0 })}`} accent={palette.leafSoft} />
+        <StatCard label="Lifetime syrup" value={`${fmtVolume(totals.syrup, { forceBig: true, decimals: 2 })}`} accent={palette.maple} />
         {totals.cost > 0 && <StatCard label="Lifetime cost" value={fmtMoney(totals.cost)} accent={palette.accent} />}
         {totals.taps > 0 && <StatCard label="Most taps" value={totals.taps} sub="in a single season" accent={palette.feather} />}
       </div>
@@ -556,11 +666,11 @@ export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyA
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, marginBottom: 8 }}>🍁 Syrup yield by year</div>
           <div style={{ height: 220 }}>
             <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={perSeason}>
+              <BarChart data={perSeason.map((s) => ({ ...s, syrupShown: Number(volumeFromGal(s.syrup).toFixed(2)) }))}>
                 <XAxis dataKey="year" style={{ fontSize: 11 }} />
                 <YAxis style={{ fontSize: 11 }} />
-                <Tooltip formatter={(v) => [`${v} gal`, "Syrup"]} />
-                <Bar dataKey="syrup" fill={palette.maple} radius={[6, 6, 0, 0]} />
+                <Tooltip formatter={(v) => [`${v} ${volumeUnitLabel()}`, "Syrup"]} />
+                <Bar dataKey="syrupShown" fill={palette.maple} radius={[6, 6, 0, 0]} />
               </BarChart>
             </ResponsiveContainer>
           </div>
@@ -622,9 +732,9 @@ export function MapleSyrupAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyA
               <div key={s.id} style={{ padding: "10px 12px", background: palette.bgAlt, borderRadius: 8, fontSize: 13 }}>
                 <div style={{ fontWeight: 700, color: palette.ink, marginBottom: 4 }}>{s.name}</div>
                 <div style={{ color: palette.inkSoft, fontSize: 12 }}>
-                  {s.taps} taps · {s.sap} gal sap → {s.syrup} gal syrup
+                  {s.taps} taps · {fmtVolume(s.sap, { forceBig: true })} sap → {fmtVolume(s.syrup, { forceBig: true, decimals: 2 })} syrup
                   {s.cost > 0 && ` · ${fmtMoney(s.cost)} cost`}
-                  {s.syrupPerTap > 0 && ` · ${s.syrupPerTap} gal/tap`}
+                  {s.syrupPerTap > 0 && ` · ${fmtVolume(s.syrupPerTap)} a tap`}
                 </div>
               </div>
             ))}

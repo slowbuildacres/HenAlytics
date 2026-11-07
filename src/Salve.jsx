@@ -20,20 +20,26 @@
 //   data.sales[] (hobbyType="salve", batchId=...)
 // ============================================================================
 
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, ozToInput, ozFromInput, flozToInput, flozFromInput, smallWeightLabel, flozLabel, currencySymbol } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -62,16 +68,16 @@ const TIN_SIZES = [
   { value: "8oz",   label: "8 oz jar" },
 ];
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
     padding: small ? "6px 12px" : "10px 18px",
-    borderRadius: 8, fontFamily: FONT_BODY,
+    borderRadius: small ? 999 : 14, fontFamily: FONT_BODY,
     fontWeight: 600, fontSize: small ? 12 : 14,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.5 : 1,
@@ -79,11 +85,11 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   };
   const variants = {
     primary: { background: palette.ink, color: palette.bg },
-    accent:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    accent:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    danger:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
   };
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{minHeight: small ? 36 : 44,  ...base, ...variants[variant], ...style }}>{children}</button>;
 }
 
 function Field({ label, children }) {
@@ -99,7 +105,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}><X size={22} /></button>
@@ -112,9 +118,9 @@ function Modal({ open, onClose, title, children }) {
 
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -122,8 +128,8 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -137,13 +143,13 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const [name, setName] = useState(batch?.name || "");
   const [recipe, setRecipe] = useState(batch?.recipe || "");
   const [infusedOilUsed, setInfusedOilUsed] = useState(batch?.infusedOilUsed || "");
-  const [beeswaxOz, setBeeswaxOz] = useState(batch?.beeswaxOz ? String(batch.beeswaxOz) : "");
-  const [butterOz, setButterOz] = useState(batch?.butterOz ? String(batch.butterOz) : "");
+  const [beeswaxOz, setBeeswaxOz] = useState(batch?.beeswaxOz ? ozToInput(batch.beeswaxOz) : "");
+  const [butterOz, setButterOz] = useState(batch?.butterOz ? ozToInput(batch.butterOz) : "");
   const [essentialOils, setEssentialOils] = useState(batch?.essentialOils || "");
   const [pouredDate, setPouredDate] = useState(batch?.pouredDate || todayIso());
   const [tinsMade, setTinsMade] = useState(batch?.tinsMade ? String(batch.tinsMade) : "");
   const [tinSize, setTinSize] = useState(batch?.tinSize || "1oz");
-  const [totalYieldOz, setTotalYieldOz] = useState(batch?.totalYieldOz ? String(batch.totalYieldOz) : "");
+  const [totalYieldOz, setTotalYieldOz] = useState(batch?.totalYieldOz ? flozToInput(batch.totalYieldOz) : "");
   const [ingredientsCost, setIngredientsCost] = useState(batch?.ingredientsCost ? String(batch.ingredientsCost) : "");
   const [notes, setNotes] = useState(batch?.notes || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -152,7 +158,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
     if (!name.trim() && !recipe.trim()) return;
     const id = batch?.id || newId();
     const made = Number(tinsMade) || 0;
-    update(d => {
+    undoable(update, "Saved batch")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -161,8 +167,8 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         name: name.trim() || recipe.trim(),
         recipe: recipe.trim(),
         infusedOilUsed: infusedOilUsed.trim(),
-        beeswaxOz: Number(beeswaxOz) || 0,
-        butterOz: Number(butterOz) || 0,
+        beeswaxOz: ozFromInput(beeswaxOz),
+        butterOz: ozFromInput(butterOz),
         essentialOils: essentialOils.trim(),
         pouredDate,
         tinsMade: made,
@@ -170,7 +176,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
           ? batch.tinsRemaining + (made - (batch?.tinsMade || 0))
           : made,
         tinSize,
-        totalYieldOz: Number(totalYieldOz) || 0,
+        totalYieldOz: flozFromInput(totalYieldOz),
         ingredientsCost: Number(ingredientsCost) || 0,
         notes: notes.trim(),
         events: batch?.events || [{ id: newId(), kind: "poured", date: pouredDate, note: made > 0 ? `${made} × ${tinSize}` : "" }],
@@ -190,7 +196,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted batch")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       if (Array.isArray(d.sales)) d.sales = d.sales.filter(s => s.batchId !== batch.id);
@@ -202,56 +208,56 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit salve batch" : "Make a salve"}>
       <Field label="Salve name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calendula healing salve, Cuts & scrapes balm" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calendula healing salve, Cuts & scrapes balm" autoFocus />
       </Field>
       <Field label="Recipe / purpose (optional)">
-        <input style={inputStyle} value={recipe} onChange={e => setRecipe(e.target.value)} placeholder="e.g. Skin healing, sore muscles" />
+        <input style={inputStyle()} value={recipe} onChange={e => setRecipe(e.target.value)} placeholder="e.g. Skin healing, sore muscles" />
       </Field>
       <Field label="Infused oil(s) used (optional)">
-        <input style={inputStyle} value={infusedOilUsed} onChange={e => setInfusedOilUsed(e.target.value)} placeholder="e.g. Calendula in olive oil, plantain in jojoba" />
+        <input style={inputStyle()} value={infusedOilUsed} onChange={e => setInfusedOilUsed(e.target.value)} placeholder="e.g. Calendula in olive oil, plantain in jojoba" />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Beeswax (oz)">
-            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={beeswaxOz} onChange={e => setBeeswaxOz(e.target.value)} placeholder="0" />
+          <Field label={`Beeswax (${smallWeightLabel()})`}>
+            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={beeswaxOz} onChange={e => setBeeswaxOz(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Butters (oz)">
-            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={butterOz} onChange={e => setButterOz(e.target.value)} placeholder="0" />
+          <Field label={`Butters (${smallWeightLabel()})`}>
+            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={butterOz} onChange={e => setButterOz(e.target.value)} placeholder="0" />
             <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, lineHeight: 1.3 }}>Shea, cocoa, mango, etc.</div>
           </Field>
         </div>
       </div>
       <Field label="Essential oils (optional)">
-        <input style={inputStyle} value={essentialOils} onChange={e => setEssentialOils(e.target.value)} placeholder="e.g. 20 drops lavender, 10 drops tea tree" />
+        <input style={inputStyle()} value={essentialOils} onChange={e => setEssentialOils(e.target.value)} placeholder="e.g. 20 drops lavender, 10 drops tea tree" />
       </Field>
       <Field label="Poured / made on">
-        <input type="date" style={inputStyle} value={pouredDate} onChange={e => setPouredDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={pouredDate} onChange={e => setPouredDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Tins made">
-            <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle} value={tinsMade} onChange={e => setTinsMade(e.target.value)} placeholder="0" />
+            <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle()} value={tinsMade} onChange={e => setTinsMade(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Tin size">
-            <select style={inputStyle} value={tinSize} onChange={e => setTinSize(e.target.value)}>
+            <select style={inputStyle()} value={tinSize} onChange={e => setTinSize(e.target.value)}>
               {TIN_SIZES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
             </select>
           </Field>
         </div>
       </div>
-      <Field label="Total yield in fl oz (optional)">
-        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 8" />
+      <Field label={`Total yield in ${flozLabel()} (optional)`}>
+        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 8" />
       </Field>
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Recipe ratios, how it set up, anything to remember next time..."
         />
@@ -290,7 +296,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     const n = Number(count);
     if (!n || n < 1 || n > max) return;
-    update(d => {
+    undoable(update, "Saved")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -339,25 +345,25 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         {max} {batch.tinSize} tin{max === 1 ? "" : "s"} remaining
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Tins (max ${max})`}>
-            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
+            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle()} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per tin">
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={pricePerTin} onChange={e => setPricePerTin(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerTin} onChange={e => setPricePerTin(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </div>
       </div>
       <Field label="Buyer (optional)">
-        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+        <input style={inputStyle()} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
+        <input style={inputStyle()} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
       </Field>
       {total > 0 && (
         <div style={{ background: palette.yolkSoft, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: palette.ink, marginBottom: 12 }}>
@@ -480,7 +486,7 @@ function SalveModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function SalvePage({ hobby, data, update, setModal }) {
+export default function SalvePage({ hobby, data, update, setModal, nl = null }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
@@ -490,6 +496,34 @@ export default function SalvePage({ hobby, data, update, setModal }) {
   const available = active.filter(b => (b.tinsRemaining || 0) > 0);
   const soldOut = active.filter(b => (b.tinsRemaining || 0) <= 0 && (b.tinsMade || 0) > 0);
   const noInventory = active.filter(b => (b.tinsMade || 0) === 0);
+
+  if (nl) {
+    const archived = batches.filter((b) => b.archived);
+    const left = active.reduce((s, b) => s + (Number(b.tinsRemaining) || 0), 0);
+    const ctx = {
+      key: "salve", tabs: nl.tabs,
+      summary: { big: left, small: `tin${left === 1 ? "" : "s"} on the shelf`, line: active.length ? `${active.length} batch${active.length === 1 ? "" : "es"}` : "" },
+      newLabel: "Pour a batch", onNew: () => setLocalModal({ type: "addBatch" }),
+      shelfTitle: "On the shelf", shelfEmpty: "No salves yet. Pour a batch and the tins show up here.",
+      shelf: active.slice().sort((a, b) => (Number(b.tinsRemaining) || 0) - (Number(a.tinsRemaining) || 0)).map((b) => ({ id: b.id, title: b.name || "Salve", left: Number(b.tinsRemaining) || 0, unit: "tins",
+        onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [`${Number(b.tinsRemaining) || 0} of ${b.tinsMade || 0} × ${b.tinSize || "tin"}`, b.pouredDate ? `poured ${fmtDate(b.pouredDate)}` : null, b.infusedOilUsed || null].filter(Boolean).join(" · "),
+        badge: (Number(b.tinsRemaining) || 0) <= 0 && (b.tinsMade || 0) > 0 ? { tone: "quiet", text: "Sold out" } : null,
+        actions: (Number(b.tinsRemaining) || 0) > 0 ? [{ label: "Sell or use", run: () => setLocalModal({ type: "sell", batchId: b.id }) }] : [] })),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Salve", sub: `${b.tinsMade || 0} tins · poured ${fmtDate(b.pouredDate)}`, onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }) })),
+      extras: [
+        { key: "expense", label: "Expense", sub: "Herbs, tins, labels", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        <SalveModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -513,7 +547,7 @@ export default function SalvePage({ hobby, data, update, setModal }) {
               ➕ Custom
             </button>
           )}
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onYolk, display: "flex", alignItems: "center", gap: 6 }}>
             <Plus size={14} />New batch
           </button>
         </div>
@@ -526,7 +560,7 @@ export default function SalvePage({ hobby, data, update, setModal }) {
           <div style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
             Record your salve batches — what infused oils and beeswax you used, how many tins it made.
           </div>
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.ink }}>Make first salve</button>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.onYolk }}>Make first salve</button>
         </div>
       ) : (
         <>
@@ -561,6 +595,30 @@ export default function SalvePage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: batches poured, tins made and sold.
+export function salveStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.pouredDate));
+  const made = bs.reduce((s, b) => s + (Number(b.tinsMade) || 0), 0);
+  const gone = bs.reduce((s, b) => s + Math.max(0, (Number(b.tinsMade) || 0) - (Number(b.tinsRemaining) || 0)), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "salve" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const by = new Map(); for (const b of bs) { const k = String(b.recipe || b.name || "Salve").trim(); by.set(k, (by.get(k) || 0) + (Number(b.tinsMade) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} tins` }));
+  const facts = [];
+  if (made >= 6) facts.push({ key: "made", icon: "jar", big: String(made), line: "tins of salve made by hand", title: `${made} tins of salve`, sub: `From ${bs.length} batch${bs.length === 1 ? "" : "es"}.` });
+  return {
+    cards: [
+      { label: "Tins made", value: made, sub: `${bs.length} batch${bs.length === 1 ? "" : "es"}` },
+      { label: revenue ? "Sold" : "Gone", value: revenue ? fmtMoney(revenue) : gone, sub: revenue ? `${gone} tins` : "Sold or used" },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: made ? `${fmtMoney((cost / made))} a tin` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🌿", kicker: "Our apothecary",
+  };
+}
+
 export function SalveAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;

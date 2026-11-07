@@ -21,25 +21,26 @@
 // where someone bought a doe but never registered her parents in the app.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useRef, useState } from "react";
 import { X } from "lucide-react";
 
 // Match the rest of the app's design tokens. Duplicated rather than imported
 // to avoid a circular dependency with HomesteadApp.jsx, which doesn't export
 // its palette. Keep these in sync if the main palette changes.
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 // ============================================================================
 // SireDamPicker — used inside Add/Edit Animal forms
@@ -133,7 +134,7 @@ export function SireDamPicker({
         {label} (optional)
       </div>
       <select
-        style={inputStyle}
+        style={inputStyle()}
         value={dropdownValue}
         onChange={(e) => {
           const v = e.target.value;
@@ -185,7 +186,7 @@ export function SireDamPicker({
           </div>
           <input
             ref={freeTextRef}
-            style={{ ...inputStyle, background: palette.bg }}
+            style={{ ...inputStyle(), background: palette.bg }}
             value={selectedName || ""}
             onChange={(e) => onChange({ id: "", name: e.target.value })}
             placeholder={placeholder || `Type the ${label.toLowerCase()}'s name`}
@@ -260,7 +261,7 @@ export function PedigreeView({ animal, animals, onClose, onJumpTo }) {
           background: palette.bg, borderRadius: 16,
           maxWidth: 720, width: "100%", maxHeight: "92vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY,
         }}
       >
         <div style={{

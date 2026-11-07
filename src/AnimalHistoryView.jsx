@@ -28,14 +28,16 @@
 // The component is the modal shell itself (mirrors PedigreeView's contract).
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import { X, Trash2, Save, Edit3 } from "lucide-react";
+import { fmtMoney as fmtMoneyIntl, fmtWeight, fmtVolume } from "./units.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", feather: "#8B6F47",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -50,7 +52,7 @@ const fmtDate = (s) => {
     month: "short", day: "numeric", year: "numeric",
   });
 };
-const fmtMoney = (n) => `$${(Number(n) || 0).toFixed(2)}`;
+const fmtMoney =(n) =>fmtMoneyIntl(Number(n)||0);
 
 // ----------------------------------------------------------------------------
 // Action label/emoji map — covers every per-animal action across all species.
@@ -85,23 +87,23 @@ const actionMeta = (action) => ACTION_META[action] || { emoji: "•", label: act
 // ----------------------------------------------------------------------------
 const detailForEntry = (e) => {
   const bits = [];
-  if (e.action === "milk" && e.gallons != null) bits.push(`${e.gallons} gal`);
+  if (e.action === "milk" && e.gallons != null) bits.push(fmtVolume(Number(e.gallons) || 0));
   if (e.action === "fed") {
     // Newer entries store feedAmount + feedUnit; legacy entries only have lbs.
     if (e.feedUnit === "cups" && e.feedAmount != null) {
       bits.push(`${e.feedAmount} cups`);
     } else if (e.lbs != null && Number(e.lbs) > 0) {
-      bits.push(`${e.lbs} lbs`);
+      bits.push(fmtWeight(Number(e.lbs), { forceBig: true }));
     } else if (e.feedAmount != null && Number(e.feedAmount) > 0) {
       // Defensive fallback: feedAmount present but feedUnit missing — default to lbs
-      bits.push(`${e.feedAmount} lbs`);
+      bits.push(fmtWeight(Number(e.feedAmount), { forceBig: true }));
     }
     if (e.cost > 0) bits.push(fmtMoney(e.cost));
   }
-  if (e.action === "weight" && e.weight != null) bits.push(`${e.weight} lbs`);
+  if (e.action === "weight" && e.weight != null) bits.push(fmtWeight(Number(e.weight), { forceBig: true }));
   if (e.action === "butcher") {
-    if (e.weight != null) bits.push(`${e.weight} lbs`);
-    else if (e.count != null && e.avgWeight != null) bits.push(`${e.count} × ${e.avgWeight} lbs`);
+    if (e.weight != null) bits.push(fmtWeight(Number(e.weight), { forceBig: true }));
+    else if (e.count != null && e.avgWeight != null) bits.push(`${e.count} × ${fmtWeight(Number(e.avgWeight), { forceBig: true })}`);
     if (e.cost > 0) bits.push(fmtMoney(e.cost));
   }
   if (e.action === "death" && e.cause) bits.push(e.cause);
@@ -261,7 +263,7 @@ function collectEvents({ animal, hobby, entries, sales, species }) {
   if (species === "sheep") {
     (hobby.shearings || []).filter(s => s.animalId === animalId).forEach(s => {
       const bits = [];
-      if (s.woolLbs) bits.push(`${s.woolLbs} lbs wool`);
+      if (s.woolLbs) bits.push(`${fmtWeight(Number(s.woolLbs), { forceBig: true })} wool`);
       if (s.woolGrade) bits.push(s.woolGrade);
       if (s.notes) bits.push(s.notes);
       out.push({
@@ -492,7 +494,7 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
           background: palette.bg, borderRadius: 16,
           maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `6px 8px 0 ${palette.line}`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY,
         }}
       >
@@ -685,7 +687,7 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
                     onClick={handleDelete}
                     style={{
                       padding: "6px 12px", borderRadius: 6, border: "none",
-                      background: palette.accent, color: "#FFFFFF",
+                      background: palette.accent, color: palette.onColor,
                       fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12,
                       cursor: "pointer", display: "flex", alignItems: "center", gap: 6,
                     }}
@@ -813,7 +815,7 @@ export function AnimalHistoryView({ animal, hobby, entries, sales, species, upda
           background: palette.bg, borderRadius: 16,
           maxWidth: 520, width: "100%", maxHeight: "92vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `6px 8px 0 ${palette.line}`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY,
         }}
       >

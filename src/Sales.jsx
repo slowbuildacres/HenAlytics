@@ -13,27 +13,29 @@
 // read alongside data.sales for egg revenue stats (never deleted).
 // ============================================================================
 
-import React, { useState, useMemo } from "react";
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import React, { useState, useMemo, useEffect } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
-import { fmtMoney } from "./units.js";
-import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses } from "./expenseFifo.js";
+import { fmtMoney, fmtMoneyWhole, perLbToInput, perLbFromInput, perWeightLabel, lbsToInput, lbsFromInput, weightUnitLabel, fmtWeight, currencySymbol } from "./units.js";
+import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
+import { askConfirm, askChoice } from "./newlook/ConfirmHost.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   honey: "#E8961A", honeySoft: "#F5C96A",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -56,7 +58,7 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 const thisMonthStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`; };
 
 // Hobby type colors and labels
-const HOBBY_META = {
+const HOBBY_META = () => ({
   eggs:          { label: "Eggs",          emoji: "🥚", color: palette.yolk },
   honey:         { label: "Honey",         emoji: "🍯", color: palette.honey },
   meat_chickens: { label: "Meat Birds", emoji: "🍗", color: palette.feather },
@@ -81,7 +83,7 @@ const HOBBY_META = {
   cat:           { label: "Cats",          emoji: "🐈", color: palette.feather },
   maple_syrup:   { label: "Maple Syrup",   emoji: "🍁", color: palette.honey },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
-};
+});
 
 const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Peafowl", "Other"];
 
@@ -103,7 +105,7 @@ const RABBIT_FORMS = ["Whole rabbit", "Cuts / pieces", "Live rabbit"];
 // ============================================================================
 // COMPUTE REVENUE from a sale entry
 // ============================================================================
-function computeRevenue(sale) {
+export function computeRevenue(sale) {
   if (sale.totalRevenue != null) return Number(sale.totalRevenue) || 0;
   const qty = Number(sale.qty) || 0;
   const price = Number(sale.pricePerUnit) || 0;
@@ -195,16 +197,16 @@ function deriveSoldEggsRevenue(e) {
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -221,7 +223,7 @@ function Field({ label, children }) {
 // ============================================================================
 // ADD / EDIT SALE MODAL — 3-step wizard
 // ============================================================================
-function AddSaleModal({ data, update, onClose, existingSale }) {
+export function AddSaleModal({ data, update, onClose, existingSale }) {
   const isEdit = !!existingSale;
   const customers = data.customers || [];
   const visibleHobbies = (data.hobbies || []).filter(h => !h.hidden);
@@ -256,8 +258,11 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
   // Meat / rabbits
   const [saleForm, setSaleForm] = useState(existingSale?.saleForm || "Whole bird");
   const [pricingMethod, setPricingMethod] = useState(existingSale?.pricingMethod || "per_bird");
-  const [pricePerLb, setPricePerLb] = useState(existingSale?.pricePerLb != null ? String(existingSale.pricePerLb) : "");
-  const [avgWeightLbs, setAvgWeightLbs] = useState(existingSale?.avgWeightLbs != null ? String(existingSale.avgWeightLbs) : "");
+  // Meat sold by weight is typed in lbs or kg (and price per lb or kg);
+  // stored per lb. For other sales pricePerLb holds a cost per unit.
+  const byWeight = existingSale?.pricingMethod === "per_lb";
+  const [pricePerLb, setPricePerLb] = useState(existingSale?.pricePerLb != null ? (byWeight ? perLbToInput(existingSale.pricePerLb) : String(existingSale.pricePerLb)) : "");
+  const [avgWeightLbs, setAvgWeightLbs] = useState(existingSale?.avgWeightLbs != null ? lbsToInput(existingSale.avgWeightLbs) : "");
 
   // Garden
   const [crop, setCrop] = useState(existingSale?.crop || "");
@@ -357,8 +362,8 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
       sale = { ...sale, honeyForm, honeyContainer, pricePerUnit: Number(pricePerUnit) || 0 };
     } else if (hobbyType === "meat_chickens" || hobbyType === "rabbits") {
       sale = { ...sale, saleForm, pricingMethod,
-        pricePerLb: Number(pricePerLb) || 0,
-        avgWeightLbs: Number(avgWeightLbs) || 0,
+        pricePerLb: pricingMethod === "per_lb" ? perLbFromInput(pricePerLb) : Number(pricePerLb) || 0,
+        avgWeightLbs: lbsFromInput(avgWeightLbs),
         pricePerUnit: Number(pricePerUnit) || 0,
         flatPrice: Number(flatPrice) || 0,
       };
@@ -460,7 +465,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
           if (a && !a.archived) {
             a.archived = true;
             const verb = (otherItem || "sold") === "leased" ? "Leased" : "Sold";
-            const priceStr = Number(pricePerUnit) > 0 ? ` for $${Number(pricePerUnit).toFixed(2)}` : "";
+            const priceStr = Number(pricePerUnit) > 0 ? ` for ${fmtMoney(Number(pricePerUnit))}` : "";
             a.archivedReason = `${verb}${priceStr}`;
             a.archivedDate = date;
             a.saleId = sale.id;
@@ -493,7 +498,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit sale" : "Log a sale"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -505,12 +510,12 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
             <>
               <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:14 }}>What did you sell?</div>
               <div style={{ display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(130px,1fr))",gap:8,marginBottom:20 }}>
-                {Object.entries(HOBBY_META).filter(([k]) => availableHobbyTypes.includes(k)).map(([key, meta]) => (
+                {Object.entries(HOBBY_META()).filter(([k]) => availableHobbyTypes.includes(k)).map(([key, meta]) => (
                   <button key={key} onClick={() => { setHobbyType(key); setStep(2); }} style={{
                     padding:"14px 10px",background:palette.card,border:`1.5px solid ${palette.line}`,
                     borderRadius:10,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
                     display:"flex",flexDirection:"column",alignItems:"center",gap:6,
-                    boxShadow:`2px 2px 0 ${palette.line}`,
+                    boxShadow:"none",
                   }}>
                     <span style={{ fontSize:28 }}>{meta.emoji}</span>
                     <span style={{ fontSize:13,fontWeight:600 }}>{meta.label}</span>
@@ -525,12 +530,12 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
             <>
               {!isEdit && (
                 <button onClick={() => setStep(1)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontFamily:FONT_BODY,fontSize:13,padding:"0 0 14px",display:"flex",alignItems:"center",gap:4 }}>
-                  ← {HOBBY_META[hobbyType]?.emoji} {HOBBY_META[hobbyType]?.label}
+                  ← {HOBBY_META()[hobbyType]?.emoji} {HOBBY_META()[hobbyType]?.label}
                 </button>
               )}
 
               <Field label="Date">
-                <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+                <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
               </Field>
 
               {/* Eggs */}
@@ -538,14 +543,14 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Bird type">
-                      <select style={inputStyle} value={eggType} onChange={e=>setEggType(e.target.value)}>
+                      <select style={inputStyle()} value={eggType} onChange={e=>setEggType(e.target.value)}>
                         {EGG_TYPES.map(t=><option key={t}>{t}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Purpose">
-                      <select style={inputStyle} value={eggPurpose} onChange={e=>setEggPurpose(e.target.value)}>
+                      <select style={inputStyle()} value={eggPurpose} onChange={e=>setEggPurpose(e.target.value)}>
                         {EGG_PURPOSES.map(p=><option key={p}>{p}</option>)}
                       </select>
                     </Field>
@@ -553,18 +558,18 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 </div>
                 {eggType === "Other" && (
                   <Field label="What kind?">
-                    <input style={inputStyle} value={eggTypeCustom} onChange={e=>setEggTypeCustom(e.target.value)} placeholder="e.g. emu, ostrich, partridge" />
+                    <input style={inputStyle()} value={eggTypeCustom} onChange={e=>setEggTypeCustom(e.target.value)} placeholder="e.g. emu, ostrich, partridge" />
                   </Field>
                 )}
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Qty">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Unit">
-                      <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
+                      <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
                         <option value="dozen">Dozen</option>
                         <option value="eggs">Individual eggs</option>
                       </select>
@@ -572,7 +577,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                   <div style={{ flex:1,minWidth:120 }}>
                     <Field label={unit === "dozen" ? "Price / dozen" : "Price / dozen (equiv)"}>
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -583,14 +588,14 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Form">
-                      <select style={inputStyle} value={honeyForm} onChange={e=>setHoneyForm(e.target.value)}>
+                      <select style={inputStyle()} value={honeyForm} onChange={e=>setHoneyForm(e.target.value)}>
                         {HONEY_FORMS.map(f=><option key={f}>{f}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:130 }}>
                     <Field label="Container / unit">
-                      <select style={inputStyle} value={honeyContainer} onChange={e=>setHoneyContainer(e.target.value)}>
+                      <select style={inputStyle()} value={honeyContainer} onChange={e=>setHoneyContainer(e.target.value)}>
                         {HONEY_CONTAINERS.map(c=><option key={c}>{c}</option>)}
                       </select>
                     </Field>
@@ -599,12 +604,12 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12 }}>
                   <div style={{ flex:1 }}>
                     <Field label="Qty (units sold)">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Price per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -613,15 +618,15 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Meat chickens */}
               {hobbyType === "meat_chickens" && <>
                 <Field label="Form">
-                  <select style={inputStyle} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
+                  <select style={inputStyle()} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
                     {MEAT_FORMS.map(f=><option key={f}>{f}</option>)}
                   </select>
                 </Field>
                 <Field label="Number of birds / units">
-                  <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                  <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                 </Field>
                 <Field label="Pricing method">
-                  <select style={inputStyle} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
+                  <select style={inputStyle()} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
                     <option value="per_bird">Per bird / unit</option>
                     <option value="per_lb">Per lb</option>
                     <option value="flat">Flat price (total)</option>
@@ -630,25 +635,25 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 {pricingMethod === "per_lb" && <>
                   <div style={{ display:"flex",gap:12 }}>
                     <div style={{ flex:1 }}>
-                      <Field label="Avg weight (lbs)">
-                        <input type="number" min={0} step="0.1" style={inputStyle} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
+                      <Field label={`Avg weight (${weightUnitLabel()})`}>
+                        <input type="number" min={0} step="0.1" style={inputStyle()} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
                       </Field>
                     </div>
                     <div style={{ flex:1 }}>
-                      <Field label="Price / lb">
-                        <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <Field label={`Price / ${perWeightLabel()}`}>
+                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                       </Field>
                     </div>
                   </div>
                 </>}
                 {pricingMethod === "per_bird" && (
                   <Field label="Price / bird">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
                 {pricingMethod === "flat" && (
-                  <Field label="Total price ($)">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                  <Field label={`Total price (${currencySymbol()})`}>
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
               </>}
@@ -656,15 +661,15 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Rabbits */}
               {hobbyType === "rabbits" && <>
                 <Field label="Form">
-                  <select style={inputStyle} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
+                  <select style={inputStyle()} value={saleForm} onChange={e=>setSaleForm(e.target.value)}>
                     {RABBIT_FORMS.map(f=><option key={f}>{f}</option>)}
                   </select>
                 </Field>
                 <Field label="Quantity">
-                  <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                  <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                 </Field>
                 <Field label="Pricing method">
-                  <select style={inputStyle} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
+                  <select style={inputStyle()} value={pricingMethod} onChange={e=>setPricingMethod(e.target.value)}>
                     <option value="per_bird">Per rabbit</option>
                     <option value="per_lb">Per lb</option>
                     <option value="flat">Flat price (total)</option>
@@ -673,25 +678,25 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 {pricingMethod === "per_lb" && (
                   <div style={{ display:"flex",gap:12 }}>
                     <div style={{ flex:1 }}>
-                      <Field label="Avg weight (lbs)">
-                        <input type="number" min={0} step="0.1" style={inputStyle} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
+                      <Field label={`Avg weight (${weightUnitLabel()})`}>
+                        <input type="number" min={0} step="0.1" style={inputStyle()} value={avgWeightLbs} onChange={e=>setAvgWeightLbs(e.target.value)} placeholder="0.0" />
                       </Field>
                     </div>
                     <div style={{ flex:1 }}>
-                      <Field label="Price / lb">
-                        <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <Field label={`Price / ${perWeightLabel()}`}>
+                        <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                       </Field>
                     </div>
                   </div>
                 )}
                 {pricingMethod === "per_bird" && (
                   <Field label="Price / rabbit">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
                 {pricingMethod === "flat" && (
-                  <Field label="Total price ($)">
-                    <input type="number" min={0} step="0.01" style={inputStyle} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                  <Field label={`Total price (${currencySymbol()})`}>
+                    <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                   </Field>
                 )}
               </>}
@@ -699,24 +704,24 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Garden */}
               {hobbyType === "garden" && <>
                 <Field label="Crop / product">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, corn, cut flowers..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, corn, cut flowers..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Qty">
-                      <input type="number" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="0.1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Unit">
-                      <select style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
+                      <select style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
                         {["lbs","oz","count","bunch","quart","pint","bag","basket"].map(u=><option key={u}>{u}</option>)}
                       </select>
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:110 }}>
                     <Field label={`Price / ${gardenUnit}`}>
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -725,17 +730,17 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Farm Stand */}
               {hobbyType === "farmstand" && <>
                 <Field label="Item name">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, eggs, honey, baked goods..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Tomatoes, eggs, honey, baked goods..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Qty sold">
-                      <input type="number" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="0.1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1,minWidth:100 }}>
                     <Field label="Unit">
-                      <select style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
+                      <select style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)}>
                         {["each","lbs","dozen","quart","pint","bunch","bag","jar","loaf"].map(u=><option key={u}>{u}</option>)}
                       </select>
                     </Field>
@@ -744,12 +749,12 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1 }}>
                     <Field label="Your cost per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per unit">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -758,7 +763,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Sourdough */}
               {hobbyType === "sourdough" && <>
                 <Field label="Recipe / loaf type">
-                  <input style={inputStyle} list="sourdough-recipes" value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Country Loaf, Boule, Cinnamon Raisin..." />
+                  <input style={inputStyle()} list="sourdough-recipes" value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Country Loaf, Boule, Cinnamon Raisin..." />
                   <datalist id="sourdough-recipes">
                     {["Country Loaf","Boule","Batard","Whole Wheat","Rye","Multigrain","Sandwich Loaf","Focaccia","Baguette","Cinnamon Raisin","Jalapeño Cheddar","Pizza Dough","Discard Crackers"].map(r => <option key={r} value={r} />)}
                   </datalist>
@@ -766,17 +771,17 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Loaves sold">
-                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per loaf (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per loaf">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -785,25 +790,25 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Baking */}
               {hobbyType === "baking" && <>
                 <Field label="Recipe / item">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Apple Pie, Banana Bread, Croissants..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Apple Pie, Banana Bread, Croissants..." />
                 </Field>
                 <Field label="Unit (optional)">
-                  <input style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="loaves, pies, dozen cookies..." />
+                  <input style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="loaves, pies, dozen cookies..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Quantity sold">
-                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per item (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per item">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -812,25 +817,25 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Canning */}
               {hobbyType === "canning" && <>
                 <Field label="Item">
-                  <input style={inputStyle} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Strawberry Jam, Dill Pickles, Tomato Sauce..." />
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Strawberry Jam, Dill Pickles, Tomato Sauce..." />
                 </Field>
                 <Field label="Jar type">
-                  <input style={inputStyle} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="pint jars, quart jars, half-pints..." />
+                  <input style={inputStyle()} value={gardenUnit} onChange={e=>setGardenUnit(e.target.value)} placeholder="pint jars, quart jars, half-pints..." />
                 </Field>
                 <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
                   <div style={{ flex:1,minWidth:80 }}>
                     <Field label="Jars sold">
-                      <input type="number" min={0} step="1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} step="1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Cost per jar (optional)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerLb} onChange={e=>setPricePerLb(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Sale price per jar">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -842,14 +847,14 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                     pick one. Picking pre-fills the name AND archives the animal
                     on save so the Sales tab can retire it in one tap. */}
                 {(() => {
-                  const speciesLabel = (HOBBY_META[hobbyType]?.label || "Animal");
+                  const speciesLabel = (HOBBY_META()[hobbyType]?.label || "Animal");
                   const lsHobby = (data.hobbies || []).find(h => h.id === LIVESTOCK_HOBBY_ID[hobbyType]);
                   const liveAnimals = (lsHobby?.animals || []).filter(a => !a.archived);
                   if (liveAnimals.length === 0) return null;
                   return (
                     <Field label={`Sell an existing animal? (optional)`}>
                       <select
-                        style={inputStyle}
+                        style={inputStyle()}
                         value={selectedAnimalId}
                         onChange={e => {
                           const id = e.target.value;
@@ -869,16 +874,16 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                   );
                 })()}
                 <Field label="Animal name">
-                  <input style={inputStyle} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Bessie, Thunder" />
+                  <input style={inputStyle()} value={crop} onChange={e=>{setCrop(e.target.value); setSelectedAnimalId("");}} placeholder="e.g. Bessie, Thunder" />
                 </Field>
                 <Field label="Type of transaction">
-                  <select style={inputStyle} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
+                  <select style={inputStyle()} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
                     <option value="sold">Sold</option>
                     <option value="leased">Leased</option>
                   </select>
                 </Field>
                 <Field label="Sale / lease price">
-                  <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                  <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                 </Field>
                 {selectedAnimalId && (
                   <div style={{ fontSize:12, color:palette.inkSoft, marginBottom:10, padding:"8px 10px", background:palette.bgAlt, borderRadius:6, lineHeight:1.5 }}>
@@ -890,20 +895,20 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Incubator / chicks */}
               {hobbyType === "incubator" && <>
                 <Field label="Bird type">
-                  <input style={inputStyle} value={chickBirdType} onChange={e=>setChickBirdType(e.target.value)} placeholder="e.g. Chicken, Duck, Quail" />
+                  <input style={inputStyle()} value={chickBirdType} onChange={e=>setChickBirdType(e.target.value)} placeholder="e.g. Chicken, Duck, Quail" />
                 </Field>
                 <Field label="Brooder batch (optional)">
-                  <input style={inputStyle} value={chickBrooderName} onChange={e=>setChickBrooderName(e.target.value)} placeholder="e.g. Spring batch #1" />
+                  <input style={inputStyle()} value={chickBrooderName} onChange={e=>setChickBrooderName(e.target.value)} placeholder="e.g. Spring batch #1" />
                 </Field>
                 <div style={{ display:"flex",gap:12 }}>
                   <div style={{ flex:1 }}>
                     <Field label="Chicks sold">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
                     <Field label="Price per chick">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -917,17 +922,17 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               {/* Other */}
               {hobbyType === "other" && <>
                 <Field label="What was sold?">
-                  <input style={inputStyle} value={otherItem} onChange={e=>setOtherItem(e.target.value)} placeholder="e.g. Quail eggs, seedlings, crafts..." />
+                  <input style={inputStyle()} value={otherItem} onChange={e=>setOtherItem(e.target.value)} placeholder="e.g. Quail eggs, seedlings, crafts..." />
                 </Field>
                 <div style={{ display:"flex",gap:12 }}>
                   <div style={{ flex:1 }}>
                     <Field label="Qty">
-                      <input type="number" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                      <input type="number" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
                     </Field>
                   </div>
                   <div style={{ flex:1 }}>
-                    <Field label="Total price ($)">
-                      <input type="number" min={0} step="0.01" style={inputStyle} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder="$0.00" />
+                    <Field label={`Total price (${currencySymbol()})`}>
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={flatPrice} onChange={e=>setFlatPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
                     </Field>
                   </div>
                 </div>
@@ -944,7 +949,7 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
               <Field label="Customer (optional)">
                 {!showNewBuyer ? (
                   <div style={{ display:"flex",gap:8 }}>
-                    <select style={{ ...inputStyle,flex:1 }} value={buyerId} onChange={e=>setBuyerId(e.target.value)}>
+                    <select style={{ ...inputStyle(),flex:1 }} value={buyerId} onChange={e=>setBuyerId(e.target.value)}>
                       <option value="">— No customer —</option>
                       {customers.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
@@ -954,18 +959,18 @@ function AddSaleModal({ data, update, onClose, existingSale }) {
                   </div>
                 ) : (
                   <div style={{ display:"flex",gap:8 }}>
-                    <input style={{ ...inputStyle,flex:1 }} value={newBuyerName} onChange={e=>setNewBuyerName(e.target.value)} placeholder="Customer name" autoFocus />
+                    <input style={{ ...inputStyle(),flex:1 }} value={newBuyerName} onChange={e=>setNewBuyerName(e.target.value)} placeholder="Customer name" autoFocus />
                     <button onClick={()=>setShowNewBuyer(false)} style={{ padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.bgAlt,cursor:"pointer",fontFamily:FONT_BODY,fontSize:13,color:palette.inkSoft }}>Cancel</button>
                   </div>
                 )}
               </Field>
 
               <Field label="Notes (optional)">
-                <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Farmers market, neighbor, online..." />
+                <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Farmers market, neighbor, online..." />
               </Field>
 
               <Field label="Tip (optional)">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
               </Field>
 
               <Btn variant="primary" onClick={save} style={{ width:"100%" }}>
@@ -987,17 +992,17 @@ function CustomerModal({ customer, onSave, onClose }) {
   const [note, setNote] = useState(customer?.note || "");
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>{customer ? "Edit customer" : "Add customer"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink }}><X size={20}/></button>
         </div>
         <div style={{ padding:20 }}>
           <Field label="Name">
-            <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Smith" autoFocus />
+            <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Smith" autoFocus />
           </Field>
           <Field label="Notes (optional)">
-            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
+            <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
           </Field>
           <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
         </div>
@@ -1013,7 +1018,7 @@ function ExpenseRow({ expense, hobbies, onEdit, onDelete, readOnly }) {
   const hobby = (hobbies || []).find(h => h.id === expense.hobbyId);
   const hobbyLabel = hobby ? hobby.name : "General overhead";
   return (
-    <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:"#FBE5DE",border:`1.5px solid ${palette.accent}40`,borderRadius:10 }}>
+    <div style={{ display:"flex",alignItems:"center",gap:12,padding:"12px 14px",background:palette.dangerBg,border:`1.5px solid ${palette.accent}40`,borderRadius:10 }}>
       <div style={{ fontSize:22,flexShrink:0 }}>💸</div>
       <div style={{ flex:1,minWidth:0 }}>
         <div style={{ fontWeight:600,fontSize:14,color:palette.ink,display:"flex",alignItems:"center",gap:8 }}>
@@ -1042,7 +1047,7 @@ function ExpenseRow({ expense, hobbies, onEdit, onDelete, readOnly }) {
 }
 
 function SaleRow({ sale, customers, onEdit, onDelete }) {
-  const meta = HOBBY_META[sale.hobbyType] || HOBBY_META.other;
+  const meta = HOBBY_META()[sale.hobbyType] || HOBBY_META().other;
   const customer = customers.find(c => c.id === sale.buyerId);
   const revenue = computeRevenue(sale);
 
@@ -1060,7 +1065,7 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
     detail = `${sale.qty} × ${sale.honeyContainer} · ${sale.honeyForm}`;
   } else if (sale.hobbyType === "meat_chickens" || sale.hobbyType === "rabbits") {
     detail = `${sale.qty} ${sale.saleForm || ""}`;
-    if (sale.pricingMethod === "per_lb" && sale.avgWeightLbs) detail += ` · ${sale.avgWeightLbs} lbs avg`;
+    if (sale.pricingMethod === "per_lb" && sale.avgWeightLbs) detail += ` · ${fmtWeight(sale.avgWeightLbs, { forceBig: true })} avg`;
   } else if (sale.hobbyType === "farmstand") {
     detail = `${sale.crop} · ${sale.qty} ${sale.gardenUnit||""} @ ${fmtMoney(sale.pricePerUnit||0)}/unit`;
   } else if (sale.hobbyType === "sourdough") {
@@ -1320,9 +1325,9 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   // Default action button — used when not editing a virtual instance.
   const save = saveSeries;
 
-  const remove = () => {
+  const remove = async () => {
     if (!isEdit) return;
-    if (!confirm("Delete this expense?")) return;
+    if (!(await askConfirm({ title: "Delete this expense?", confirmLabel: "Delete" }))) return;
     update((d) => {
       d.expenses = (d.expenses || []).filter(e => e.id !== existingExpense.id);
       return d;
@@ -1332,22 +1337,22 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit expense" : "Log expense"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
-      <Field label="Amount ($)">
+      <Field label={`Amount (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={amount}
           onChange={(e) => { setAmount(e.target.value); setError(""); }}
           placeholder="0.00"
@@ -1358,7 +1363,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       <Field label="Category">
         <input
           list="expense-categories"
-          style={inputStyle}
+          style={inputStyle()}
           value={category}
           onChange={(e) => { setCategory(e.target.value); setError(""); }}
           placeholder="Feed, Bedding, etc."
@@ -1369,7 +1374,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       </Field>
 
       <Field label="For which hobby? (optional)">
-        <select style={inputStyle} value={hobbyId} onChange={(e) => { setHobbyId(e.target.value); setFlockId(""); }}>
+        <select style={inputStyle()} value={hobbyId} onChange={(e) => { setHobbyId(e.target.value); setFlockId(""); }}>
           <option value="">— All / unspecified —</option>
           {visibleHobbies.map(h => (
             <option key={h.id} value={h.id}>{h.name}</option>
@@ -1386,7 +1391,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
         if (flocks.length === 0) return null;
         return (
           <Field label="Which flock? (optional)">
-            <select style={inputStyle} value={flockId} onChange={(e) => setFlockId(e.target.value)}>
+            <select style={inputStyle()} value={flockId} onChange={(e) => setFlockId(e.target.value)}>
               <option value="">— All flocks / general —</option>
               {flocks.map(f => (
                 <option key={f.id} value={f.id}>{f.name}</option>
@@ -1398,7 +1403,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
 
       <Field label="Note (optional)">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={note}
           onChange={(e) => setNote(e.target.value)}
           placeholder="20lb layer pellets at TSC"
@@ -1406,14 +1411,14 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
       </Field>
 
       <Field label="Repeats">
-        <select style={inputStyle} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
+        <select style={inputStyle()} value={recurrence} onChange={(e) => setRecurrence(e.target.value)}>
           {RECUR_OPTIONS.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
         </select>
       </Field>
 
       {recurrence !== "none" && (
         <Field label="End date (optional)">
-          <input type="date" style={inputStyle} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
+          <input type="date" style={inputStyle()} value={recurEnd} onChange={(e) => setRecurEnd(e.target.value)} />
         </Field>
       )}
 
@@ -1453,14 +1458,61 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
   );
 }
 
-export default function SalesPage({ data, update, onEmailCustomers }) {
+// What a sale was, in a few words ("Eggs", "Honey"), for one-line summaries.
+export function saleKind(sale) {
+  const meta = HOBBY_META()[sale && sale.hobbyType] || HOBBY_META().other || { label: "Sale" };
+  if (sale && sale.hobbyType === "eggs" && sale.qty) return `${sale.qty} ${sale.unit === "dozen" ? "dozen eggs" : "eggs"}`;
+  if (sale && sale.crop) return sale.crop;
+  return meta.label;
+}
+
+// Delete a sale and unwind what it touched (legacy sold_eggs twin, brooder
+// disposition). Shared by the Sales log and the 3.0 Undo bar.
+export function removeSale(d, id) {
+  const target = (d.sales || []).find(s => s.id === id);
+  d.sales = (d.sales||[]).filter(s => s.id !== id);
+  if (d.entries?.["egg_layers"]) {
+    d.entries["egg_layers"] = d.entries["egg_layers"].filter(
+      e => !(e.action === "sold_eggs" && e.id === id)
+    );
+  }
+  if (target?.brooderBatchId && target?.dispositionId) {
+    const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
+    const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);
+    if (batch && Array.isArray(batch.dispositions)) {
+      batch.dispositions = batch.dispositions.filter(x => x.id !== target.dispositionId);
+      if (batch.archived) batch.archived = false;
+    }
+  }
+  return d;
+}
+
+// Sold / spent / profit for a window, the Sales page's numbers. Legacy
+// per-flock egg sales are merged into data.sales so they count, exactly as
+// the totals above them do. Shared with the 3.0 Sales screen.
+export function profitStats(data, windowKey, mode, legacyEggSales = null) {
+  const window = resolveWindow(windowKey, new Date());
+  const legacy = legacyEggSales || collectAllSales(data).filter(s => s.isLegacy);
+  const saleIds = new Set((data.sales || []).map(s => s.id));
+  const mergedData = { ...data, sales: [...(data.sales || []), ...legacy.filter(s => !saleIds.has(s.id))] };
+  return mode === "fifo" ? computeFifoStats(mergedData, window) : computeSimpleStats(mergedData, window);
+}
+
+// `embedded` (3.0): shown under the new Sales screen, so its own title and
+// shortcut buttons are hidden. `focus` scrolls to "log" or "customers".
+export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHistory, embedded = false, focus = null }) {
   const [showAddSale, setShowAddSale] = useState(false);
   const [editingSale, setEditingSale] = useState(null);
   const [showAddExpense, setShowAddExpense] = useState(false);
   const [editingExpense, setEditingExpense] = useState(null);
   const [editingOccurrenceDate, setEditingOccurrenceDate] = useState(null);
   const [filterType, setFilterType] = useState("all");
-  const [showCustomers, setShowCustomers] = useState(false);
+  const [showCustomers, setShowCustomers] = useState(focus === "customers");
+  useEffect(() => {
+    if (!focus) return;
+    const el = document.getElementById(focus === "customers" ? "sales-customers" : focus === "log" ? "sales-log" : null);
+    if (el) setTimeout(() => el.scrollIntoView({ block: "start" }), 50);
+  }, [focus]);
   const [editingCustomer, setEditingCustomer] = useState(null);
   const [showAddCustomer, setShowAddCustomer] = useState(false);
   const [showYearReport, setShowYearReport] = useState(false);
@@ -1508,9 +1560,9 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
       acc[t] = (acc[t] || 0) + computeRevenue(sale);
     });
     return Object.entries(acc).map(([type, revenue]) => ({
-      name: HOBBY_META[type]?.label || type,
+      name: HOBBY_META()[type]?.label || type,
       revenue: parseFloat(revenue.toFixed(2)),
-      emoji: HOBBY_META[type]?.emoji || "💰",
+      emoji: HOBBY_META()[type]?.emoji || "💰",
     })).sort((a,b) => b.revenue - a.revenue);
   }, [allSales]);
 
@@ -1565,51 +1617,10 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
   // Simple mode: cash in vs cash out within the window. No backlog tracking.
   // Matches the standard homesteader mental model ("did I spend more than I
   // made this month?").
-  const fifoStats = useMemo(() => {
-    const window = resolveWindow(profitWindow, new Date());
-    // Build a synthetic data object that includes legacyEggSales merged into
-    // sales — otherwise old per-flock egg sales wouldn't count toward egg
-    // revenue in the FIFO view, even though they show up in totalRevenue
-    // above. Same merge logic as allSales but at the data shape level.
-    const saleIds = new Set((data.sales || []).map(s => s.id));
-    const mergedSales = [
-      ...(data.sales || []),
-      ...legacyEggSales.filter(s => !saleIds.has(s.id)),
-    ];
-    const mergedData = { ...data, sales: mergedSales };
-    return profitMode === "simple"
-      ? computeSimpleStats(mergedData, window)
-      : computeFifoStats(mergedData, window);
-  }, [data, legacyEggSales, profitWindow, profitMode]);
+  const fifoStats = useMemo(() => profitStats(data, profitWindow, profitMode, legacyEggSales), [data, legacyEggSales, profitWindow, profitMode]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const deleteSale = (id) => {
-    update(d => {
-      // Snapshot the sale before deletion so we can unwind the brooder
-      // disposition (if this was a brooder-linked chick sale).
-      const target = (d.sales || []).find(s => s.id === id);
-      d.sales = (d.sales||[]).filter(s => s.id !== id);
-      // Also remove any legacy `sold_eggs` entry with the same id. Otherwise
-      // a sale that was migrated from the old per-flock egg-sale logger would
-      // "resurrect" itself after deletion — the user would delete from data.sales,
-      // but the entry in data.entries["egg_layers"] would re-appear on next render.
-      if (d.entries?.["egg_layers"]) {
-        d.entries["egg_layers"] = d.entries["egg_layers"].filter(
-          e => !(e.action === "sold_eggs" && e.id === id)
-        );
-      }
-      // Brooder-linked: remove the matching disposition so the brooder's
-      // remaining count comes back. If the batch was auto-archived (count
-      // hit 0), un-archive it since we just freed up chicks.
-      if (target?.brooderBatchId && target?.dispositionId) {
-        const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
-        const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);
-        if (batch && Array.isArray(batch.dispositions)) {
-          batch.dispositions = batch.dispositions.filter(x => x.id !== target.dispositionId);
-          if (batch.archived) batch.archived = false;
-        }
-      }
-      return d;
-    });
+    update(d => removeSale(d, id));
   };
 
   const saveCustomer = (customer) => {
@@ -1638,6 +1649,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
       {editingCustomer && <CustomerModal customer={editingCustomer} onSave={saveCustomer} onClose={() => setEditingCustomer(null)} />}
       {showYearReport && <YearEndReportModal data={data} onClose={() => setShowYearReport(false)} />}
 
+      {!embedded && <>
       {/* Header */}
       <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:16,flexWrap:"wrap",gap:10 }}>
         <h2 style={{ fontFamily:FONT_DISPLAY,fontSize:26,margin:0,color:palette.ink }}>sales</h2>
@@ -1650,7 +1662,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
       <button type="button" onClick={() => setShowYearReport(true)} style={{
         width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
         background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
-        fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+        fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:"none",
       }}>
         <span style={{ fontSize:22 }}>📄</span>
         <span style={{ flex:1 }}>
@@ -1660,11 +1672,26 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
         <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
       </button>
 
+      {onPurchaseHistory && (
+        <button type="button" onClick={onPurchaseHistory} style={{
+          width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
+          background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:"none",
+        }}>
+          <span style={{ fontSize:22 }}>🧾</span>
+          <span style={{ flex:1 }}>
+            <span style={{ display:"block",fontWeight:700,fontSize:14 }}>Purchase history</span>
+            <span style={{ display:"block",fontSize:12,color:palette.inkSoft }}>When you last bought each thing, what it cost, and how often you buy it.</span>
+          </span>
+          <span style={{ fontSize:18,color:palette.inkSoft }}>›</span>
+        </button>
+      )}
+
       {onEmailCustomers && (
         <button type="button" onClick={onEmailCustomers} style={{
           width:"100%",display:"flex",alignItems:"center",gap:10,padding:"12px 14px",marginBottom:14,
           background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:12,cursor:"pointer",
-          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:`2px 2px 0 ${palette.line}`,
+          fontFamily:FONT_BODY,textAlign:"left",color:palette.ink,boxShadow:"none",
         }}>
           <span style={{ fontSize:22 }}>📧</span>
           <span style={{ flex:1 }}>
@@ -1675,9 +1702,11 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
         </button>
       )}
 
+      </>}
+
       {/* Revenue summary cards */}
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
-        <div style={{ flex:"1 1 140px",background:palette.ink,color:palette.bg,borderRadius:12,padding:14 }}>
+        <div style={{ flex:"1 1 140px",background:palette.deep,color:palette.onDeep,borderRadius:12,padding:14 }}>
           <div style={{ fontSize:10,opacity:0.7,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>All-time revenue</div>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:32,color:palette.yolk,lineHeight:1 }}>{fmtMoney(totalRevenue)}</div>
           <div style={{ fontSize:11,opacity:0.7,marginTop:4 }}>{allSales.length} sale{allSales.length===1?"":"s"}</div>
@@ -1803,7 +1832,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
                   layout="vertical"
                   margin={{ top: 4, right: 16, bottom: 4, left: 4 }}
                 >
-                  <XAxis type="number" stroke={palette.inkSoft} fontSize={10} tickFormatter={v=>`$${v}`} />
+                  <XAxis type="number" stroke={palette.inkSoft} fontSize={10} tickFormatter={(v) => fmtMoneyWhole(v)} />
                   <YAxis type="category" dataKey="name" stroke={palette.inkSoft} fontSize={11} width={110} />
                   <Tooltip
                     contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }}
@@ -1858,7 +1887,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
           <ResponsiveContainer width="100%" height={180}>
             <BarChart data={byMonth}>
               <XAxis dataKey="month" stroke={palette.inkSoft} fontSize={11} />
-              <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={v=>`$${v}`} />
+              <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={(v) => fmtMoneyWhole(v)} />
               <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v=>[fmtMoney(v),"Revenue"]} />
               <Bar dataKey="revenue" fill={palette.leaf} radius={[6,6,0,0]} />
             </BarChart>
@@ -1897,7 +1926,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
       )}
 
       {/* Filter + log */}
-      <div style={{ display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8 }}>
+      <div id="sales-log" style={{ scrollMarginTop: 16, display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10,flexWrap:"wrap",gap:8 }}>
         <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>Sales &amp; expenses log</div>
         <div style={{ display:"flex",gap:6,flexWrap:"wrap" }}>
           {availableTypes.map(t => (
@@ -1907,7 +1936,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
               color: filterType===t ? palette.bg : palette.ink,
               border:`1.5px solid ${palette.line}`,cursor:"pointer",
             }}>
-              {t === "all" ? "All" : (HOBBY_META[t]?.emoji + " " + HOBBY_META[t]?.label)}
+              {t === "all" ? "All" : (HOBBY_META()[t]?.emoji + " " + HOBBY_META()[t]?.label)}
             </button>
           ))}
         </div>
@@ -2019,22 +2048,23 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
                     setEditingOccurrenceDate(null);
                   }
                 }}
-                onDelete={() => {
+                onDelete={async () => {
                   const parentId = row.item._parentId;
                   if (!parentId) {
                     // Non-recurring expense — simple delete.
-                    if (!confirm("Delete this expense?")) return;
+                    if (!(await askConfirm({ title: "Delete this expense?", confirmLabel: "Delete" }))) return;
                     update(d => {
                       d.expenses = (d.expenses || []).filter(e => e.id !== row.item.id);
                       return d;
                     });
                     return;
                   }
-                  // Virtual instance from a recurring template — offer two options
-                  // via chained confirms. "OK" on first prompt = skip this occurrence
-                  // only. Cancel → second prompt offers full-series delete.
+                  // One of a repeating expense's months: skip just this one, or
+                  // delete the whole series.
                   const occurrenceDateText = fmtDate(row.item.date);
-                  if (confirm(`Delete just the ${occurrenceDateText} occurrence?\n\nClick OK to skip this occurrence only.\nClick Cancel to see the option to delete the whole series.`)) {
+                  const pick = await askChoice({ title: "Delete a repeating expense", message: `This expense repeats. Delete just the ${occurrenceDateText} one, or every one?`,
+                    choices: [{ label: `Just ${occurrenceDateText}`, value: "one", danger: true }, { label: "The whole series", value: "all", danger: true }] });
+                  if (pick === "one") {
                     update(d => {
                       const parent = (d.expenses || []).find(e => e.id === parentId);
                       if (!parent) return d;
@@ -2045,7 +2075,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
                     });
                     return;
                   }
-                  if (confirm("Delete the entire recurring series instead? This removes all occurrences.")) {
+                  if (pick === "all") {
                     update(d => {
                       d.expenses = (d.expenses || []).filter(e => e.id !== parentId);
                       return d;
@@ -2228,7 +2258,7 @@ export default function SalesPage({ data, update, onEmailCustomers }) {
       })()}
 
       {/* Customers section */}
-      <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,overflow:"hidden",marginBottom:14 }}>
+      <div id="sales-customers" style={{ scrollMarginTop: 16, background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,overflow:"hidden",marginBottom:14 }}>
         <button onClick={() => setShowCustomers(!showCustomers)} style={{ width:"100%",padding:"14px 16px",background:"transparent",border:"none",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between",fontFamily:FONT_BODY }}>
           <div style={{ display:"flex",alignItems:"center",gap:10 }}>
             <User size={16} color={palette.inkSoft} />
@@ -2331,6 +2361,7 @@ const ENTRY_EXPENSE_LABEL = {
   supplies: "Supplies", restock: "Restock",
   flock_purchase: "Birds", chick_purchase: "Chicks",
   hive_purchase: "Hive", animal_purchase: "Animals",
+  infrastructure: "Building and equipment",
 };
 
 export function reportYears(data) {
@@ -2351,8 +2382,8 @@ export function buildYearReport(data, year, now = new Date()) {
 
   const sales = collectAllSales(data).filter(s => inYear(s.date)).map(s => ({
     date: s.date,
-    hobby: (HOBBY_META[s.hobbyType] || HOBBY_META.other).label,
-    item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META[s.hobbyType] || HOBBY_META.other).label,
+    hobby: (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
+    item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
     customer: s.customerName || "",
     qty: s.qty != null ? `${s.qty}${s.unit ? ` ${s.unit}` : ""}` : "",
     amount: Math.round(computeRevenue(s) * 100) / 100,
@@ -2368,7 +2399,9 @@ export function buildYearReport(data, year, now = new Date()) {
     expenses.push({ date: e.date, hobby: hobbyName(e.hobbyId), category: e.category || "Other", amount, note: e.description || e.note || "" });
   }
   for (const h of (data.hobbies || [])) {
-    for (const r of extractHobbyExpenses(data, h.id)) {
+    // Building and equipment (coops, fencing) is left out of profit but is
+    // part of what the homestead spent this year.
+    for (const r of [...extractHobbyExpenses(data, h.id), ...extractBuildCosts(data, h.id)]) {
       if (r.source === "logged_expense" || !inYear(r.date)) continue;
       expenses.push({ date: r.date, hobby: h.name || h.type, category: ENTRY_EXPENSE_LABEL[r.source] || "Supplies", amount: Number(r.cost) || 0, note: r.note || "" });
     }
@@ -2404,6 +2437,9 @@ export function buildYearReport(data, year, now = new Date()) {
   };
 }
 
+// Said on the report screen, in the PDF and in the spreadsheet.
+export const YEAR_REPORT_NOTE = "This report is here to help you run and grow your homestead. It isn't tax advice, and Henalytics isn't made by an accountant. If you're filing taxes, go over these numbers with a tax professional.";
+
 export function yearReportCsv(r) {
   const esc = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const rows = [["Type", "Date", "Hobby", "Item / Category", "Customer", "Quantity", "Amount", "Tip", "Note"]];
@@ -2414,6 +2450,8 @@ export function yearReportCsv(r) {
   rows.push(["Total tips", "", "", "", "", "", r.tips.toFixed(2)]);
   rows.push(["Total expenses", "", "", "", "", "", (-r.expenses).toFixed(2)]);
   rows.push(["Net", "", "", "", "", "", r.net.toFixed(2)]);
+  rows.push([]);
+  rows.push(["Note", YEAR_REPORT_NOTE]);
   return rows.map(row => row.map(esc).join(",")).join("\n");
 }
 
@@ -2425,7 +2463,7 @@ function downloadBlob(blob, filename) {
 }
 // Phones: hand the file to the share sheet (Save to Files, Mail, Drive…).
 // Elsewhere (or if sharing files isn't supported): download it.
-async function shareOrDownload(blob, filename, title) {
+export async function shareOrDownload(blob, filename, title) {
   try {
     const file = new File([blob], filename, { type: blob.type });
     if (navigator.canShare && navigator.canShare({ files: [file] })) {
@@ -2458,7 +2496,12 @@ async function buildYearReportPdf(r) {
   doc.setFont("helvetica", "bold"); doc.setFontSize(20);
   text(`${r.homesteadName}: ${r.year} year-end report`, M); y += 18;
   doc.setFont("helvetica", "normal"); doc.setFontSize(10); doc.setTextColor(110);
-  text(`${r.partial ? `Year to date, through ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : `January 1 to December 31, ${r.year}`} · Generated by Henalytics`, M); y += 26;
+  text(`${r.partial ? `Year to date, through ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}` : `January 1 to December 31, ${r.year}`} · Generated by Henalytics`, M); y += 16;
+  // Up top so nobody files from it thinking it's tax advice.
+  {
+    const lines = doc.splitTextToSize(YEAR_REPORT_NOTE, doc.internal.pageSize.getWidth() - 2 * M);
+    doc.setFontSize(9); doc.setTextColor(90); doc.text(lines, M, y); y += lines.length * 11 + 14;
+  }
   doc.setTextColor(0);
 
   const boxes = [["Sales", r.revenue], ["Expenses", r.expenses], ["Net", r.net]];
@@ -2507,9 +2550,6 @@ async function buildYearReportPdf(r) {
     r.expensesList.map((e) => [e.date, e.hobby, e.category, e.note, money2(e.amount)]),
     [cw * 0.15, cw * 0.18, cw * 0.2, cw * 0.3, cw * 0.17], [4]);
 
-  ensure(30);
-  doc.setFontSize(8); doc.setTextColor(120);
-  doc.text("For your records and your tax preparer. Henalytics totals what you logged; it isn't tax advice.", M, y);
   const pages = doc.internal.getNumberOfPages();
   for (let i = 1; i <= pages; i++) {
     doc.setPage(i); doc.setFontSize(8); doc.setTextColor(150);
@@ -2578,6 +2618,9 @@ export function YearEndReportModal({ data, onClose }) {
           ))}
         </div>
         {r.partial && <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10 }}>Year to date. Totals keep updating through December 31.</div>}
+        <div role="note" style={{ fontSize: 12.5, lineHeight: 1.5, color: palette.ink, background: palette.warnBg, border: `1px solid ${palette.line}`, borderRadius: 10, padding: "10px 12px", marginBottom: 12 }}>
+          {YEAR_REPORT_NOTE}
+        </div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
           {stat("Sales", r.revenue, palette.leaf)}
@@ -2617,12 +2660,12 @@ export function YearEndReportModal({ data, onClose }) {
           <button type="button" onClick={doPdf} disabled={!!busy} style={{ padding: 13, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.ink, color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, cursor: busy ? "wait" : "pointer", opacity: busy === "pdf" ? 0.7 : 1 }}>
             {busy === "pdf" ? "Making your PDF…" : "📄 Download PDF report"}
           </button>
-          <button type="button" onClick={doCsv} disabled={!!busy} style={{ padding: 12, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, cursor: busy ? "wait" : "pointer" }}>
+          <button type="button" onClick={doCsv} disabled={!!busy} style={{ padding: 12, borderRadius: 10, border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.onYolk, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14, cursor: busy ? "wait" : "pointer" }}>
             📊 Download spreadsheet (CSV)
           </button>
         </div>
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.5 }}>
-          Totals include every sale, every expense you added, and costs logged on hobby pages (feed, bedding, animals bought). It's a record of what you logged, not tax advice.
+          Totals include every sale, every expense you added, and costs logged on hobby pages (feed, bedding, animals bought, building and equipment). It's a record of what you logged.
         </div>
       </div>
     </div>

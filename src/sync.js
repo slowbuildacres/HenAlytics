@@ -52,9 +52,21 @@ function writeLocalHomestead(data, ownerUserId) {
           : (data && data._ownerUserId) || null,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(tagged));
+    if (localSaveFailing) { localSaveFailing = false; announceLocalSave(true); }
   } catch (e) {
     console.error('Local save failed', e);
+    // Usually the phone's storage for the app is full (years of logs, signed
+    // out). Say so instead of failing silently; the app shows a banner.
+    localSaveFailing = true;
+    announceLocalSave(false, e && e.name);
   }
+}
+
+// "henalytics-local-save" { ok, reason } fires when saving on this phone
+// starts failing and when it works again.
+let localSaveFailing = false;
+function announceLocalSave(ok, reason) {
+  try { window.dispatchEvent(new CustomEvent('henalytics-local-save', { detail: { ok, reason: reason || null } })); } catch (_) { /* no window */ }
 }
 
 export function clearLocalHomestead() {

@@ -59,6 +59,28 @@
                 android:name="android.appwidget.provider"
                 android:resource="@xml/widget_today_info" />
         </receiver>
+        <!-- "Egg Counter" widget: + / − tally for one flock, saved by the app
+             on open. EggTallyConfigActivity picks the flock. -->
+        <receiver
+            android:name=".EggTallyWidget"
+            android:exported="false"
+            android:label="Henalytics Egg Counter">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_egg_tally_info" />
+        </receiver>
+        <activity
+            android:name=".EggTallyConfigActivity"
+            android:exported="true"
+            android:label="Egg Counter"
+            android:theme="@android:style/Theme.Material.Light.Dialog.NoActionBar">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_CONFIGURE" />
+            </intent-filter>
+        </activity>
         <!-- ML Kit barcode scanner: download the barcode model on install -->
         <meta-data android:name="com.google.mlkit.vision.DEPENDENCIES" android:value="barcode_ui"/>
     </application>

@@ -23,11 +23,16 @@
 //                            defaultTempHigh, ingredients, notes }]
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Plus, Trash2 } from "lucide-react";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, tempFromF, fFromInput, tempUnitLabel, tempHint, fmtTemp, currencySymbol } from "./units.js";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -45,12 +50,13 @@ import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { groupDigits } from "./numFmt.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -87,20 +93,20 @@ const addDaysIso = (iso, days) => {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, type = "button", disabled = false }) {
   const variants = {
     primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
-    leaf: { bg: palette.leaf, color: "#FAF5EA", border: palette.leaf },
-    accent: { bg: palette.accent, color: "#FAF5EA", border: palette.accent },
+    leaf: { bg: palette.leaf, color: palette.onColor, border: palette.leaf },
+    accent: { bg: palette.accent, color: palette.onColor, border: palette.accent },
     ghost: { bg: "transparent", color: palette.ink, border: palette.line },
-    danger: { bg: palette.accent, color: palette.bg, border: palette.accent },
+    danger: { bg: palette.accent, color: palette.onColor, border: palette.accent },
   };
   const v = variants[variant] || variants.primary;
   return (
     <button type={type} disabled={disabled} onClick={onClick}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
-        borderRadius: 10, padding: small ? "8px 12px" : "10px 16px",
+        borderRadius: small ? 999 : 14, padding: small ? "8px 12px" : "10px 16px",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14,
         cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-        boxShadow: variant === "ghost" ? "none" : "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}>
       {children}
@@ -113,10 +119,10 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
     <div style={{
       flex: 1, minWidth: 100, padding: "12px 14px",
       background: palette.card, border: `1.5px solid ${palette.line}`,
-      borderRadius: 12,
+      borderRadius: 16,
     }}>
       <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: accent, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -158,11 +164,11 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 // ============================================================================
 // NEW / EDIT FERMENT MODAL
@@ -173,7 +179,7 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
   const [startDate, setStartDate] = useState(ferment?.startDate || todayIso());
   const [expectedDays, setExpectedDays] = useState(ferment?.expectedFinishDate ? daysBetween(ferment.startDate, ferment.expectedFinishDate).toString() : "7");
   const [recipeId, setRecipeId] = useState(ferment?.recipeId || "");
-  const [startedTemperatureF, setStartedTemperatureF] = useState(ferment?.startedTemperatureF?.toString() || "");
+  const [startedTemperatureF, setStartedTemperatureF] = useState(String(tempFromF(ferment?.startedTemperatureF)));
   const [location, setLocation] = useState(ferment?.location || "");
   const [ingredients, setIngredients] = useState(ferment?.ingredients || "");
   const [ingredientsCost, setIngredientsCost] = useState(ferment?.ingredientsCost?.toString() || "");
@@ -209,7 +215,7 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
       recipeId: recipeId || null,
       startDate,
       expectedFinishDate: addDaysIso(startDate, days),
-      startedTemperatureF: parseFloat(startedTemperatureF) || null,
+      startedTemperatureF: fFromInput(startedTemperatureF),
       location: location.trim(),
       ingredients: ingredients.trim(),
       ingredientsCost: parseFloat(ingredientsCost) || 0,
@@ -227,48 +233,48 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
     <Modal open onClose={onClose} title={editing ? "✏️ Edit ferment" : "🫧 New fermentation"}>
       {recipes.length > 0 && !editing && (
         <Field label="Start from recipe (optional)">
-          <select style={inputStyle} value={recipeId} onChange={(e) => onPickRecipe(e.target.value)}>
+          <select style={inputStyle()} value={recipeId} onChange={(e) => onPickRecipe(e.target.value)}>
             <option value="">— Custom (no recipe) —</option>
             {recipes.map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
           </select>
         </Field>
       )}
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sauerkraut Batch #3, Hot sauce, Kombucha SCOBY" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Sauerkraut Batch #3, Hot sauce, Kombucha SCOBY" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={(e) => setStartDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Expected days">
-            <input type="number" min={1} style={inputStyle} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
+            <input type="number" min={1} style={inputStyle()} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
           </Field>
         </div>
       </div>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Starting temp (°F)">
-            <input type="number" min={0} style={inputStyle} value={startedTemperatureF} onChange={(e) => setStartedTemperatureF(e.target.value)} placeholder="e.g. 68" inputMode="numeric" />
+          <Field label={`Starting temp (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={startedTemperatureF} onChange={(e) => setStartedTemperatureF(e.target.value)} placeholder={`e.g. ${tempHint(68)}`} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Location">
-            <input style={inputStyle} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Kitchen counter, basement…" />
+            <input style={inputStyle()} value={location} onChange={(e) => setLocation(e.target.value)} placeholder="Kitchen counter, basement…" />
           </Field>
         </div>
       </div>
       <Field label="Ingredients / recipe details">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="2 heads cabbage, 1 tbsp salt, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="2 heads cabbage, 1 tbsp salt, etc." />
       </Field>
       <Field label="Ingredients cost ($, optional)">
         <input
           type="number"
           step="0.01"
           min={0}
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -283,7 +289,7 @@ function FermentModal({ ferment, recipes, pantry = [], onSave, onDelete, onClose
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
-          <Btn variant="ghost" onClick={() => { if (confirm("Delete this ferment? All stage logs will be lost.")) { onDelete(ferment.id); onClose(); } }}>Delete</Btn>
+          <Btn variant="ghost" onClick={() => { onDelete(ferment.id); onClose(); }}>Delete</Btn>
         ) : <div />}
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -311,7 +317,7 @@ function LogStageModal({ ferment, onSave, onClose }) {
     onSave({
       date,
       dayNumber: daysBetween(ferment.startDate, date) + 1,
-      temperatureF: parseFloat(temperatureF) || null,
+      temperatureF: fFromInput(temperatureF),
       stageLabel: stageLabel.trim(),
       observation: observation.trim(),
       created: Date.now(),
@@ -325,22 +331,22 @@ function LogStageModal({ ferment, onSave, onClose }) {
         Logging an observation for <strong>{ferment.name}</strong>. Temperature is optional but helpful for reflection later.
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Temp (°F)">
-            <input type="number" min={0} style={inputStyle} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder="e.g. 70" inputMode="numeric" />
+          <Field label={`Temp (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={temperatureF} onChange={(e) => setTemperatureF(e.target.value)} placeholder={`e.g. ${tempHint(70)}`} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Stage label">
-            <input style={inputStyle} value={stageLabel} onChange={(e) => setStageLabel(e.target.value)} placeholder="e.g. Primary, Bubbling, Done" />
+            <input style={inputStyle()} value={stageLabel} onChange={(e) => setStageLabel(e.target.value)} placeholder="e.g. Primary, Bubbling, Done" />
           </Field>
         </div>
       </div>
       <Field label="Observation">
-        <textarea style={{ ...inputStyle, minHeight: 80, resize: "vertical", fontFamily: FONT_BODY }} value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="What does it look/smell/taste like today? Any changes since yesterday?" autoFocus />
+        <textarea style={{ ...inputStyle(), minHeight: 80, resize: "vertical", fontFamily: FONT_BODY }} value={observation} onChange={(e) => setObservation(e.target.value)} placeholder="What does it look/smell/taste like today? Any changes since yesterday?" autoFocus />
       </Field>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -361,7 +367,7 @@ function FinishFermentModal({ ferment, onFinish, onClose }) {
         Wrap up <strong>{ferment.name}</strong>. This archives the ferment with its full stage history for later reference.
       </p>
       <Field label="Final notes (taste, yield, lessons learned)">
-        <textarea style={{ ...inputStyle, minHeight: 100, resize: "vertical", fontFamily: FONT_BODY }} value={finalNotes} onChange={(e) => setFinalNotes(e.target.value)} placeholder="Came out great / too salty / would let go 2 more days…" autoFocus />
+        <textarea style={{ ...inputStyle(), minHeight: 100, resize: "vertical", fontFamily: FONT_BODY }} value={finalNotes} onChange={(e) => setFinalNotes(e.target.value)} placeholder="Came out great / too salty / would let go 2 more days…" autoFocus />
       </Field>
       <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 14 }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -378,8 +384,8 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
   const editing = !!recipe;
   const [name, setName] = useState(recipe?.name || "");
   const [expectedDays, setExpectedDays] = useState(recipe?.expectedDays?.toString() || "7");
-  const [defaultTempLow, setDefaultTempLow] = useState(recipe?.defaultTempLow?.toString() || "");
-  const [defaultTempHigh, setDefaultTempHigh] = useState(recipe?.defaultTempHigh?.toString() || "");
+  const [defaultTempLow, setDefaultTempLow] = useState(String(tempFromF(recipe?.defaultTempLow)));
+  const [defaultTempHigh, setDefaultTempHigh] = useState(String(tempFromF(recipe?.defaultTempHigh)));
   const [ingredients, setIngredients] = useState(recipe?.ingredients || "");
   const [notes, setNotes] = useState(recipe?.notes || "");
 
@@ -391,8 +397,8 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
       id: recipe?.id || newId(),
       name: name.trim(),
       expectedDays: parseInt(expectedDays, 10) || 7,
-      defaultTempLow: parseFloat(defaultTempLow) || null,
-      defaultTempHigh: parseFloat(defaultTempHigh) || null,
+      defaultTempLow: fFromInput(defaultTempLow),
+      defaultTempHigh: fFromInput(defaultTempHigh),
       ingredients: ingredients.trim(),
       notes: notes.trim(),
       created: recipe?.created || Date.now(),
@@ -403,32 +409,32 @@ function RecipeModal({ recipe, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={editing ? "✏️ Edit recipe" : "📋 New recipe"}>
       <Field label="Recipe name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Classic sauerkraut, Tibicos water kefir" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Classic sauerkraut, Tibicos water kefir" autoFocus />
       </Field>
       <Field label="Expected days">
-        <input type="number" min={1} style={inputStyle} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
+        <input type="number" min={1} style={inputStyle()} value={expectedDays} onChange={(e) => setExpectedDays(e.target.value)} placeholder="7" inputMode="numeric" />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
-          <Field label="Temp low (°F)">
-            <input type="number" min={0} style={inputStyle} value={defaultTempLow} onChange={(e) => setDefaultTempLow(e.target.value)} placeholder="65" inputMode="numeric" />
+          <Field label={`Temp low (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={defaultTempLow} onChange={(e) => setDefaultTempLow(e.target.value)} placeholder={tempHint(65)} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Temp high (°F)">
-            <input type="number" min={0} style={inputStyle} value={defaultTempHigh} onChange={(e) => setDefaultTempHigh(e.target.value)} placeholder="72" inputMode="numeric" />
+          <Field label={`Temp high (${tempUnitLabel()})`}>
+            <input type="number" min={0} style={inputStyle()} value={defaultTempHigh} onChange={(e) => setDefaultTempHigh(e.target.value)} placeholder={tempHint(72)} inputMode="numeric" />
           </Field>
         </div>
       </div>
       <Field label="Ingredients">
-        <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="Cabbage, salt at 2% by weight, optional caraway seeds…" />
+        <textarea style={{ ...inputStyle(), minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={ingredients} onChange={(e) => setIngredients(e.target.value)} placeholder="Cabbage, salt at 2% by weight, optional caraway seeds…" />
       </Field>
       <Field label="Notes / instructions">
-        <textarea style={{ ...inputStyle, minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shred cabbage, salt, massage, pack into jar…" />
+        <textarea style={{ ...inputStyle(), minHeight: 70, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Shred cabbage, salt, massage, pack into jar…" />
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
-          <Btn variant="ghost" onClick={() => { if (confirm("Delete this recipe?")) { onDelete(recipe.id); onClose(); } }}>Delete</Btn>
+          <Btn variant="ghost" onClick={() => { onDelete(recipe.id); onClose(); }}>Delete</Btn>
         ) : <div />}
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -464,16 +470,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. fermentation crocks, airlocks, weights" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. fermentation crocks, airlocks, weights" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (
@@ -488,7 +494,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function FermentationPage({ hobby, data, update, setModal }) {
+export default function FermentationPage({ hobby, data, update, setModal, nl = null }) {
   const [fermentModal, setFermentModal] = useState({ open: false, ferment: null });
   const [stageModal, setStageModal] = useState({ open: false, ferment: null });
   const [finishModal, setFinishModal] = useState({ open: false, ferment: null });
@@ -502,7 +508,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   const infraEntries = fermEntries.filter(e => e.action === "infrastructure");
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["fermentation"] = d.entries["fermentation"] || [];
       const idx = d.entries["fermentation"].findIndex(e => e.id === entry.id);
@@ -512,7 +518,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["fermentation"]) {
         d.entries["fermentation"] = d.entries["fermentation"].filter(e => e.id !== id);
       }
@@ -523,7 +529,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   const archived = ferments.filter(f => f.archived);
 
   const saveFerment = (ferment) => {
-    update(d => {
+    undoable(update, `Saved ${ferment.name || "ferment"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.ferments)) h.ferments = [];
@@ -557,7 +563,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   };
 
   const deleteFerment = (id) => {
-    update(d => {
+    undoable(update, "Deleted ferment")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any deducted stock.
@@ -571,7 +577,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   };
 
   const addStage = (fermentId, stage) => {
-    update(d => {
+    undoable(update, "Saved stage")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const f = (h?.ferments || []).find(x => x.id === fermentId);
       if (f) {
@@ -583,7 +589,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   };
 
   const deleteStage = (fermentId, stageIdx) => {
-    update(d => {
+    undoable(update, "Deleted stage")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const f = (h?.ferments || []).find(x => x.id === fermentId);
       if (f && Array.isArray(f.stages)) {
@@ -594,7 +600,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   };
 
   const finishFerment = (fermentId, finalNotes) => {
-    update(d => {
+    undoable(update, "Ferment finished")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const f = (h?.ferments || []).find(x => x.id === fermentId);
       if (f) {
@@ -607,7 +613,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   };
 
   const saveRecipe = (recipe) => {
-    update(d => {
+    undoable(update, `Saved ${recipe.name || "recipe"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.recipes)) h.recipes = [];
@@ -618,12 +624,57 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
   };
 
   const deleteRecipe = (id) => {
-    update(d => {
+    undoable(update, "Deleted recipe")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.recipes = (h.recipes || []).filter(r => r.id !== id);
       return d;
     });
   };
+
+  if (nl) {
+    const shortDate = (x) => { if (!x) return ""; const d = new Date(x + "T12:00"); return isNaN(d) ? x : d.toLocaleDateString("en-US", { month: "short", day: "numeric" }); };
+    const going = active.slice().sort((a, b) => ((a.expectedFinishDate || "") < (b.expectedFinishDate || "") ? -1 : 1)).map((f) => {
+      const day = daysBetween(f.startDate, todayIso()) + 1;
+      const total = f.expectedFinishDate ? Math.max(1, daysBetween(f.startDate, f.expectedFinishDate)) : null;
+      const over = total != null && day > total;
+      const lastStage = (f.stages || []).slice().sort((a, b) => (b.dayNumber || 0) - (a.dayNumber || 0))[0];
+      return {
+        id: f.id, title: f.name || "Ferment", onOpen: () => setFermentModal({ open: true, ferment: f }),
+        sub: [total ? `Day ${day} of ${total}` : `Day ${day}`, f.location || null, lastStage ? `last check: ${lastStage.stageLabel || lastStage.observation || `day ${lastStage.dayNumber}`}` : null].filter(Boolean).join(" · "),
+        pct: total ? (day / total) * 100 : null,
+        badge: over ? { tone: "ready", text: "Ready to taste" } : null,
+        actions: [{ label: "Log a check", run: () => setStageModal({ open: true, ferment: f }) }, { label: "It's done", primary: over, run: () => setFinishModal({ open: true, ferment: f }) }],
+      };
+    });
+    const ctx = {
+      key: "fermentation", tabs: nl.tabs,
+      summary: { big: active.length, small: `ferment${active.length === 1 ? "" : "s"} going`, line: going.filter((g) => g.badge).length ? `${going.filter((g) => g.badge).length} ready to taste` : archived.length ? `${archived.length} finished so far` : "" },
+      newLabel: "Start a ferment", onNew: () => setFermentModal({ open: true, ferment: null }),
+      goingTitle: "Fermenting", going,
+      shelfTitle: "Recipes", shelfEmpty: "Save a recipe to start ferments from it next time.",
+      shelf: recipes.map((r) => ({ id: r.id, title: r.name || "Recipe", sub: [r.expectedDays ? `${r.expectedDays} days` : null, r.notes ? String(r.notes).slice(0, 60) : null].filter(Boolean).join(" · "), onOpen: () => setRecipeModal({ open: true, recipe: r }) })),
+      past: archived.slice().sort((a, b) => ((b.finishDate || "") < (a.finishDate || "") ? -1 : 1)).map((f) => ({ id: f.id, title: f.name || "Ferment", sub: [`Started ${shortDate(f.startDate)}`, f.finishDate ? `done ${shortDate(f.finishDate)}` : null, f.finalNotes || null].filter(Boolean).join(" · "), onOpen: () => setFermentModal({ open: true, ferment: f }) })),
+      pastTitle: "Finished ferments", pastSub: "Tap one to see its notes.",
+      extras: [
+        { key: "recipe", label: "New recipe", icon: NlPlus, run: () => setRecipeModal({ open: true, recipe: null }) },
+        { key: "pantry", label: "Pantry supplies", sub: "Salt, crocks and what's left", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: "Crocks, weights and airlocks", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        {fermentModal.open && <FermentModal ferment={fermentModal.ferment} recipes={recipes} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveFerment} onDelete={fermentModal.ferment ? deleteFerment : null} onClose={() => setFermentModal({ open: false, ferment: null })} />}
+        {stageModal.open && stageModal.ferment && <LogStageModal ferment={stageModal.ferment} onSave={(stage) => addStage(stageModal.ferment.id, stage)} onClose={() => setStageModal({ open: false, ferment: null })} />}
+        {finishModal.open && finishModal.ferment && <FinishFermentModal ferment={finishModal.ferment} onFinish={(notes) => finishFerment(finishModal.ferment.id, notes)} onClose={() => setFinishModal({ open: false, ferment: null })} />}
+        {recipeModal.open && <RecipeModal recipe={recipeModal.recipe} onSave={saveRecipe} onDelete={recipeModal.recipe ? deleteRecipe : null} onClose={() => setRecipeModal({ open: false, recipe: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div style={{ paddingBottom: 100 }}>
@@ -723,7 +774,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
                       <div key={s.id || i} style={{ fontSize: 12, color: palette.ink, marginBottom: i < Math.min(2, stages.length - 1) ? 6 : 0, lineHeight: 1.4 }}>
                         <strong>Day {s.dayNumber}</strong>
                         {s.stageLabel && ` · ${s.stageLabel}`}
-                        {s.temperatureF != null && ` · ${s.temperatureF}°F`}
+                        {s.temperatureF != null && ` · ${fmtTemp(s.temperatureF)}`}
                         <div style={{ color: palette.inkSoft }}>{s.observation}</div>
                       </div>
                     ))}
@@ -765,7 +816,7 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
               <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink }}>{r.name}</div>
               <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 2 }}>
                 ~{r.expectedDays} days
-                {r.defaultTempLow && r.defaultTempHigh && ` · ${r.defaultTempLow}–${r.defaultTempHigh}°F`}
+                {r.defaultTempLow && r.defaultTempHigh && ` · ${tempFromF(r.defaultTempLow)}–${fmtTemp(r.defaultTempHigh)}`}
               </div>
               {r.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{r.notes}</div>}
             </div>
@@ -838,6 +889,31 @@ export default function FermentationPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: ferments started and finished, average days, favorites.
+export function fermentationStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const fs = (hobby && Array.isArray(hobby.ferments) ? hobby.ferments : []).filter((f) => inR(f.startDate));
+  const done = fs.filter((f) => f.archived && f.finishDate);
+  const days = done.map((f) => daysBetween(f.startDate, f.finishDate)).filter((n) => n > 0);
+  const cost = fs.reduce((s, f) => s + (Number(f.ingredientsCost) || 0), 0);
+  const by = new Map(); for (const f of fs) { const k = String(f.name || "Ferment").trim(); by.set(k, (by.get(k) || 0) + 1); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} batch${v === 1 ? "" : "es"}` }));
+  const facts = [];
+  if (fs.length >= 3) facts.push({ key: "count", icon: "jar", big: String(fs.length), line: "ferments started", title: `${fs.length} ferments started`, sub: `${done.length} finished.` });
+  if (days.length >= 2) facts.push({ key: "days", icon: "clock", big: `${Math.round(days.reduce((a, b) => a + b, 0))} days`, line: "of patient fermenting", title: `${Math.round(days.reduce((a, b) => a + b, 0))} days of patience`, sub: `About ${Math.round(days.reduce((a, b) => a + b, 0) / days.length)} days a batch.` });
+  if (rows.length > 1 && rows[0].value >= 2) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "our favorite ferment", title: `Favorite: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Started", value: fs.length, sub: `${done.length} finished` },
+      { label: "Average time", value: days.length ? `${Math.round(days.reduce((a, b) => a + b, 0) / days.length)} days` : "—", sub: "From start to done" },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: fs.length ? `${fmtMoney((cost / fs.length))} a batch` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "What you fermented", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🫙", kicker: "Our kitchen",
+  };
+}
+
 export function FermentationAnalytics({ hobby, entries = [], /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const ferments = hobby?.ferments || [];
   const recipes = hobby?.recipes || [];

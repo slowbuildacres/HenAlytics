@@ -1,9 +1,13 @@
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect, useCallback, useRef } from "react";
 import { X, Camera as CameraIcon, Image as ImageIcon, Leaf, AlertCircle, CheckCircle2, RefreshCw } from "lucide-react";
 import { supabase } from "./supabase";
 import { apiUrl } from "./apiBase.js";
 import { IAP_PRODUCTS, SCAN_PACK_PRODUCTS } from "./IapManager.js";
 import { purchaseProduct, restorePurchases } from "./IapManager.js";
+import { friendlyError } from "./friendlyError.js";
+const scanError = (e, fallback) => friendlyError(e, fallback, "Sign in to use the plant scanner. It's free, and your scans are saved to your account.");
+
 
 // ============================================================================
 // PLANT SCANNER MODAL
@@ -29,7 +33,7 @@ import { purchaseProduct, restorePurchases } from "./IapManager.js";
 //   - Web: Stripe Checkout via /api/create-scan-pack-checkout → redirect
 // ============================================================================
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
@@ -37,7 +41,7 @@ const palette = {
   warn: "#D97706", warnSoft: "#FED7AA",
   danger: "#B91C1C", dangerSoft: "#FECACA",
   success: "#15803D", successSoft: "#BBF7D0",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -49,17 +53,17 @@ const isNative = () => {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, type = "button", disabled = false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
-    leaf:    { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
+    leaf:    { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -182,8 +186,9 @@ export default function PlantScannerModal({ onClose }) {
       if (!res.ok) throw new Error(`Quota fetch failed (${res.status})`);
       const json = await res.json();
       setQuotaStatus(json);
+      return json;
     } catch (e) {
-      setError(e.message || "Could not load scan status");
+      setError(scanError(e, "Could not load scan status"));
     } finally {
       setLoadingQuota(false);
     }
@@ -205,7 +210,7 @@ export default function PlantScannerModal({ onClose }) {
         webInputRef.current?.click();
       }
     } catch (e) {
-      setError(e.message || "Could not capture photo");
+      setError(scanError(e, "Could not capture photo"));
     }
   };
 
@@ -222,7 +227,7 @@ export default function PlantScannerModal({ onClose }) {
         webLibraryInputRef.current?.click();
       }
     } catch (e) {
-      setError(e.message || "Could not pick photo");
+      setError(scanError(e, "Could not pick photo"));
     }
   };
 
@@ -234,7 +239,7 @@ export default function PlantScannerModal({ onClose }) {
       setPhotoBase64(photo.base64);
       setPhotoDataUrl(photo.dataUrl);
     } catch (err) {
-      setError(err.message || "Could not read photo");
+      setError(scanError(err, "Could not read photo"));
     }
   };
 
@@ -287,7 +292,7 @@ export default function PlantScannerModal({ onClose }) {
       setView("result");
       await refreshQuota();
     } catch (e) {
-      setError(e.message || "Scan failed");
+      setError(scanError(e, "Scan failed"));
     } finally {
       setScanning(false);
     }
@@ -303,8 +308,18 @@ export default function PlantScannerModal({ onClose }) {
         const productId = packSize === 10 ? IAP_PRODUCTS.SCAN_PACK_10 : IAP_PRODUCTS.SCAN_PACK_30;
         const result = await purchaseProduct(productId);
         if (result.success) {
-          // Webhook will have credited the user by now. Refresh quota.
-          await refreshQuota();
+          // The store has charged; the scans arrive when RevenueCat's webhook
+          // reaches our server, usually within seconds but sometimes up to a
+          // minute. Wait for the count to go up so nobody buys twice thinking
+          // the first one failed.
+          const before = (quotaStatus && quotaStatus.extra_remaining) || 0;
+          let credited = false;
+          for (const wait of [1500, 3000, 5000, 8000, 12000, 20000]) {
+            await new Promise((r) => setTimeout(r, wait));
+            const q = await refreshQuota();
+            if (q && (q.extra_remaining || 0) > before) { credited = true; break; }
+          }
+          if (!credited) setError("Your purchase went through. The scans can take a minute to show up; close and reopen the scanner if they're not here yet.");
           setView("home");
         } else if (!result.userCanceled) {
           throw new Error(result.error || "Purchase failed");
@@ -331,7 +346,7 @@ export default function PlantScannerModal({ onClose }) {
         window.location.href = url;
       }
     } catch (e) {
-      setError(e.message || "Purchase failed");
+      setError(scanError(e, "Purchase failed"));
     } finally {
       setPurchasing(false);
     }
@@ -346,7 +361,7 @@ export default function PlantScannerModal({ onClose }) {
       if (!result.success) throw new Error(result.error || "Restore failed");
       await refreshQuota();
     } catch (e) {
-      setError(e.message || "Restore failed");
+      setError(scanError(e, "Restore failed"));
     } finally {
       setPurchasing(false);
     }
@@ -364,7 +379,7 @@ export default function PlantScannerModal({ onClose }) {
       <style>{`@keyframes scan-spin { to { transform: rotate(360deg); } }`}</style>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 12, maxWidth: 540, width: "100%",
-        border: `2px solid ${palette.ink}`, boxShadow: `4px 4px 0 ${palette.line}`,
+        border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
       }}>
         {/* Header */}
         <div style={{

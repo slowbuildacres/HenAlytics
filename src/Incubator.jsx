@@ -1,28 +1,35 @@
 // ============================================================================
 // INCUBATOR — tracks hatching runs by bird type with auto calendar reminders
 // ============================================================================
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): the rebuilt incubator screens reuse this file's forms.
+import { IncubatorToday, IncubatorHistory } from "./newlook/incubator/IncubatorScreens.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import { X, Edit3, Trash2, Plus, Calendar } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
+import { groupDigits } from "./numFmt.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   honey: "#E8961A", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -32,7 +39,8 @@ const localDateStr = (date) => {
 const todayStr = () => localDateStr(new Date());
 const parseLocalDate = (s) => { if (!s) return new Date(); const [y,m,d] = s.split("-").map(Number); return new Date(y,(m||1)-1,d||1); };
 const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"}); };
-const addDays = (dateStr, days) => localDateStr(new Date(parseLocalDate(dateStr).getTime() + days*24*60*60*1000));
+// Calendar days: adding 24-hour blocks lands a day early across the fall time change.
+const addDays = (dateStr, days) => { const d = parseLocalDate(dateStr); return localDateStr(new Date(d.getFullYear(), d.getMonth(), d.getDate() + days)); };
 
 // Incubation periods per bird type
 const BIRD_INCUBATION = {
@@ -82,16 +90,16 @@ const remainingInBrooder = (batch) => {
 function Btn({ children, onClick, variant="primary", small=false, style={}, disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger:  { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent:  { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent:  { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
-    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -109,7 +117,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -122,9 +130,9 @@ function Modal({ open, onClose, title, children }) {
 
 function StatCard({ label, value, sub, accent=palette.accent }) {
   return (
-    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 140px",minWidth:140,boxSizing:"border-box" }}>
+    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,flex:"1 1 140px",minWidth:140,boxSizing:"border-box" }}>
       <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>{label}</div>
-      <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1 }}>{value}</div>
+      <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.ink,lineHeight:1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize:11,color:palette.inkSoft,marginTop:4 }}>{sub}</div>}
     </div>
   );
@@ -132,8 +140,8 @@ function StatCard({ label, value, sub, accent=palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12 }}>
-      <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>{title}</div>
+    <div style={{ background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,marginBottom:12 }}>
+      <div style={{ fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -169,7 +177,7 @@ function RunModal({ run, hobbyId, update, onClose }) {
       notes: run?.notes || "",
       created: run?.created || Date.now(),
     };
-    update(d => {
+    undoable(update, run ? "Saved changes" : `Started ${n} ${birdType.toLowerCase()} eggs`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.runs)) h.runs = [];
@@ -196,7 +204,7 @@ function RunModal({ run, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit run" : "Start a new run"}>
       <Field label="Run name (optional)">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder={`${birdType} run`} autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder={`${birdType} run`} autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
@@ -213,24 +221,24 @@ function RunModal({ run, hobbyId, update, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Variety / breed (optional)">
-            <input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Rhode Island Red" />
+            <input style={inputStyle()} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Rhode Island Red" />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Source (optional)">
-            <input style={inputStyle} value={source} onChange={e=>setSource(e.target.value)} placeholder="e.g. Own flock" />
+            <input style={inputStyle()} value={source} onChange={e=>setSource(e.target.value)} placeholder="e.g. Own flock" />
           </Field>
         </div>
       </div>
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Eggs set">
-            <input type="number" min={1} style={inputStyle} value={eggsSet} onChange={e=>setEggsSet(e.target.value)} placeholder="0" />
+            <input type="number" min={1} style={inputStyle()} value={eggsSet} onChange={e=>setEggsSet(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Date set">
-            <input type="date" style={inputStyle} value={dateSet} onChange={e=>setDateSet(e.target.value)} />
+            <input type="date" style={inputStyle()} value={dateSet} onChange={e=>setDateSet(e.target.value)} />
           </Field>
         </div>
       </div>
@@ -321,12 +329,12 @@ function CandleModal({ run, hobbyId, update, onClose }) {
         Log the number that <strong>kept developing</strong> (the keepers).
       </div>
       <Field label="Date candled">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label={`Eggs that showed development (of ${run.eggsSet} set)`}>
         <input
           type="number" min={0} max={run.eggsSet}
-          style={inputStyle} value={candled}
+          style={inputStyle()} value={candled}
           onChange={e => setCandled(e.target.value)}
           placeholder="0" autoFocus inputMode="numeric"
         />
@@ -361,7 +369,7 @@ function CandleModal({ run, hobbyId, update, onClose }) {
       )}
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="What you saw, which eggs you removed, etc."
         />
@@ -435,7 +443,7 @@ function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
         <input
           type="number" min={0}
           max={run.discardedAfterCandle && run.candledCount != null ? run.candledCount : run.eggsSet}
-          style={inputStyle} value={hatched}
+          style={inputStyle()} value={hatched}
           onChange={e=>setHatched(e.target.value)}
           placeholder="0" autoFocus
         />
@@ -451,7 +459,7 @@ function LogHatchModal({ run, hobbyId, update, onClose, onAfterSave }) {
         </div>
       )}
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:70 }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Humidity, temp issues, quitters..." />
+        <textarea style={{ ...inputStyle(),minHeight:70 }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Humidity, temp issues, quitters..." />
       </Field>
       <Btn onClick={save} disabled={!hatched}>Log hatch</Btn>
     </Modal>
@@ -484,7 +492,7 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
     // to leave the heated brooder and move to outdoor coop. Stored alongside
     // other incubator calendar events using the existing `type` field convention.
     const readyDate = addDays(startDate, 42);
-    update(d => {
+    undoable(update, `Moved ${count} chicks to the brooder`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
@@ -527,22 +535,22 @@ function MoveToBrooderModal({ run, hobbyId, update, onClose }) {
         {run.eggsHatched} chicks hatched from <strong>{run.name}</strong>. Move them into a brooder batch so you can track what happens next.
       </div>
       <Field label="Brooder batch name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 chicks" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 chicks" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Chicks in brooder">
-            <input type="number" min={1} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={1} style={inputStyle()} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Skip</Btn>
@@ -584,7 +592,7 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
     // heated brooder. Same convention as the hatch-created flow.
     const readyDate = addDays(startDate, 42);
     const batchName = name.trim() || `${birdType} chicks`;
-    update(d => {
+    undoable(update, `Added ${count} chicks to the brooder`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.brooderBatches)) h.brooderBatches = [];
@@ -625,7 +633,7 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
         Got chicks without hatching them — shipped from a hatchery, or picked up locally? Add them as a brooder batch to track what happens next.
       </div>
       <Field label="Brooder batch name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 shipped chicks" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. May 2026 shipped chicks" autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -634,7 +642,7 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
               key={t}
               onClick={() => setBirdType(t)}
               style={{
-                padding: "6px 12px", borderRadius: 8,
+                minHeight: 36, padding: "6px 12px", borderRadius: 8,
                 border: `1.5px solid ${birdType === t ? palette.ink : palette.line}`,
                 background: birdType === t ? palette.ink : palette.card,
                 color: birdType === t ? palette.bg : palette.ink,
@@ -649,20 +657,20 @@ function AddBrooderModal({ hobbyId, update, onClose }) {
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Chicks in brooder">
-            <input type="number" min={1} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={1} style={inputStyle()} value={initialCount} onChange={e => setInitialCount(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Source (optional)">
-        <input style={inputStyle} value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Murray McMurray Hatchery, local feed store" />
+        <input style={inputStyle()} value={source} onChange={e => setSource(e.target.value)} placeholder="e.g. Murray McMurray Hatchery, local feed store" />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, breed mix, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, breed mix, etc." />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -763,7 +771,7 @@ function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit brooder batch">
       <Field label="Batch name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -785,17 +793,17 @@ function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Chicks (started with)">
-            <input type="number" min={0} style={inputStyle} value={initialCount} onChange={e => setInitialCount(e.target.value)} inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={initialCount} onChange={e => setInitialCount(e.target.value)} inputMode="numeric" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60 }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Brooder location, heat source, etc." />
       </Field>
       <Btn onClick={save} disabled={!canSave} style={{ width: "100%" }}>Save changes</Btn>
 
@@ -824,7 +832,7 @@ function EditBrooderBatchModal({ batch, hobbyId, data, update, onClose }) {
           <div style={{ fontSize: 11, color: palette.accent, marginTop: 8, lineHeight: 1.4 }}>
             ⚠️ Removes this brooder batch and its disposition history.
             {soldCount > 0
-              ? ` The ${soldCount} chick sale${soldCount === 1 ? "" : "s"} from this batch will stay in your Sales tab.`
+              ? ` The ${soldCount} chick sale${soldCount === 1 ? "" : "s"} from this batch will stay in Sales & costs.`
               : ""} This can't be undone.
           </div>
         )}
@@ -1046,7 +1054,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
           <Field label="How many">
             <input
               type="number" min={1} max={remaining}
-              style={inputStyle} value={count}
+              style={inputStyle()} value={count}
               onChange={e => setCount(e.target.value)}
               inputMode="numeric"
             />
@@ -1054,7 +1062,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
           </Field>
         </div>
       </div>
@@ -1070,19 +1078,19 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
         <>
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
-              <Field label="Price each ($)">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerBird} onChange={e => setPricePerBird(e.target.value)} placeholder="0.00" inputMode="decimal" />
+              <Field label={`Price each (${currencySymbol()})`}>
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerBird} onChange={e => setPricePerBird(e.target.value)} placeholder="0.00" inputMode="decimal" />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Sold to">
-                <input style={inputStyle} value={soldTo} onChange={e => setSoldTo(e.target.value)} placeholder="Buyer name" />
+                <input style={inputStyle()} value={soldTo} onChange={e => setSoldTo(e.target.value)} placeholder="Buyer name" />
               </Field>
             </div>
           </div>
           {pricePerBird && n > 0 && (
             <div style={{ marginBottom: 12, padding: "8px 12px", background: palette.leafSoft, borderRadius: 8, fontSize: 13, color: palette.ink }}>
-              Total: <strong>${(parseFloat(pricePerBird) * n).toFixed(2)}</strong>
+              Total: <strong>{fmtMoney(parseFloat(pricePerBird) * n)}</strong>
             </div>
           )}
         </>
@@ -1095,7 +1103,7 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
           </div>
         ) : (
           <Field label="Target">
-            <select style={inputStyle} value={targetFlockKey} onChange={e => setTargetFlockKey(e.target.value)}>
+            <select style={inputStyle()} value={targetFlockKey} onChange={e => setTargetFlockKey(e.target.value)}>
               {flockOptions.map(opt => (
                 <option key={opt.key} value={opt.key}>{opt.label}</option>
               ))}
@@ -1106,12 +1114,12 @@ function BrooderDispositionModal({ batch, hobbyId, data, update, onClose }) {
 
       {type === "died" && (
         <Field label="Cause (optional)">
-          <input style={inputStyle} value={cause} onChange={e => setCause(e.target.value)} placeholder="e.g. failure to thrive, pasty butt" />
+          <input style={inputStyle()} value={cause} onChange={e => setCause(e.target.value)} placeholder="e.g. failure to thrive, pasty butt" />
         </Field>
       )}
 
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={dispNotes} onChange={e => setDispNotes(e.target.value)} placeholder="Anything else worth noting" />
+        <input style={inputStyle()} value={dispNotes} onChange={e => setDispNotes(e.target.value)} placeholder="Anything else worth noting" />
       </Field>
 
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -1269,7 +1277,7 @@ function RunCard({ run, hobbyId, update, setModal, calendarEvents, brooderBatche
           )}
 
           {isLockdown && (
-            <div style={{ background:"#FFF3CD",border:"1.5px solid "+palette.yolk,borderRadius:8,padding:"8px 12px",fontSize:13,color:palette.ink,marginBottom:10 }}>
+            <div style={{ background:palette.warnBg,border:"1.5px solid "+palette.yolk,borderRadius:8,padding:"8px 12px",fontSize:13,color:palette.ink,marginBottom:10 }}>
               ⚠️ <strong>Lockdown time!</strong> Stop turning eggs and increase humidity.
             </div>
           )}
@@ -1366,7 +1374,7 @@ function BrooderBatchCard({ batch, hobbyId, data, update, setModal }) {
             <div style={{ marginTop: 6, padding: "8px 10px", background: palette.bgAlt, borderRadius: 6 }}>
               {batch.dispositions.slice().sort((a, b) => (b.date || "").localeCompare(a.date || "")).map(d => {
                 let label = "";
-                if (d.type === "sold") label = `💰 Sold ${d.count} @ $${(d.pricePerBird || 0).toFixed(2)} ea`;
+                if (d.type === "sold") label = `💰 Sold ${d.count} @ ${fmtMoney((d.pricePerBird || 0))} ea`;
                 else if (d.type === "moved_to_flock") label = `🐔 Moved ${d.count} to flock`;
                 else if (d.type === "died") label = `🪦 ${d.count} died${d.cause ? ` — ${d.cause}` : ""}`;
                 else label = `📝 ${d.count} ${d.notes || "removed"}`;
@@ -1746,6 +1754,31 @@ export default function IncubatorPage({ hobby, data, update, setModal }) {
     <div>
       <IncubatorModalRouter modal={localModal} hobby={hobby} data={data} update={update} setModal={setLocalModal} onClose={closeModal} />
       <IncubatorHome hobby={hobby} update={update} setModal={setLocalModal} setAppModal={setModal} data={data} />
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Hatches with this file's own forms (new run,
+// candle, log hatch → move to brooder, new brooder, chicks left, edit).
+// ============================================================================
+export function IncubatorNewLook({ hobby, data, update, setModal, tab, onTab }) {
+  const [localModal, setLocalModal] = useState(null);
+  const act = {
+    newRun: () => setLocalModal({ type: "addRun", hobbyId: hobby.id }),
+    editRun: (runId) => setLocalModal({ type: "editRun", runId }),
+    candle: (runId) => setLocalModal({ type: "candle", runId }),
+    logHatch: (runId) => setLocalModal({ type: "logHatch", runId }),
+    newBrooder: () => setLocalModal({ type: "addBrooder", hobbyId: hobby.id }),
+    editBrooder: (batchId) => setLocalModal({ type: "editBrooderBatch", batchId }),
+    brooderOut: (batchId) => setLocalModal({ type: "brooderDispose", batchId }),
+    toHistory: () => onTab && onTab("animals"),
+  };
+  useHobbyRequest(hobby.id, (a) => { if (a === "newRun") act.newRun(); else if (a === "newBrooder") act.newBrooder(); });
+  return (
+    <div>
+      <IncubatorModalRouter modal={localModal} hobby={hobby} data={data} update={update} setModal={setLocalModal} onClose={() => setLocalModal(null)} />
+      {tab === "animals" ? <IncubatorHistory hobby={hobby} act={act} /> : <IncubatorToday hobby={hobby} setModal={setModal} act={act} />}
     </div>
   );
 }

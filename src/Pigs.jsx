@@ -1,28 +1,38 @@
 // ============================================================================
 // PIGS — per-animal tracking, growth monitoring, FCR, litters, butcher
 // ============================================================================
+import { localIso } from "./localDate.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
-import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit } from "./units.js";
+// NEW_LOOK (3.0): the shared livestock screens reuse this file's log forms.
+import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES } from "./newlook/livestock/livestockData.js";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
+import { fmtWeight, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, currencySymbol, fmtMoney as fmtMoneyIntl } from "./units.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
   accent:"#C84B31",leaf:"#5A7A3C",leafSoft:"#A8C078",
   yolk:"#E8B547",yolkSoft:"#F2D58A",feather:"#8B6F47",
   line:"#2C181030",card:"#FAF5EA",
-}; /* PIGS_UNIFY_V1 — added leafSoft + yolkSoft */
+}); /* PIGS_UNIFY_V1 — added leafSoft + yolkSoft */
 const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"};
+const inputStyle=() => ({width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"});
 const newId=()=>Math.random().toString(36).slice(2,10);
 // Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
 // If the sale already has a buyerId (picked from the dropdown) this is a
@@ -44,24 +54,24 @@ const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.g
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
-const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
-const addDays=(dateStr,days)=>localDateStr(new Date(parseLocalDate(dateStr).getTime()+days*24*60*60*1000)); /* PIGS_UNIFY_V1 */
+const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
+const addDays=(dateStr,days)=>{const d=parseLocalDate(dateStr);return localDateStr(new Date(d.getFullYear(),d.getMonth(),d.getDate()+days));}; /* PIGS_UNIFY_V1; calendar days, so a time change can't shift the date */
 
 const PIG_BREEDS=["Berkshire","Duroc","Hampshire","Yorkshire","Landrace","Tamworth","Spotted","Mangalitsa","Kunekune","Chester White","Poland China","American Guinea Hog","Mixed","Other"];
 const PIG_SEXES=["Sow","Boar","Barrow","Gilt","Piglet"];
 const GESTATION_DAYS=114; // pig gestation: "three months, three weeks, three days" — PIGS_UNIFY_V1
 
 function Btn({children,onClick,variant="primary",small=false,style={},disabled=false}){
-  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.bg,border:`1.5px solid ${palette.leaf}`}}; /* PIGS_UNIFY_V1 — leaf variant */
-  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"2px 2px 0 "+palette.line,...styles[variant],...style}}>{children}</button>;
+  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.onColor,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.onYolk,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.onColor,border:`1.5px solid ${palette.leaf}`}}; /* PIGS_UNIFY_V1 — leaf variant */
+  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, padding:small?"6px 12px":"10px 18px",borderRadius:small ? 999 : 14,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"none",...styles[variant],...style}}>{children}</button>;
 }
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
 function Modal({open,onClose,title,children}){
   if(!open)return null;
-  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`}}><div style={{fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink}}>{title}</div><button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4}}><X size={22}/></button></div><div style={{padding:20}}>{children}</div></div></div>;
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`}}><div style={{fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink}}>{title}</div><button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4}}><X size={22}/></button></div><div style={{padding:20}}>{children}</div></div></div>;
 }
-function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1}}>{value}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
-function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{title}</div>{children}</div>;}
+function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:palette.ink,lineHeight:1.1}}>{groupDigits(value)}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
+function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{plainTitle(title)}</div>{children}</div>;}
 
 // ============================================================================
 // ANIMAL PHOTOS — profile pic + dated timeline, per individual animal
@@ -184,7 +194,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
                 <PhotoThumb path={p.path} size={56} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
-                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    type="date" style={{ ...inputStyle(), padding: "6px 8px", fontSize: 13 }}
                     value={p.date || ""}
                     onChange={(e) => editDate(p.path, e.target.value)}
                   />
@@ -213,7 +223,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
         display: "inline-block", padding: "8px 14px", borderRadius: 8,
         background: busy ? palette.bgAlt : palette.yolk,
         border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
-        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink,
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: busy ? palette.ink : palette.onYolk,
       }}>
         {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another photo")}
         <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
@@ -272,7 +282,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,sex,dob,startWeight:Number(startWeight)||0,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?localIso():null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -298,24 +308,24 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   };
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit pig":"Add a pig"}>
-      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Wilbur" autoFocus/></Field>
+      <Field label="Name"><input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Wilbur" autoFocus/></Field>
       <Field label="Breed">
-        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{PIG_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
+        <select style={inputStyle()} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{PIG_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
         {breedSelect === "Other" && (
-          <input style={{...inputStyle, marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Ossabaw, Gloucester Old Spot, Iberian)" autoFocus />
+          <input style={{...inputStyle(), marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Ossabaw, Gloucester Old Spot, Iberian)" autoFocus />
         )}
       </Field>
       <div style={{display:"flex",gap:12}}>
-        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{PIG_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
+        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle()} value={sex} onChange={e=>setSex(e.target.value)}>{PIG_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
         <div style={{flex:1}}>{(()=>{
           const isMetricW=getCurrentWeightUnit()==="kg";
           const shown=startWeight===""||startWeight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(startWeight))*100)/100):startWeight);
-          return <Field label={isMetricW?"Start weight (kg)":"Start weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shown} onChange={e=>{const r=e.target.value;setStartWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field>;
+          return <Field label={isMetricW?"Start weight (kg)":"Start weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shown} onChange={e=>{const r=e.target.value;setStartWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field>;
         })()}</div>
       </div>
-      <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
-      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
+      <Field label="Date of birth / arrival (optional)"><input type="date" style={inputStyle()} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, markings, notes..."/></Field>
 
       {/* Push 7a — Pedigree. Sow/Gilt for dam, Boar for sire. */}
       <details style={{marginBottom:14}}>
@@ -344,10 +354,10 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
             placeholder="Type the sire's name"
           />
           <Field label="Registry name (optional)">
-            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Hampshire Star"/>
+            <input style={inputStyle()} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Maplewood Hampshire Star"/>
           </Field>
           <Field label="Registry number (optional)">
-            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. NSR #123456"/>
+            <input style={inputStyle()} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. NSR #123456"/>
           </Field>
         </div>
       </details>
@@ -382,7 +392,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
             Keeps the pig's history but removes them from your active list.
           </div>
           <Field label="Reason">
-            <select style={inputStyle} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
+            <select style={inputStyle()} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
               <option value="butchered">Butchered</option>
               <option value="sold">Sold</option>
               <option value="died">Died</option>
@@ -416,7 +426,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
 
 function pillStyleP(active) {
   return {
-    padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+    minHeight:36,padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
     border: active ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
     background: active ? palette.ink : palette.bgAlt,
     color: active ? palette.bg : palette.ink,
@@ -512,7 +522,7 @@ function FedPigModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🌾 Log feeding">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label={`Who is this for? (${targetIds.length} pig${targetIds.length===1?"":"s"})`}>
         {selectionButtonsP({ live, mode, setMode })}
@@ -523,14 +533,14 @@ function FedPigModal({ hobby, hobbyId, update, onClose }) {
         const shown = lbs===""||lbs==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs);
         return (
           <Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0"/>
           </Field>
         );
       })()}
-      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -541,16 +551,17 @@ function FedPigModal({ hobby, hobbyId, update, onClose }) {
 
 // --- ⚖️ 💊 📝 LogPigEntryModal (shared for weight / health / note) ---------
 
-function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
+function LogPigEntryModal({ hobby, hobbyId, action, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
 
   // Weight is single-select (one number per pig). Health & note are multi.
   const isMulti = action === "health" || action === "note";
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
-  const [mode, setMode] = useState(live.length ? "all" : "custom");
-  const [customIds, setCustomIds] = useState([]);
+  // initialAnimalId (3.0 animal page): start on that pig.
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
+  const [mode, setMode] = useState(initialAnimalId ? "custom" : live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState(initialAnimalId ? [initialAnimalId] : []);
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -610,11 +621,11 @@ function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
     <Modal open onClose={onClose} title={titles[action]}>
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       {action === "weight" ? (
         <Field label="Pig">
-          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+          <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
             {live.length === 0 && <option value="">— No live pigs —</option>}
             {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
           </select>
@@ -630,14 +641,14 @@ function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
         const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
         return (
           <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0" autoFocus inputMode="decimal"/>
           </Field>
         );
       })()}
       <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}
           placeholder={
             action === "health" ? "e.g. Ivermectin — dewormer round" :
             action === "note" ? "What happened" : ""
@@ -654,14 +665,14 @@ function LogPigEntryModal({ hobby, hobbyId, action, update, onClose }) {
 
 // --- 🐖 BredPigModal --------------------------------------------------------
 
-function BredPigModal({ hobby, hobbyId, update, onClose }) {
+function BredPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Sows AND gilts are breedable (a gilt becomes a sow after first farrow).
   const females = live.filter(a => a.sex === "Sow" || a.sex === "Gilt");
   const boars = live.filter(a => a.sex === "Boar");
 
   const [date, setDate] = useState(todayStr());
-  const [femaleId, setFemaleId] = useState(females[0]?.id || "");
+  const [femaleId, setFemaleId] = useState((initialAnimalId && females.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || females[0]?.id || "");
   const [boarId, setBoarId] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -703,16 +714,16 @@ function BredPigModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🐖 Log breeding">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Sow / gilt">
-        <select style={inputStyle} value={femaleId} onChange={e=>setFemaleId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={femaleId} onChange={e=>setFemaleId(e.target.value)} autoFocus>
           {females.length === 0 && <option value="">— No sows or gilts available —</option>}
           {females.map(a => <option key={a.id} value={a.id}>{a.name} · {a.sex}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
       </Field>
       <Field label="Boar (optional)">
-        <select style={inputStyle} value={boarId} onChange={e=>setBoarId(e.target.value)}>
+        <select style={inputStyle()} value={boarId} onChange={e=>setBoarId(e.target.value)}>
           <option value="">— Not specified —</option>
           {boars.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
         </select>
@@ -723,7 +734,7 @@ function BredPigModal({ hobby, hobbyId, update, onClose }) {
           <div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>A reminder will be added to your calendar after saving.</div>
         </div>
       )}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -734,7 +745,7 @@ function BredPigModal({ hobby, hobbyId, update, onClose }) {
 
 // --- 🐽 FarrowPigModal ------------------------------------------------------
 
-function FarrowPigModal({ hobby, hobbyId, update, onClose }) {
+function FarrowPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Spec says "Farrow is for sows only" — gilts are still on the Bred picker
   // (a gilt with her first litter is conventionally reclassified to Sow by
@@ -744,7 +755,7 @@ function FarrowPigModal({ hobby, hobbyId, update, onClose }) {
   const boars = live.filter(a => a.sex === "Boar");
 
   const [date, setDate] = useState(todayStr());
-  const [sowId, setSowId] = useState(sows[0]?.id || "");
+  const [sowId, setSowId] = useState((initialAnimalId && sows.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || sows[0]?.id || "");
   const [sireId, setSireId] = useState("");
   const [pigletsAlive, setPigletsAlive] = useState("");
   const [pigletsStillborn, setPigletsStillborn] = useState("");
@@ -788,25 +799,25 @@ function FarrowPigModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🐽 Log farrowing">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Sow">
-        <select style={inputStyle} value={sowId} onChange={e=>setSowId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={sowId} onChange={e=>setSowId(e.target.value)} autoFocus>
           {sows.length === 0 && <option value="">— No sows available —</option>}
           {sows.map(a => <option key={a.id} value={a.id}>{a.name}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
       </Field>
       <Field label="Sire / boar (optional)">
-        <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+        <select style={inputStyle()} value={sireId} onChange={e=>setSireId(e.target.value)}>
           <option value="">— Not specified —</option>
           {boars.map(b => <option key={b.id} value={b.id}>{b.name}{b.breed?` · ${b.breed}`:""}</option>)}
         </select>
       </Field>
       <div style={{display:"flex",gap:12}}>
-        <div style={{flex:1}}><Field label="Piglets alive"><input type="number" min={0} style={inputStyle} value={pigletsAlive} onChange={e=>setPigletsAlive(e.target.value)} placeholder="0"/></Field></div>
-        <div style={{flex:1}}><Field label="Stillborn"><input type="number" min={0} style={inputStyle} value={pigletsStillborn} onChange={e=>setPigletsStillborn(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}><Field label="Piglets alive"><input type="number" min={0} style={inputStyle()} value={pigletsAlive} onChange={e=>setPigletsAlive(e.target.value)} placeholder="0"/></Field></div>
+        <div style={{flex:1}}><Field label="Stillborn"><input type="number" min={0} style={inputStyle()} value={pigletsStillborn} onChange={e=>setPigletsStillborn(e.target.value)} placeholder="0"/></Field></div>
       </div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -897,7 +908,7 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
           created: Date.now(),
         };
         d.entries[hobbyId].push(entry);
-        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const priceStr = numericPrice > 0 ? ` for ${fmtMoney(numericPrice)}` : "";
         const partyStr = partyName ? ` to ${partyName}` : "";
         target.archived = true;
         target.archivedReason = `${verb}${partyStr}${priceStr}`;
@@ -961,7 +972,7 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="❄️ Remove pig">
       <Field label="Which pig?">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {live.length === 0 && <option value="">— No live pigs —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
@@ -979,7 +990,7 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
 
       {reason === "butchered" && (()=>{
         const isMetricW = getCurrentWeightUnit()==="kg";
@@ -987,41 +998,41 @@ function RemovePigModal({ hobby, hobbyId, update, onClose }) {
         return (
           <>
             <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
-              <input type="number" min={0} step="0.1" style={inputStyle} value={shownW}
+              <input type="number" min={0} step="0.1" style={inputStyle()} value={shownW}
                 onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
             </Field>
-            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+            <Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
           </>
         );
       })()}
 
       {reason === "sold" && (
         <>
-          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
-          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label="Buyer (optional)"><input style={inputStyle()} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
         </>
       )}
 
       {(reason === "rehomed" || reason === "given_away") && (
-        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+        <Field label="Recipient (optional)"><input style={inputStyle()} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
       )}
 
       {reason === "died" && (
         <Field label="Cause">
-          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+          <select style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)}>
             {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Birthing complications","Other"].map(c=><option key={c}>{c}</option>)}
           </select>
         </Field>
       )}
 
       {reason === "culled" && (
-        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
+        <Field label="Reason (optional)"><input style={inputStyle()} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
       )}
 
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
 
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
-        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This pig";})()} will move to your Archived pigs list{(reason==="sold")?" and a sale record will appear in your Sales tab":""}. You can restore from there if this was a mistake.
+        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This pig";})()} will move to your Archived pigs list{(reason==="sold")?" and a sale record will appear in Sales & costs":""}. You can restore from there if this was a mistake.
       </div>
 
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -1081,7 +1092,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
         if(a&&!a.archived){
           a.archived=true;
           const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
-          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const priceStr=Number(salePrice)>0?` for ${fmtMoney(Number(salePrice))}`:"";
           const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
           a.archivedReason=`${verb}${buyerStr}${priceStr}`;
           a.archivedDate=date;
@@ -1105,30 +1116,30 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const isSale=action==="sale";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
       {action==="fed"&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
-        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field></div><div style={{flex:1}}><Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></div></div>;
       })()}
       {action==="weight"&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
-        return <Field label={isMetricW?"Current weight (kg)":"Current weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+        return <Field label={isMetricW?"Current weight (kg)":"Current weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
       })()}
-      {action==="litter"&&<Field label="Piglets born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
+      {action==="litter"&&<Field label="Piglets born (count)"><input type="number" min={1} style={inputStyle()} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
       {action==="butcher"&&<>{(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
-        return <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
-      })()}<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></>}
-      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
+        return <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+      })()}<Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></>}
+      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
-        <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
+        <Field label="Type"><select style={inputStyle()} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
         <Field label="Customer (optional)">
           {!showNewBuyer ? (
             <div style={{ display: "flex", gap: 8 }}>
-              <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+              <select style={{ ...inputStyle(), flex: 1 }} value={buyerId} onChange={e => {
                 const id = e.target.value;
                 setBuyerId(id);
                 const c = (customers || []).find(x => x.id === id);
@@ -1141,16 +1152,16 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8 }}>
-              <input style={{ ...inputStyle, flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+              <input style={{ ...inputStyle(), flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
               <button onClick={() => { setShowNewBuyer(false); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
             </div>
           )}
         </Field>
-        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+        {saleType!=="rehomed"&&<Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>}
       </>}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list. You can restore from there if this was a mistake.</div>}
-      {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list and {saleType!=="rehomed"?"a sale record will appear in your Sales tab":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
+      {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived pigs list and {saleType!=="rehomed"?"a sale record will appear in Sales & costs":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
       <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
     </Modal>
   );
@@ -1279,7 +1290,7 @@ export function PigsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=null
         <StatCard label="Meat produced" value={fmtWeight(totalMeatLbs)} accent={palette.leaf}/>
         <StatCard label="Piglets born" value={totalPiglets} accent={palette.yolk}/>
         {fcr!=="—"&&<StatCard label="FCR" value={fcr} sub="lbs feed / lb meat" accent={palette.feather}/>}
-        {costPerLb!=="—"&&<StatCard label="Feed cost / lb" value={`$${costPerLb}`} accent={palette.accent}/>}
+        {costPerLb!=="—"&&<StatCard label="Feed cost / lb" value={`${currencySymbol()}${costPerLb}`} accent={palette.accent}/>}
       </div>
 
       <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
@@ -1396,7 +1407,7 @@ function HerdTallySection({ hobby, update }) {
           {HERD_TALLY_CATEGORIES.map(k => (
             <Field key={k} label={k}>
               <input
-                type="number" inputMode="numeric" min={0} style={inputStyle}
+                type="number" inputMode="numeric" min={0} style={inputStyle()}
                 value={counts[k]}
                 onChange={e => setCounts(c => ({ ...c, [k]: e.target.value }))}
                 placeholder="0"
@@ -1469,14 +1480,14 @@ export default function PigsPage({hobby,data,update,user,setModal:setAppModal}){
       )}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink}}>Your pigs</div>
-        <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.ink,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add pig</button>
+        <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"7px 14px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",color:palette.onYolk,display:"flex",alignItems:"center",gap:6}}><Plus size={14}/>Add pig</button>
       </div>
       {animals.length===0?(
         <div style={{padding:28,background:palette.card,border:`2px dashed ${palette.line}`,borderRadius:12,textAlign:"center",color:palette.inkSoft}}>
           <div style={{fontSize:36,marginBottom:10}}>🐷</div>
           <div style={{fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink,marginBottom:6}}>No pigs yet</div>
           <div style={{fontSize:13,marginBottom:14}}>Add your first pig to track growth, feed, and butcher stats.</div>
-          <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.ink}}>Add first pig</button>
+          <button onClick={()=>setLocalModal({type:"addAnimal",hobbyId:hobby.id})} style={{padding:"10px 18px",borderRadius:8,background:palette.yolk,border:`1.5px solid ${palette.ink}`,fontFamily:FONT_BODY,fontWeight:600,fontSize:14,cursor:"pointer",color:palette.onYolk}}>Add first pig</button>
         </div>
       ):animals.map(a=><AnimalCard key={a.id} animal={a} hobbyId={hobby.id} animals={allAnimals} entries={entries} sales={data.sales||[]} hobby={hobby} update={update} setModal={setLocalModal} customers={data.customers||[]}/>)}
 
@@ -1498,6 +1509,106 @@ export default function PigsPage({hobby,data,update,user,setModal:setAppModal}){
             ))}
           </div>
         </details>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Herd / one pig on the shared livestock screens
+// (src/newlook/livestock/) with this file's own forms: fed, bred (with the
+// 114-day farrow date), farrow, weight, health, note, remove, add/edit pig.
+// Saves that add log entries show "Saved · Undo".
+// ============================================================================
+const PIG_UNDO = { fed: "feeding", bred: "breeding", litter: "farrowing", weight: "weight", health: "health log", note: "note" };
+const PIG_TALLY = ["Sow", "Boar", "Barrow", "Gilt", "Piglet", "Unsexed"];
+
+// Forms that save something other than a log (a breeding record, a
+// shearing, an animal): what the Undo bar says.
+const FORM_SAVED = { breeding: "Saved breeding", shearing: "Saved shearing", animal: "Saved", addAnimal: "Saved", herd: "Saved herd count" };
+
+export function PigsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
+  const sp = SPECIES.pigs;
+  const entries = data.entries[hobby.id] || [];
+  const [local, setLocal] = useState(null);
+  const [form, setFormRaw] = useState(null);
+  // With no pigs yet, forms that need one open "Add your first pig" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["fed","weight","health","note","bred","litter","remove"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, animalId = null) => { setUndoCheck(null); setForm({ kind, animalId, before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck({ before: form.before, snap: form.snap, kind: form.kind }); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.before.has(e.id));
+    setUndoCheck(null);
+    if (!added.length) { if (FORM_SAVED[undoCheck.kind]) offerUndoSince(update, undoCheck.snap, data, FORM_SAVED[undoCheck.kind]); return; }
+    if (!added.length || !PIG_UNDO[added[0].action]) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const msg = e.action === "litter" ? `Saved ${Number(e.pigletsAlive) || 0} piglets${e.animalName ? ` for ${e.animalName}` : ""}`
+      : `Saved ${PIG_UNDO[e.action]}${e.animalName && added.length === 1 ? ` for ${e.animalName}` : added.length > 1 ? ` for ${added.length} pigs` : ""}`;
+    offerUndoSince(update, undoCheck.snap, data, msg);
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const openProfile = (id) => { setProfileId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} };
+  const act = {
+    milk: () => {},
+    fed: () => open("fed"),
+    weight: (id) => open("weight", id || null),
+    health: (id) => open("health", id || null),
+    note: (id) => open("note", id || null),
+    birth: (id) => open("litter", id || null),
+    log: (key, id) => open(key, id || null),
+    // Breedings are "bred" logs here; an existing one opens the sow's page.
+    breeding: (b, damId) => { if (b && b.damId) openProfile(b.damId); else open("bred", damId || null); },
+    remove: () => setForm({ kind: "remove" }),
+    addAnimal: () => setLocal({ type: "addAnimal" }),
+    editAnimal: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    herdCount: () => setTallyOpen(true),
+    openProfile,
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "add") act.addAnimal(); else if (["fed", "bred", "litter", "weight", "health", "note"].includes(a)) open(a);
+  });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = PIG_TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = PIG_TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? (hobby.animals || []).find((a) => a.id === profileId) : null;
+  const f = form || {};
+  const props = { hobby, hobbyId: hobby.id, update, onClose: closeForm, initialAnimalId: f.animalId };
+
+  return (
+    <div>
+      {needAnimal && <NeedAnimal noun="pig" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setLocal({ type: "addAnimal" }); }} />}
+      <PigModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
+      {f.kind === "fed" && <FedPigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
+      {f.kind === "bred" && <BredPigModal {...props} />}
+      {f.kind === "litter" && <FarrowPigModal {...props} />}
+      {["weight", "health", "note"].includes(f.kind) && <LogPigEntryModal {...props} action={f.kind} />}
+      {f.kind === "remove" && <RemovePigModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={PIG_TALLY} noun="pigs" />
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="pig" onClose={() => setView(null)} />
+      )}
+      {tab === "animals" ? (
+        profile ? <LivestockProfile sp={sp} hobby={hobby} data={data} animal={profile} act={act} onBack={() => setProfileId(null)} />
+          : <LivestockHerd sp={sp} hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <LivestockToday sp={sp} hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
       )}
     </div>
   );

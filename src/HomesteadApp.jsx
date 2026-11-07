@@ -1,3 +1,4 @@
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect, useRef } from "react";
 
 import {
@@ -6,7 +7,7 @@ import {
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle, Check,
-  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck, Trophy
+  MapPin, CloudRain, Thermometer, Share2, Store, BookOpen, Truck, Trophy, ChevronLeft
 } from "lucide-react";
 import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, Legend } from "recharts";
 // ADV_ANALYTICS: shared advanced-analytics layer (leaf module — see analytics.js).
@@ -15,7 +16,7 @@ import { LineChart, Line, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContai
 import {
   ADV_ANALYTICS_FEATURE_KEY, priorDateRange, computeDelta, StatTrend,
   personalRecord, monthlySeries, LockedStatOverlay,
-  collectGardenHarvests, totalHarvestLbs,
+  collectGardenHarvests, totalHarvestLbs, harvestLbs
 } from "./analytics.js";
 import AuthModal from "./AuthModal.jsx";
 import FarmhandModal from "./FarmhandModal.jsx";
@@ -87,7 +88,39 @@ import {
   reconcileNudges, reconcileFrostAlerts, reconcileWrappedAlert,
 } from "./notifications.js";
 import { cropsAtRisk, buildFrostSchedule } from "./frostAlerts.js";
-import { buildWidgetSnapshot, pushWidgetSnapshot } from "./widgetBridge.js";
+import { buildWidgetSnapshot, pushWidgetSnapshot, takeWidgetTally, applyWidgetTally, onWidgetTallyChanged, takeVoiceLogs, applyVoiceLogs } from "./widgetBridge.js";
+// NEW_LOOK (3.0): the redesign, built behind a per-device switch (src/newlook/flag.js).
+import { useNewLook, NEW_LOOK_LAUNCHED } from "./newlook/flag.js";
+import { nl, LOOKS } from "./newlook/theme.js";
+import { useAppearance } from "./newlook/appearance.js";
+import SupporterScreen, { SupportSheet } from "./newlook/SupporterScreen.jsx";
+import LookScreen from "./newlook/LookScreen.jsx";
+import ImportScreen from "./newlook/importer/ImportScreen.jsx";
+import { ProjectsHome, ProjectRecord, ProjectForm, SectionSheet, ProjectLogSheet, PdfGuide, AetSummary, InfoSheet } from "./newlook/projects/ProjectScreens.jsx";
+import { projectsOf } from "./newlook/projects/projectData.js";
+import { GraduationCap, Milk as MilkIcon, Scale as ScaleIcon, Baby as BabyIcon, Syringe as SyringeIcon, Flame as FlameIcon, Droplets as DropletsIcon } from "lucide-react";
+import { MonthlyRecapViewer, recapMonthKey, monthTeaser, monthHasStory, monthName } from "./newlook/MonthlyRecap.jsx";
+import NavBar from "./newlook/NavBar.jsx";
+import LogPicker from "./newlook/LogPicker.jsx";
+import HomeScreen from "./newlook/HomeScreen.jsx";
+import MoreScreen from "./newlook/MoreScreen.jsx";
+import AnnouncementCard from "./newlook/Announcements.jsx";
+import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
+import { nextYearProject, nextYearLabel } from "./newlook/projects/projectData.js";
+import { closeTopOverlay } from "./newlook/backClose.js";
+import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
+import { UndoHost, showUndo, undoable, UNDO_MS } from "./newlook/UndoBar.jsx";
+import { ConfirmHost, askConfirm } from "./newlook/ConfirmHost.jsx";
+import SetupFlow from "./newlook/SetupFlow.jsx";
+import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
+import { HobbyTabs, Legacy } from "./newlook/ui.jsx";
+import EggToday from "./newlook/eggs/EggToday.jsx";
+import EggBirds from "./newlook/eggs/EggBirds.jsx";
+import EggStats from "./newlook/eggs/EggStats.jsx";
+import YearScreen from "./newlook/YearScreen.jsx";
+import { GardenToday, GardenPlants, GardenPlan, GardenStats, GardenClosed, GardenNeedSeason, nextGardenSeasonName } from "./newlook/garden/GardenScreens.jsx";
+import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
+import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES, cleanName } from "./newlook/hobbies.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -106,6 +139,11 @@ import { computeHarvestValue, plantKey } from "./gardenValue.js";
 import SeedInventory, { needsBuying as seedNeedsBuying, SeedUseModal, matchingPackets, useSeedShop } from "./SeedInventory.jsx";
 import { seedShopUrl, AFFILIATE_DISCLOSURE } from "./affiliate.js";
 import { eggInsight } from "./eggInsights.js";
+// 3.0: helpers shared with the new-look screens live in their own files.
+import { computeFeedStatus, feedEntryLbs, FEED_BURN_WINDOW_DAYS } from "./feedSupply.js";
+import { computeEggsOnHand } from "./eggInventory.js";
+import { winterSeason, WINTER_ITEMS } from "./winterChecklist.js";
+import { planAnnualConfirm } from "./gardenPlanting.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
 import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
@@ -122,8 +160,9 @@ import {
 } from "./CalendarModals.jsx";
 import GardenMapModal from "./GardenMap.jsx";
 import PlantScannerModal from "./PlantScannerModal.jsx";
-import RabbitsPage, { RabbitsAnalytics } from "./Rabbits.jsx";
-import SalesPage, { AddExpenseModal, expandRecurringExpenses } from "./Sales.jsx";
+import RabbitsPage, { RabbitsAnalytics, RabbitsNewLook } from "./Rabbits.jsx";
+import { RabbitStats } from "./newlook/rabbits/RabbitScreens.jsx";
+import SalesPage, { AddExpenseModal, expandRecurringExpenses, YearEndReportModal, shareOrDownload } from "./Sales.jsx";
 import {
   PANTRY_CATEGORIES, PANTRY_CATEGORY_LABELS, INGREDIENT_DENSITIES,
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
@@ -131,44 +170,58 @@ import {
   pantryItemDensity, pantryItemCostPerPurchaseUnit, pantryItemCostForUsage,
   computeRecipeCost,
 } from "./pantry.js";
-import BeesPage, { BeesAnalytics } from "./Bees.jsx";
-import IncubatorPage, { IncubatorAnalytics } from "./Incubator.jsx";
-import GoatsPage, { GoatsAnalytics } from "./Goats.jsx";
-import CowsPage, { CowsAnalytics } from "./Cows.jsx";
-import PigsPage, { PigsAnalytics } from "./Pigs.jsx";
-import SheepPage, { SheepAnalytics } from "./Sheep.jsx";
-import HorsesPage, { HorsesAnalytics } from "./Horses.jsx";
-import SourdoughPage, { SourdoughAnalytics } from "./Sourdough.jsx";
-import FarmstandPage, { FarmstandAnalytics } from "./Farmstand.jsx";
+import BeesPage, { BeesAnalytics, BeesNewLook } from "./Bees.jsx";
+import { BeeStats } from "./newlook/bees/BeeScreens.jsx";
+import IncubatorPage, { IncubatorAnalytics, IncubatorNewLook } from "./Incubator.jsx";
+import { IncubatorStats } from "./newlook/incubator/IncubatorScreens.jsx";
+import GoatsPage, { GoatsAnalytics, GoatsNewLook } from "./Goats.jsx";
+import { LivestockStats } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES } from "./newlook/livestock/livestockData.js";
+import SalesScreen from "./newlook/sales/SalesScreen.jsx";
+import { MeatToday, MeatBatches, MeatStats } from "./newlook/meat/MeatScreens.jsx";
+import { batchAlive, restorePastBatch as restorePastBatchIn } from "./meatBatches.js";
+import { requestHobbyAction, useHobbyRequest } from "./newlook/hobbyRequests.js";
+import CowsPage, { CowsAnalytics, CowsNewLook } from "./Cows.jsx";
+import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
+import SheepPage, { SheepAnalytics, SheepNewLook } from "./Sheep.jsx";
+import HorsesPage, { HorsesAnalytics, HorsesNewLook } from "./Horses.jsx";
+import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
+import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
+import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
-import BakingPage, { BakingAnalytics } from "./Baking.jsx";
-import CanningPage, { CanningAnalytics } from "./Canning.jsx";
-import FreezeDryingPage, { FreezeDryingAnalytics } from "./FreezeDrying.jsx";
-import DehydratingPage, { DehydratingAnalytics } from "./Dehydrating.jsx";
-import FermentationPage, { FermentationAnalytics } from "./Fermentation.jsx";
-import TincturePage, { TinctureAnalytics } from "./Tincture.jsx";
+import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
+import { broodyPatch, broodyDay, broodySpellLabel, ageLabel, brooderHistory, hatchChoicesForFlock, flockEggSummary, eggSeriesByFlock, chartPeriodRows, collectPurchases, lastBoughtByItem, agoLabel } from "./flockTools.js";
+import BakingPage, { BakingAnalytics, bakingStats } from "./Baking.jsx";
+import CanningPage, { CanningAnalytics, canningStats } from "./Canning.jsx";
+import { PantryStatsPage, pantryNew } from "./newlook/pantry/PantryScreens.jsx";
+import FeedCard from "./newlook/FeedCard.jsx";
+import { petStats } from "./newlook/pantry/petStats.js";
+import FreezeDryingPage, { FreezeDryingAnalytics, freezeDryingStats } from "./FreezeDrying.jsx";
+import DehydratingPage, { DehydratingAnalytics, dehydratingStats } from "./Dehydrating.jsx";
+import FermentationPage, { FermentationAnalytics, fermentationStats } from "./Fermentation.jsx";
+import TincturePage, { TinctureAnalytics, tinctureStats } from "./Tincture.jsx";
 import CelebrationCard, {
   defaultCelebrationState, migrateCelebrationState,
   detectCelebrations, getCelebrationById, isReviewWorthy, celebrationHobby,
   ObservationCard, defaultObservationState, migrateObservationState,
   detectObservations, snoozeObservationUntil, observationHobby,
 } from "./Suggestions.jsx";
-import OilInfusionPage, { OilInfusionAnalytics } from "./OilInfusion.jsx";
-import SalvePage, { SalveAnalytics } from "./Salve.jsx";
-import TeaPage, { TeaAnalytics } from "./Tea.jsx";
+import OilInfusionPage, { OilInfusionAnalytics, oilInfusionStats } from "./OilInfusion.jsx";
+import SalvePage, { SalveAnalytics, salveStats } from "./Salve.jsx";
+import TeaPage, { TeaAnalytics, teaStats } from "./Tea.jsx";
 import DogsPage, { DogsAnalytics } from "./Dogs.jsx";
 import CatsPage, { CatsAnalytics } from "./Cats.jsx";
-import MapleSyrupPage, { MapleSyrupAnalytics } from "./MapleSyrup.jsx";
-import HuntingPage, { HuntingAnalytics, huntingTotals } from "./Hunting.jsx";
-import SoapMakingPage, { SoapMakingAnalytics, soapBatchStats } from "./SoapMaking.jsx";
+import MapleSyrupPage, { MapleSyrupAnalytics, mapleStats } from "./MapleSyrup.jsx";
+import HuntingPage, { HuntingAnalytics, huntingTotals, huntingStats } from "./Hunting.jsx";
+import SoapMakingPage, { SoapMakingAnalytics, soapBatchStats, soapStats } from "./SoapMaking.jsx";
 import {
   initIap, identifyIapUser, purchaseProduct, restorePurchases,
   hasActiveSubscription, openManageSubscriptions, TIER_TO_IAP_PRODUCT,
 } from "./IapManager.js";
 
 // ============ DESIGN TOKENS ============
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0",         // warm parchment
   bgAlt: "#EBE0CC",      // deeper parchment
   ink: "#2C1810",        // dark coffee
@@ -183,7 +236,7 @@ const palette = {
   featherSoft: "#C9A77B",
   line: "#2C181030",
   card: "#FAF5EA",
-};
+});
 
 // ============ STORAGE HELPERS ============
 const defaultData = () => ({
@@ -337,6 +390,9 @@ function migrateData(data) {
   if (!data || typeof data !== "object") return defaultData();
   if (!Array.isArray(data.hobbies)) data.hobbies = defaultData().hobbies;
   if (!data.entries || typeof data.entries !== "object") data.entries = {};
+  // Fix record shapes old versions, sync or imports may have left (dates
+  // that aren't "YYYY-MM-DD", lists that became null, empty slots).
+  tidyData(data);
   // Celebrations (Suggestions.jsx) — ensure state exists and back-mark any
   // already-earned milestones so they never fire retroactively.
   migrateCelebrationState(data);
@@ -1166,8 +1222,11 @@ const hasGoats = data.hobbies.some(h => h.id === "goats");
 // "5" of anything. These helpers group a list of harvest entries by unit so
 // totals are reported per-unit. Entries with no unit are treated as "lbs"
 // (every harvest logged before the unit picker existed was implicitly lbs).
+// The weight unit a new harvest starts with: kg for metric homesteads.
+const defaultHarvestUnit = () => (getCurrentWeightUnit() === "kg" ? "kg" : "lbs");
+
 const HARVEST_UNIT_LABELS = {
-  lbs: "lbs", oz: "oz", each: "each", count: "count",
+  lbs: "lbs", oz: "oz", kg: "kg", g: "g", each: "each", count: "count",
   cups: "cups", pints: "pints", quarts: "quarts", bunch: "bunches",
   // Singular aliases — perennial harvest records historically stored these.
   quart: "quarts", pint: "pints",
@@ -1176,30 +1235,33 @@ const HARVEST_UNIT_LABELS = {
 // Returns a map of { unit: totalQuantity } for the given harvest entries.
 // Accepts both `quantity` (annual garden entries) and `qty` (perennial
 // harvest records) as the amount field.
+// Weights (lbs, oz, kg, g) all add up under "lbs" (in pounds), so a person
+// who switched units sees one total in their own units.
 function harvestTotalsByUnit(harvestEntries) {
   const totals = {};
   (harvestEntries || []).forEach((e) => {
     const unit = e && e.unit ? e.unit : "lbs";
     const raw = e && (e.quantity != null ? e.quantity : e.qty);
     const qty = Number(raw) || 0;
-    totals[unit] = (totals[unit] || 0) + qty;
+    const asLbs = harvestAmountLbs(qty, unit);
+    if (asLbs != null) totals.lbs = (totals.lbs || 0) + asLbs;
+    else totals[unit] = (totals[unit] || 0) + qty;
   });
   return totals;
+}
+function harvestPart(unit, n) {
+  if (unit === "lbs") return fmtWeight(n, { forceBig: n >= 1 || n === 0 });
+  const label = HARVEST_UNIT_LABELS[unit] || unit;
+  const isWhole = unit === "each" || unit === "count" || unit === "bunch";
+  return `${isWhole ? Math.round(n) : Number(n.toFixed(1))} ${label}`;
 }
 
 // Returns a human display string like "12.5 lbs · 8 each · 3 cups".
 // Falls back to "0 lbs" when there are no harvests.
 function harvestSummary(harvestEntries) {
   const totals = harvestTotalsByUnit(harvestEntries);
-  const parts = Object.keys(totals).map((unit) => {
-    const n = totals[unit];
-    const label = HARVEST_UNIT_LABELS[unit] || unit;
-    // Whole numbers for count-like units, one decimal for weight/volume.
-    const isWhole = unit === "each" || unit === "count" || unit === "bunch";
-    const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
-    return `${num} ${label}`;
-  });
-  return parts.length ? parts.join(" · ") : "0 lbs";
+  const parts = Object.keys(totals).map((unit) => harvestPart(unit, totals[unit]));
+  return parts.length ? parts.join(" · ") : fmtWeight(0);
 }
 
 // Returns a per-plant breakdown of harvests as an array of:
@@ -1213,21 +1275,12 @@ function harvestBreakdownByPlant(harvestEntries) {
   (harvestEntries || []).forEach((e) => {
     if (!e) return;
     const plant = (e.plant || "Unknown").toString().trim() || "Unknown";
-    const unit = e.unit || "lbs";
-    const raw = e.quantity != null ? e.quantity : e.qty;
-    const qty = Number(raw) || 0;
-    if (!byPlant[plant]) byPlant[plant] = {};
-    byPlant[plant][unit] = (byPlant[plant][unit] || 0) + qty;
+    if (!byPlant[plant]) byPlant[plant] = [];
+    byPlant[plant].push(e);
   });
   const rows = Object.keys(byPlant).map((plant) => {
-    const totals = byPlant[plant];
-    const parts = Object.keys(totals).map((unit) => {
-      const n = totals[unit];
-      const label = HARVEST_UNIT_LABELS[unit] || unit;
-      const isWhole = unit === "each" || unit === "count" || unit === "bunch";
-      const num = isWhole ? Math.round(n) : Number(n.toFixed(1));
-      return `${num} ${label}`;
-    });
+    const totals = harvestTotalsByUnit(byPlant[plant]);
+    const parts = Object.keys(totals).map((unit) => harvestPart(unit, totals[unit]));
     // Sort key: lbs first, then any other unit max. Lets the list rank
     // "Tomatoes — 24 lbs" above "Lettuce — 6 lbs" above "Basil — 6 bunches".
     const sortValue = totals.lbs != null
@@ -1413,8 +1466,24 @@ function exportAllAsCsv(data) {
     });
   });
 
+  // And data.expenses[]: costs logged with "Log an expense" (feed bags,
+  // equipment, vet bills). They live outside data.entries too.
+  (data.expenses || []).forEach((x) => {
+    if (!x) return;
+    const sourceHobby = x.hobbyId ? hobbies.find(h => h.id === x.hobbyId) : null;
+    rows.push({
+      ...x,
+      action: "expense",
+      hobbyName: sourceHobby ? sourceHobby.name : "General",
+      hobbyType: sourceHobby ? sourceHobby.type : "",
+      cost: x.amount,
+      item: x.description || x.item || "",
+      archived: false,
+    });
+  });
+
   // Sort newest first
-  rows.sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+  rows.sort((a, b) => (String(b.date || "")).localeCompare(String(a.date || "")));
 
   // Define columns. Order matters — most useful first. Sales-relevant columns
   // (revenue/price/buyer/totals) sit near the start so they're visible
@@ -1429,11 +1498,11 @@ function exportAllAsCsv(data) {
     "pricePerUnit", "pricePerLb", "pricePerDozen", "flatPrice",
     "costPerUnit", "cost", "totalRevenue", "totalCost",
     // entity / who bought / what was sold
-    "buyer", "crop", "plant", "item", "saleForm", "saleType",
+    "buyer", "animalName", "crop", "plant", "item", "category", "saleForm", "saleType",
     "eggType", "eggPurpose", "eggTypeCustom",
     "honeyForm", "honeyContainer", "gardenUnit", "birdType",
     // measurements
-    "lbs", "gallons", "avgWeight", "avgWeightLbs", "cuft",
+    "lbs", "oz", "gallons", "weight", "avgWeight", "avgWeightLbs", "cuft",
     // events / context
     "cause", "issueType", "detail", "note",
     // weather (live entries only — sales don't have it)
@@ -1460,18 +1529,11 @@ function exportAllAsCsv(data) {
 
   const csv = [headerRow, ...bodyRows].join("\n");
 
-  // Download as file
+  // Phones: the share sheet (Save to Files, Drive, Mail…); computers: a download.
   const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement("a");
-  a.href = url;
   const dateStr = localDateStr(new Date());
   const safeName = (data.homesteadName || "homestead").replace(/[^a-zA-Z0-9-_]/g, "_") || "homestead";
-  a.download = `${safeName}-export-${dateStr}.csv`;
-  document.body.appendChild(a);
-  a.click();
-  document.body.removeChild(a);
-  URL.revokeObjectURL(url);
+  shareOrDownload(blob, `${safeName}-export-${dateStr}.csv`, "Henalytics export");
 }
 
 // ============ UTIL ============
@@ -1648,7 +1710,11 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput, fmtWeightWhole, fmtWeight1, harvestAmountLbs } from "./units.js";
+import { groupDigits } from "./numFmt.js";
+import { useSupportProgress } from "./newlook/supportProgress.js";
+import { tidyData } from "./tidyData.js";
+import { friendlyError } from "./friendlyError.js";
 
 // Generate a unique ID. Prefers crypto.randomUUID() (available on all modern
 // browsers + iOS/Android WebViews); falls back to Math.random for ancient
@@ -1679,7 +1745,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 54;
+const CURRENT_VERSION = 57;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1743,7 +1809,7 @@ function giveawayWeekKey(d) {
 // everyone who taps Sure gets it. We just filter who we bother with the
 // request based on engagement signals, which is the standard pattern.
 function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
-  const palette = { bg: "#F4EDE0", card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030" };
+  const palette = { bg: palette.bg, card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030" };
   const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
   const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
   return (
@@ -1766,7 +1832,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
         </div>
         <button onClick={onSure} style={{
           width: "100%", padding: "12px 16px", borderRadius: 10, border: "none",
-          background: palette.accent, color: "#fff", fontFamily: FONT_BODY,
+          background: palette.accent, color: palette.onColor, fontFamily: FONT_BODY,
           fontSize: 15, fontWeight: 600, cursor: "pointer", marginBottom: 8,
         }}>
           Sure, I'll leave a review
@@ -1792,6 +1858,14 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "✨ A whole new Henalytics — every screen rebuilt to make things easier to find. Home shows what needs you today, each hobby has Today, its animals or plants, and Stats, and the yellow Log button logs anything in two taps. Saves show a few seconds of Undo instead of \"Are you sure?\" popups. Your animals, logs and numbers are exactly where you left them.",  // NEWLOOK_30_WHATSNEW
+  "🌙 Dark mode for everyone (More › Look & app icon). Supporters also get Meadow and Barn colors, new app icons on iPhone, and a Wrapped of their month on the 1st of every month.",
+  "🎓 4-H & FFA — start a project and the record book fills itself in from what you already log: animals, production, costs, sales, health and photos. Log project hours and shows, write goals and the project story, then download a PDF ready to sign. FFA projects get an AET summary to type from.",
+  "📊 Bring in old records — egg counts, harvests and sales from Excel, Google Sheets or a CSV (More › Bring in old records).",
+  "🎙️ More Siri (iPhone): \"Log a feeding\", \"Log milk\" and \"Log a harvest\" in Henalytics. Widgets got the new colors too, with a dark version.",
+  "🎙️ Log eggs with your voice (iPhone) — say \"Hey Siri, log eggs in Henalytics\". Siri asks how many (and which flock, if you have more than one) and adds them to today, same as the egg counter. Ask \"Hey Siri, how many eggs today in Henalytics\" to hear your count. Works from your Apple Watch, AirPods and CarPlay too, and the phrases show up in the Shortcuts app.",  // SIRI_EGGS_WHATSNEW
+  "🐔 Flock upgrades — see how many days a hen has been broody (and her past broody spells), add hatch dates so every bird shows its age, and look back at your whole brooder history. Egg counts now split by flock on the egg layers page and in Stats, and \"When did I last buy feed?\" shows the last time you bought anything, plus every purchase.",  // FLOCK_FEATURES_WHATSNEW
+  "🥚 Egg Counter widget (phone app) — add it to your home screen, pick a flock, and tap + every time you collect. No need to open the app; the count saves to that day on its own, just like the counter on the egg layers page. Long-press the widget to switch flocks. This update also fixes the app not opening on iOS 27.",
   "\uD83C\uDF42 Fall Community Giveaway \u2014 running October 1 through December 31, and this one's big: TWO winners, one prize each. Up for grabs are an Omlet 1.5 Gallon Insulated Chicken Waterer and a HenGear small nest box with roll-out tray. To enter, just have a Henalytics account and follow us on Facebook \u2014 that's it, one entry per account. A reminder popup appears each Friday while it runs. No purchase necessary and donating never improves your odds \u2014 donating in the app is what makes these giveaways happen, and lets them keep growing.",  // GIVEAWAY_FALL_WHATSNEW
   "🌾 Feed supply tracker — never get surprised by an empty feed bin again. On any animal page (chickens, goats, cows, pigs, sheep, rabbits, dogs, cats, horses), tap the new feed banner, tell Henalytics how many lbs you've got, and your normal feed logs teach it how fast you burn through it. You'll see days remaining and an estimated empty date, and when you're about 5 days out it drops a reminder on your calendar — which also rides your weekly chore email. Log purchases with a cost and they flow straight into your Feed expenses. Works with cups or lbs feedings. (Horses got a new \u{1F33E} Fed button so the barn can join in.)",  // FEED_TRACKER_WHATSNEW
   "🧺 Eggs on hand — a live count of the eggs actually in your fridge. Tap the new Use Eggs tile on the egg layers page, count what you've got right now, and from then on every egg you collect adds to it and every egg you sell (from the tile or the Sales tab) or use comes off. Log what happened to them — ate, donated, tossed, set to hatch — and your stats page shows where your eggs actually go. Year in Review gets a \"where they went\" breakdown too. Totally optional; the tile can be hidden in Manage Hobbies like any other.",  // EGG_INVENTORY_WHATSNEW
@@ -2352,6 +2426,67 @@ function ToastHost() {
 // message and can try again. The backend is the source of truth for which
 // price they actually get; client-side tier is just a route key.
 // ============================================================================
+// Monthly Wrapped numbers are worth caching: they run Year in Review's math
+// for a month. Keyed by the data object, which changes on every save.
+const _recapCache = { data: null, key: null, ready: false, teaser: null, teaserDone: false };
+function recapInfo(data, key, withTeaser) {
+  if (_recapCache.data !== data || _recapCache.key !== key) {
+    Object.assign(_recapCache, { data, key, ready: monthHasStory(data, key), teaser: null, teaserDone: false });
+  }
+  if (withTeaser && _recapCache.ready && !_recapCache.teaserDone) {
+    try { _recapCache.teaser = monthTeaser(data, key); } catch (_) { _recapCache.teaser = null; }
+    _recapCache.teaserDone = true;
+  }
+  return _recapCache;
+}
+
+// ---- New-look Supporter screen: restore + link a web membership ----------
+// Same steps as SupportModal's buttons, returned as results instead of UI.
+async function supporterStatusNow() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return false;
+    const r = await fetch(apiUrl("/api/supporter-status"), { headers: { "Authorization": `Bearer ${session.access_token}` } });
+    if (!r.ok) return false;
+    const j = await r.json();
+    return j.isSupporter === true;
+  } catch (_) { return false; }
+}
+// "restored" | "none"
+async function restoreSupporter() {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    await initIap(session?.user?.id || null);
+  } catch (_) {}
+  let r;
+  try { r = await restorePurchases(); } catch (_) { r = { success: false }; }
+  if (await supporterStatusNow()) {
+    toast("Purchases restored. Your membership is active.");
+    try { window.dispatchEvent(new CustomEvent("henalytics-supporter-claimed")); } catch (_) {}
+    return "restored";
+  }
+  if (r && !r.success && r.error && r.error !== "IAP not initialized") toast(r.error, { kind: "error" });
+  else toast("No App Store or Play purchase found on this device.");
+  return "none";
+}
+// { ok } | { error }
+async function claimWebSupporter(email) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session?.access_token) return { error: "Please sign in first." };
+    const r = await fetch(apiUrl("/api/claim-supporter"), {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "Authorization": `Bearer ${session.access_token}` },
+      body: JSON.stringify({ email }),
+    });
+    const j = await r.json().catch(() => ({}));
+    if (!r.ok) return { error: j.error || "We couldn't find a membership for that email." };
+    toast("Membership linked. Thank you for supporting Henalytics!");
+    try { window.dispatchEvent(new CustomEvent("henalytics-supporter-claimed")); } catch (_) {}
+    return { ok: true };
+  } catch (_) { return { error: "Something went wrong. Try again in a moment." }; }
+}
+
 const startCheckout = async (tier) => {
   // ---- IAP branch (native iOS/Android) ----
   // Apple's rules require IAP for digital goods sold to iOS users. Even though
@@ -2383,9 +2518,10 @@ const startCheckout = async (tier) => {
         toast(`Unknown tier: ${tier}`, { kind: "error" });
         return;
       }
-      // RC handles the Apple purchase sheet, receipt validation, and webhook
-      // delivery. The webhook (api/revenuecat-webhook) fires server-to-server
-      // and updates the supporters table BEFORE this function returns.
+      // RC handles the Apple/Google purchase sheet and receipt validation.
+      // Its webhook (api/revenuecat-webhook) updates the supporters table on
+      // its own schedule, usually seconds after this returns; the
+      // henalytics-iap-success listener turns the perks on meanwhile.
       const result = await purchaseProduct(productId);
       if (!result.success) {
         if (!result.userCanceled) {
@@ -2727,7 +2863,7 @@ function Tile({ icon: Icon, label, sub, onClick, color = palette.ink, bg = palet
         cursor: "pointer",
         fontFamily: FONT_BODY,
         color: palette.ink,
-        boxShadow: "2px 3px 0 " + palette.line,
+        boxShadow: "none",
         transition: "transform 0.1s ease, box-shadow 0.1s ease",
         minHeight: big ? 110 : 90,
       }}
@@ -2779,7 +2915,7 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
     <div style={{
       background: palette.card,
       border: `1.5px solid ${palette.line}`,
-      borderRadius: 12,
+      borderRadius: 16,
       padding: 14,
       flex: "1 1 140px",   // grow + shrink, but never narrower than 140px
       minWidth: 140,
@@ -2795,10 +2931,10 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
         {label}
       </div>
       <div style={{
-        fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1,
+        fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1,
         whiteSpace: "normal", wordBreak: "break-word",
       }}>
-        {value}
+        {groupDigits(value)}
       </div>
       {sub && (
         <div style={{
@@ -2812,11 +2948,22 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
   );
 }
 
+// Escape closes the topmost open popup (keyboards, iPad and desktop).
+function EscToClose({ onClose }) {
+  useEffect(() => {
+    const onKey = (e) => { if (e.key === "Escape" && onClose) onClose(); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  return null;
+}
+
 function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div
       onClick={onClose}
+      role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined}
       style={{
         position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -2829,7 +2976,7 @@ function Modal({ open, onClose, title, children }) {
           background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
           maxHeight: "90vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{
@@ -2837,10 +2984,11 @@ function Modal({ open, onClose, title, children }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4, minWidth: 40, minHeight: 40 }}>
             <X size={22} />
           </button>
         </div>
+        <EscToClose onClose={onClose} />
         <div style={{ padding: 20 }}>{children}</div>
       </div>
     </div>
@@ -2858,34 +3006,34 @@ function Field({ label, children }) {
   );
 }
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 function Btn({ children, onClick, variant = "primary", style = {}, type = "button", small = false, disabled = false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
     <button
       type={type}
       onClick={disabled ? undefined : onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         padding: small ? "6px 12px" : "10px 18px",
-        borderRadius: 8,
+        borderRadius: small ? 999 : 14,
         cursor: disabled ? "wait" : "pointer",
         fontFamily: FONT_BODY,
         fontWeight: 600,
         fontSize: small ? 13 : 14,
         opacity: disabled ? 0.7 : 1,
         ...styles[variant],
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -2901,7 +3049,7 @@ function NavTab({ active, onClick, icon: Icon, label }) {
       style={{
         flex: 1, maxWidth: 120, padding: "8px 4px",
         background: active ? palette.yolk : "transparent",
-        color: active ? palette.ink : palette.bg,
+        color: active ? palette.onYolk : palette.bg,
         border: "none", borderRadius: 10, cursor: "pointer",
         display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", gap: 2,
         fontWeight: 600, fontSize: 11,
@@ -2938,7 +3086,7 @@ function NavTipButton({ onClick, filled }) {
     >
       <span style={{
         background: filled ? palette.accent : "transparent",
-        color: filled ? "#FFFFFF" : palette.bg,
+        color: filled ? palette.onColor : palette.bg,
         width: 36, height: 36, borderRadius: 18,
         border: filled ? "none" : `2px solid ${palette.bg}`,
         display: "flex", alignItems: "center", justifyContent: "center",
@@ -3105,7 +3253,7 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
       await onSwitch(h.homesteadId);
       setOpen(false);
     } catch (e) {
-      setError(e.message || "Could not switch homestead");
+      setError(friendlyError(e, "Could not switch homestead"));
     } finally {
       // Always clear the switching flag — including on success. Previously
       // success left `switching` stuck true, so the FIRST switch worked but
@@ -3142,7 +3290,7 @@ function HomesteadSwitcher({ user, currentName, role, onSwitch, onManageFarmhand
           position: "absolute", top: "100%", left: 0, marginTop: 4,
           minWidth: 240, maxWidth: 300,
           background: palette.card, border: `2px solid ${palette.ink}`,
-          borderRadius: 12, boxShadow: `4px 5px 0 ${palette.line}`,
+          borderRadius: 12, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           zIndex: 60, overflow: "hidden",
         }}>
           {error && (
@@ -3293,6 +3441,34 @@ function ManageHomesteadsModal({ user, homesteads, onToggle, onClose }) {
 export default function HomesteadApp() {
   const [data, setData] = useState(null);
   const [page, setPage] = useState("home");
+  // NEW_LOOK (3.0) state. "dash" = the new all-homestead Home, "more" = More.
+  const [newLook, setNewLook] = useNewLook();
+  const [logPickerOpen, setLogPickerOpen] = useState(false);
+  const [switcherOpen, setSwitcherOpen] = useState(false);
+  const [frostTonight, setFrostTonight] = useState(null);
+  const [lastSyncAt, setLastSyncAt] = useState(null);
+  const [nlNotice, setNlNotice] = useState(null); // announcement opened from the Home card
+  const [nlHobbyTab, setNlHobbyTab] = useState("today"); // rebuilt hobbies: "today" | "animals"
+  const [nlYear, setNlYear] = useState(() => new Date().getFullYear());
+  // Saving on this phone failed (usually out of room); see sync.js.
+  const [localSaveFailed, setLocalSaveFailed] = useState(false);
+  useEffect(() => {
+    const on = (e) => setLocalSaveFailed(!(e && e.detail && e.detail.ok));
+    window.addEventListener("henalytics-local-save", on);
+    return () => window.removeEventListener("henalytics-local-save", on);
+  }, []);
+  // Through January, Year in review opens on the year that just ended (if
+  // there's anything in it); after that, on the new year.
+  useEffect(() => {
+    if (page !== "year" || !data) return;
+    const now = new Date();
+    const y = now.getFullYear();
+    if (now.getMonth() !== 0) { setNlYear(y); return; }
+    const has = (dt) => String(dt || "").startsWith(String(y - 1));
+    const any = Object.values(allEntriesByHobby(data)).some((arr) => Array.isArray(arr) && arr.some((e) => e && has(e.date)))
+      || (data.sales || []).some((x) => x && has(x.date));
+    setNlYear(any ? y - 1 : y);
+  }, [page]); // eslint-disable-line react-hooks/exhaustive-deps
   const [activeHobby, setActiveHobby] = useState("garden");
   const [hobbyMenuOpen, setHobbyMenuOpen] = useState(false);
   const [modal, setModal] = useState(null);
@@ -3302,7 +3478,7 @@ export default function HomesteadApp() {
 // Track daily app opens (web + native)
 useEffect(() => {
   try {
-    const today = new Date().toISOString().slice(0, 10);
+    const today = localDateStr(new Date());
     if (localStorage.getItem('last_open') === today) return;
     localStorage.setItem('last_open', today);
     const platform = window.Capacitor?.getPlatform?.() || 'web';
@@ -3337,6 +3513,30 @@ useEffect(() => {
   // the safe default (never grants early access it cannot confirm).
   const [earlyAccessConfig, setEarlyAccessConfig] = useState(null);
   const [isSupporter, setIsSupporter] = useState(false);
+  // This month's running costs covered (heart button on Home, Support page).
+  const nlSupport = useSupportProgress();
+  const [supportSheetOpen, setSupportSheetOpen] = useState(false);
+  const [supportScrollToOptions, setSupportScrollToOptions] = useState(false);
+  useEffect(() => { if (page !== "supporter") setSupportScrollToOptions(false); }, [page]);
+  // "unknown" until the server gives a definite answer — the new look keeps a
+  // supporter's chosen colors meanwhile instead of flashing Farmhouse.
+  const [supporterStatus, setSupporterStatus] = useState("unknown");
+  const appearance = useAppearance({ enabled: newLook, isSupporter, supporterStatus });
+  // 4-H & FFA (new look): open project, its section sheet, the new/edit form,
+  // the hours/show log sheet and the info sheets.
+  const [nlProjectId, setNlProjectId] = useState(null);
+  const [nlProjectSection, setNlProjectSection] = useState(null);
+  const [nlProjectForm, setNlProjectForm] = useState(null); // { kind } | { project }
+  const [nlProjectLog, setNlProjectLog] = useState(null);   // "hours" | "show"
+  const [nlProjectInfo, setNlProjectInfo] = useState(null);
+  // Log picker → a kitchen/craft/pet hobby's main form ("Canning batch"…).
+  useHobbyRequest(activeHobby, () => { if (pantryNew.fn) pantryNew.fn(); }, (a) => a === "new");
+  // In the new look, every "Support Henalytics" button (announcements, Year
+  // in review, Games, old screens) opens the Supporter screen instead of the
+  // old popup.
+  useEffect(() => {
+    if (newLook && modal && modal.type === "support") { setModal(null); setPage("supporter"); }
+  }, [newLook, modal]);
   const lastEntryCountRef = React.useRef(0);
   // Whether the current user has any supporter row created in the current
   // calendar month. Drives the Tip button visual: outlined heart by default,
@@ -3592,6 +3792,11 @@ useEffect(() => {
   // Re-runs when the signed-in user changes.
   useEffect(() => {
     let cancelled = false;
+    // ?supporter=1 on the dev server previews the Supporter perks.
+    if (import.meta.env.DEV && typeof window !== "undefined" && new URLSearchParams(window.location.search).get("supporter") === "1") {
+      setIsSupporter(true); setSupporterStatus("yes");
+      return () => { cancelled = true; };
+    }
     (async () => {
       if (!isSupabaseConfigured) return;
       // Early-access config row.
@@ -3605,7 +3810,7 @@ useEffect(() => {
         if (!cancelled) console.warn("[early-access] config fetch failed:", e);
       }
       // Current supporter status — requires a signed-in user.
-      if (!user) { if (!cancelled) setIsSupporter(false); return; }
+      if (!user) { if (!cancelled) { setIsSupporter(false); if (authReady) setSupporterStatus("no"); } return; }
       try {
         const { data: { session } } = await supabase.auth.getSession();
         if (!session?.access_token) { if (!cancelled) setIsSupporter(false); return; }
@@ -3614,13 +3819,13 @@ useEffect(() => {
         });
         if (!r.ok) { if (!cancelled) setIsSupporter(false); return; }
         const j = await r.json();
-        if (!cancelled) setIsSupporter(j.isSupporter === true);
+        if (!cancelled) { setIsSupporter(j.isSupporter === true); setSupporterStatus(j.isSupporter === true ? "yes" : "no"); }
       } catch (e) {
         if (!cancelled) { console.warn("[early-access] status fetch failed:", e); setIsSupporter(false); }
       }
     })();
     return () => { cancelled = true; };
-  }, [user]);
+  }, [user, authReady]);
   // ---- Tip button heart ----
   // The nav heart fills red when the user is currently supporting. Two ways
   // to qualify:
@@ -3992,8 +4197,15 @@ useEffect(() => {
   // calendar items, handed to the home-screen widget on every relevant change
   // and on resume. Debounced; the bridge skips unchanged snapshots.
   const widgetEggKey = (data?.entries?.egg_layers || []).filter((e) => e && e.date === todayKey).length;
+  // Flock names + today's baskets, so the egg tally widget follows the app.
+  const widgetFlockKey = (data?.hobbies || [])
+    .filter((h) => h && h.type === "egg_layers" && !h.hidden)
+    .flatMap((h) => (h.flocks || []).filter((f) => f && !f.archived).map((f) => `${f.id}:${f.name}:${f.birdType}:${f.eggBasket ? `${f.eggBasket.date}=${f.eggBasket.count}` : ""}`))
+    .join("|");
   useEffect(() => {
-    if (!isNativeApp() || !data?.hobbies) return;
+    // NEW_LOOK: the new Home shows tonight's frost too, so this also runs on
+    // the web (only the native widget push is native-only).
+    if ((!isNativeApp() && !newLook) || !data?.hobbies) return;
     let cancelled = false;
     const t = setTimeout(async () => {
       let frost = null;
@@ -4005,10 +4217,49 @@ useEffect(() => {
           if (low != null && low <= 34) frost = { lowText: fmtTemp(low), crops: crops.tender.slice(0, 3) };
         }
       } catch (_) {}
-      if (!cancelled) pushWidgetSnapshot(buildWidgetSnapshot(data, { frost }));
+      if (cancelled) return;
+      setFrostTonight(frost);
+      if (isNativeApp()) pushWidgetSnapshot(buildWidgetSnapshot(data, { frost }));
     }, 800);
     return () => { cancelled = true; clearTimeout(t); };
-  }, [calendarEventsKey, widgetEggKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [calendarEventsKey, widgetEggKey, widgetFlockKey, frostCropsKey, frostOff, frostLat, frostLon, frostResumeTick, todayKey, data?.homesteadName, nudgeHobbyKey, newLook]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ---- Egg tally widget → flock baskets --------------------------------------
+  // Taps on the widget's + / − build a per-flock, per-day tally in the native
+  // store. On launch and every resume, take it and fold it into the flocks'
+  // egg baskets (today) or entries (past days), same as the in-app counter;
+  // the stale-basket sweep below then saves yesterday's basket to its day.
+  const widgetTallyBusyRef = useRef(false);
+  const hasHobbies = !!data?.hobbies;
+  // Siri voice logs land in the same tally while the app is open (iOS).
+  const [voiceTallyTick, setVoiceTallyTick] = useState(0);
+  useEffect(() => {
+    if (!isNativeApp()) return undefined;
+    return onWidgetTallyChanged(() => setVoiceTallyTick((t) => t + 1));
+  }, []);
+  useEffect(() => {
+    if (!isNativeApp() || !hasHobbies || widgetTallyBusyRef.current) return;
+    widgetTallyBusyRef.current = true;
+    (async () => {
+      try {
+        const tally = await takeWidgetTally();
+        if (tally && Object.keys(tally).length) {
+          const today = todayStr();
+          update((d) => applyWidgetTally(d, tally, today).d);
+        }
+        // Siri feedings, milk and harvests (3.0).
+        const voice = await takeVoiceLogs();
+        if (voice.length) {
+          const today = todayStr();
+          update((d) => applyVoiceLogs(d, voice, today).d);
+        }
+      } catch (_) {
+        // a lost tally is better than a crash; the widget keeps nothing else
+      } finally {
+        widgetTallyBusyRef.current = false;
+      }
+    })();
+  }, [frostResumeTick, voiceTallyTick, hasHobbies]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Offer the daily nudge once, right after someone's 2nd log on the phone
   // app (they've shown they want to track; that's when a reminder helps).
@@ -4170,6 +4421,35 @@ useEffect(() => {
   // "fix" it later by adding it to deps and breaking the intent.
 
   const [syncStatus, setSyncStatus] = useState("idle");
+
+  // ---- NEW_LOOK (3.0) helpers ----------------------------------------------
+  // "Saved · synced 2 min ago" on More.
+  useEffect(() => { if (syncStatus === "saved" || syncStatus === "idle") setLastSyncAt(Date.now()); }, [syncStatus]);
+  // Turning the new look on/off lands on the matching home.
+  const newLookFirstRef = useRef(true);
+  useEffect(() => {
+    if (newLookFirstRef.current) {
+      newLookFirstRef.current = false;
+      if (newLook && page === "home") setPage("dash");
+      return;
+    }
+    setLogPickerOpen(false);
+    setSwitcherOpen(false);
+    setPage(newLook ? "dash" : "home");
+  }, [newLook]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Each hobby opens on its Today tab.
+  useEffect(() => { setNlHobbyTab("today"); }, [activeHobby]);
+  // A notice opened from the Home card closes like its popup did; forget it then.
+  useEffect(() => {
+    const still = { whatsNew: showWhatsNew, appStoreLaunch: showAppStoreLaunch, giveaway: showGiveaway, supporterThanks: showSupporterThanks, milestone: showMilestone };
+    if (nlNotice && !still[nlNotice]) setNlNotice(null);
+  }, [nlNotice, showWhatsNew, showAppStoreLaunch, showGiveaway, showSupporterThanks, showMilestone]);
+  // The old Settings screen offers "Try the new look" via this event.
+  useEffect(() => {
+    const on = (e) => setNewLook(!!(e && e.detail));
+    window.addEventListener("henalytics-newlook", on);
+    return () => window.removeEventListener("henalytics-newlook", on);
+  }, [setNewLook]);
   // Tracks the device's online status. Used to short-circuit cloud writes
   // when the device is offline (sync.js handles cloudReady=false as a
   // benign skip) and to trigger an automatic save when the device comes
@@ -4305,9 +4585,23 @@ useEffect(() => {
       // our Stripe-path delay for consistency.
       const marker = `henalytics-iap-handled-${tier}-${Date.now()}`;
       try { sessionStorage.setItem(marker, "1"); } catch (_) {}
-      setTimeout(() => {
-        setModal({ type: "supporterName" });
-      }, 2500);
+      // A monthly membership: Apple or Google has already charged, so turn
+      // the perks (colors, icons, monthly Wrapped) on now. The server finds
+      // out through RevenueCat's webhook, which usually lands in a second or
+      // two but can take a minute; keep asking so the next launch agrees.
+      // (The one-time tip carries no perks.)
+      if (tier !== "one_time") { setIsSupporter(true); setSupporterStatus("yes"); }
+      setTimeout(() => setModal({ type: "supporterName" }), 2500);
+      if (tier !== "one_time") {
+        const waits = [2500, 6000, 15000, 30000, 60000];
+        let i = 0;
+        const check = () => supporterStatusNow().then((yes) => {
+          if (yes) return;
+          if (++i < waits.length) setTimeout(check, waits[i] - waits[i - 1]);
+          else console.warn("[iap] purchase confirmed by the store, but the server hasn't recorded it yet");
+        });
+        setTimeout(check, waits[0]);
+      }
     };
     window.addEventListener("henalytics-iap-success", onIapSuccess);
     return () => window.removeEventListener("henalytics-iap-success", onIapSuccess);
@@ -4326,7 +4620,7 @@ useEffect(() => {
           const r = await fetch(apiUrl("/api/supporter-status"), {
             headers: { "Authorization": `Bearer ${session.access_token}` },
           });
-          if (r.ok) { const j = await r.json(); setIsSupporter(j.isSupporter === true); }
+          if (r.ok) { const j = await r.json(); setIsSupporter(j.isSupporter === true); setSupporterStatus(j.isSupporter === true ? "yes" : "no"); }
         }
       } catch (_) {}
       setModal({ type: "supporterName" });
@@ -4487,7 +4781,8 @@ useEffect(() => {
       setModal(null);
       const oh = w.hobbyId && data.hobbies.find((x) => (x.id === w.hobbyId || x.type === w.hobbyId) && !x.hidden);
       if (oh) setActiveHobby(oh.id);
-      setPage(oh && !WIDGET_HOME_TYPES.includes(oh.type) ? oh.type : "home");
+      if (newLook) setPage(oh ? hobbyPage(oh) : "dash");
+      else setPage(oh && !WIDGET_HOME_TYPES.includes(oh.type) ? oh.type : "home");
       return;
     }
     // hobby=any → the hobby you were last on (or your first visible one).
@@ -4495,8 +4790,8 @@ useEffect(() => {
       ? (data.hobbies.find((x) => x.id === activeHobby && !x.hidden) || data.hobbies.find((x) => !x.hidden))
       : data.hobbies.find((x) => x.id === w.hobbyId || x.type === w.hobbyId);
     if (!h || h.hidden) {
-      toast("That hobby is turned off. Turn it on in Settings → Manage hobbies, or edit the widget.");
-      setPage("home");
+      toast(newLook ? "That hobby is turned off. Turn it on in More › Hobbies, or edit the widget." : "That hobby is turned off. Turn it on in Settings → Manage hobbies, or edit the widget.");
+      setPage(newLook ? "dash" : "home");
       return;
     }
     setActiveHobby(h.id);
@@ -4513,7 +4808,7 @@ useEffect(() => {
   //   2. Sub-pages — return to home
   //   3. Fall through — Capacitor exits the app (Android default)
   // On iOS and web this hook is a no-op (no hardware back button).
-useNativeBackButton(React.useCallback(() => {
+const nativeBack = React.useCallback(() => {
   // Onboarding: step back through wizard before doing anything else.
   if (onboardingStep > 0) {
     setOnboardingStep((s) => Math.max(0, s - 1));
@@ -4530,11 +4825,45 @@ useNativeBackButton(React.useCallback(() => {
   if (showTutorialPrompt) { setShowTutorialPrompt(false); return true; }
   // Don't auto-dismiss showTutorial — has its own exit UI.
   if (hobbyMenuOpen) { setHobbyMenuOpen(false); return true; }
+  if (logPickerOpen) { setLogPickerOpen(false); return true; }
+  if (switcherOpen) { setSwitcherOpen(false); return true; }
+  if (nlProjectSection) { setNlProjectSection(null); return true; }
+  if (nlProjectForm) { setNlProjectForm(null); return true; }
+  if (nlProjectLog) { setNlProjectLog(null); return true; }
+  if (nlProjectInfo) { setNlProjectInfo(null); return true; }
+  // New look: screens under More go back to More (a project's pages back to
+  // the project), Year in review back to Stats, everything else to Home.
+  const nlParent = () => (page === "project" ? "projects"
+    : page === "projectAet" ? "project"
+    : page === "projectGuide" ? (nlProjectId ? "project" : "projects")
+    : ["supporter", "look", "projects", "import", "sales", "journal", "games", "photos"].includes(page) ? "more"
+    : page === "year" ? "analytics"
+    : page !== "dash" ? "dash" : null);
+  // Forms and sheets a screen opened itself (a milk form, a canning batch, a
+  // sale…) close before going back a screen, so typed-in work isn't lost.
+  // If what's on top didn't close, go back a screen as usual.
+  const closed = closeTopOverlay();
+  if (closed) {
+    if (closed.how === "layer") setTimeout(() => {
+      if (!closed.layer.isConnected) return;
+      const parent = newLook ? nlParent() : (page !== "home" ? "home" : null);
+      if (parent) setPage(parent);
+    }, 120);
+    return true;
+  }
+  if (newLook) {
+    const parent = nlParent();
+    if (parent) { setPage(parent); return true; }
+    return false;
+  }
   // Sub-page → home.
   if (page !== "home") { setPage("home"); return true; }
   // Home, nothing open — exit the app.
   return false;
-}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page]));
+}, [onboardingStep, modal, showWhatsNew, showAppStoreLaunch, showGiveaway, showAccountNudge, showSupporterThanks, showMilestone, showTutorialPrompt, hobbyMenuOpen, page, newLook, logPickerOpen, switcherOpen, nlProjectSection, nlProjectForm, nlProjectLog, nlProjectInfo, nlProjectId]);
+useNativeBackButton(nativeBack);
+// Lets the browser tests press "Android back" (dev builds only).
+if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nativeBack;
   // ---- If there's a pending invite and the user isn't signed in, prompt them to ----
   useEffect(() => {
     if (!authReady) return;
@@ -5036,14 +5365,242 @@ useNativeBackButton(React.useCallback(() => {
   // Swap palette when spouse mode is on
   const sp = data.spouseMode ? paletteDark : palette;
 
+  // ---- NEW_LOOK (3.0) navigation -------------------------------------------
+  const isHobbyPage = HOBBY_PAGES.includes(page);
+  // Years with any logs, newest first (Year in review's year chips).
+  const nlYears = newLook && page === "year" ? (() => {
+    // Every year with anything in it: live logs, closed garden seasons,
+    // finished batches, sales and expenses.
+    const set = new Set([new Date().getFullYear()]);
+    const add = (dt) => { const y = Number(String(dt || "").slice(0, 4)); if (y > 2000 && y < 2100) set.add(y); };
+    Object.values(allEntriesByHobby(data)).forEach((arr) => (Array.isArray(arr) ? arr : []).forEach((e) => add(e && e.date)));
+    (data.sales || []).forEach((x) => add(x && x.date));
+    (data.expenses || []).forEach((x) => add(x && x.date));
+    return [...set].sort((a, b) => b - a);
+  })() : [];
+  // Hobbies already rebuilt for 3.0 (more join phase by phase).
+  const nlRebuilt = !!(newLook && hobby && hobby.type === "egg_layers");
+  // Garden: rebuilt when a season is running (no-season start/reopen screen stays as is).
+  const nlGarden = !!(newLook && hobby && hobby.type === "garden" && hobby.currentSeason);
+  // Between seasons (the last one was closed): the same tabs, showing the
+  // season that just closed, with Start next season / Reopen on Today.
+  const nlGardenClosed = !!(newLook && hobby && hobby.type === "garden" && !hobby.currentSeason && (hobby.archivedSeasons || []).length > 0);
+  const nlGardenView = nlGardenClosed ? (() => {
+    const past = (hobby.archivedSeasons || []).slice().sort((a, b) => String(b.endDate || b.startDate || "").localeCompare(String(a.endDate || a.startDate || "")));
+    const last = past[0];
+    const fe = Array.isArray(last.finalEntries) ? last.finalEntries : [];
+    const vData = { ...data, entries: { ...data.entries, garden: [...(data.entries.garden || []), ...fe] } };
+    const vHobby = { ...hobby, currentSeason: last };
+    const harvests = collectGardenHarvests(vData, { seasonId: last.id, season: last });
+    return {
+      hobby: vHobby, data: vData,
+      spent: gardenSeasonCost(vData, vHobby, last, fe),
+      closed: {
+        season: last, next: nextGardenSeasonName(), pastCount: past.length,
+        value: computeHarvestValue(harvests, hobby.harvestPrices || {}).total, harvestCount: harvests.length,
+        onStart: () => setModal({ type: "startGardenSeason" }),
+        onReopen: () => reopenGardenSeason(update, hobby.id, last.id),
+        onPast: () => setModal({ type: "reopenSeason" }),
+      },
+    };
+  })() : null;
+  const nlGoats = !!(newLook && hobby && hobby.type === "goats");
+  const nlMeat = !!(newLook && hobby && hobby.type === "meat_chickens");
+  const nlRabbits = !!(newLook && hobby && hobby.type === "rabbits");
+  const nlCows = !!(newLook && hobby && hobby.type === "cows");
+  const nlPigs = !!(newLook && hobby && hobby.type === "pigs");
+  const nlSheep = !!(newLook && hobby && hobby.type === "sheep");
+  const nlHorses = !!(newLook && hobby && hobby.type === "horses");
+  const nlBees = !!(newLook && hobby && hobby.type === "bees");
+  const nlIncubator = !!(newLook && hobby && hobby.type === "incubator");
+  // NEW_LOOK (3.0) kitchen & craft hobbies: each page renders the shared
+  // Today / Shelf screens with its own forms when given `nl`.
+  const NL_PANTRY = {
+    canning: { Page: CanningPage, stats: canningStats, shelf: "Pantry", all: "All the numbers: by item, used vs sold, costs" },
+    freeze_drying: { Page: FreezeDryingPage, stats: freezeDryingStats, shelf: "Stored", all: "All the numbers: runs, output, costs" },
+    dehydrating: { Page: DehydratingPage, stats: dehydratingStats, shelf: "Stored", all: "All the numbers: batches, output, costs" },
+    fermentation: { Page: FermentationPage, stats: fermentationStats, shelf: "Ferments", all: "All the numbers: ferments, recipes, costs" },
+    tincture: { Page: TincturePage, stats: tinctureStats, shelf: "Shelf", all: "All the numbers: batches, bottles, sales" },
+    oil_infusion: { Page: OilInfusionPage, stats: oilInfusionStats, shelf: "Shelf", all: "All the numbers: batches, bottles, sales" },
+    salve: { Page: SalvePage, stats: salveStats, shelf: "Shelf", all: "All the numbers: batches, tins, sales" },
+    tea: { Page: TeaPage, stats: teaStats, shelf: "Blends", all: "All the numbers: blends, sales" },
+    sourdough: { Page: SourdoughPage, stats: sourdoughStats, shelf: "Bakes", all: "All the numbers: bakes, starters, sales", analytics: () => <SourdoughAnalytics hobby={hobby} sales={data.sales || []} entries={data.entries[hobby.id] || []} /> },
+    baking: { Page: BakingPage, stats: bakingStats, shelf: "Bakes", all: "All the numbers: bakes, recipes, sales", analytics: () => <BakingAnalytics hobby={hobby} entries={data.entries.baking || []} sales={data.sales || []} spouseMode={data.spouseMode} /> },
+    maple_syrup: { Page: MapleSyrupPage, stats: mapleStats, shelf: "Logs", all: "All the numbers: seasons, sap, boils, costs", analytics: () => <MapleSyrupAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} /> },
+    hunting: { Page: HuntingPage, stats: huntingStats, shelf: "Harvests", all: "All the numbers: harvests, tags, gear", analytics: () => <HuntingAnalytics hobby={hobby} /> },
+    farmstand: { Page: FarmstandPage, stats: farmstandStats, shelf: "Items", all: "All the numbers: sales, items, costs", analytics: () => <FarmstandAnalytics hobby={hobby} sales={data.sales || []} entries={data.entries.farmstand || []} spouseMode={data.spouseMode} /> },
+    dogs: { Page: DogsPage, stats: petStats, shelf: "Dogs", all: "All the numbers: dogs, litters, guardian work", analytics: () => <DogsAnalytics hobby={hobby} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />, feed: true },
+    cats: { Page: CatsPage, stats: petStats, shelf: "Cats", all: "All the numbers: cats, litters, barn work", analytics: () => <CatsAnalytics hobby={hobby} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />, feed: true },
+    soap: { Page: SoapMakingPage, stats: soapStats, shelf: "Bars", all: "All the numbers: batches, sales, costs", analytics: () => <SoapMakingAnalytics hobby={hobby} sales={data.sales || []} /> },
+  };
+  const nlPantryCfg = newLook && hobby ? NL_PANTRY[hobby.type] : null;
+  const nlPantryGroup = hobby && PRESERVING_TYPES.includes(hobby.type) ? PRESERVING_TYPES : hobby && HERBAL_TYPES.includes(hobby.type) ? HERBAL_TYPES : null;
+  const nlPantryTabs = nlPantryCfg && nlPantryGroup ? nlPantryGroup
+    .map((t) => data.hobbies.find((h) => h && h.type === t && !h.hidden)).filter(Boolean)
+    .map((h) => ({ key: h.type, label: cleanName(h.name) || h.type, selected: h.id === hobby.id, onPick: () => { setActiveHobby(h.id); if (page !== "analytics") setPage(h.type); } })) : null;
+  const nlGardenSpent = nlGarden ? gardenSeasonCost(data, hobby, hobby.currentSeason, (data.entries.garden || []).filter((e) => e.seasonId === hobby.currentSeason.id)) : 0;
+  const nlPlanConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
+  const nlTab = page === "dash" ? "home"
+    : page === "analytics" || page === "year" ? "stats"
+    : page === "calendar" ? "calendar"
+    : ["more", "sales", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet", "import"].includes(page) ? "more"
+    : "home";
+  const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
+  // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
+  const nlOpenEntry = (entry, { stayOnStats = false } = {}) => {
+    if (!entry || !entry.hobby) return;
+    setActiveHobby(entry.hobby.id);
+    setSeasonFilter("all");
+    setSwitcherOpen(false);
+    setLogPickerOpen(false);
+    if (stayOnStats && page === "analytics") return;
+    setPage(hobbyPage(entry.hobby));
+  };
+  // A Log picker action → the same log forms the hobby page opens.
+  // 4-H / FFA: start next program year's record from this one (Undo-able),
+  // then open it.
+  const nlContinueProject = (p) => {
+    const id = `p${Date.now().toString(36)}${Math.random().toString(36).slice(2, 7)}`;
+    undoable(update, `Started the ${nextYearLabel(p)} record`)((d) => {
+      d.projects = Array.isArray(d.projects) ? d.projects : [];
+      const old = d.projects.find((x) => x && x.id === p.id);
+      if (old) old.continuedTo = id;
+      d.projects.push(nextYearProject(old || p, id));
+      return d;
+    });
+    setNlProjectId(id); setPage("project");
+  };
+  const nlLogAction = (entry, a) => {
+    const h = (a.hobbyId && data.hobbies.find((x) => x.id === a.hobbyId)) || entry.hobby;
+    setLogPickerOpen(false);
+    setActiveHobby(h.id);
+    if (isHobbyPage) setPage(hobbyPage(h));
+    if (h.type === "garden" && !h.currentSeason) { setModal({ type: "gardenNeedSeason" }); return; }
+    if (a.onPage) { setPage(hobbyPage(h)); requestHobbyAction(h.id, a.key); }
+    else if (a.modal === "gardenMore") setModal({ type: "gardenMore", hobbyId: h.id });
+    else if (a.key === "used_eggs" && !h.eggInventory) setModal({ type: "eggInventorySetup", hobbyId: h.id, next: "used_eggs" });
+    else setModal({ type: "log", action: a.key, hobbyIdOverride: h.id });
+  };
+  const nlFeedAlerts = newLook ? data.hobbies
+    .filter((h) => h && !h.hidden && h.feedTracker && h.feedTracker.enabled)
+    .map((h) => ({ h, st: computeFeedStatus(h, data.entries[h.id] || []) }))
+    .filter(({ st }) => st && (st.state === "low" || st.state === "out"))
+    .map(({ h, st }) => ({ hobbyId: h.id, hobbyName: h.name, daysLeft: st.daysLeft || 0, state: st.state, entry: entryForHobby(data.hobbies, h.id) })) : [];
+  // One-time tips, one screen at a time, after the welcome.
+  const nlSeenTips = data.newLookTips || {};
+  const nlTipKey = (newLook && data.newLookWelcomeSeen && !modal && !logPickerOpen && !switcherOpen && !shouldShowWizard)
+    ? (page === "dash" && !nlSeenTips.log ? "log"
+      : isHobbyPage && activeEntry && !nlSeenTips["hobby-title"] ? "hobby-title"
+      : page === "analytics" && activeEntry && !nlSeenTips.yir ? "yir" : null)
+    : null;
+  // One announcement card on Home instead of popups stacked at launch.
+  const nlMonthKey = `${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, "0")}`;
+  const nlRecapKey = recapMonthKey();
+  const nlRecap = newLook && ["dash", "more", "supporter"].includes(page) ? recapInfo(data, nlRecapKey, page === "supporter") : { ready: false, teaser: null };
+  const nlRecapState = (data.monthlyRecaps && data.monthlyRecaps[nlRecapKey]) || {};
+  const nlRecapFresh = isSupporter && nlRecap.ready && !nlRecapState.seenAt;
+  // The December Wrapped, first in line on Home from Dec 1 to Jan 15 (the
+  // old look showed a Christmas banner on every page instead).
+  const nlWrapped = newLook && wrappedYearNow && page === "dash" ? (() => {
+    const w = (data.wrapped && data.wrapped[wrappedYearNow]) || {};
+    if (w.bannerDismissed) return null;
+    const y = String(wrappedYearNow);
+    const logs = Object.values(data.entries || {}).reduce((n, arr) => n + (Array.isArray(arr) ? arr.filter((e) => e && String(e.date || "").startsWith(y)).length : 0), 0);
+    return logs >= 5 ? { seen: !!w.seenAt } : null;
+  })() : null;
+  // "Start your 2027 garden" from Feb 1 (see gardenNewSeasonDue).
+  const nlGardenHobby = newLook && page === "dash" ? data.hobbies.find((h) => h && h.type === "garden") : null;
+  const nlGardenDue = nlGardenHobby ? gardenNewSeasonDue(nlGardenHobby, data) : null;
+  const nlNotices = newLook ? [
+    nlGardenDue && {
+      key: "gardenSeason", icon: "sprout", title: `Start your ${nlGardenDue.year} garden`,
+      sub: nlGardenDue.open
+        ? `${nlGardenDue.open.name || "Last season"} is still open. Starting ${nlGardenDue.year} closes it and carries your beds over.`
+        : `Your beds from ${nlGardenDue.last.name || "last season"} carry over, empty and ready to plant.`,
+      action: `Start ${nlGardenDue.year}`,
+      onAction: () => {
+        startNextGardenSeason(update, nlGardenHobby.id, `${nlGardenDue.year} Garden`);
+        setActiveHobby(nlGardenHobby.id); setNlHobbyTab("today"); setPage(hobbyPage(nlGardenHobby));
+      },
+      onDismiss: () => update((d) => { d.gardenSeasonPrompt = { ...(d.gardenSeasonPrompt || {}), [nlGardenDue.year]: true }; return d; }),
+    },
+    nlWrapped && {
+      key: "wrapped", icon: "gift",
+      title: nlWrapped.seen ? `Share your ${wrappedYearNow} Wrapped` : `Your ${wrappedYearNow} Homestead Wrapped is here`,
+      sub: nlWrapped.seen ? "Post it to your story or send it to family. It makes a sweet Christmas card." : "Your year in eggs, harvests and more, wrapped up with a bow.",
+      action: nlWrapped.seen ? "Open my Wrapped" : "Unwrap it",
+      onAction: () => setModal({ type: "wrapped", year: wrappedYearNow }),
+      onDismiss: () => update((d) => { d.wrapped = { ...(d.wrapped || {}) }; d.wrapped[wrappedYearNow] = { ...(d.wrapped[wrappedYearNow] || {}), bannerDismissed: true }; return d; }),
+    },
+    nlRecapFresh && !nlRecapState.dismissed && new Date().getDate() <= 10 && {
+      key: "monthlyRecap", icon: "gift", title: `Your ${monthName(nlRecapKey)} Wrapped is ready`,
+      sub: "Your month on the homestead as a story, ready to share.",
+      action: "Watch it", onAction: () => setModal({ type: "monthlyRecap", month: nlRecapKey }),
+      onDismiss: () => update((d) => { d.monthlyRecaps = { ...(d.monthlyRecaps || {}) }; d.monthlyRecaps[nlRecapKey] = { ...(d.monthlyRecaps[nlRecapKey] || {}), dismissed: true }; return d; }),
+    },
+    showGiveaway && {
+      key: "giveaway", icon: "gift", title: GIVEAWAY.headline,
+      sub: `Win ${GIVEAWAY.prizes.length > 1 ? "one of " + GIVEAWAY.prizes.length + " prizes" : "a prize"} · free to enter`,
+      action: "See how to enter", onAction: () => setNlNotice("giveaway"),
+      onDismiss: () => { setShowGiveaway(false); update(d => { d.lastGiveawayPopupMonday = giveawayWeekKey(); return d; }); },
+    },
+    showWhatsNew && {
+      key: "whatsNew", icon: "sparkles", title: "What's new in Henalytics",
+      sub: String(WHATS_NEW[0] || "").replace(/[\p{Extended_Pictographic}\u{FE0F}]/gu, "").split(/ — |\. /)[0].trim().slice(0, 70),
+      action: "See what's new", onAction: () => setNlNotice("whatsNew"),
+      onDismiss: () => { whatsNewDismissedRef.current = true; setShowWhatsNew(false); update(d => { d.lastSeenVersion = CURRENT_VERSION; return d; }); },
+    },
+    showAccountNudge && {
+      key: "accountNudge", icon: "shield", title: "Back up your homestead",
+      sub: "A free account keeps your logs safe if you lose your phone.",
+      action: "Create a free account",
+      onAction: () => { setShowAccountNudge(false); update(d => { d.accountNudgeDismissed = true; return d; }); setModal({ type: "signup" }); },
+      onDismiss: () => { setShowAccountNudge(false); update(d => { d.accountNudgeDismissed = true; return d; }); },
+    },
+    showSupporterThanks && {
+      key: "supporterThanks", icon: "heart", title: "Thank you, supporters",
+      sub: "See who's keeping Henalytics free this month.",
+      action: "See the list", onAction: () => setNlNotice("supporterThanks"),
+      onDismiss: () => { setShowSupporterThanks(false); update(d => { d.supportersDismissedMonth = nlMonthKey; return d; }); },
+    },
+    showMilestone && milestoneConfig && currentMilestone != null && {
+      key: "milestone", icon: "party", title: `Henalytics passed ${Number(currentMilestone).toLocaleString("en-US")} homesteads`,
+      sub: "Thanks for being one of them.",
+      action: "See more", onAction: () => setNlNotice("milestone"),
+      onDismiss: () => {
+        setShowMilestone(false);
+        const key = `milestone_${currentMilestone}`;
+        update(d => { if (!Array.isArray(d.seenMilestones)) d.seenMilestones = []; if (!d.seenMilestones.includes(key)) d.seenMilestones.push(key); return d; });
+      },
+    },
+    showAppStoreLaunch && {
+      key: "appStoreLaunch", icon: "phone", title: "Henalytics is on the App Store and Google Play",
+      sub: "Get the phone app for widgets and reminders.",
+      action: "Get the app", onAction: () => setNlNotice("appStoreLaunch"),
+      onDismiss: () => {
+        setShowAppStoreLaunch(false);
+        const webOS = getWebMobileOS();
+        update(d => { if (webOS === "android") d.playStoreLaunchDismissed = true; else d.appStoreLaunchDismissed = true; return d; });
+      },
+    },
+  ].filter(Boolean) : [];
+  const nlBack = (label = "More", to = "more") => (
+    <button type="button" onClick={() => setPage(to)} style={{
+      display: "inline-flex", alignItems: "center", gap: 2, minHeight: 40, marginLeft: -6, marginBottom: 6,
+      background: "none", border: "none", cursor: "pointer", color: nl.ink, font: `600 15px ${FONT_BODY}`,
+    }}><ChevronLeft size={22} strokeWidth={2} aria-hidden="true" />{label}</button>
+  );
+
   return (
     <div style={{
       minHeight: "100vh",
-      background: sp.bg,
-      backgroundImage: `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
+      // backgroundColor, not the background shorthand: React warns when the
+      // shorthand changes (light/dark) next to backgroundImage/backgroundSize.
+      backgroundColor: newLook ? nl.paper : sp.bg,
+      backgroundImage: newLook ? "none" : `radial-gradient(${sp.line} 0.5px, transparent 0.5px)`,
       backgroundSize: "20px 20px",
       fontFamily: FONT_BODY,
-      color: sp.ink,
+      color: newLook ? nl.ink : sp.ink,
       paddingBottom: 100,
       paddingTop: (signedOutRemotely || !online) ? "calc(env(safe-area-inset-top) + 56px)" : "env(safe-area-inset-top)",
     }}>
@@ -5094,7 +5651,7 @@ useNativeBackButton(React.useCallback(() => {
           data-no-keyboard-shift
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 199,
-            background: palette.feather, color: "#FAF5EA",
+            background: palette.feather, color: palette.onColor,
             padding: "12px 20px",
             paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -5104,6 +5661,21 @@ useNativeBackButton(React.useCallback(() => {
           }}
         >
           📡 Offline — your changes will sync when you reconnect
+        </div>
+      )}
+
+      {localSaveFailed && (
+        <div role="alert" style={{
+          margin: "calc(8px + env(safe-area-inset-top)) 12px 0", padding: "12px 14px", borderRadius: 14,
+          background: palette.dangerBg, color: palette.ink, border: `1px solid ${palette.line}`,
+          fontFamily: "'Be Vietnam Pro', sans-serif", fontSize: 14, lineHeight: 1.45,
+          display: "flex", flexDirection: "column", gap: 8,
+        }}>
+          <strong>This phone is out of room for Henalytics</strong>
+          <span>{user
+            ? "Your latest changes couldn't be saved on this phone, but they're backed up to your account. Freeing up space on the phone will clear this."
+            : "Your latest changes couldn't be saved on this phone. Sign in to back up your records so nothing is lost, then free up some space."}</span>
+          {!user && <button type="button" onClick={() => setModal({ type: "signup" })} style={{ alignSelf: "flex-start", minHeight: 40, padding: "0 16px", borderRadius: 999, border: "none", background: palette.ink, color: palette.bg, fontWeight: 700, cursor: "pointer" }}>Sign in to back up</button>}
         </div>
       )}
 
@@ -5120,7 +5692,7 @@ useNativeBackButton(React.useCallback(() => {
           }}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 198,
-            background: "#3E7C5A", color: "#FAF5EA",
+            background: "#3E7C5A", color: palette.onColor,
             padding: "12px 20px",
             paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -5156,7 +5728,7 @@ useNativeBackButton(React.useCallback(() => {
           }}
           style={{
             position: "fixed", top: 0, left: 0, right: 0, zIndex: 200,
-            background: "#C84B31", color: "#FAF5EA",
+            background: "#C84B31", color: palette.onColor,
             padding: "12px 20px",
             paddingTop: "calc(12px + env(safe-area-inset-top))",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -5188,7 +5760,7 @@ useNativeBackButton(React.useCallback(() => {
             onClick={(e) => e.stopPropagation()}
             style={{
               background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
-              border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+              border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
               padding: 20,
             }}
           >
@@ -5220,8 +5792,8 @@ useNativeBackButton(React.useCallback(() => {
                 style={{
                   padding: "10px 16px", borderRadius: 8, background: palette.accent,
                   border: `1.5px solid ${palette.ink}`, cursor: "pointer",
-                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg,
-                  boxShadow: `2px 2px 0 ${palette.line}`,
+                  fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.onColor,
+                  boxShadow: "none",
                 }}
               >
                 Refresh &amp; load newer
@@ -5238,7 +5810,37 @@ useNativeBackButton(React.useCallback(() => {
       <ToastHost />
 
       {/* Onboarding wizard: shown only on first-ever load with no data */}
-      {shouldShowWizard && (
+      {/* NEW_LOOK: first-time setup (new users) and the welcome (existing users) */}
+      {shouldShowWizard && newLook && (
+        <SetupFlow
+          hobbies={data.hobbies}
+          onSignIn={() => setModal({ type: "signin" })}
+          onFinish={({ name, showIds, location, importAfter }) => {
+            update((d) => {
+              if (name) d.homesteadName = name;
+              if (location) {
+                d.homesteadLocation = { lat: location.lat, lon: location.lon, label: location.label };
+                if (!d.userZoneSystem && location.zone) { d.userZoneSystem = location.zone.system; d.userZone = location.zone.zone; }
+              }
+              d.hobbies = (d.hobbies || []).map((h) => { h.hidden = !showIds.includes(h.id); return h; });
+              d.onboardedAt = Date.now();
+              d.lastSeenVersion = CURRENT_VERSION;
+              const now = new Date();
+              const monthKey = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+              d.supportersDismissedMonth = monthKey;
+              d.appStoreFundDismissedMonth = monthKey;
+              d.newLookWelcomeSeen = true; // new users never saw the old look
+              return d;
+            });
+            setPage(importAfter ? "import" : "dash");
+          }}
+        />
+      )}
+      {newLook && !shouldShowWizard && !data.newLookWelcomeSeen && (data.onboardedAt || hasAnyEntries) && role !== "member" && (
+        <WelcomeNewLook onDone={() => { update((d) => { d.newLookWelcomeSeen = true; return d; }); setPage("dash"); }} />
+      )}
+      {newLook && nlTipKey && <TipSpotlight tipKey={nlTipKey} onDone={() => update((d) => { d.newLookTips = { ...(d.newLookTips || {}), [nlTipKey]: true }; return d; })} />}
+      {shouldShowWizard && !newLook && (
         <OnboardingWizard
           update={update}
           setModal={setModal}
@@ -5266,7 +5868,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* What's New popup */}
-      {showWhatsNew && (
+      {showWhatsNew && (!newLook || nlNotice === "whatsNew") && (
         <WhatsNewModal onClose={() => {
           whatsNewDismissedRef.current = true;
           setShowWhatsNew(false);
@@ -5277,7 +5879,7 @@ useNativeBackButton(React.useCallback(() => {
       {/* App launch popup — "we're on the App Store / Google Play". Web users
           only, one-time per platform. Always shows both store badges; the
           detected OS just leads the copy and picks which dismiss flag to set. */}
-      {showAppStoreLaunch && !showWhatsNew && (
+      {showAppStoreLaunch && (newLook ? nlNotice === "appStoreLaunch" : !showWhatsNew) && (
         <AppStoreLaunchModal
           webOS={getWebMobileOS()}
           onClose={() => {
@@ -5293,7 +5895,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* Weekly community giveaway popup (no purchase necessary) */}
-      {showGiveaway && !showWhatsNew && (
+      {showGiveaway && (newLook ? nlNotice === "giveaway" : !showWhatsNew) && (
         <GiveawayModal
           user={user}
           followedKey={data?.giveawayFollowedKey}
@@ -5316,7 +5918,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* "Create an account" nudge — signed-out users, one-time, ~10 entries */}
-      {showAccountNudge && !showWhatsNew && !showAppStoreLaunch && (
+      {showAccountNudge && !newLook && !showWhatsNew && !showAppStoreLaunch && (
         <AccountNudgeModal
           onCreateAccount={() => {
             setShowAccountNudge(false);
@@ -5331,7 +5933,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* Monthly supporter thank-you popup (9th-11th of each month) */}
-      {showSupporterThanks && !showWhatsNew && (
+      {showSupporterThanks && (newLook ? nlNotice === "supporterThanks" : !showWhatsNew) && (
         <SupporterThanksModal
           onClose={() => {
             setShowSupporterThanks(false);
@@ -5358,7 +5960,7 @@ useNativeBackButton(React.useCallback(() => {
           a milestone threshold they haven't seen yet. Marks seen on either
           button so each milestone shows exactly once per user. Tapping
           Support opens the existing SupportModal flow. */}
-      {showMilestone && !showWhatsNew && !showSupporterThanks && milestoneConfig && currentMilestone != null && (
+      {showMilestone && (newLook ? nlNotice === "milestone" : (!showWhatsNew && !showSupporterThanks)) && milestoneConfig && currentMilestone != null && (
         <MilestoneModal
           config={milestoneConfig}
           userCount={userCount}
@@ -5447,7 +6049,7 @@ useNativeBackButton(React.useCallback(() => {
       )}
 
       {/* Tutorial prompt — shown once after onboarding */}
-      {showTutorialPrompt && !showTutorial && (
+      {showTutorialPrompt && !showTutorial && !newLook && (
         <TutorialPrompt
           onStart={() => { setShowTutorialPrompt(false); setShowTutorial(true); }}
           onSkip={() => {
@@ -5472,7 +6074,8 @@ useNativeBackButton(React.useCallback(() => {
           });
         }} />
       )}
-      {/* HEADER */}
+      {/* HEADER (old look; the new look puts these in More and the hobby title) */}
+      {!newLook && (<>
       <header style={{
         padding: "20px 20px 12px",
         borderBottom: `2px solid ${palette.ink}`,
@@ -5527,7 +6130,7 @@ useNativeBackButton(React.useCallback(() => {
                 <span style={{
                   display: "inline-flex", alignItems: "center", gap: 3,
                   fontFamily: FONT_BODY, fontSize: 11, fontWeight: 700,
-                  color: palette.bg, background: palette.leaf,
+                  color: palette.onColor, background: palette.leaf,
                   border: `1.5px solid ${palette.ink}`,
                   borderRadius: 999, padding: "3px 9px",
                   marginBottom: 3, whiteSpace: "nowrap",
@@ -5609,7 +6212,7 @@ useNativeBackButton(React.useCallback(() => {
               background: palette.card, border: `1.5px solid ${palette.ink}`,
               display: "flex", alignItems: "center", justifyContent: "space-between",
               cursor: "pointer", fontSize: 16, fontWeight: 600, color: palette.ink,
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             <span style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -5640,7 +6243,7 @@ useNativeBackButton(React.useCallback(() => {
               overflowX: "hidden",
               WebkitOverflowScrolling: "touch",
               overscrollBehavior: "contain",
-              boxShadow: "3px 4px 0 " + palette.line,
+              boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
             }}>
               {(() => {
                 const preservingTypes = ["canning", "freeze_drying", "dehydrating", "fermentation"];
@@ -5775,10 +6378,118 @@ useNativeBackButton(React.useCallback(() => {
         </div>
         )}
       </header>
+      </>)}
 
       {/* MAIN */}
       <main style={{ maxWidth: 720, margin: "0 auto", padding: "20px 20px 40px" }}>
         <ErrorBoundary resetKey={`${page}|${activeHobby}`} label={`${page}/${activeHobby}`}>
+        {/* NEW_LOOK (3.0) screens and headers */}
+        {newLook && page === "dash" && (
+          <HomeScreen
+            data={data} today={todayKey} frost={frostTonight} feedAlerts={nlFeedAlerts}
+            announcement={<AnnouncementCard notices={nlNotices} />}
+            onOpenCalendar={() => setPage("calendar")}
+            onOpenHobby={(e) => nlOpenEntry(e)}
+            onOpenSwitcher={() => setSwitcherOpen(true)}
+            onManage={() => setModal({ type: "manageHobbies" })}
+            support={nlSupport} onOpenSupport={() => setSupportSheetOpen(true)}
+            onOpenMore={() => setPage("more")}
+            HobbyIcon={HobbyIcon}
+          />
+        )}
+        {newLook && (
+          <SupportSheet open={supportSheetOpen} onClose={() => setSupportSheetOpen(false)} support={nlSupport} isSupporter={isSupporter}
+            onSupport={() => { setSupportSheetOpen(false); setSupportScrollToOptions(!isSupporter); setPage("supporter"); }} />
+        )}
+        {newLook && page === "more" && (
+          <MoreScreen
+            data={data} user={user} isSupporter={isSupporter} syncStatus={syncStatus} online={online} lastSyncAt={lastSyncAt}
+            homesteadSwitcher={user ? (
+              <HomesteadSwitcher user={user} currentName={data.homesteadName} role={role}
+                onSwitch={switchHomestead} onManageFarmhands={() => setModal({ type: "farmhand" })} />
+            ) : null}
+            onAccount={() => setModal({ type: isSupabaseConfigured && !user ? "signin" : "renameHomestead" })}
+            onSales={() => setPage("sales")} onYear={() => setPage("year")} onJournal={() => setPage("journal")}
+            onGames={() => setPage("games")} onPhotos={() => setPage("photos")}
+            onSupport={() => setPage("supporter")}
+            supportLine={nlRecapFresh ? `${monthName(nlRecapKey)} recap is ready · thank you` : null}
+            lookName={LOOKS[appearance.effectiveLook] ? LOOKS[appearance.effectiveLook].name + (appearance.dark ? ", dark" : "") : "Farmhouse"}
+            onLook={() => setPage("look")}
+            onProjects={() => setPage("projects")}
+            onImport={() => setPage("import")}
+            projectsLine={(() => { const n = projectsOf(data).length; return n ? `${n} project${n === 1 ? "" : "s"}` : "Record books that fill themselves in"; })()}
+            onHobbies={() => setModal({ type: "manageHobbies" })}
+            onBarn={() => setModal({ type: "barn" })}
+            onSettings={() => setModal({ type: "settings" })}
+          />
+        )}
+        {newLook && page === "supporter" && (
+          <SupporterScreen
+            isSupporter={isSupporter} recapKey={nlRecapKey} recapReady={nlRecap.ready} recapTeaser={nlRecap.teaser}
+            onBack={() => setPage("more")}
+            onOpenRecap={() => setModal({ type: "monthlyRecap", month: nlRecapKey })}
+            onLook={() => setPage("look")}
+            onCheckout={(tier) => startCheckout(tier)}
+            isIap={isNativeApp() && typeof window !== "undefined" && window.__HENALYTICS_USE_IAP__ === true}
+            onRestore={restoreSupporter} onManage={() => openManageSubscriptions()} onClaim={claimWebSupporter}
+            support={nlSupport} scrollToOptions={supportScrollToOptions}
+            onContact={() => openExternalUrl("mailto:slowbuildacres@gmail.com")} onOpenUrl={openExternalUrl}
+          />
+        )}
+        {newLook && page === "projects" && (
+          <ProjectsHome data={data} onBack={() => setPage("more")}
+            onOpen={(id) => { setNlProjectId(id); setPage("project"); }}
+            onNew={(kind) => setNlProjectForm({ kind })}
+            onGuide={() => { setNlProjectId(null); setPage("projectGuide"); }}
+            onInfo={setNlProjectInfo} onContinue={nlContinueProject} />
+        )}
+        {newLook && page === "project" && (() => {
+          const pj = (data.projects || []).find((x) => x.id === nlProjectId);
+          if (!pj) return <ProjectsHome data={data} onBack={() => setPage("more")} onOpen={(id) => setNlProjectId(id)} onNew={(kind) => setNlProjectForm({ kind })} onGuide={() => setPage("projectGuide")} onInfo={setNlProjectInfo} onContinue={nlContinueProject} />;
+          return (
+            <ProjectRecord data={data} project={pj} toast={toast}
+              onBack={() => setPage("projects")}
+              onSection={setNlProjectSection}
+              onEdit={() => setNlProjectForm({ project: pj })}
+              onAet={() => setPage("projectAet")}
+              onDelete={() => {
+                const logs = (data.projectLogs || []).filter((l) => l.projectId === pj.id);
+                update((d) => { d.projects = (d.projects || []).filter((x) => x.id !== pj.id); d.projectLogs = (d.projectLogs || []).filter((l) => l.projectId !== pj.id); return d; });
+                setPage("projects");
+                showUndo(`Deleted ${pj.title} project`, () => update((d) => { d.projects = [...(d.projects || []), pj]; d.projectLogs = [...(d.projectLogs || []), ...logs]; return d; }));
+              }} />
+          );
+        })()}
+        {newLook && page === "projectGuide" && (
+          <PdfGuide data={data} project={(data.projects || []).find((x) => x.id === nlProjectId)} onBack={() => setPage(nlProjectId ? "project" : "projects")} />
+        )}
+        {newLook && page === "projectAet" && (data.projects || []).some((x) => x.id === nlProjectId) && (
+          <AetSummary data={data} project={(data.projects || []).find((x) => x.id === nlProjectId)} toast={toast} onBack={() => setPage("project")} />
+        )}
+        {newLook && page === "import" && (
+          <ImportScreen data={data} update={update} toast={toast} onBack={() => setPage("more")} />
+        )}
+        {newLook && page === "look" && (
+          <LookScreen appearance={appearance} isSupporter={appearance.supporterOk} toast={toast}
+            onBack={() => setPage("more")} onSupport={() => setPage("supporter")}
+            onChange={appearance.set} />
+        )}
+        {newLook && isHobbyPage && activeEntry && (
+          <div style={{ marginBottom: 12 }}>
+            <HobbyTitle name={activeEntry.name} onOpen={() => setSwitcherOpen(true)} />
+          </div>
+        )}
+        {newLook && page === "analytics" && activeEntry && (
+          <div style={{ marginBottom: 12 }}>
+            <HobbyTitle name={activeEntry.name} onOpen={() => setSwitcherOpen(true)} right={
+              <button type="button" data-tip="yir" onClick={() => setPage("year")} style={{
+                display: "flex", alignItems: "center", gap: 4, minHeight: 36, padding: "0 12px", borderRadius: 999,
+                background: nl.ink, color: nl.paper, border: "none", font: `600 13px ${FONT_BODY}`, cursor: "pointer", whiteSpace: "nowrap",
+              }}>Year in review<ChevronDown size={15} strokeWidth={2.2} style={{ transform: "rotate(-90deg)" }} aria-hidden="true" /></button>
+            } />
+          </div>
+        )}
+        {newLook && ["journal", "games", "photos"].includes(page) && nlBack()}
         {/* Celebration card (Suggestions.jsx) — shows ONLY on the tab the
             celebration belongs to. "One hundred jars" appears on canning, not
             on garden or egg-layers. activeHobby is the match key. */}
@@ -5809,221 +6520,465 @@ useNativeBackButton(React.useCallback(() => {
             })}
           />
         )}
-        {wrappedYearNow && WRAPPED_BANNER_PAGES.includes(page) && (
+        {wrappedYearNow && !newLook && WRAPPED_BANNER_PAGES.includes(page) && (
           <WrappedBanner data={data} update={update} year={wrappedYearNow} compact={page === "year"} onOpen={() => setModal({ type: "wrapped", year: wrappedYearNow })} />
         )}
-        {page === "home" && (
+        {page === "home" && !(newLook && (nlRebuilt || nlGarden || nlGardenClosed || nlMeat)) && (
           <HomePage hobby={hobby} data={data} update={update} setModal={setModal} setPage={setPage} />
         )}
-        {page === "analytics" && activeHobby === "rabbits" && (
+        {/* NEW_LOOK (3.0) rebuilt hobbies: Today · animals · Stats */}
+        {newLook && nlRebuilt && (page === "home" || page === "analytics") && (
+          <HobbyTabs label={`${activeEntry ? activeEntry.name : "Hobby"} sections`}
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Birds" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
+        )}
+        {newLook && nlRebuilt && page === "home" && nlHobbyTab !== "animals" && (
+          <EggToday hobby={hobby} data={data} update={update} setModal={setModal} onOpenJournal={() => setPage("journal")} />
+        )}
+        {newLook && nlRebuilt && page === "home" && nlHobbyTab === "animals" && (
+          <EggBirds hobby={hobby} data={data} update={update} setModal={setModal} />
+        )}
+        {newLook && (nlGarden || nlGardenClosed) && (page === "home" || page === "analytics") && (
+          <HobbyTabs label="Garden sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Plants" }, { key: "plan", label: "Plan" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
+        )}
+        {newLook && nlGarden && page === "home" && (nlHobbyTab === "today" || !["animals", "plan"].includes(nlHobbyTab)) && (
+          <GardenToday hobby={hobby} data={data} update={update} setModal={setModal} frost={frostTonight} spent={nlGardenSpent}
+            onPlanAnnualConfirm={nlPlanConfirm} onOpenJournal={() => setPage("journal")} onTab={(k) => setNlHobbyTab(k)} />
+        )}
+        {newLook && nlGarden && page === "home" && nlHobbyTab === "animals" && (
+          <GardenPlants hobby={hobby} data={data} setModal={setModal} onPlanAnnualConfirm={nlPlanConfirm} />
+        )}
+        {nlGardenView && page === "home" && (nlHobbyTab === "today" || !["animals", "plan"].includes(nlHobbyTab)) && (
+          <GardenClosed closed={nlGardenView.closed} data={data} update={update} setModal={setModal} onTab={(k) => setNlHobbyTab(k)} onOpenJournal={() => setPage("journal")} />
+        )}
+        {nlGardenView && page === "home" && nlHobbyTab === "animals" && (
+          <GardenPlants hobby={nlGardenView.hobby} data={nlGardenView.data} liveHobby={hobby} closed={nlGardenView.closed} setModal={setModal} onPlanAnnualConfirm={nlPlanConfirm} />
+        )}
+        {nlGardenView && page === "home" && nlHobbyTab === "plan" && (
+          <GardenPlan hobby={nlGardenView.hobby} data={data} setModal={setModal} closed={nlGardenView.closed}
+            seedBox={<SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={ALMANAC_CROPS.map((c) => String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim())} openUrl={openExternalUrl} />}
+            onOpenCalendar={() => setPage("calendar")} onOpenBarn={() => setModal({ type: "barn" })} />
+        )}
+        {newLook && nlGarden && page === "home" && nlHobbyTab === "plan" && (
+          <GardenPlan hobby={hobby} data={data} setModal={setModal}
+            seedBox={<SeedInventory hobby={hobby} update={update} toast={toast} cropOptions={ALMANAC_CROPS.map((c) => String(c.name || "").replace(/\s*\(.*\)\s*/, "").trim())} openUrl={openExternalUrl} />}
+            onOpenCalendar={() => setPage("calendar")} onOpenBarn={() => setModal({ type: "barn" })} />
+        )}
+        {page === "analytics" && activeHobby === "rabbits" && !nlRabbits && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <RabbitsAnalytics hobby={data.hobbies.find(h=>h.id==="rabbits")} entries={data.entries["rabbits"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "bees" && (
+        {page === "analytics" && activeHobby === "bees" && !nlBees && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <BeesAnalytics hobby={data.hobbies.find(h=>h.id==="bees")} entries={data.entries["bees"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "incubator" && (
+        {page === "analytics" && activeHobby === "incubator" && !nlIncubator && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="incubator")} entries={data.entries["incubator"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <IncubatorAnalytics hobby={data.hobbies.find(h=>h.id==="incubator")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "goats" && (
+        {page === "analytics" && activeHobby === "goats" && !nlGoats && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <GoatsAnalytics hobby={data.hobbies.find(h=>h.id==="goats")} entries={data.entries["goats"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "cows" && (
+        {page === "analytics" && activeHobby === "cows" && !nlCows && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <CowsAnalytics hobby={data.hobbies.find(h=>h.id==="cows")} entries={data.entries["cows"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "pigs" && (
+        {page === "analytics" && activeHobby === "pigs" && !nlPigs && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <PigsAnalytics hobby={data.hobbies.find(h=>h.id==="pigs")} entries={data.entries["pigs"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "sheep" && (
+        {page === "analytics" && activeHobby === "sheep" && !nlSheep && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SheepAnalytics hobby={data.hobbies.find(h=>h.id==="sheep")} entries={data.entries["sheep"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "dogs" && (
+        {page === "analytics" && activeHobby === "dogs" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="dogs")} entries={data.entries["dogs"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <DogsAnalytics hobby={data.hobbies.find(h=>h.id==="dogs")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "cats" && (
+        {page === "analytics" && activeHobby === "cats" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="cats")} entries={data.entries["cats"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <CatsAnalytics hobby={data.hobbies.find(h=>h.id==="cats")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "hunting" && (
+        {page === "analytics" && activeHobby === "hunting" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="hunting")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <HuntingAnalytics hobby={data.hobbies.find(h=>h.id==="hunting")} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "soap" && (
+        {page === "analytics" && activeHobby === "soap" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="soap")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SoapMakingAnalytics hobby={data.hobbies.find(h=>h.id==="soap")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "maple_syrup" && (
+        {page === "analytics" && activeHobby === "maple_syrup" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <MapleSyrupAnalytics hobby={data.hobbies.find(h=>h.id==="maple_syrup")} entries={data.entries["maple_syrup"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "horses" && (
+        {page === "analytics" && activeHobby === "horses" && !nlHorses && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="horses")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <HorsesAnalytics hobby={data.hobbies.find(h=>h.id==="horses")} sales={data.sales || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "sourdough" && (
+        {page === "analytics" && activeHobby === "sourdough" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="sourdough")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <SourdoughAnalytics hobby={data.hobbies.find(h=>h.id==="sourdough")} sales={data.sales || []} entries={data.entries?.["sourdough"] || []} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "farmstand" && (
+        {page === "analytics" && activeHobby === "farmstand" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="farmstand")} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <FarmstandAnalytics hobby={data.hobbies.find(h=>h.id==="farmstand")} sales={data.sales || []} entries={data.entries?.["farmstand"] || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && activeHobby === "baking" && (
+        {page === "analytics" && activeHobby === "baking" && !nlPantryCfg && (
           <AnalyticsShareWrapper hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
             <BakingAnalytics hobby={data.hobbies.find(h=>h.id==="baking")} entries={data.entries?.["baking"] || []} sales={data.sales || []} spouseMode={data.spouseMode} />
           </AnalyticsShareWrapper>
         )}
-        {page === "analytics" && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
+        {nlPantryCfg && (page === hobby.type || page === "analytics") && (
+          <HobbyTabs label={`${activeEntry ? activeEntry.name : "Hobby"} sections`}
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: nlPantryCfg.shelf || "Shelf" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage(hobby.type); } }} />
+        )}
+        {nlPantryCfg && nlPantryCfg.feed && page === hobby.type && nlHobbyTab !== "animals" && (
+          <div style={{ marginBottom: 12 }}><FeedCard hobby={hobby} entries={data.entries[hobby.id] || []} update={update} setModal={setModal} eatWord={`your ${hobby.type} eat`} /></div>
+        )}
+        {nlPantryCfg && page === hobby.type && (
+          <nlPantryCfg.Page hobby={hobby} data={data} update={update} setModal={setModal} user={user}
+            nl={{ tab: nlHobbyTab, tabs: nlPantryTabs, onOpenJournal: () => setPage("journal"), onSeeAll: () => setNlHobbyTab("animals") }} />
+        )}
+        {nlPantryCfg && page === "analytics" && (
+          <PantryStatsPage hobby={hobby} data={data} setModal={setModal} statsFn={nlPantryCfg.stats} tabs={nlPantryTabs} allLabel={nlPantryCfg.all}
+            allNumbers={nlPantryGroup === PRESERVING_TYPES
+              ? <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+              : nlPantryGroup === HERBAL_TYPES ? <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+              : nlPantryCfg.analytics ? nlPantryCfg.analytics() : null} />
+        )}
+        {page === "analytics" && !nlPantryCfg && (activeHobby === "canning" || activeHobby === "freeze_drying" || activeHobby === "dehydrating" || activeHobby === "fermentation") && (
           <PreservingAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
+        {page === "analytics" && !nlPantryCfg && (activeHobby === "tincture" || activeHobby === "oil_infusion" || activeHobby === "salve" || activeHobby === "tea") && (
           <HerbalismAnalyticsPage data={data} initialSubType={activeHobby} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "analytics" && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
+        {page === "analytics" && !(newLook && (nlRebuilt || nlGarden || nlGardenClosed || nlMeat)) && activeHobby !== "rabbits" && activeHobby !== "bees" && activeHobby !== "incubator" && activeHobby !== "goats" && activeHobby !== "cows" && activeHobby !== "pigs" && activeHobby !== "sheep" && activeHobby !== "horses" && activeHobby !== "sourdough" && activeHobby !== "farmstand" && activeHobby !== "baking" && activeHobby !== "canning" && activeHobby !== "freeze_drying" && activeHobby !== "dehydrating" && activeHobby !== "fermentation" && activeHobby !== "tincture" && activeHobby !== "oil_infusion" && activeHobby !== "salve" && activeHobby !== "tea" && activeHobby !== "dogs" && activeHobby !== "cats" && activeHobby !== "maple_syrup" && activeHobby !== "hunting" && activeHobby !== "soap" && (
           <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
         )}
-        {page === "photos" && (
-          <PhotoLibraryPage data={data} user={user} />
+        {page === "analytics" && nlGardenView && (
+          <GardenStats hobby={nlGardenView.hobby} data={nlGardenView.data} setModal={setModal} spent={nlGardenView.spent} closed={nlGardenView.closed} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
         )}
-        {page === "year" && (
+        {page === "analytics" && nlGarden && (
+          <GardenStats hobby={hobby} data={data} setModal={setModal} spent={nlGardenSpent} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
+        )}
+        {newLook && nlMeat && (page === "home" || page === "analytics") && (
+          <HobbyTabs label="Meat bird sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Batches" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("home"); } }} />
+        )}
+        {nlMeat && page === "home" && nlHobbyTab !== "animals" && (
+          <MeatToday hobby={hobby} data={data} update={update} setModal={setModal} onOpenJournal={() => setPage("journal")} onTab={(k) => setNlHobbyTab(k)} />
+        )}
+        {nlMeat && page === "home" && nlHobbyTab === "animals" && (
+          <MeatBatches hobby={hobby} data={data} update={update} setModal={setModal} />
+        )}
+        {page === "analytics" && nlMeat && (
+          <MeatStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
+        )}
+        {page === "analytics" && newLook && nlRebuilt && (
+          <EggStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+          <AnalyticsPage hobby={hobby} data={data} update={update} seasonFilter={seasonFilter} setSeasonFilter={setSeasonFilter} dateFilter={dateFilter} setDateFilter={setDateFilter} customStart={customStart} setCustomStart={setCustomStart} customEnd={customEnd} setCustomEnd={setCustomEnd} spouseMode={data.spouseMode} /* ADV_ANALYTICS */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
+          } />
+        )}
+        {page === "photos" && (
+          <Legacy><PhotoLibraryPage data={data} user={user} /></Legacy>
+        )}
+        {page === "year" && !newLook && (
           <YearInReviewPage data={data} update={update} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /* STEP3_REVIEW_PROMPT */ />
+        )}
+        {page === "year" && newLook && (
+          <YearScreen
+            data={data} year={nlYear} years={nlYears} onYear={setNlYear}
+            onBack={() => setPage("analytics")}
+            wrappedOpen={!!wrappedYearNow} wrappedYear={wrappedYearNow}
+            onOpenWrapped={(y) => setModal({ type: "wrapped", year: y || wrappedYearNow })}
+            isSupporter={isSupporter} onOpenMonth={(k) => setModal({ type: "monthlyRecap", month: k })} onBecomeSupporter={() => setPage("supporter")}
+            onOpenHobby={(e) => { setActiveHobby(e.hobby.id); setPage("analytics"); }}
+            onYearEndReport={() => setModal({ type: "yearEndReport" })}
+          >
+            <Legacy><YearInReviewPage data={data} update={update} year={nlYear} embedded isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} onScrolled={() => { yirHasScrolledRef.current = true; }} /></Legacy>
+          </YearScreen>
         )}
         {/* HOMESTEAD_GAMES — regional standings hub (trophy icon in header) */}
         {page === "games" && (
-          <GamesHubPage data={data} user={user} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} />
+          <Legacy><GamesHubPage data={data} user={user} isSupporter={isSupporter} onOpenSupport={() => setModal({ type: "support" })} /></Legacy>
         )}
-        {page === "bees" && (
+        {newLook && nlBees && (page === "bees" || page === "analytics") && (
+          <HobbyTabs label="Bee sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Hives" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("bees"); } }} />
+        )}
+        {page === "bees" && nlBees && (
+          <BeesNewLook hobby={hobby} data={data} update={update} setModal={setModal} tab={nlHobbyTab} onTab={setNlHobbyTab} onOpenJournal={() => setPage("journal")} />
+        )}
+        {page === "analytics" && nlBees && (
+          <BeeStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <BeesAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} spouseMode={data.spouseMode} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "bees" && !nlBees && (
           <BeesPage hobby={data.hobbies.find(h=>h.id==="bees")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "incubator" && (
+        {newLook && nlIncubator && (page === "incubator" || page === "analytics") && (
+          <HobbyTabs label="Incubator sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Hatches" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("incubator"); } }} />
+        )}
+        {page === "incubator" && nlIncubator && (
+          <IncubatorNewLook hobby={hobby} data={data} update={update} setModal={setModal} tab={nlHobbyTab} onTab={setNlHobbyTab} />
+        )}
+        {page === "analytics" && nlIncubator && (
+          <IncubatorStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <IncubatorAnalytics hobby={hobby} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "incubator" && !nlIncubator && (
           <IncubatorPage hobby={data.hobbies.find(h=>h.id==="incubator")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "goats" && (
+        {newLook && nlGoats && (page === "goats" || page === "analytics") && (
+          <HobbyTabs label="Goats sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Herd" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("goats"); } }} />
+        )}
+        {page === "goats" && nlGoats && (
+          <GoatsNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlGoats && (
+          <LivestockStats sp={SPECIES.goats} hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <GoatsAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "goats" && !nlGoats && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} />
             <GoatsPage hobby={data.hobbies.find(h=>h.id==="goats")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "cows" && (
+        {newLook && nlCows && (page === "cows" || page === "analytics") && (
+          <HobbyTabs label="Cattle sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Herd" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("cows"); } }} />
+        )}
+        {page === "cows" && nlCows && (
+          <CowsNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlCows && (
+          <LivestockStats sp={SPECIES.cows} hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <CowsAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "cows" && !nlCows && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} />
             <CowsPage hobby={data.hobbies.find(h=>h.id==="cows")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "pigs" && (
+        {newLook && nlPigs && (page === "pigs" || page === "analytics") && (
+          <HobbyTabs label="Pig sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Pigs" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("pigs"); } }} />
+        )}
+        {page === "pigs" && nlPigs && (
+          <PigsNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab} onTab={setNlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlPigs && (
+          <LivestockStats sp={SPECIES.pigs} hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <PigsAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "pigs" && !nlPigs && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} />
             <PigsPage hobby={data.hobbies.find(h=>h.id==="pigs")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "rabbits" && (
+        {newLook && nlRabbits && (page === "rabbits" || page === "analytics") && (
+          <HobbyTabs label="Rabbit sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Rabbits" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("rabbits"); } }} />
+        )}
+        {page === "rabbits" && nlRabbits && (
+          <RabbitsNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab} onTab={setNlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlRabbits && (
+          <RabbitStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <RabbitsAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} spouseMode={data.spouseMode} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "rabbits" && !nlRabbits && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} />
             <RabbitsPage hobby={data.hobbies.find(h=>h.id==="rabbits")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "farmstand" && (
+        {page === "farmstand" && !nlPantryCfg && (
           <FarmstandPage hobby={data.hobbies.find(h=>h.id==="farmstand")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "baking" && (
+        {page === "baking" && !nlPantryCfg && (
           <BakingPage hobby={data.hobbies.find(h=>h.id==="baking")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "canning" && (
+        {page === "canning" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="canning" />
         )}
-        {page === "freeze_drying" && (
+        {page === "freeze_drying" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="freeze_drying" />
         )}
-        {page === "dehydrating" && (
+        {page === "dehydrating" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="dehydrating" />
         )}
-        {page === "fermentation" && (
+        {page === "fermentation" && !nlPantryCfg && (
           <PreservingPage data={data} update={update} setModal={setModal} initialSubType="fermentation" />
         )}
-        {page === "tincture" && (
+        {page === "tincture" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tincture" />
         )}
-        {page === "oil_infusion" && (
+        {page === "oil_infusion" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="oil_infusion" />
         )}
-        {page === "salve" && (
+        {page === "salve" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="salve" />
         )}
-        {page === "tea" && (
+        {page === "tea" && !nlPantryCfg && (
           <HerbalismPage data={data} update={update} setModal={setModal} initialSubType="tea" />
         )}
-        {page === "sheep" && (
+        {newLook && nlSheep && (page === "sheep" || page === "analytics") && (
+          <HobbyTabs label="Sheep sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Flock" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("sheep"); } }} />
+        )}
+        {page === "sheep" && nlSheep && (
+          <SheepNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlSheep && (
+          <LivestockStats sp={SPECIES.sheep} hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={data.entries[hobby.id] || []} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <SheepAnalytics hobby={hobby} entries={data.entries[hobby.id] || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "sheep" && !nlSheep && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} />
             <SheepPage hobby={data.hobbies.find(h=>h.id==="sheep")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "dogs" && (
+        {page === "dogs" && !nlPantryCfg && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} />
             <DogsPage hobby={data.hobbies.find(h=>h.id==="dogs")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "cats" && (
+        {page === "cats" && !nlPantryCfg && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} />
             <CatsPage hobby={data.hobbies.find(h=>h.id==="cats")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "hunting" && (
+        {page === "hunting" && !nlPantryCfg && (
           <HuntingPage hobby={data.hobbies.find(h=>h.id==="hunting")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "soap" && (
+        {page === "soap" && !nlPantryCfg && (
           <SoapMakingPage hobby={data.hobbies.find(h=>h.id==="soap")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "maple_syrup" && (
+        {page === "maple_syrup" && !nlPantryCfg && (
           <MapleSyrupPage hobby={data.hobbies.find(h=>h.id==="maple_syrup")} data={data} update={update} setModal={setModal} />
         )}
-        {page === "horses" && (
+        {newLook && nlHorses && (page === "horses" || page === "analytics") && (
+          <HobbyTabs label="Horse sections"
+            tabs={[{ key: "today", label: "Today" }, { key: "animals", label: "Horses" }, { key: "stats", label: "Stats" }]}
+            active={page === "analytics" ? "stats" : nlHobbyTab}
+            onPick={(k) => { if (k === "stats") setPage("analytics"); else { setNlHobbyTab(k); setPage("horses"); } }} />
+        )}
+        {page === "horses" && nlHorses && (
+          <HorsesNewLook hobby={hobby} data={data} update={update} setModal={setModal} user={user} tab={nlHobbyTab} onTab={setNlHobbyTab}
+            onOpenJournal={() => setPage("journal")} onOpenCalendar={() => setPage("calendar")} />
+        )}
+        {page === "analytics" && nlHorses && (
+          <HorseStats hobby={hobby} data={data} setModal={setModal} allNumbers={
+            <AnalyticsShareWrapper hobby={hobby} entries={[]} data={data} earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter}>
+              <HorsesAnalytics hobby={hobby} sales={data.sales || []} />
+            </AnalyticsShareWrapper>
+          } />
+        )}
+        {page === "horses" && !nlHorses && (
           <>
             <FeedTrackerCard hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} />
             <HorsesPage hobby={data.hobbies.find(h=>h.id==="horses")} data={data} update={update} setModal={setModal} user={user} />
           </>
         )}
-        {page === "sourdough" && (
+        {page === "sourdough" && !nlPantryCfg && (
           <SourdoughPage hobby={data.hobbies.find(h=>h.id==="sourdough")} data={data} update={update} setModal={setModal} />
         )}
         {page === "calendar" && (
-          <CalendarPage data={data} update={update} setModal={setModal} />
+          <Legacy><CalendarPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "journal" && (
-          <JournalPage data={data} update={update} setModal={setModal} />
+          <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
-        {page === "sales" && (
-          <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} />
+        {page === "sales" && newLook && (
+          <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />
+        )}
+        {page === "sales" && !newLook && (
+          <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
         )}
         </ErrorBoundary>
       </main>
 
-      {/* COPYRIGHT FOOTER */}
-      <div style={{
+      {/* COPYRIGHT FOOTER (old look only) */}
+      {!newLook && <div style={{
         textAlign: "center",
         padding: "12px 20px",
         paddingBottom: "max(12px, env(safe-area-inset-bottom))",
@@ -6035,7 +6990,62 @@ useNativeBackButton(React.useCallback(() => {
         margin: "0 auto",
       }}>
         © {new Date().getFullYear()} Henalytics · Built by a homesteader, for homesteaders. Not a company — just someone who wanted to better understand their chickens, garden, and land. Free forever, by intention. Unauthorized commercial use is prohibited.
-      </div>
+      </div>}
+      {newLook ? (
+        <>
+          <NavBar
+            tab={nlTab} logOpen={logPickerOpen}
+            onHome={() => { setLogPickerOpen(false); setPage("dash"); }}
+            onStats={() => { setLogPickerOpen(false); setPage("analytics"); }}
+            onLog={() => setLogPickerOpen((o) => !o)}
+            onCalendar={() => { setLogPickerOpen(false); setPage("calendar"); }}
+            onMore={() => { setLogPickerOpen(false); setPage("more"); }}
+          />
+          <LogPicker
+            open={logPickerOpen} onClose={() => setLogPickerOpen(false)}
+            hobbies={data.hobbies} activeHobbyId={activeHobby}
+            onAction={nlLogAction} onOpenHobby={(e) => nlOpenEntry(e)} HobbyIcon={HobbyIcon}
+            extra={projectsOf(data).length ? [{ key: "projects", name: "4-H & FFA", icon: <GraduationCap size={16} strokeWidth={2} aria-hidden="true" />, actions: [
+              { key: "hours", label: "Project hours", icon: "clock", primary: true }, { key: "show", label: "Show or fair", icon: "award" },
+            ] }] : []}
+            onExtraAction={(k, a) => { setLogPickerOpen(false); setNlProjectLog(a.key); }}
+          />
+          {nlProjectForm && (
+            <ProjectForm open data={data} kindKey={nlProjectForm.kind} project={nlProjectForm.project} onClose={() => setNlProjectForm(null)}
+              onSave={(pj) => {
+                const isNew = !nlProjectForm.project;
+                update((d) => { d.projects = isNew ? [...(d.projects || []), pj] : (d.projects || []).map((x) => (x.id === pj.id ? pj : x)); return d; });
+                setNlProjectForm(null);
+                if (isNew) { setNlProjectId(pj.id); setPage("project"); }
+              }} />
+          )}
+          {nlProjectSection && (data.projects || []).some((x) => x.id === nlProjectId) && (
+            <SectionSheet which={nlProjectSection} data={data} update={update} project={(data.projects || []).find((x) => x.id === nlProjectId)}
+              onClose={() => setNlProjectSection(null)}
+              onLog={(k) => { setNlProjectSection(null); setNlProjectLog(k); }}
+              onOpenHobby={(hid) => { const h = data.hobbies.find((x) => x.id === hid); if (h) { setActiveHobby(h.id); setPage(hobbyPage(h)); } }} />
+          )}
+          {nlProjectLog && (
+            <ProjectLogSheet kind={nlProjectLog} data={data} defaultProjectId={page === "project" ? nlProjectId : null}
+              onClose={() => setNlProjectLog(null)}
+              onSave={(log) => {
+                update((d) => { d.projectLogs = [...(d.projectLogs || []), log]; return d; });
+                setNlProjectLog(null);
+                showUndo(log.kind === "show" ? `Logged ${log.showName}` : `Logged ${log.hours} hour${log.hours === 1 ? "" : "s"}`, () => update((d) => { d.projectLogs = (d.projectLogs || []).filter((x) => x.id !== log.id); return d; }));
+              }} />
+          )}
+          <InfoSheet which={nlProjectInfo} onClose={() => setNlProjectInfo(null)} />
+          <UndoHost />
+          <ConfirmHost />
+          <HobbySwitcherSheet
+            open={switcherOpen} onClose={() => setSwitcherOpen(false)}
+            hobbies={data.hobbies} activeKey={activeEntry ? activeEntry.key : null}
+            onPick={(e) => nlOpenEntry(e, { stayOnStats: true })}
+            onManage={() => { setSwitcherOpen(false); setModal({ type: "manageHobbies" }); }}
+            HobbyIcon={HobbyIcon}
+          />
+        </>
+      ) : (<>
       {/* BOTTOM NAV — 5 tabs, compact layout */}
       <nav style={{
         position: "fixed", bottom: 0, left: 0, right: 0,
@@ -6049,6 +7059,7 @@ useNativeBackButton(React.useCallback(() => {
         {!data.salesHidden && <NavTab active={page === "sales"} onClick={() => setPage("sales")} icon={DollarSign} label="Sales" />}
         <NavTab active={page === "year"} onClick={() => setPage("year")} icon={Sparkles} label="Year" />
       </nav>
+      </>)}
 
       {/* MODALS */}
       <ModalRouter modal={modal} setModal={setModal} data={data} update={update} activeHobby={activeHobby} user={user} role={role} setActiveHobby={setActiveHobby} setPage={setPage} onFreshStart={() => setData(defaultData())} /* GARDEN_GRID_SCOPE_FIX */ earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} />
@@ -6378,117 +7389,7 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
   // PlanCropModal handles pushing calendar events; we just need to mirror
   // the legacy quick-log behavior of creating a plantings[] record and
   // ensuring an annuals[] record exists for this crop+season.
-  const handlePlanAnnualConfirm = (payload) => {
-    if (!payload) return;
-    const { cropId, cropName, variety, method, events, isCustom, customDate } = payload;
-    // Pick the planting date based on what kind of event matches the method.
-    // Falls back to today if no matching event (defensive — shouldn't happen).
-    let plantingDate;
-    if (isCustom) {
-      plantingDate = customDate || todayStr();
-    } else if (Array.isArray(events) && events.length > 0) {
-      const matchKind = method === "indoor" ? "indoor"
-        : method === "direct" ? "direct"
-        : method === "transplant" ? "transplant"
-        : null;
-      const matchEvent = matchKind ? events.find(e => e.kind === matchKind) : null;
-      plantingDate = matchEvent ? matchEvent.date : todayStr();
-    } else {
-      plantingDate = todayStr();
-    }
-    // Display name for the planting record: variety name takes precedence,
-    // then the crop's display name, then the raw cropName fallback for custom.
-    const plantName = (variety && variety.name) || cropName || "Unknown";
-    update((d) => {
-      const gh = d.hobbies.find(x => x.type === "garden");
-      const sid = gh?.currentSeason?.id || "";
-
-      // Push a `planted` entry into data.entries.garden so Recent Activity,
-      // analytics, and the journal pick it up. Without this the planting was
-      // silently missing from Recent Activity (BUGFIX: previously this flow
-      // only created plantings[] + annuals[] but skipped the entry, so users
-      // saw the calendar event but no "Planted X" row appeared in recent
-      // activity. Mirrors step 1 of the legacy seed-start-transplant save.)
-      //
-      // Date selection for the Recent Activity row:
-      //   - Custom crop path: use customDate (user-picked).
-      //   - User edited the date in the modal: use plantingDate (they
-      //     deliberately backdated/forward-dated, respect that).
-      //   - User didn't edit: use today. plantingDate is the almanac's
-      //     suggested sow/transplant date and is usually weeks off — using
-      //     it as the entry date would bury the row far down the feed.
-      // The `plantings[]` record below keeps `plantingDate` regardless —
-      // that record represents the actual planting event/plan.
-      let entryDate;
-      if (isCustom) {
-        entryDate = plantingDate; // already user-picked
-      } else {
-        const matchKind = method === "indoor" ? "indoor"
-          : method === "direct" ? "direct"
-          : method === "transplant" ? "transplant"
-          : null;
-        const matchEvent = matchKind && Array.isArray(events)
-          ? events.find(e => e.kind === matchKind)
-          : null;
-        entryDate = (matchEvent && matchEvent.userEdited) ? plantingDate : todayStr();
-      }
-      if (!d.entries) d.entries = {};
-      if (!Array.isArray(d.entries.garden)) d.entries.garden = [];
-      d.entries.garden.push({
-        id: newId(),
-        date: entryDate,
-        action: "planted",
-        plant: plantName,
-        quantity: "",
-        seasonId: sid,
-        created: Date.now(),
-      });
-
-      // Create planting record
-      d.plantings = d.plantings || [];
-      d.plantings.push({
-        id: newId(),
-        plant: plantName,
-        quantity: "",
-        date: plantingDate,
-        harvested: false,
-      });
-      // Ensure annual record exists for this plant in the current season.
-      // Mirrors the logic in the legacy quick-log "planted" save handler.
-      if (gh) {
-        if (!Array.isArray(gh.annuals)) gh.annuals = [];
-        const nm = plantName.trim() || "Unnamed";
-        // If this annual was previously deleted (tombstoned), the new
-        // planting expresses intent to bring it back. Clear the tombstone
-        // so migrateData rebuilds the record on next load too.
-        const tombKey = `${nm.toLowerCase()}|${sid}`;
-        if (Array.isArray(gh.deletedAnnualKeys) && gh.deletedAnnualKeys.includes(tombKey)) {
-          gh.deletedAnnualKeys = gh.deletedAnnualKeys.filter(k => k !== tombKey);
-        }
-        const exists = gh.annuals.some(
-          a => String(a.name || "").trim().toLowerCase() === nm.toLowerCase() &&
-               (a.seasonId || "") === sid
-        );
-        if (!exists) {
-          gh.annuals.push({
-            id: newId(),
-            name: nm,
-            seasonId: sid,
-            actions: [],
-            created: Date.now(),
-          });
-        }
-      }
-      return d;
-    });
-    // Seed box: offer to mark the packet used. PlanCropModal closes itself
-    // right after onConfirm, so open ours on the next tick.
-    const gardenH = (data.hobbies || []).find((x) => x.type === "garden");
-    const seedName = [variety && variety.name, cropName].filter(Boolean).join(" ");
-    if (gardenH && matchingPackets(gardenH.seeds, seedName).length) {
-      setTimeout(() => setModal({ type: "seedUse", plantName: seedName }), 0);
-    }
-  };
+  const handlePlanAnnualConfirm = (payload) => planAnnualConfirm({ data, update, setModal }, payload);
 
   return (
     <div>
@@ -6542,9 +7443,11 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
               hobbyType={hobby.type}
               onEdit={() => setModal({ type: "log", action: e.action, existingEntry: e })}
               onDelete={() => {
-                // Best-effort: clean up ALL photos from storage if there were any.
-                getEntryPhotos(e).forEach((p) => deletePhoto(p).catch(() => {}));
-                update((d) => {
+                // One tap, so Undo; photos leave storage only once Undo is gone.
+                const photos = getEntryPhotos(e);
+                let undone = false;
+                if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
+                undoable(update, `Deleted ${deletedLogName(e)}`, { onUndo: () => { undone = true; } })((d) => {
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
                   // For butcher entries, also remove the matching record from
                   // currentBatch.butchered (so remaining-birds math recovers)
@@ -6641,7 +7544,7 @@ function TellAFriendCard({ data, update, setModal }) {
   if (tf.done || snoozed || daysIn < 14 || totalLogs < 20) return null;
   const close = (patch) => update((d) => { d.tellAFriend = { ...(d.tellAFriend || {}), lastShownAt: Date.now(), ...patch }; return d; });
   return (
-    <div style={{ marginTop: 22, background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 14, padding: 14, boxShadow: "2px 3px 0 " + palette.line }}>
+    <div style={{ marginTop: 22, background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 14, padding: 14, boxShadow: "none" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}>
         <div style={{ fontSize: 26, lineHeight: 1 }}>🤝</div>
         <div style={{ flex: 1 }}>
@@ -6821,7 +7724,7 @@ function JournalScrapbook({ data, hobbyFilter }) {
               padding: "8px 12px 8px 8px", borderRadius: 999,
               background: palette.card, border: `1.5px solid ${palette.line}`,
               cursor: "pointer", fontFamily: FONT_BODY, color: palette.ink,
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             <ScrapbookCircle animal={animal} />
@@ -6866,10 +7769,14 @@ function JournalPage({ data, update, setModal }) {
   const archivedEntriesByHobby = React.useMemo(() => {
     const map = {};
     for (const h of data.hobbies || []) {
-      const batches = Array.isArray(h.archivedBatches) ? h.archivedBatches : [];
+      // Finished batches and closed garden seasons both keep their logs as
+      // finalEntries; a closed 2026 garden must still show in the Journal.
       const merged = [];
-      for (const b of batches) {
+      for (const b of (Array.isArray(h.archivedBatches) ? h.archivedBatches : [])) {
         if (Array.isArray(b.finalEntries)) merged.push(...b.finalEntries);
+      }
+      for (const se of (Array.isArray(h.archivedSeasons) ? h.archivedSeasons : [])) {
+        if (Array.isArray(se.finalEntries)) merged.push(...se.finalEntries);
       }
       if (merged.length > 0) map[h.id] = merged;
     }
@@ -6953,18 +7860,14 @@ function JournalPage({ data, update, setModal }) {
   // Also handles entries that live in archived batches' finalEntries
   // snapshot — the Journal surfaces those now, so deletion must reach them.
   const deleteEntry = (entry, hobby) => {
-    getEntryPhotos(entry).forEach((p) => deletePhoto(p).catch(() => {}));
-    update((d) => {
-      d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== entry.id);
-      // Also strip the entry from any archived batch's finalEntries.
-      const hForArchive = d.hobbies.find((x) => x.id === hobby.id);
-      if (hForArchive && Array.isArray(hForArchive.archivedBatches)) {
-        for (const b of hForArchive.archivedBatches) {
-          if (Array.isArray(b.finalEntries)) {
-            b.finalEntries = b.finalEntries.filter((x) => x.id !== entry.id);
-          }
-        }
-      }
+    // Deleting is one tap, so it comes with Undo. The log's photos are only
+    // removed from storage once the Undo bar has gone without a tap.
+    const photos = getEntryPhotos(entry);
+    let undone = false;
+    if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
+    undoable(update, `Deleted ${deletedLogName(entry)}`, { onUndo: () => { undone = true; } })((d) => {
+      // Wherever it lives: the live log, a finished batch or a closed season.
+      removeEntryEverywhere(d, hobby.id, entry.id);
       if (entry.action === "butcher") {
         const h = d.hobbies.find((x) => x.id === hobby.id);
         if (h && Array.isArray(h.currentBatches)) {
@@ -7012,7 +7915,7 @@ function JournalPage({ data, update, setModal }) {
               active={hobbyFilter === h.id}
               onClick={() => setHobbyFilter(h.id)}
             >
-              {h.name}
+              <span style={{ display: "block", maxWidth: 220, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={cleanName(h.name)}>{cleanName(h.name)}</span>
             </PillButton>
           ))}
         </div>
@@ -7046,7 +7949,7 @@ function JournalPage({ data, update, setModal }) {
                 border: `1.5px solid ${palette.line}`,
                 borderRadius: 12,
                 overflow: "hidden",
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
               }}
             >
               <button
@@ -7109,8 +8012,9 @@ function JournalPage({ data, update, setModal }) {
                           marginBottom: 3,
                           marginLeft: 2,
                           fontWeight: 600,
+                          whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis",
                         }}>
-                          {hobby.name}
+                          {cleanName(hobby.name)}
                         </div>
                       )}
                       <ActivityRow
@@ -7136,8 +8040,10 @@ function JournalPage({ data, update, setModal }) {
 function PillButton({ active, onClick, children }) {
   return (
     <button
+      type="button"
       onClick={onClick}
       style={{
+        minHeight: 36,
         padding: "6px 12px",
         borderRadius: 999,
         border: `1.5px solid ${active ? palette.ink : palette.line}`,
@@ -7227,8 +8133,8 @@ function QuickLogTiles({ hobby, setModal, onPlanAnnualConfirm }) {
               // Use Eggs doubles as the discovery point for inventory
               // tracking: first tap (tracking off) opens setup, after
               // that it opens the normal used_eggs log.
-              if (t.action === "used_eggs" && !(hobby.eggInventory && hobby.eggInventory.enabled)) {
-                setModal({ type: "eggInventorySetup", hobbyId: hobby.id });
+              if (t.action === "used_eggs" && !hobby.eggInventory) {
+                setModal({ type: "eggInventorySetup", hobbyId: hobby.id, next: "used_eggs" });
               } else {
                 setModal({ type: "log", action: t.action });
               }
@@ -7630,13 +8536,13 @@ function PlantScannerSection({ setModal }) {
               padding: "8px 16px",
               borderRadius: 8,
               background: palette.leaf,
-              color: palette.bg,
+              color: palette.onColor,
               border: `1.5px solid ${palette.leaf}`,
               fontFamily: FONT_BODY,
               fontWeight: 600,
               fontSize: 14,
               cursor: "pointer",
-              boxShadow: "2px 2px 0 " + palette.line,
+              boxShadow: "none",
               display: "inline-flex",
               alignItems: "center",
               gap: 6,
@@ -7951,8 +8857,8 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
   // planted entries), we add a tombstone key to hobby.deletedAnnualKeys.
   // The tombstone is cleared automatically the next time the user logs a
   // planting under this name+season, so re-planting brings the annual back.
-  const deleteAnnual = () => {
-    if (!confirm(`Delete "${annual.name}" from your annuals list?\n\nYour plantings and harvests for this plant will stay in Recent Activity — only the annual list entry is removed.`)) return;
+  const deleteAnnual = async () => {
+    if (!(await askConfirm({ title: `Delete "${annual.name}" from your annuals list?`, message: "Your plantings and harvests for this plant stay in your logs. Only the list entry is removed.", confirmLabel: "Delete" }))) return;
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
@@ -7975,10 +8881,11 @@ function AnnualDetailModal({ hobbyId, annual, data, update, setModal, onClose })
     setModal({ type: "log", action: entry.action, existingEntry: entry, hobbyIdOverride: hobbyId });
   };
   const deletePlantingOrHarvest = (entry) => {
-    if (!confirm(`Delete this ${entry.action === "planted" ? "planting" : "harvest"}?`)) return;
-    // Best-effort: clean up photos if any.
-    try { getEntryPhotos(entry).forEach(p => deletePhoto(p).catch(() => {})); } catch (_) {}
-    update(d => {
+    // Undo instead of "Are you sure?"; photos go once the Undo bar is gone.
+    let photos = []; try { photos = getEntryPhotos(entry); } catch (_) {}
+    let undone = false;
+    if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
+    undoable(update, `Deleted ${entry.action === "planted" ? "planting" : "harvest"}`, { onUndo: () => { undone = true; } })(d => {
       if (d.entries && Array.isArray(d.entries.garden)) {
         d.entries.garden = d.entries.garden.filter(x => x.id !== entry.id);
       }
@@ -8245,15 +9152,15 @@ function LogAnnualActionModal({ hobbyId, annual, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Log action — ${annual.name}`}>
       <Field label="Action">
-        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)} autoFocus>
           {ANNUAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how much you thinned, etc." />
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how much you thinned, etc." />
       </Field>
       <Btn variant="primary" onClick={() => {
         update(d => {
@@ -8521,7 +9428,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           autoFocus
           value={plant}
           onChange={(e) => setPlant(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder="e.g. Tomato, Pepper, Basil"
         />
       </Field>
@@ -8529,7 +9436,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
         <input
           value={variety}
           onChange={(e) => setVariety(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder="e.g. Cherokee Purple"
         />
       </Field>
@@ -8538,7 +9445,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           type="date"
           value={sowDate}
           onChange={(e) => setSowDate(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <Field label="Seeds sown *">
@@ -8548,7 +9455,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           min="1"
           value={seedsSown}
           onChange={(e) => setSeedsSown(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder="e.g. 24"
         />
       </Field>
@@ -8560,7 +9467,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           max="60"
           value={expectGermDays}
           onChange={(e) => setExpectGermDays(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>
           We'll drop a "check seedlings" reminder on your calendar for this date. Typical range is 7–14 days.
@@ -8571,7 +9478,7 @@ function AddSeedStartModal({ hobbyId, data, update, setModal, onClose }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          style={{ ...inputStyle, resize: "vertical", minHeight: 50 }}
+          style={{ ...inputStyle(), resize: "vertical", minHeight: 50 }}
           placeholder="Tray ID, soil mix, light setup..."
         />
       </Field>
@@ -8630,7 +9537,7 @@ function LogGerminationModal({ hobbyId, batch, update, onClose }) {
           max={sown}
           value={germinated}
           onChange={(e) => setGerminated(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
           placeholder={`0 to ${sown}`}
         />
         {germinated !== "" && n >= 0 && sown > 0 && (
@@ -8644,7 +9551,7 @@ function LogGerminationModal({ hobbyId, batch, update, onClose }) {
           type="date"
           value={germDate}
           onChange={(e) => setGermDate(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -8782,7 +9689,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           max={remaining}
           value={count}
           onChange={(e) => setCount(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <Field label="Transplant date *">
@@ -8790,7 +9697,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           type="date"
           value={date}
           onChange={(e) => setDate(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <Field label="Notes (optional)">
@@ -8798,7 +9705,7 @@ function TransplantSeedlingsModal({ hobbyId, batch, update, onClose }) {
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
           rows={2}
-          style={{ ...inputStyle, resize: "vertical", minHeight: 50 }}
+          style={{ ...inputStyle(), resize: "vertical", minHeight: 50 }}
           placeholder="Bed, spacing, weather..."
         />
       </Field>
@@ -8872,7 +9779,7 @@ function LogSeedStartLossModal({ hobbyId, batch, update, onClose }) {
           max={remaining}
           value={count}
           onChange={(e) => setCount(e.target.value)}
-          style={inputStyle}
+          style={inputStyle()}
         />
       </Field>
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
@@ -8905,8 +9812,8 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
   const transplantRate = batch.germinated > 0
     ? Math.round((transplantedTotal / batch.germinated) * 100) : null;
 
-  const markFailed = () => {
-    if (!confirm("Mark this batch as failed? It will be archived.")) return;
+  const markFailed = async () => {
+    if (!(await askConfirm({ title: "Mark this batch as failed?", message: "It will be archived.", confirmLabel: "Mark failed" }))) return;
     update((d) => {
       const gh = d.hobbies.find((h) => h.id === hobbyId);
       if (!gh) return d;
@@ -8931,8 +9838,8 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
     });
   };
 
-  const deleteBatch = () => {
-    if (!confirm("Delete this seed-start batch? Transplants you've already logged will stay (they're real planting records now).")) return;
+  const deleteBatch = async () => {
+    if (!(await askConfirm({ title: "Delete this seed-start batch?", message: "Transplants you've already logged stay (they're real planting records now).", confirmLabel: "Delete" }))) return;
     update((d) => {
       const gh = d.hobbies.find((h) => h.id === hobbyId);
       if (!gh) return d;
@@ -8964,7 +9871,7 @@ function SeedStartDetailModal({ hobbyId, batchId, data, update, setModal, onClos
           : status === "archived" ? palette.line
           : status === "ready_to_transplant" ? palette.leafSoft
           : palette.bgAlt,
-        color: status === "failed" ? palette.bg : palette.ink,
+        color: status === "failed" ? palette.onColor : palette.ink,
         fontSize: 11, fontWeight: 600, marginBottom: 12,
       }}>
         {status === "failed" ? "Failed"
@@ -9172,7 +10079,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
                     style={{
                       flexShrink: 0, padding: "6px 12px", borderRadius: 8,
                       border: `1.5px solid ${palette.leaf}`, background: palette.leaf,
-                      color: "#fff", fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
+                      color: palette.onColor, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
                     }}
                   >
                     ↩ Reopen
@@ -9197,7 +10104,7 @@ function GardenSummary({ hobby, data, update, setModal, setPage, onPlanAnnualCon
   // current season's date range count too.
   const harvests = collectGardenHarvests(data, { seasonId: season.id, season });
   const plantings = seasonEntries.filter((e) => e.action === "planted").length;
-  const days = Math.floor((Date.now() - new Date(season.startDate).getTime()) / (1000 * 60 * 60 * 24));
+  const days = Math.floor((Date.now() - new Date(season.startDate + "T00:00").getTime()) / (1000 * 60 * 60 * 24));
   // Garden map shape changed from { photoPath, pins } to { areas: [{ photoPath, pins }] }.
   // Read the new shape, but stay backwards-compatible for any unmigrated season.
   const gmAreas = Array.isArray(season.gardenMap?.areas) ? season.gardenMap.areas : null;
@@ -9600,7 +10507,7 @@ function GardenTodayCard({ hobby, data, update, entries, setModal, setPage, onOp
             style={{
               display: "flex", alignItems: "center", gap: 10,
               padding: "9px 10px", borderRadius: 10,
-              background: r.tone === "warn" ? "#FBE5DE" : palette.bg,
+              background: r.tone === "warn" ? palette.dangerBg : palette.bg,
               border: `1px solid ${r.tone === "warn" ? palette.accent : palette.line}`,
               cursor: r.onTap ? "pointer" : "default",
               opacity: r.tone === "quiet" ? 0.85 : 1,
@@ -9750,7 +10657,7 @@ function BragCardArt({ card, layout = "portrait", innerRef }) {
         {chips.length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", justifyContent: wide ? "flex-start" : "center", marginTop: wide ? 16 : tall ? 16 : 12 }}>
             {chips.map((c, i) => (
-              <span key={i} style={{ fontSize: wide ? 14 : tall ? 12 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : "#2C1810" }}>{c}</span>
+              <span key={i} style={{ fontSize: wide ? 14 : tall ? 12 : 11, fontWeight: 600, padding: wide ? "5px 10px" : "4px 9px", borderRadius: 999, background: i === 0 ? "rgba(244,237,224,0.12)" : "#E8B547", color: i === 0 ? "#F4EDE0" : palette.onYolk }}>{c}</span>
             ))}
           </div>
         )}
@@ -9829,7 +10736,7 @@ function BragShareModal({ card, user, onClose, onSignIn, children }) {
         const scale = Math.min(1, (shape === "story" ? Math.min(avail, 230) : avail) / sz.w);
         return (
           <div style={{ display: "flex", justifyContent: "center", marginBottom: 14 }}>
-            <div style={{ width: sz.w * scale, height: sz.h * scale, position: "relative", boxShadow: "3px 4px 0 " + palette.line, borderRadius: 18 * scale }}>
+            <div style={{ width: sz.w * scale, height: sz.h * scale, position: "relative", boxShadow: "0 12px 32px rgba(0,0,0,0.22)", borderRadius: 18 * scale }}>
               <div style={{ position: "absolute", left: 0, top: 0, transform: `scale(${scale})`, transformOrigin: "top left" }}>
                 <BragCardArt card={card} layout={shape} />
               </div>
@@ -9852,7 +10759,7 @@ function BragShareModal({ card, user, onClose, onSignIn, children }) {
         }}>{busy === "link" ? "Making your link…" : user ? "🔗 Share a link (best for Facebook)" : "🔗 Sign in to share a link"}</button>
         <button type="button" onClick={shareImage} disabled={!!busy} style={{
           width: "100%", padding: "12px", borderRadius: 10, cursor: busy ? "wait" : "pointer",
-          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink,
+          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.onYolk,
           fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, opacity: busy === "image" ? 0.7 : 1,
         }}>{busy === "image" ? "Preparing image…" : canShareImageFiles() ? "📸 Share the picture" : "📸 Save the picture"}</button>
       </div>
@@ -9936,7 +10843,7 @@ function EggShareModal({ data, hobby, update, user, onClose, onSignIn }) {
           {currencySymbol()}
           <input type="number" inputMode="decimal" step="0.25" min="0" value={price}
             onChange={(e) => setPrice(e.target.value)} onBlur={save}
-            style={{ ...inputStyle, width: 72, padding: "5px 8px", fontSize: 14 }} />
+            style={{ ...inputStyle(), width: 72, padding: "5px 8px", fontSize: 14 }} />
         </span>
         a dozen where I shop
       </label>
@@ -9952,7 +10859,7 @@ function EggInsightCard({ data, entries }) {
   const tone = {
     calm: { bg: "#EEF3E4", border: palette.leaf, fg: palette.ink },
     good: { bg: "#EEF3E4", border: palette.leaf, fg: palette.ink },
-    check: { bg: "#FBE5DE", border: palette.accent, fg: palette.accent },
+    check: { bg: palette.dangerBg, border: palette.accent, fg: palette.accent },
   }[insight.tone] || {};
   return (
     <div style={{ display: "flex", gap: 10, alignItems: "flex-start", padding: "12px 14px", marginBottom: 12, borderRadius: 12, background: tone.bg, border: `1.5px solid ${tone.border}` }}>
@@ -9969,31 +10876,6 @@ function EggInsightCard({ data, entries }) {
 // A seasonal checklist (Nov–Feb north, May–Aug south) for the slow months, so
 // the app stays useful when the garden is asleep. Ticks are saved per winter:
 // data.winterChecklist = { "<season key>": { done: { id: true }, hidden } }.
-function winterSeason(now = new Date()) {
-  const south = getCurrentHemisphere() === "south";
-  const m = now.getMonth(), y = now.getFullYear();
-  if (south) return m >= 4 && m <= 7 ? `S${y}` : null;
-  if (m >= 10) return `${y}-${y + 1}`;
-  if (m <= 1) return `${y - 1}-${y}`;
-  return null;
-}
-
-const WINTER_ITEMS = {
-  egg_layers: [
-    { id: "water", icon: "💧", text: "Keep water from freezing", sub: "A heated base, or swap waterers morning and evening. Hens lay less when they can't drink." },
-    { id: "lamp", icon: "🔥", text: "Heat lamp? Secure it twice, or skip it", sub: "Heat lamps start many coop fires. Most cold-hardy breeds are fine without heat." },
-    { id: "vent", icon: "🌬️", text: "Check coop ventilation", sub: "Frostbite comes from damp air, not cold. Vents above the roost, no drafts at roost height." },
-    { id: "bedding", icon: "🌾", text: "Add deep bedding", sub: "Fresh straw or shavings for warmth. Deep litter composts in place over winter." },
-    { id: "collect", icon: "🥚", text: "Collect eggs twice a day", sub: "Eggs can freeze and crack in the nest on cold days." },
-  ],
-  garden: [
-    { id: "seedbox", icon: "🌾", text: "Take stock of your seed box", sub: "Mark what's low or getting old before you order.", action: "seeds" },
-    { id: "order", icon: "🛒", text: "Order seeds", sub: "Popular varieties sell out by February.", action: "shop" },
-    { id: "plan", icon: "🗺️", text: "Plan next year's beds", sub: "On the garden map, Henalytics flags crops from the same family in the same spot.", action: "map" },
-    { id: "tools", icon: "🧰", text: "Clean, sharpen and oil tools", sub: "Saves rust and blisters come spring." },
-    { id: "onions", icon: "🧅", text: "Start onions and leeks indoors", sub: "Usually 10 to 12 weeks before your last frost." },
-  ],
-};
 
 function WinterChecklistCard({ data, update, types, onOpenSeeds, onOpenMap }) {
   const season = winterSeason();
@@ -10129,7 +11011,7 @@ function GardenValueModal({ hobby, data, update, onClose, onShare }) {
                     type="number" inputMode="decimal" step="0.05" min="0"
                     defaultValue={r.price}
                     onBlur={(e) => { if (String(r.price) !== e.target.value) setPrice(r.plant, r.slot, e.target.value); }}
-                    style={{ ...inputStyle, width: 64, padding: "5px 6px", fontSize: 13, borderColor: r.custom ? palette.leaf : undefined }}
+                    style={{ ...inputStyle(), width: 64, padding: "5px 6px", fontSize: 13, borderColor: r.custom ? palette.leaf : undefined }}
                   />
                   /{VALUE_SLOT_LABEL[r.slot]}
                 </label>
@@ -10142,8 +11024,8 @@ function GardenValueModal({ hobby, data, update, onClose, onShare }) {
       {value.total > 0 && onShare && (
         <button type="button" onClick={onShare} style={{
           width: "100%", marginTop: 12, padding: "12px", borderRadius: 10, cursor: "pointer",
-          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.ink,
-          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, boxShadow: "2px 2px 0 " + palette.line,
+          border: `2px solid ${palette.ink}`, background: palette.yolk, color: palette.onYolk,
+          fontFamily: FONT_BODY, fontWeight: 700, fontSize: 15, boxShadow: "none",
         }}>📤 Share what my garden grew</button>
       )}
       <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 10, lineHeight: 1.45 }}>
@@ -10234,59 +11116,6 @@ function HarvestBreakdownSection({ harvests }) {
 // convert via cupsPerLb (default 4 cups/lb ≈ ¼ lb per cup). Needs at least
 // 3 amount-bearing feed logs before it starts estimating, so brand-new
 // users see a "still learning" state instead of a garbage date.
-const FEED_BURN_WINDOW_DAYS = 21;
-const feedEntryLbs = (e, cupsPerLb) => {
-  if (!e || e.action !== "fed") return 0;
-  if (e.feedUnit === "cups") {
-    const cups = Number(e.feedAmount) || 0;
-    return cups / (cupsPerLb > 0 ? cupsPerLb : 4);
-  }
-  return Number(e.lbs ?? e.feedAmount) || 0;
-};
-function computeFeedStatus(hobby, entries) {
-  const ft = hobby && hobby.feedTracker;
-  if (!ft || !ft.enabled) return null;
-  const cupsPerLb = Number(ft.cupsPerLb) > 0 ? Number(ft.cupsPerLb) : 4;
-  const warnDays = Number(ft.warnDays) > 0 ? Number(ft.warnDays) : 5;
-  const since = Number(ft.startTs) || 0;
-  const today = todayStr();
-  const toLocalDate = (s) => {
-    const p = String(s || "").split("-").map(Number);
-    return new Date(p[0], (p[1] || 1) - 1, p[2] || 1);
-  };
-  const todayDate = toLocalDate(today);
-  const windowStart = new Date(todayDate.getTime() - (FEED_BURN_WINDOW_DAYS - 1) * 86400000);
-
-  let consumedLbs = 0;   // since the last count — drains the on-hand pile
-  let windowLbs = 0;     // burn-rate window
-  let windowCount = 0;
-  let earliestWindowDate = null;
-  (entries || []).forEach((e) => {
-    if (!e || e.action !== "fed") return;
-    const lbs = feedEntryLbs(e, cupsPerLb);
-    if (lbs <= 0) return;
-    if ((Number(e.created) || 0) >= since) consumedLbs += lbs;
-    const d = e.date ? toLocalDate(e.date) : null;
-    if (d && d >= windowStart && d <= todayDate) {
-      windowLbs += lbs;
-      windowCount += 1;
-      if (!earliestWindowDate || d < earliestWindowDate) earliestWindowDate = d;
-    }
-  });
-
-  const remainingLbs = (Number(ft.onHandLbs) || 0) - consumedLbs;
-  if (windowCount < 3 || windowLbs <= 0) {
-    return { state: "learning", remainingLbs, dailyBurnLbs: 0, daysLeft: null, runOutDate: null, warnDays, cupsPerLb, windowCount };
-  }
-  const spanDays = Math.max(1, Math.min(FEED_BURN_WINDOW_DAYS, Math.round((todayDate - earliestWindowDate) / 86400000) + 1));
-  const dailyBurnLbs = windowLbs / spanDays;
-  const daysLeft = remainingLbs > 0 ? remainingLbs / dailyBurnLbs : 0;
-  const runOut = new Date(todayDate.getTime() + Math.floor(daysLeft) * 86400000);
-  const pad = (n) => String(n).padStart(2, "0");
-  const runOutDate = `${runOut.getFullYear()}-${pad(runOut.getMonth() + 1)}-${pad(runOut.getDate())}`;
-  const state = remainingLbs <= 0 ? "out" : (daysLeft <= warnDays ? "low" : "ok");
-  return { state, remainingLbs, dailyBurnLbs, daysLeft, runOutDate, warnDays, cupsPerLb, windowCount };
-}
 
 // Feed supply card. Mounted on every animal hobby page (inline chicken pages
 // via HomePage, external pages via the page shell) so goats/cows/dogs/etc.
@@ -10318,7 +11147,7 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
         type: "feed_low",
         notes: status.state === "out"
           ? "Feed tracker shows you're out. Log a feed purchase when you restock."
-          : `About ${Math.max(0, Math.round(status.daysLeft))} day${Math.round(status.daysLeft) === 1 ? "" : "s"} of feed left (~${status.remainingLbs.toFixed(0)} lbs). Estimated empty ${status.runOutDate}.`,
+          : `About ${Math.max(0, Math.round(status.daysLeft))} day${Math.round(status.daysLeft) === 1 ? "" : "s"} of feed left (~${fmtWeightWhole(status.remainingLbs)}). Estimated empty ${status.runOutDate}.`,
       });
       return d;
     });
@@ -10356,7 +11185,7 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
   const stateColor = status.state === "ok" ? palette.leaf : (status.state === "learning" ? palette.inkSoft : palette.accent);
   let headline, sub;
   if (status.state === "learning") {
-    headline = `${Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand`;
+    headline = `${fmtWeightWhole(Math.max(0, status.remainingLbs))} on hand`;
     sub = `Log ${Math.max(0, 3 - status.windowCount)} more feeding${3 - status.windowCount === 1 ? "" : "s"} with amounts and I'll estimate your run-out date`;
   } else if (status.state === "out") {
     headline = "Out of feed";
@@ -10364,7 +11193,7 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
   } else {
     const days = Math.max(0, Math.round(status.daysLeft));
     headline = `~${days} day${days === 1 ? "" : "s"} of feed left`;
-    sub = `${Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand · ~${status.dailyBurnLbs.toFixed(1)} lbs/day · empty ~${status.runOutDate}`;
+    sub = `${fmtWeightWhole(Math.max(0, status.remainingLbs))} on hand · ~${fmtWeight1(status.dailyBurnLbs)} a day · empty ~${status.runOutDate}`;
   }
   return (
     <div style={{
@@ -10375,6 +11204,9 @@ function FeedTrackerCard({ hobby, data, update, setModal }) {
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: stateColor }}>{headline}</div>
         <div style={{ fontSize: 11, color: palette.inkSoft }}>{sub}</div>
+        <button type="button" onClick={() => setModal({ type: "purchases" })} style={{ background: "none", border: "none", padding: 0, marginTop: 3, fontSize: 11, color: palette.leaf, fontWeight: 600, textDecoration: "underline", cursor: "pointer", fontFamily: FONT_BODY }}>
+          When did I last buy feed?
+        </button>
       </div>
       <Btn variant="accent" onClick={() => setModal({ type: "feedTracker", hobbyId: hobby.id })} style={{ padding: "8px 12px", fontSize: 13 }}>
         + Feed
@@ -10401,34 +11233,6 @@ const usedEggsTypeLabel = (v) => {
   const t = USED_EGGS_TYPES.find((x) => x.value === v);
   return t ? t.label : "Used";
 };
-function computeEggsOnHand(hobby, entries, sales) {
-  const inv = hobby && hobby.eggInventory;
-  if (!inv || !inv.enabled) return null;
-  const since = Number(inv.startTs) || 0;
-  let n = Number(inv.startCount) || 0;
-  const entryIds = new Set();
-  (entries || []).forEach((e) => {
-    if (!e) return;
-    if (e.action === "sold_eggs") entryIds.add(e.id);
-    if ((Number(e.created) || 0) < since) return;
-    const c = Number(e.count) || 0;
-    if (e.action === "eggs" || e.action === "eggs_laid") n += c;
-    else if (e.action === "sold_eggs" || e.action === "used_eggs") n -= c;
-  });
-  // Egg sales logged directly on the Sales tab also leave the basket.
-  // Skip anything that mirrors a sold_eggs entry (the entries→sales
-  // migration copies those over with the same id, plus a flag) so a
-  // tile-logged sale is never subtracted twice.
-  (sales || []).forEach((s) => {
-    if (!s || s.hobbyType !== "eggs") return;
-    if (s.migratedFromEntries || entryIds.has(s.id)) return;
-    if ((Number(s.created) || 0) < since) return;
-    const qty = Number(s.qty) || 0;
-    const perUnit = { eggs: 1, egg: 1, dozen: 12, dozens: 12 };
-    n -= qty * (perUnit[String(s.unit || "eggs").toLowerCase()] || 1);
-  });
-  return n;
-}
 
 // Card on the egg-layer home page showing live eggs-on-hand once the user
 // turns inventory tracking on. Sits under the flock baskets. Tapping
@@ -10526,6 +11330,18 @@ function EggLayersSummary({ hobby, data, entries, sales, update, setModal }) {
       >
         <Plus size={16} /> Add another flock
       </button>
+
+      {/* Brooder history — batches live on the Incubator hobby (often
+          hidden), so egg-layer folks get a direct way in from here. */}
+      {data && brooderHistory(data).length > 0 && (
+        <button
+          type="button"
+          onClick={() => setModal({ type: "brooderHistory" })}
+          style={{ padding: "10px 14px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600, color: palette.ink, display: "flex", alignItems: "center", justifyContent: "center", gap: 8 }}
+        >
+          🐣 Brooder history ({brooderHistory(data).length})
+        </button>
+      )}
 
       {/* Weekly summary across all flocks */}
       {eggsLaid.length > 0 && (
@@ -10678,8 +11494,26 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
           <div style={{ fontSize: 48, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1 }}>{count}</div>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{count === 0 ? (todayLogged ? `✓ logged today` : "tap + to collect") : `egg${count===1?"":"s"} so far today`}</div>
         </div>
-        <button onClick={inc} style={{ width: 52, height: 52, borderRadius: 26, fontSize: 28, fontWeight: 700, border: `2px solid ${palette.ink}`, background: palette.yolk, cursor: "pointer", color: palette.ink, boxShadow: "2px 2px 0 " + palette.line, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
+        <button onClick={inc} style={{ width: 52, height: 52, borderRadius: 26, fontSize: 28, fontWeight: 700, border: `2px solid ${palette.ink}`, background: palette.yolk, cursor: "pointer", color: palette.onYolk, boxShadow: "none", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>+</button>
       </div>
+
+      {/* This flock's eggs: today (incl. the basket), last 7 and 30 days. */}
+      {(() => {
+        const sum = flockEggSummary(entries, flock.id, { today, basket: count });
+        const cell = (label, n) => (
+          <div style={{ flex: 1, textAlign: "center" }}>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, lineHeight: 1.1 }}>{n}</div>
+            <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6 }}>{label}</div>
+          </div>
+        );
+        return (
+          <div style={{ display: "flex", marginTop: 10, padding: "8px 4px", background: palette.card, border: `1px solid ${palette.line}`, borderRadius: 10 }}>
+            {cell("Today", sum.today)}
+            {cell("7 days", sum.week)}
+            {cell("30 days", sum.month)}
+          </div>
+        );
+      })()}
 
       {count > 0 && (
         <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
@@ -10726,6 +11560,10 @@ function FlockBasket({ flock, hobby, entries, update, setModal, birdEmoji }) {
                         }} />
                       )}
                       <span>{b.name}</span>
+                      {b.broody && (() => {
+                        const dday = broodyDay(b, entries, today);
+                        return <span title="Broody" style={{ fontSize: 11, color: palette.inkSoft }}>🪺{dday ? ` day ${dday}` : ""}</span>;
+                      })()}
                     </button>
                   ))}
                 </div>
@@ -10759,33 +11597,7 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   // currentBatches with endDate cleared, and re-hydrate its entries into
   // data.entries[hobby.id] from the snapshot we stored at finalize time.
   // Behind a confirm prompt so accidental taps don't shuffle data around.
-  const restorePastBatch = (batchId) => {
-    update((d) => {
-      const h = d.hobbies.find((x) => x.id === hobby.id);
-      if (!h || !Array.isArray(h.archivedBatches)) return d;
-      const idx = h.archivedBatches.findIndex((b) => b.id === batchId);
-      if (idx === -1) return d;
-      const target = h.archivedBatches[idx];
-      const restored = JSON.parse(JSON.stringify(target));
-      // Clear finalize-only fields so the batch reads as active again.
-      const snapshotEntries = Array.isArray(restored.finalEntries) ? restored.finalEntries : [];
-      delete restored.finalEntries;
-      restored.endDate = "";
-      h.currentBatches = h.currentBatches || [];
-      h.currentBatches.push(restored);
-      h.archivedBatches.splice(idx, 1);
-      // Re-hydrate the entries. We de-dupe by entry id in case a parallel
-      // path already promoted some of them back (shouldn't happen, but
-      // belt-and-suspenders since data corruption here would be confusing).
-      d.entries[hobby.id] = d.entries[hobby.id] || [];
-      const existingIds = new Set(d.entries[hobby.id].map(e => e.id).filter(Boolean));
-      for (const e of snapshotEntries) {
-        if (!e || (e.id && existingIds.has(e.id))) continue;
-        d.entries[hobby.id].push(e);
-      }
-      return d;
-    }, { immediate: true });
-  };
+  const restorePastBatch = (batchId) => update((d) => restorePastBatchIn(d, hobby.id, batchId), { immediate: true });
 
   // Past batches section — extracted so we can render it in both the
   // "has active batches" path AND the "no active batches" empty-state path.
@@ -10835,9 +11647,8 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
                 <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 8 }}>
                   <button
                     type="button"
-                    onClick={() => {
-                      const msg = `Restore "${b.name}" to active batches? Any logged entries for this batch will come back too.`;
-                      if (typeof window !== "undefined" && window.confirm && !window.confirm(msg)) return;
+                    onClick={async () => {
+                      if (!(await askConfirm({ title: `Restore "${b.name}" to active batches?`, message: "Any logged entries for this batch come back too.", confirmLabel: "Restore", danger: false }))) return;
                       restorePastBatch(b.id);
                     }}
                     style={{
@@ -10889,22 +11700,15 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   return (
     <div>
       {activeBatches.map((batch) => {
-        const days = Math.floor((Date.now() - new Date(batch.startDate).getTime()) / (1000 * 60 * 60 * 24));
+        const days = Math.floor((Date.now() - new Date(batch.startDate + "T00:00").getTime()) / (1000 * 60 * 60 * 24));
         const weeks = (days / 7).toFixed(1);
-        const deaths = entries
-          .filter((e) => e.action === "death" && e.batchId === batch.id)
-          .reduce((s, e) => s + (Number(e.count) || 1), 0);
-        const butcheredCount = (batch.butchered || []).reduce((s, x) => s + (Number(x.count) || 0), 0);
-        const softCulledCount = entries
-          .filter((e) => e.action === "note" && e.batchId === batch.id && Number(e.cullCount) > 0)
-          .reduce((s, e) => s + Number(e.cullCount), 0);
-        const alive = Math.max(0, batch.startCount - deaths - butcheredCount - softCulledCount + (Number(batch.countAdjustment) || 0));
+        const alive = batchAlive(batch, entries);
         return (
           <div
             key={batch.id}
             onClick={() => setModal({ type: "editBatch", hobbyId: hobby.id, batchId: batch.id })}
             style={{
-              background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14,
+              background: palette.deep, color: palette.onDeep, borderRadius: 12, padding: 14,
               marginBottom: 10, cursor: "pointer",
             }}
           >
@@ -10936,6 +11740,15 @@ function MeatChickensSummary({ hobby, entries, update, setModal }) {
   );
 }
 
+// "Deleted egg log" — what the Undo bar calls a deleted log.
+function deletedLogName(e) {
+  const a = (e && e.action) || "";
+  const words = { eggs: "egg log", eggs_laid: "egg log", fed: "feeding", watered: "watering", harvested: "harvest", planted: "planting",
+    note: "note", death: "loss", butcher: "butcher log", sold_eggs: "egg sale", used_eggs: "egg log", milk: "milking", weight: "weight",
+    infrastructure: "build cost", bedding: "bedding log", issue: "issue", fertilized: "fertilizing" };
+  return words[a] || "log";
+}
+
 // ============ ACTIVITY ROW ============
 function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
   const labels = {
@@ -10945,12 +11758,23 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
     death: "Death reported", note: "Note", butcher: "Butchered",
     sold_eggs: "Eggs sold", used_eggs: "Eggs used", infrastructure: "Infrastructure",
     move_tractor: "Moved chicken tractor",
+    // Logs from the other hobbies (the Journal lists every hobby here).
+    fertilized: "Fertilized", milk: "Milked", weight: "Weighed", sale: "Sold", use: "Used",
+    litter: "Litter", kid: "Kidding", calf: "Calving", hatched: "Hatched", bred: "Bred",
+    heat: "In heat", preg_test: "Pregnancy check", ai: "AI breeding", broody: "Broody",
+    treatment: "Treatment", inspect: "Hive inspection", harvest: "Harvest", feed: "Fed",
+    varroa: "Mite check", swarm: "Swarm", split: "Hive split", spring_buildup: "Spring buildup",
+    winter_prep: "Winter prep", tap_set: "Taps set", sap_collected: "Sap collected",
+    boil: "Boil", supplies: "Supplies", restock: "Restocked", more: "More",
   };
   const icons = {
     watered: Droplet, fertilized: Leaf, planted: Sprout, harvested: Scissors, issue: AlertTriangle,
     fed: Sun, free_range: Bird, eggs: Egg, eggs_laid: Egg, bedding: Archive, death: Skull,
     butcher: Snowflake, note: NotebookPen, sold_eggs: DollarSign, used_eggs: Egg, infrastructure: Hammer,
     move_tractor: Truck,
+    milk: MilkIcon, weight: ScaleIcon, sale: DollarSign, litter: BabyIcon, kid: BabyIcon, calf: BabyIcon,
+    hatched: Egg, treatment: SyringeIcon, varroa: SyringeIcon, boil: FlameIcon, sap_collected: DropletsIcon,
+    feed: Sun, harvest: Scissors,
   };
   const Icon = icons[entry.action] || Edit3;
   let detail = "";
@@ -11063,8 +11887,23 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       break;
     }
     case "note": detail = entry.note ? (entry.note.length > 50 ? entry.note.slice(0, 50) + "…" : entry.note) : ""; break;
-    default: detail = entry.note || "";
+    default: {
+      // Other hobbies: the amounts their logs carry, then any note.
+      const parts = [];
+      if (entry.action === "milk" && (entry.oz != null || entry.gallons != null)) parts.push(fmtVolume(entry.oz != null ? Number(entry.oz) / 128 : Number(entry.gallons) || 0));
+      else if (entry.action === "boil" && Number(entry.syrupGal) > 0) parts.push(`${fmtVolume(Number(entry.syrupGal))} syrup`);
+      else if (entry.gallons != null && Number(entry.gallons) > 0) parts.push(fmtVolume(Number(entry.gallons)));
+      if (entry.action === "weight" && Number(entry.weight) > 0) parts.push(fmtWeight(Number(entry.weight)));
+      if (entry.action === "litter" && entry.kitsAlive != null) parts.push(`${entry.kitsAlive} kit${Number(entry.kitsAlive) === 1 ? "" : "s"}`);
+      else if (Number(entry.count) > 0) parts.push(groupDigits(Number(entry.count)));
+      if (Number(entry.cost) > 0) parts.push(fmtMoney(entry.cost));
+      if (entry.animalName) parts.unshift(entry.animalName);
+      const note = entry.note || entry.notes || "";
+      if (note) parts.push(note.length > 50 ? note.slice(0, 50) + "…" : note);
+      detail = parts.join(" · ");
+    }
   }
+  const prettyAction = (a) => { const t = String(a || "Log").replace(/_/g, " "); return t.charAt(0).toUpperCase() + t.slice(1); };
   return (
     <div style={{
       display: "flex", alignItems: "center", gap: 12, padding: "12px 14px",
@@ -11077,7 +11916,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
         <Icon size={18} strokeWidth={1.8} color={palette.ink} />
       </div>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{entry.action === "custom" ? (entry.customLabel || "Custom log") : (labels[entry.action] || entry.action)}</div>
+        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{entry.action === "custom" ? (entry.customLabel || "Custom log") : (labels[entry.action] || prettyAction(entry.action))}</div>
         <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
           {fmtDate(entry.date)} {detail && "· " + detail}
         </div>
@@ -11106,21 +11945,24 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
           </div>
         );
       })()}
+      {/* 44px targets: these sit at the edge of a row and get tapped with a thumb. */}
       {onEdit && (
         <button
+          type="button"
           onClick={onEdit}
-          style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
-          title="Edit"
+          style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, width: 44, height: 44, margin: "-8px -6px -8px 0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+          title="Edit" aria-label="Edit"
         >
-          <Edit3 size={16} />
+          <Edit3 size={17} />
         </button>
       )}
       <button
+        type="button"
         onClick={onDelete}
-        style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
-        title="Delete"
+        style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, width: 44, height: 44, margin: "-8px -10px -8px 0", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}
+        title="Delete" aria-label="Delete"
       >
-        <Trash2 size={16} />
+        <Trash2 size={17} />
       </button>
     </div>
   );
@@ -11198,7 +12040,7 @@ function EntryPhotoThumb({ path, size = 40 }) {
             <div>Photo unavailable</div>
             <div style={{ fontSize: 11, opacity: 0.7 }}>Try refreshing the page</div>
           </div>
-          <button
+          <button aria-label="Close"
             onClick={() => setOpen(false)}
             style={{
               position: "absolute", top: 16, right: 16,
@@ -11241,7 +12083,7 @@ function AnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilter, dat
           <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
             View
           </div>
-          <button onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
+          <button type="button" onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,minHeight:36,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
             <Share2 size={13} /> Share stats
           </button>
         </div>
@@ -11361,6 +12203,29 @@ function dateRangeLabel(range) {
 // deleted on close, just hidden because their seasonId no longer matched any
 // active season). If a different season is active, it's archived first so
 // nothing is lost.
+// One tap from the "Start your 2027 garden" notice: closes the open season
+// the same way Close season does (its logs move into the closed season) and
+// starts the next one with the beds carried over. Undo puts both back.
+function startNextGardenSeason(update, hobbyId, name) {
+  undoable(update, `Started ${name}`)((d) => {
+    const h = d.hobbies.find((x) => x.id === hobbyId);
+    if (!h) return d;
+    if (!d.entries[hobbyId]) d.entries[hobbyId] = [];
+    const beds = lastSeasonGardenAreas(h);
+    if (h.currentSeason) {
+      const cur = JSON.parse(JSON.stringify(h.currentSeason));
+      cur.endDate = todayStr();
+      cur.finalEntries = d.entries[hobbyId].filter((e) => e.seasonId === cur.id);
+      h.archivedSeasons = h.archivedSeasons || [];
+      h.archivedSeasons.push(cur);
+      d.entries[hobbyId] = d.entries[hobbyId].filter((e) => e.seasonId !== cur.id);
+    }
+    h.currentSeason = { id: newId(), name, startDate: todayStr() };
+    if (beds.length) h.currentSeason.gardenMap = { areas: carryForwardAreas(beds) };
+    return d;
+  });
+}
+
 function reopenGardenSeason(update, hobbyId, seasonId) {
   update((d) => {
     const h = d.hobbies.find((x) => x.id === hobbyId);
@@ -11408,7 +12273,7 @@ function ReopenSeasonModal({ hobby, update, onClose }) {
 
   const rowBtn = {
     flexShrink: 0, padding: "6px 12px", borderRadius: 8,
-    border: `1.5px solid ${palette.leaf}`, background: palette.leaf, color: "#fff",
+    border: `1.5px solid ${palette.leaf}`, background: palette.leaf, color: palette.onColor,
     fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer",
   };
   const ghostBtn = {
@@ -11514,7 +12379,7 @@ function GardenAnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilte
           <div style={{ fontSize: 10, letterSpacing: 1, color: palette.inkSoft, textTransform: "uppercase", fontWeight: 600 }}>
             View
           </div>
-          <button onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
+          <button type="button" onClick={() => setShowShare(true)} style={{ display:"flex",alignItems:"center",gap:6,minHeight:36,padding:"6px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontWeight:600,fontSize:12,color:palette.ink,cursor:"pointer" }}>
             <Share2 size={13} /> Share stats
           </button>
         </div>
@@ -11558,7 +12423,7 @@ function GardenAnalyticsPage({ hobby, data, update, seasonFilter, setSeasonFilte
                   <div style={{ display: "flex", gap: 8 }}>
                     <button
                       onClick={() => { reopenGardenSeason(update, hobby.id, archivedSel.id); setConfirmReopen(false); setSeasonFilter(archivedSel.id); }}
-                      style={{ ...reopenBtnStyle, background: palette.leaf, color: "#fff", borderColor: palette.leaf }}
+                      style={{ ...reopenBtnStyle, background: palette.leaf, color: palette.onColor, borderColor: palette.leaf }}
                     >
                       Yes, reopen
                     </button>
@@ -11644,11 +12509,13 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
   // by-plant aggregate (lbs only — non-lbs units mix poorly in a bar chart)
   const byPlant = {};
   harvests.forEach((h) => {
-    if (h.unit !== "lbs") return;
+    const w = harvestLbs(h);
+    if (w == null) return;
     const p = h.plant || "Unknown";
-    byPlant[p] = (byPlant[p] || 0) + (Number(h.quantity) || 0);
+    byPlant[p] = (byPlant[p] || 0) + w;
   });
-  const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value }));
+  // Shown in the homestead's unit (lbs or kg).
+  const plantData = Object.entries(byPlant).map(([name, value]) => ({ name, value: Math.round(weightFromLbs(value) * 10) / 10 }));
 
   // Full per-plant breakdown across ALL units — used by the "Harvest by
   // plant" list below the bar chart so users see cucumbers/squash/etc.
@@ -11769,7 +12636,7 @@ function GardenAnalytics({ entries, data, hobby, seasonFilter, seasonName, spous
       </div>
 
       {plantData.length > 0 && (
-        <ChartCard title="Harvest by crop">
+        <ChartCard title={`Harvest by crop (${weightUnitLabel()})`}>
           <ResponsiveContainer width="100%" height={220}>
             <BarChart data={plantData}>
               <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
@@ -11930,8 +12797,13 @@ function computeCoopPayoff(eggEntries, infraCost, allEntries) {
   };
 }
 
-function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false, data = null }) {
-  if (!hobby) return <EmptyState text="Loading…" />;
+// Hooks must run in the same order every render, so the "no hobby yet"
+// check lives in this small wrapper instead of above the hooks.
+function EggLayersAnalytics(props) {
+  if (!props.hobby) return <EmptyState text="Loading…" />;
+  return <EggLayersAnalyticsBody {...props} />;
+}
+function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false, data = null }) {
   // Toggle: include one-time infrastructure (coops, fencing, brooders) in the
   // Cost/Egg figure. Defaults ON to preserve the historical number; turning it
   // off shows the ongoing/operating cost per egg only.
@@ -12004,24 +12876,19 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
   const tractorFeet = tractorMoves.reduce((s, e) => s + (Number(e.distanceFeet) || 0), 0);
   const tractorMoveCount = tractorMoves.length;
 
-  // egg trend — keep full ISO date so multi-year data sorts correctly
-  // and so we can render an axis label that includes year context for
-  // ranges that span more than one year (otherwise "01-04" from 2024 and
-  // 2025 collapse into a confusing duplicate).
+  // Egg trend: daily for short ranges, by week or month for long ones
+  // (chartPeriodRows), so years of logs stay readable on a phone.
   const byDate = {};
   eggs.forEach((e) => { byDate[e.date] = (byDate[e.date] || 0) + (Number(e.count) || 0); });
-  const eggTrendRaw = Object.entries(byDate)
-    .map(([date, count]) => ({ date, count }))
-    .sort((a, b) => a.date.localeCompare(b.date));
-  // Detect multi-year span — if spread, switch the axis label to YYYY-MM-DD
-  // (Recharts will still thin ticks via interval/minTickGap below). Single-
-  // year ranges stay on the friendlier MM-DD format.
-  const eggTrendYears = new Set(eggTrendRaw.map(p => (p.date || "").slice(0, 4)));
-  const eggTrendMultiYear = eggTrendYears.size > 1;
-  const eggTrend = eggTrendRaw.map(p => ({
-    date: eggTrendMultiYear ? p.date : (p.date || "").slice(5),
-    count: p.count,
-  }));
+  const eggPeriods = chartPeriodRows(Object.entries(byDate).map(([date, count]) => ({ date, count })));
+  const eggTrend = eggPeriods.rows;
+  const eggTrendBy = eggPeriods.by;
+  // With 2+ flocks, the production chart gets a line per flock (+ total).
+  const chartFlocks = (hobby.flocks || []).filter(f => f && !f.archived);
+  const FLOCK_LINE_COLORS = [palette.leaf, palette.accent, "#4C8FD6", palette.feather || "#8B6F47", "#8E5BB5", "#2E9C8F"];
+  const eggTrendByFlock = chartFlocks.length > 1
+    ? chartPeriodRows(eggSeriesByFlock(eggs, chartFlocks)).rows
+    : null;
 
   return (
     <div>
@@ -12077,7 +12944,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
         const onHand = invEnabled ? computeEggsOnHand(hobby, allEntries || entries, (data && data.sales) || []) : null;
         return (
           <>
-            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, margin: "4px 0 10px" }}>🧺 Egg use</div>
+            <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink, margin: "4px 0 10px" }}>Egg use</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
               {invEnabled && <StatCard label="On hand now" value={onHand} sub={`counted ${hobby.eggInventory.startDate}`} accent={palette.yolk} />}
               {(byType.ate || 0) > 0 && <StatCard label="Eaten" value={byType.ate} accent={palette.leaf} />}
@@ -12187,7 +13054,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
                 {eggDelta && (
                   <div style={{ flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
                     <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Eggs vs. prior period</div>
-                    <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1.1 }}>{totalEggs} eggs</div>
+                    <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.yolk, lineHeight: 1.1 }}>{groupDigits(totalEggs)} eggs</div>
                     <div style={{ marginTop: 4 }}><StatTrend delta={eggDelta} palette={palette} fonts={pFonts} /></div>
                   </div>
                 )}
@@ -12195,7 +13062,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
               {eggMonthly.length > 1 && (
                 <ChartCard title="🥚 Eggs by month">
                   <ResponsiveContainer width="100%" height={200}>
-                    <LineChart data={eggMonthly}>
+                    <LineChart data={eggMonthly} margin={{ top: 10, right: 18, left: 0, bottom: 5 }}>
                       <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
                       <YAxis stroke={palette.inkSoft} fontSize={11} />
                       <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={v => [`${v} eggs`, "Laid"]} />
@@ -12210,20 +13077,38 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
       })()}
 
       {eggTrend.length > 0 && (
-        <ChartCard title="Egg production">
+        <ChartCard title={`${eggTrendByFlock ? "Egg production by flock" : "Egg production"}${eggTrendBy === "day" ? "" : eggTrendBy === "week" ? ", by week" : ", by month"}`}>
+          {eggTrendByFlock && (
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", fontSize: 11, color: palette.inkSoft, marginBottom: 6 }}>
+              <span><span style={{ display: "inline-block", width: 10, height: 3, background: palette.yolk, verticalAlign: "middle", marginRight: 4 }} />All flocks</span>
+              {chartFlocks.map((f, i) => (
+                <span key={f.id}><span style={{ display: "inline-block", width: 10, height: 3, background: FLOCK_LINE_COLORS[i % FLOCK_LINE_COLORS.length], verticalAlign: "middle", marginRight: 4 }} />{f.name}</span>
+              ))}
+            </div>
+          )}
           <ResponsiveContainer width="100%" height={220}>
-            <LineChart data={eggTrend} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
+            <LineChart data={eggTrendByFlock || eggTrend} margin={{ top: 10, right: 18, left: 0, bottom: 5 }}>
               <XAxis
-                dataKey="date"
+                dataKey="label"
                 stroke={palette.inkSoft}
                 fontSize={11}
                 interval="preserveStartEnd"
-                minTickGap={40}
+                minTickGap={24}
                 tickMargin={6}
+                padding={{ left: 8, right: 8 }}
               />
-              <YAxis stroke={palette.inkSoft} fontSize={11} />
-              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} />
-              <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
+              <YAxis stroke={palette.inkSoft} fontSize={11} tickFormatter={(v) => Number(v).toLocaleString()} width={44} />
+              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} labelFormatter={(l) => (eggTrendBy === "week" ? `Week of ${l}` : l)} formatter={(v, n) => [Number(v).toLocaleString(), n === "count" ? "Eggs" : n]} />
+              {eggTrendByFlock ? (
+                <>
+                  <Line type="monotone" dataKey="total" name="All flocks" stroke={palette.yolk} strokeWidth={3} dot={false} />
+                  {chartFlocks.map((f, i) => (
+                    <Line key={f.id} type="monotone" dataKey={f.id} name={f.name} stroke={FLOCK_LINE_COLORS[i % FLOCK_LINE_COLORS.length]} strokeWidth={2} dot={false} connectNulls />
+                  ))}
+                </>
+              ) : (
+                <Line type="monotone" dataKey="count" stroke={palette.yolk} strokeWidth={3} dot={eggTrend.length > 40 ? false : { fill: palette.accent, r: 4 }} />
+              )}
             </LineChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -12267,7 +13152,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
                       <div style={{ fontSize:12,color:palette.inkSoft }}>{fl.birdType} · {fl.birdCount} birds</div>
                     </div>
                     <div style={{ fontSize:18,fontWeight:700,color:palette.yolk,fontFamily:FONT_DISPLAY }}>
-                      {flockEggs}
+                      {flockEggs.toLocaleString()}
                       <span style={{ fontSize:11,color:palette.inkSoft,fontWeight:500,marginLeft:4 }}>eggs</span>
                     </div>
                   </div>
@@ -12301,7 +13186,7 @@ function EggLayersAnalytics({ hobby, entries, spouseMode, /* ADV_ANALYTICS */ al
       )}
       {/* Revenue nudge */}
       <div style={{ padding: "10px 14px", background: palette.yolkSoft, borderRadius: 8, fontSize: 13, color: palette.ink, lineHeight: 1.5, marginTop: 8 }}>
-        💰 Track egg sales revenue in the <strong>Sales tab</strong> — log by bird type, eating vs hatching, customer, and more.
+        Track egg sales in <strong>More › Sales &amp; costs</strong>: by bird type, eating vs hatching, customer and more.
       </div>
 
       {entries.length === 0 && <EmptyState text="No egg layer entries yet for this view." />}
@@ -12585,13 +13470,13 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode, /* ADV_A
 
       {leadingCause && (
         <div style={{
-          background: palette.ink, color: palette.bg, borderRadius: 12, padding: 14, marginBottom: 12,
+          background: palette.deep, color: palette.onDeep, borderRadius: 12, padding: 14, marginBottom: 12,
         }}>
           <div style={{ fontSize: 10, opacity: 0.7, textTransform: "uppercase", letterSpacing: 1.5 }}>
             Leading cause of death
           </div>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.yolk, marginTop: 4 }}>
-            {leadingCause[0]} <span style={{ fontSize: 14, color: palette.bg, opacity: 0.7 }}>({leadingCause[1]} of {totalDeaths})</span>
+            {leadingCause[0]} <span style={{ fontSize: 14, color: palette.onDeep, opacity: 0.7 }}>({leadingCause[1]} of {totalDeaths})</span>
           </div>
           {avgDeathAge && (
             <div style={{ fontSize: 13, opacity: 0.85, marginTop: 4 }}>
@@ -12631,7 +13516,7 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode, /* ADV_A
               }}>
                 <div>
                   <strong>{b.name}</strong>
-                  {b.isActive && <span style={{ background: palette.yolk, color: palette.ink, fontSize: 10, padding: "2px 6px", borderRadius: 4, marginLeft: 8 }}>ACTIVE</span>}
+                  {b.isActive && <span style={{ background: palette.yolk, color: palette.onYolk, fontSize: 10, padding: "2px 6px", borderRadius: 4, marginLeft: 8 }}>ACTIVE</span>}
                   <div style={{ fontSize: 12, color: palette.inkSoft }}>
                     Started {fmtDate(b.startDate)} · {b.startCount} birds
                   </div>
@@ -12652,11 +13537,11 @@ function MeatChickensAnalytics({ hobby, entries, dateRange, spouseMode, /* ADV_A
 function ChartCard({ title, children }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, marginBottom: 12,
     }}>
       <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>
-        {title}
+        {plainTitle(title)}
       </div>
       {children}
     </div>
@@ -12680,7 +13565,7 @@ function PhotoLibraryPage({ data, user }) {
     return (
       <div>
         <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 12px", color: palette.ink }}>
-          photo library
+          Photos
         </h2>
         <div style={{
           padding: 32, background: palette.card, border: `1.5px dashed ${palette.line}`,
@@ -12787,7 +13672,7 @@ function PhotoLibraryPage({ data, user }) {
   return (
     <div>
       <h2 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 12px", color: palette.ink }}>
-        photo library
+        Photos
       </h2>
 
       {!anyPhotos && (
@@ -12975,7 +13860,7 @@ function PhotoTile({ photo }) {
           }}>
             {fmtDate(photo.date)}{caption ? " · " + caption : ""}
           </div>
-          <button
+          <button aria-label="Close"
             onClick={() => setOpen(false)}
             style={{
               position: "absolute", top: 16, right: 16,
@@ -13008,6 +13893,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "barn") return <BarnModal data={data} update={update} onClose={close} setModal={setModal} user={user} role={role} />;
   if (modal.type === "about") return <AboutModal onClose={close} />;
   if (modal.type === "support") return <SupportModal onClose={close} />;
+  if (modal.type === "monthlyRecap") return <MonthlyRecapViewer data={data} update={update} monthKey={modal.month} isSupporter={isSupporter} onClose={close} onBecomeSupporter={() => { close(); setPage("supporter"); }} toast={toast} />;
   if (modal.type === "plantScanner") return <PlantScannerModal onClose={close} />;
   if (modal.type === "supporterName") return <SupporterNamePromptModal user={user} onClose={close} />;
   if (modal.type === "customizeQuickLogs") return <CustomizeQuickLogsModal data={data} update={update} hobbyId={modal.hobbyId} onClose={close} />;
@@ -13065,7 +13951,10 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "eggInventorySetup") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
     if (!targetHobby) { close(); return null; }
-    return <EggInventorySetupModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} sales={data.sales || []} update={update} onClose={close} />;
+    // Opened from Use Eggs: after setting up (or skipping), go on to the
+    // Use Eggs form instead of closing, so the eggs still get logged.
+    const onContinue = modal.next ? () => setModal({ type: "log", action: modal.next, hobbyIdOverride: targetHobby.id }) : null;
+    return <EggInventorySetupModal hobby={targetHobby} entries={data.entries[targetHobby.id] || []} sales={data.sales || []} update={update} onClose={close} onContinue={onContinue} />;
   }
   if (modal.type === "butcherFlock") {
     const targetHobby = data.hobbies.find(h => h.id === modal.hobbyId);
@@ -13142,6 +14031,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   }
   if (modal.type === "butcher") return <ButcherModal hobby={hobby} batchId={modal.batchId} entries={data.entries[activeHobby] || []} update={update} onClose={close} />;
   if (modal.type === "startGardenSeason") return <StartGardenSeasonModal hobby={hobby} update={update} onClose={close} />;
+  if (modal.type === "gardenNeedSeason") return <GardenNeedSeason next={nextGardenSeasonName()} onStart={() => setModal({ type: "startGardenSeason" })} onClose={close} />;
   if (modal.type === "reopenSeason") return <ReopenSeasonModal hobby={hobby} update={update} onClose={close} />;
   if (modal.type === "closeGardenSeason") return <CloseGardenSeasonModal hobby={hobby} entries={data.entries[activeHobby] || []} data={data} update={update} onClose={close} />;
   if (modal.type === "closeOutCrops") return <CloseOutCropsModal hobbyId={modal.hobbyId || "garden"} data={data} update={update} setModal={setModal} onClose={close} />;
@@ -13154,6 +14044,7 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
       ? (data.hobbies.find((h) => h.id === modal.hobbyIdOverride) || hobby)
       : hobby;
     return <LogModal hobby={targetHobby} action={modal.action} customLogId={modal.customLogId} data={data} update={update} onClose={close} user={user} existingEntry={modal.existingEntry}
+      onEggCount={() => setModal({ type: "eggInventorySetup", hobbyId: targetHobby.id })}
       onPlanted={(plantName) => {
         const gh = data.hobbies.find((h) => h.type === "garden");
         if (gh && matchingPackets(gh.seeds, plantName).length) setTimeout(() => setModal({ type: "seedUse", plantName }), 0);
@@ -13209,6 +14100,10 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     if (!gh) return null;
     return <SeedUseModal hobby={gh} plantName={modal.plantName} update={update} onClose={close} />;
   }
+  if (modal.type === "yearEndReport") return <YearEndReportModal data={data} onClose={close} />;
+  if (modal.type === "shareCard" && modal.card) {
+    return <BragShareModal card={modal.card} user={user} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
+  }
   if (modal.type === "eggShare") {
     const eh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
     return <EggShareModal data={data} hobby={eh} update={update} user={user} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
@@ -13218,6 +14113,14 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
     return <BragShareModal card={gardenShareCard(data, gh)} user={user} onClose={close}
       onSignIn={() => setModal({ type: "signup" })} />;
   }
+  if (modal.type === "brooderHistory") {
+    const inc = data.hobbies.find((h) => h.id === "incubator" || h.type === "incubator");
+    return <BrooderHistoryModal data={data} onClose={close} onOpenIncubator={inc ? () => {
+      if (inc.hidden) update((d) => { const h = d.hobbies.find((x) => x.id === inc.id); if (h) h.hidden = false; return d; });
+      close(); setActiveHobby(inc.id); setPage("incubator");
+    } : null} />;
+  }
+  if (modal.type === "purchases") return <PurchaseHistoryModal data={data} onClose={close} />;
   if (modal.type === "wrapped") {
     const wy = modal.year || activeWrappedYear(new Date(), true);
     return <WrappedViewer data={data} update={update} user={user} year={wy} toast={toast} onClose={close} onSignIn={() => setModal({ type: "signup" })} />;
@@ -13283,7 +14186,7 @@ function InviteErrorModal({ message, onClose }) {
   return (
     <Modal open onClose={onClose} title="Invitation problem">
       <div style={{
-        padding: 12, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+        padding: 12, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
         borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
         display: "flex", alignItems: "flex-start", gap: 8,
       }}>
@@ -13305,7 +14208,7 @@ function SectionBtn({ icon: Icon, label, sub, onClick, accent = palette.ink }) {
         background: palette.card, border: `1.5px solid ${palette.line}`,
         borderRadius: 10, cursor: "pointer", textAlign: "left",
         display: "flex", alignItems: "center", gap: 12,
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
       }}
     >
       <div style={{
@@ -13494,7 +14397,7 @@ function ManageHobbiesSection({ data, update }) {
                   borderRadius: 6,
                   border: `1.5px solid ${palette.line}`,
                   background: h.hidden ? palette.bgAlt : palette.leaf,
-                  color: h.hidden ? palette.inkSoft : palette.bg,
+                  color: h.hidden ? palette.inkSoft : palette.onColor,
                   fontFamily: FONT_BODY,
                   fontWeight: 600,
                   fontSize: 12,
@@ -13585,7 +14488,7 @@ function InternationalSection({ data, update, setModal, onClose }) {
           <div style={{ marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 6, fontWeight: 600 }}>💵 Currency</div>
             <select
-              style={{ ...inputStyle }}
+              style={{ ...inputStyle() }}
               value={currency}
               onChange={e => setUnit("currency", e.target.value)}
             >
@@ -13806,7 +14709,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
             background: palette.card, border: `1.5px solid ${palette.line}`,
             borderRadius: 10,
             display: "flex", alignItems: "center", gap: 12,
-            boxShadow: "2px 2px 0 " + palette.line,
+            boxShadow: "none",
           }}>
             <div style={{
               width: 36, height: 36, borderRadius: 8, background: palette.leafSoft,
@@ -13913,7 +14816,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
                 if (granted) {
                   update((d) => { d.localRemindersOptIn = true; return d; });
                 } else {
-                  alert("Notifications are turned off for Henalytics. Turn them on in your device Settings to get reminders.");
+                  toast("Notifications are turned off for Henalytics. Turn them on in your phone's Settings to get reminders.", { kind: "error" });
                 }
               });
             }
@@ -13938,7 +14841,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
 
       {/* SPOUSE MODE */}
       <div style={{ marginTop: 16, marginBottom: 4 }}>
-        <div style={{ fontSize: 11, color: data.spouseMode ? "#A0A0B0" : palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
+        <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
           🤫 Spouse Mode
         </div>
         <div style={{
@@ -13983,10 +14886,26 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         }}
       />
 
+      {/* NEW_LOOK (3.0) preview switch — on this device only; gone at launch. */}
+      {!NEW_LOOK_LAUNCHED && <SectionBtn
+        icon={Sparkles}
+        label="Try the new look (preview)"
+        sub="See the redesign we're building. Switch back anytime from More."
+        accent={palette.yolk}
+        onClick={() => { onClose(); setTimeout(() => window.dispatchEvent(new CustomEvent("henalytics-newlook", { detail: true })), 0); }}
+      />}
+      <SectionBtn
+        icon={Sparkles}
+        label="Show the 3.0 welcome again"
+        sub="What changed in 3.0, plus the three tips"
+        accent={palette.leaf}
+        onClick={() => { update((d) => { d.newLookWelcomeSeen = false; d.newLookTips = {}; return d; }); onClose(); }}
+      />
+
       <SectionBtn
         icon={Lightbulb}
         label="What's new 🌾"
-        sub="See the latest features added to HenAlytics"
+        sub="See the latest features added to Henalytics"
         accent={palette.yolk}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "whatsNew" }), 0); }}
       />
@@ -13994,7 +14913,7 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       <SectionBtn
         icon={Lightbulb}
         label="Take the tour 🌾"
-        sub="A quick walkthrough of HenAlytics features"
+        sub="A quick walkthrough of Henalytics"
         accent={palette.leaf}
         onClick={() => { onClose(); setTimeout(() => setModal({ type: "tutorial" }), 0); }}
       />
@@ -14011,16 +14930,16 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
       {/* TABS SECTION */}
       <div style={{ marginTop: 16, marginBottom: 8 }}>
         <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, fontWeight: 600, marginBottom: 8 }}>
-          Tabs
+          Show in More
         </div>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, marginBottom: 6 }}>
           <div>
-            <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>💰 Sales tab</div>
+            <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>Sales &amp; costs</div>
             <div style={{ fontSize: 11, color: palette.inkSoft }}>Track what you sell across all hobbies</div>
           </div>
           <button
             onClick={() => update(d => { d.salesHidden = !d.salesHidden; return d; })}
-            style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: data.salesHidden ? palette.bgAlt : palette.leaf, color: data.salesHidden ? palette.inkSoft : palette.bg, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
+            style={{ padding: "6px 12px", borderRadius: 6, border: `1.5px solid ${palette.line}`, background: data.salesHidden ? palette.bgAlt : palette.leaf, color: data.salesHidden ? palette.inkSoft : palette.onColor, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, cursor: "pointer" }}
           >
             {data.salesHidden ? "Hidden" : "Visible"}
           </button>
@@ -14442,12 +15361,12 @@ function SupportModal({ onClose }) {
                 borderRadius: 12,
                 border: `2px solid ${palette.ink}`,
                 background: t.featured ? palette.leaf : palette.card,
-                color: t.featured ? palette.bg : palette.ink,
+                color: t.featured ? palette.onColor : palette.ink,
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
                 cursor: "pointer",
                 position: "relative",
               }}
@@ -14455,7 +15374,7 @@ function SupportModal({ onClose }) {
               {t.featured && (
                 <div style={{
                   position: "absolute", top: -10, left: "50%", transform: "translateX(-50%)",
-                  background: palette.yolk, color: palette.ink, fontSize: 10, fontWeight: 700,
+                  background: palette.yolk, color: palette.onYolk, fontSize: 10, fontWeight: 700,
                   letterSpacing: 0.5, padding: "2px 8px", borderRadius: 999,
                   border: `1.5px solid ${palette.ink}`, textTransform: "uppercase",
                 }}>
@@ -14490,12 +15409,12 @@ function SupportModal({ onClose }) {
             borderRadius: 10,
             border: `1.5px solid ${palette.ink}`,
             background: palette.yolk,
-            color: palette.ink,
+            color: palette.onYolk,
             textAlign: "center",
             fontFamily: FONT_BODY,
             fontWeight: 700,
             fontSize: 14,
-            boxShadow: "2px 2px 0 " + palette.line,
+            boxShadow: "none",
             cursor: "pointer",
           }}
         >
@@ -14807,7 +15726,7 @@ function SupporterNamePromptModal({ user, onClose }) {
     }}>
       <div onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
-        border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+        border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         fontFamily: FONT_BODY, overflow: "hidden",
         display: "flex", flexDirection: "column",
       }}>
@@ -14878,7 +15797,7 @@ function SupporterNamePromptModal({ user, onClose }) {
 
               {error && (
                 <div style={{
-                  padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+                  padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
                   borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 12,
                   lineHeight: 1.4,
                 }}>
@@ -14895,7 +15814,7 @@ function SupporterNamePromptModal({ user, onClose }) {
                   border: `1.5px solid ${palette.ink}`, background: palette.ink,
                   color: palette.bg, fontFamily: FONT_BODY, fontWeight: 700, fontSize: 14,
                   cursor: (working || !name.trim()) ? "wait" : "pointer",
-                  boxShadow: "2px 2px 0 " + palette.line,
+                  boxShadow: "none",
                   opacity: (working || !name.trim()) ? 0.6 : 1,
                   marginBottom: 8,
                 }}
@@ -14987,7 +15906,7 @@ function FirstSignInModal({ user, localData, onClose, onFreshStart }) {
           background: palette.ink, color: palette.bg,
           border: `1.5px solid ${palette.ink}`, borderRadius: 10,
           cursor: working ? "wait" : "pointer", textAlign: "left",
-          boxShadow: "2px 2px 0 " + palette.line,
+          boxShadow: "none",
           fontFamily: FONT_BODY,
         }}
       >
@@ -15007,7 +15926,7 @@ function FirstSignInModal({ user, localData, onClose, onFreshStart }) {
           background: palette.card, color: palette.ink,
           border: `1.5px solid ${palette.line}`, borderRadius: 10,
           cursor: working ? "wait" : "pointer", textAlign: "left",
-          boxShadow: "2px 2px 0 " + palette.line,
+          boxShadow: "none",
           fontFamily: FONT_BODY,
         }}
       >
@@ -15116,7 +16035,7 @@ function CustomLogPickerModal({ data, update, hobbyId, onClose, setModal }) {
         <>
           <Field label="Label">
             <input
-              style={inputStyle}
+              style={inputStyle()}
               value={newLabel}
               onChange={(e) => { setNewLabel(e.target.value); setError(""); }}
               placeholder="e.g. Pull weeds"
@@ -15320,7 +16239,7 @@ function CustomizeQuickLogsModal({ data, update, hobbyId, onClose }) {
                 {isEditing ? (
                   <>
                     <input
-                      style={inputStyle}
+                      style={inputStyle()}
                       value={editLabel}
                       onChange={(e) => { setEditLabel(e.target.value); setEditError(""); }}
                       autoFocus
@@ -15443,7 +16362,7 @@ function PantryModal({ data, update, onClose, setModal }) {
             style={{
               alignSelf: "flex-start",
               background: pct < 20 ? palette.accent : "transparent",
-              color: pct < 20 ? palette.bg : palette.ink,
+              color: pct < 20 ? palette.onColor : palette.ink,
               border: `1.5px solid ${pct < 20 ? palette.accent : palette.line}`,
               borderRadius: 6,
               padding: "4px 10px",
@@ -15626,7 +16545,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
     <Modal open onClose={onClose} title={isEdit ? "Edit pantry item" : "Add pantry item"}>
       <Field label="Name">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={name}
           onChange={e => { setName(e.target.value); setError(""); }}
           placeholder="e.g. All-purpose flour"
@@ -15636,7 +16555,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
 
       <Field label="Brand (optional)">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={brand}
           onChange={e => setBrand(e.target.value)}
           placeholder="e.g. King Arthur"
@@ -15644,7 +16563,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
       </Field>
 
       <Field label="Category">
-        <select style={inputStyle} value={category} onChange={e => setCategory(e.target.value)}>
+        <select style={inputStyle()} value={category} onChange={e => setCategory(e.target.value)}>
           {PANTRY_CATEGORIES.map(c => (
             <option key={c} value={c}>{PANTRY_CATEGORY_LABELS[c] || c}</option>
           ))}
@@ -15657,14 +16576,14 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
             type="number"
             step="0.01"
             min="0"
-            style={inputStyle}
+            style={inputStyle()}
             value={purchaseAmount}
             onChange={e => { setPurchaseAmount(e.target.value); setError(""); }}
             placeholder="10"
           />
         </Field>
         <Field label="Unit">
-          <select style={inputStyle} value={purchaseUnit} onChange={e => setPurchaseUnit(e.target.value)}>
+          <select style={inputStyle()} value={purchaseUnit} onChange={e => setPurchaseUnit(e.target.value)}>
             <optgroup label="Weight">
               {PANTRY_WEIGHT_UNITS.map(u => <option key={u} value={u}>{PANTRY_UNIT_LABELS[u]}</option>)}
             </optgroup>
@@ -15678,12 +16597,12 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
         </Field>
       </div>
 
-      <Field label="Purchase cost ($)">
+      <Field label={`Purchase cost (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={purchaseCost}
           onChange={e => { setPurchaseCost(e.target.value); setError(""); }}
           placeholder="5.00"
@@ -15691,7 +16610,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
       </Field>
 
       <Field label="Purchase date">
-        <input type="date" style={inputStyle} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} />
       </Field>
 
       <Field label="Current stock remaining">
@@ -15699,7 +16618,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={currentAmount}
           onChange={e => setCurrentAmount(e.target.value)}
           placeholder={purchaseAmount || "0"}
@@ -15714,7 +16633,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={densityOverride}
           onChange={e => setDensityOverride(e.target.value)}
           placeholder={builtInDensity != null ? `Default: ${builtInDensity}` : "No default for this category"}
@@ -15777,7 +16696,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
 
       {!isEdit && (
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 6, marginBottom: 10, lineHeight: 1.5, padding: 10, background: palette.bgAlt, borderRadius: 6 }}>
-          Adding this also logs a ${parseFloat(purchaseCost || 0).toFixed(2)} expense in the Sales tab (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
+          Adding this also logs a {fmtMoney(parseFloat(purchaseCost || 0))} expense in Sales & costs (category: Supplies). The expense isn't attributed to any single hobby since pantry is shared — you can re-assign it from the Sales tab if you want.
         </div>
       )}
 
@@ -15797,7 +16716,7 @@ function AddPantryItemModal({ data, update, existing, onClose }) {
           ) : (
             <button
               onClick={handleDelete}
-              style={{ padding: "9px 14px", borderRadius: 8, background: palette.accent, border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.bg }}
+              style={{ padding: "9px 14px", borderRadius: 8, background: palette.accent, border: `1.5px solid ${palette.accent}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onColor }}
             >
               Confirm delete
             </button>
@@ -15905,7 +16824,7 @@ function RefillPantryModal({ data, update, item, onClose }) {
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={refillAmount}
           onChange={e => { setRefillAmount(e.target.value); setError(""); }}
           placeholder={item?.purchaseAmount != null ? String(item.purchaseAmount) : "0"}
@@ -15913,12 +16832,12 @@ function RefillPantryModal({ data, update, item, onClose }) {
         />
       </Field>
 
-      <Field label="New purchase cost ($)">
+      <Field label={`New purchase cost (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={refillCost}
           onChange={e => { setRefillCost(e.target.value); setError(""); }}
           placeholder={item?.purchaseCost != null ? String(item.purchaseCost) : "0.00"}
@@ -15926,7 +16845,7 @@ function RefillPantryModal({ data, update, item, onClose }) {
       </Field>
 
       <Field label="Purchase date">
-        <input type="date" style={inputStyle} value={refillDate} onChange={e => setRefillDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={refillDate} onChange={e => setRefillDate(e.target.value)} />
       </Field>
 
       <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 12, padding: 10, background: palette.bgAlt, borderRadius: 6, lineHeight: 1.5 }}>
@@ -15964,7 +16883,7 @@ function RenameHomesteadModal({ data, update, onClose }) {
       </div>
       <Field label="Homestead name">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Slow Build Acres, Willow Creek Farm..."
@@ -16017,7 +16936,7 @@ function LocationModal({ data, update, onClose }) {
       });
       onClose();
     } catch (e) {
-      setError(e.message || "Could not get location.");
+      setError(friendlyError(e, "Could not get location."));
     } finally {
       setBusy(false);
     }
@@ -16034,7 +16953,7 @@ function LocationModal({ data, update, onClose }) {
         setSearchResults(result);
       }
     } catch (e) {
-      setError(e.message || "Search failed.");
+      setError(friendlyError(e, "Search failed."));
     } finally {
       setBusy(false);
     }
@@ -16116,7 +17035,7 @@ function LocationModal({ data, update, onClose }) {
       <form onSubmit={useTyped}>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
-            style={inputStyle}
+            style={inputStyle()}
             value={typed}
             onChange={(e) => setTyped(e.target.value)}
             placeholder="Kansas City"
@@ -16145,7 +17064,7 @@ function LocationModal({ data, update, onClose }) {
 
       {error && (
         <div style={{
-          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginTop: 8,
           display: "flex", alignItems: "flex-start", gap: 8,
         }}>
@@ -16246,10 +17165,10 @@ function WeatherSourceSettings({ data, update }) {
           {st.provider === "wu" ? (
             <>
               <Field label="Station ID">
-                <input style={inputStyle} value={st.stationId || ""} onChange={(e) => setField("stationId", e.target.value)} placeholder="KMOKANSA123" autoCapitalize="characters" />
+                <input style={inputStyle()} value={st.stationId || ""} onChange={(e) => setField("stationId", e.target.value)} placeholder="KMOKANSA123" autoCapitalize="characters" />
               </Field>
               <Field label="API key">
-                <input style={inputStyle} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} placeholder="From wunderground.com → My Profile → API Keys" />
+                <input style={inputStyle()} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} placeholder="From wunderground.com → My Profile → API Keys" />
               </Field>
               <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
                 Works with any station that uploads to Weather Underground (Ecowitt, Davis, AcuRite, Tempest, and others). Station owners get a free API key on their Weather Underground profile.
@@ -16258,13 +17177,13 @@ function WeatherSourceSettings({ data, update }) {
           ) : (
             <>
               <Field label="Station MAC address">
-                <input style={inputStyle} value={st.macAddress || ""} onChange={(e) => setField("macAddress", e.target.value)} placeholder="00:0E:C6:20:0F:7B" />
+                <input style={inputStyle()} value={st.macAddress || ""} onChange={(e) => setField("macAddress", e.target.value)} placeholder="00:0E:C6:20:0F:7B" />
               </Field>
               <Field label="API key">
-                <input style={inputStyle} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} />
+                <input style={inputStyle()} value={st.apiKey || ""} onChange={(e) => setField("apiKey", e.target.value)} />
               </Field>
               <Field label="Application key">
-                <input style={inputStyle} value={st.applicationKey || ""} onChange={(e) => setField("applicationKey", e.target.value)} />
+                <input style={inputStyle()} value={st.applicationKey || ""} onChange={(e) => setField("applicationKey", e.target.value)} />
               </Field>
               <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
                 Create both keys at ambientweather.net → Account → API Keys. The MAC address is on the Devices page.
@@ -16277,7 +17196,7 @@ function WeatherSourceSettings({ data, update }) {
           {testMsg && (
             <div style={{
               marginTop: 8, fontSize: 12, lineHeight: 1.5, padding: 8, borderRadius: 6,
-              background: testMsg.ok ? palette.leafSoft : "#FBE5DE",
+              background: testMsg.ok ? palette.leafSoft : palette.dangerBg,
               color: testMsg.ok ? palette.ink : palette.accent,
             }}>{testMsg.text}</div>
           )}
@@ -16334,12 +17253,12 @@ function FrostDateSettings({ data, update }) {
       <div style={{ display: "flex", gap: 8 }}>
         <label style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
           Last spring frost
-          <input type="date" style={{ ...inputStyle, marginTop: 4 }} value={lastSpring}
+          <input type="date" style={{ ...inputStyle(), marginTop: 4 }} value={lastSpring}
             onChange={(e) => { setLastSpring(e.target.value); save(e.target.value, firstFall); }} />
         </label>
         <label style={{ flex: 1, fontSize: 11, color: palette.inkSoft }}>
           First fall frost
-          <input type="date" style={{ ...inputStyle, marginTop: 4 }} value={firstFall}
+          <input type="date" style={{ ...inputStyle(), marginTop: 4 }} value={firstFall}
             onChange={(e) => { setFirstFall(e.target.value); save(lastSpring, e.target.value); }} />
         </label>
       </div>
@@ -16596,7 +17515,7 @@ function DailyNudgeSetting({ data, update }) {
           ))}
           <input type="time" value={n.time || "18:00"}
             onChange={(e) => { const v = e.target.value; if (v) update((d) => { d.dailyNudge = { ...(d.dailyNudge || {}), enabled: true, time: v }; return d; }); }}
-            style={{ ...inputStyle, width: "auto", padding: "4px 8px", fontSize: 12 }} />
+            style={{ ...inputStyle(), width: "auto", padding: "4px 8px", fontSize: 12 }} />
         </div>
       )}
     </div>
@@ -16736,9 +17655,9 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       // so we can show a friendly explanation instead of a generic red error box.
       if (e && e.kind === 'rate_limit') {
         setIsRateLimit(true);
-        setError(e.message || "We've hit our daily email send limit. Please try again tomorrow or use the email fallback below.");
+        setError(friendlyError(e, "We've hit our daily email send limit. Please try again tomorrow or use the email fallback below."));
       } else {
-        setError(e.message || "Could not send. Please try the fallback options below.");
+        setError(friendlyError(e, "Could not send. Please try the fallback options below."));
       }
     } finally {
       setSending(false);
@@ -16785,7 +17704,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       </div>
 
       <Field label="Type of feedback">
-        <select style={inputStyle} value={category} onChange={(e) => setCategory(e.target.value)}>
+        <select style={inputStyle()} value={category} onChange={(e) => setCategory(e.target.value)}>
           <option value="idea">💡 New idea</option>
           <option value="bug">🐛 Bug report</option>
           <option value="hobby">🌱 New hobby/category request</option>
@@ -16795,7 +17714,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
 
       <Field label="Your message">
         <textarea
-          style={{ ...inputStyle, minHeight: 120, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 120, resize: "vertical" }}
           value={message}
           onChange={(e) => setMessage(e.target.value)}
           placeholder="What would make this app better for you?"
@@ -16807,7 +17726,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
       <Field label="Your email (optional, so I can reply)">
         <input
           type="email"
-          style={inputStyle}
+          style={inputStyle()}
           value={fromEmail}
           onChange={(e) => setFromEmail(e.target.value)}
           placeholder="you@example.com"
@@ -16832,7 +17751,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
 
       {error && !isRateLimit && (
         <div style={{
-          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
           display: "flex", alignItems: "flex-start", gap: 8,
         }}>
@@ -16869,7 +17788,7 @@ function FeedbackModal({ onClose, presetCategory, user }) {
                 display: "inline-flex", alignItems: "center", gap: 6,
                 padding: "8px 12px", borderRadius: 8, textDecoration: "none",
                 fontSize: 12, fontWeight: 600,
-                background: palette.yolk, color: palette.ink,
+                background: palette.yolk, color: palette.onYolk,
                 border: `1.5px solid ${palette.ink}`,
               }}
             >
@@ -16908,10 +17827,10 @@ function AddHobbyModal({ update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Add a hobby">
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bees, Goats" />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Bees, Goats" />
       </Field>
       <Field label="Behavior template">
-        <select style={inputStyle} value={type} onChange={(e) => setType(e.target.value)}>
+        <select style={inputStyle()} value={type} onChange={(e) => setType(e.target.value)}>
           <option value="garden">Like Garden (planting/harvest)</option>
           <option value="egg_layers">Like Egg Layers (ongoing flock)</option>
           <option value="meat_chickens">Like Meat Birds (seasonal batches)</option>
@@ -17358,7 +18277,7 @@ function AddFlockModal({ hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Add a flock">
       <Field label="Flock name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main Flock, Duck Pen, Turkey Run" autoFocus />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Main Flock, Duck Pen, Turkey Run" autoFocus />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -17370,12 +18289,12 @@ function AddFlockModal({ hobbyId, update, onClose }) {
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.femalePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={females} onChange={(e) => setFemales(e.target.value)} placeholder="0" />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={females} onChange={(e) => setFemales(e.target.value)} placeholder="0" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.malePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={males} onChange={(e) => setMales(e.target.value)} placeholder="0" />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={males} onChange={(e) => setMales(e.target.value)} placeholder="0" />
           </Field>
         </div>
       </div>
@@ -17385,13 +18304,13 @@ function AddFlockModal({ hobbyId, update, onClose }) {
         </div>
       )}
       <Field label="Date acquired">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Where purchased (optional)">
-        <input style={inputStyle} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
+        <input style={inputStyle()} value={purchasedFrom} onChange={(e) => setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
       </Field>
       <Btn variant="primary" onClick={() => {
         const f = parseInt(females) || 0;
@@ -17547,7 +18466,7 @@ function BirdPhotoSection({ bird, user, onCommit }) {
         display: "inline-block", padding: "6px 12px", borderRadius: 7,
         background: busy ? palette.line : palette.yolk,
         border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
-        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, color: palette.ink,
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 12, color: busy ? palette.ink : palette.onYolk,
       }}>
         {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another")}
         <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
@@ -17558,6 +18477,8 @@ function BirdPhotoSection({ bird, user, onCommit }) {
 
 function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose }) {
   const flock = (hobby.flocks || []).find(f => f.id === flockId);
+  const flockEntries = React.useMemo(() => ((data && data.entries && data.entries[hobbyId]) || []), [data, hobbyId]);
+  const hatchChoices = React.useMemo(() => hatchChoicesForFlock(data, flockId), [data, flockId]);
   const [birds, setBirds] = useState(() =>
     (flock?.namedBirds || []).map(b => ({ ...b }))
   );
@@ -17811,7 +18732,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                   }} />
                 )}
                 <input
-                  style={{ ...inputStyle, flex: 1, padding: "6px 10px" }}
+                  style={{ ...inputStyle(), flex: 1, padding: "6px 10px" }}
                   value={b.name}
                   onChange={(e) => updateBird(b.id, { name: e.target.value })}
                   placeholder="Bird name"
@@ -17821,7 +18742,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                 }}><X size={16} /></button>
               </div>
               <select
-                style={{ ...inputStyle, padding: "6px 10px", fontSize: 13 }}
+                style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13 }}
                 value={b.bandColor || ""}
                 onChange={(e) => updateBird(b.id, { bandColor: e.target.value })}
               >
@@ -17875,7 +18796,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                 return (
                   <>
                     <select
-                      style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                      style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                       value={selectVal}
                       onChange={(e) => {
                         const v = e.target.value;
@@ -17894,7 +18815,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                     </select>
                     {selectVal === "Other" && (
                       <input
-                        style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                        style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                         value={!inList ? savedBreed : ""}
                         onChange={(e) => updateBird(b.id, { breed: e.target.value })}
                         onBlur={(e) => rememberBreed(e.target.value)}
@@ -17905,7 +18826,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                 );
               })()}
               <input
-                style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginTop: 6 }}
+                style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginTop: 6 }}
                 value={b.notes || ""}
                 onChange={(e) => updateBird(b.id, { notes: e.target.value })}
                 placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
@@ -17915,23 +18836,67 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                   (updating the flock counter, logging an entry) happen via the
                   Broody tile on the main page, not here; this is just the flag
                   for users who'd rather just track without logging an event. */}
-              <button
-                type="button"
-                onClick={() => updateBird(b.id, { broody: !b.broody })}
-                style={{
-                  marginTop: 8,
-                  display: "flex", alignItems: "center", gap: 8,
-                  padding: "6px 10px",
-                  background: b.broody ? palette.yolkSoft : "transparent",
-                  border: `1.5px solid ${b.broody ? palette.yolk : palette.line}`,
-                  borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
-                  fontSize: 12, color: palette.ink, width: "100%",
-                  textAlign: "left",
-                }}
-              >
-                <span style={{ fontSize: 14 }}>{b.broody ? "🪺" : "○"}</span>
-                <span>{b.broody ? "Currently broody" : "Not broody"} — tap to toggle</span>
-              </button>
+              {/* Hatch date + age. Quick picks: brooder batches whose chicks
+                  moved into this flock (flockTools.hatchChoicesForFlock). */}
+              <div style={{ marginTop: 8 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap" }}>Hatched</label>
+                  <input
+                    type="date"
+                    style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, flex: 1 }}
+                    value={b.hatchDate || ""}
+                    max={todayStr()}
+                    onChange={(e) => updateBird(b.id, { hatchDate: e.target.value || null })}
+                  />
+                </div>
+                {b.hatchDate && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 3 }}>{ageLabel(b.hatchDate, todayStr())}</div>}
+                {!b.hatchDate && hatchChoices.length > 0 && (
+                  <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 5 }}>
+                    {hatchChoices.slice(0, 3).map((hc) => (
+                      <button key={hc.id} type="button" onClick={() => updateBird(b.id, { hatchDate: hc.hatchDate })}
+                        style={{ padding: "3px 9px", borderRadius: 999, border: `1px solid ${palette.line}`, background: palette.card, fontSize: 11, color: palette.ink, cursor: "pointer", fontFamily: FONT_BODY }}>
+                        🐣 {hc.name}, {new Date(hc.hatchDate + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+              {/* Broody: the date she went broody is stamped, so we can show
+                  "day N"; breaking closes the spell into broodyHistory. */}
+              {(() => {
+                const day = broodyDay(b, flockEntries, todayStr());
+                const spells = Array.isArray(b.broodyHistory) ? b.broodyHistory.slice(-3).reverse() : [];
+                return (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => updateBird(b.id, broodyPatch(b, !b.broody, todayStr()))}
+                      style={{
+                        marginTop: 8,
+                        display: "flex", alignItems: "center", gap: 8,
+                        padding: "6px 10px",
+                        background: b.broody ? palette.yolkSoft : "transparent",
+                        border: `1.5px solid ${b.broody ? palette.yolk : palette.line}`,
+                        borderRadius: 8, cursor: "pointer", fontFamily: FONT_BODY,
+                        fontSize: 12, color: palette.ink, width: "100%",
+                        textAlign: "left",
+                      }}
+                    >
+                      <span style={{ fontSize: 14 }}>{b.broody ? "🪺" : "○"}</span>
+                      <span style={{ flex: 1 }}>
+                        {b.broody ? (day ? `Broody · day ${day}` : "Currently broody") : "Not broody"}
+                        {b.broody && b.broodySince && <span style={{ color: palette.inkSoft }}> (since {new Date(b.broodySince + "T00:00:00").toLocaleDateString(undefined, { month: "short", day: "numeric" })})</span>}
+                      </span>
+                      <span style={{ color: palette.inkSoft, textDecoration: "underline" }}>{b.broody ? "Mark as broken" : "Mark broody"}</span>
+                    </button>
+                    {spells.length > 0 && (
+                      <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.5 }}>
+                        Past broody spells: {spells.map(broodySpellLabel).join(" · ")}
+                      </div>
+                    )}
+                  </>
+                );
+              })()}
               <BirdPhotoSection bird={b} user={user} onCommit={(nextPhotos) => commitBirdPhotos(b.id, nextPhotos)} />
               {dyingBirdId === b.id ? (
                 <div style={{ marginTop: 8, padding: 10, background: palette.bgAlt, border: `1.5px solid ${palette.accent}`, borderRadius: 8 }}>
@@ -17939,10 +18904,10 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
                     Mark {b.name} as died? This decrements your flock count by 1 and adds a death entry.
                   </div>
                   <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
-                    <input type="date" style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, flex: 1 }} value={deathDate} onChange={(e) => setDeathDate(e.target.value)} />
+                    <input type="date" style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, flex: 1 }} value={deathDate} onChange={(e) => setDeathDate(e.target.value)} />
                   </div>
                   <input
-                    style={{ ...inputStyle, padding: "6px 10px", fontSize: 13, marginBottom: 8 }}
+                    style={{ ...inputStyle(), padding: "6px 10px", fontSize: 13, marginBottom: 8 }}
                     value={deathCause}
                     onChange={(e) => setDeathCause(e.target.value)}
                     placeholder="Cause (optional): predator, illness, unknown…"
@@ -17979,7 +18944,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
         </div>
         <div style={{ display: "flex", gap: 8, marginBottom: 8 }}>
           <input
-            style={{ ...inputStyle, flex: 1 }}
+            style={{ ...inputStyle(), flex: 1 }}
             value={newName}
             onChange={(e) => setNewName(e.target.value)}
             placeholder="Name (e.g. Henrietta, Big Red)"
@@ -17987,7 +18952,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
           />
         </div>
         <select
-          style={inputStyle}
+          style={inputStyle()}
           value={newBandColor}
           onChange={(e) => setNewBandColor(e.target.value)}
         >
@@ -17996,7 +18961,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
           ))}
         </select>
         <select
-          style={{ ...inputStyle, marginTop: 8 }}
+          style={{ ...inputStyle(), marginTop: 8 }}
           value={newBreed}
           onChange={(e) => setNewBreed(e.target.value)}
         >
@@ -18007,7 +18972,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
         </select>
         {newBreed === "Other" && (
           <input
-            style={{ ...inputStyle, marginTop: 8 }}
+            style={{ ...inputStyle(), marginTop: 8 }}
             value={newBreedOther}
             onChange={(e) => setNewBreedOther(e.target.value)}
             placeholder="Breed name"
@@ -18041,7 +19006,7 @@ function NamedBirdsModal({ hobbyId, flockId, hobby, data, update, user, onClose 
           })}
         </div>
         <input
-          style={{ ...inputStyle, marginTop: 8 }}
+          style={{ ...inputStyle(), marginTop: 8 }}
           value={newNotes}
           onChange={(e) => setNewNotes(e.target.value)}
           placeholder="Notes (optional): e.g. broody hen, lays jumbo eggs…"
@@ -18167,7 +19132,7 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
   return (
     <Modal open onClose={onClose} title="Edit flock">
       <Field label="Flock name">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} />
       </Field>
       <Field label="Bird type">
         <div style={{ display:"flex",flexWrap:"wrap",gap:6 }}>
@@ -18179,12 +19144,12 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.femalePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={females} onChange={e=>setFemales(e.target.value)} />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={females} onChange={e=>setFemales(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Number of ${sn.malePl}`}>
-            <input type="number" inputMode="numeric" min={0} style={inputStyle} value={males} onChange={e=>setMales(e.target.value)} />
+            <input type="number" inputMode="numeric" min={0} style={inputStyle()} value={males} onChange={e=>setMales(e.target.value)} />
           </Field>
         </div>
       </div>
@@ -18194,13 +19159,13 @@ function EditFlockModal({ hobbyId, flockId, hobby, update, onClose, setModal }) 
         </div>
       )}
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Total cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Where purchased (optional)">
-        <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
+        <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Murray McMurray, Tractor Supply, neighbor" />
       </Field>
       <div style={{ display:"flex",gap:8,marginTop:8,flexWrap:"wrap" }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -18345,7 +19310,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
             <Field label={`How many birds (this flock has ${sourceCount})`}>
               <input
                 type="number" inputMode="numeric" min={1} max={sourceCount}
-                style={inputStyle} value={count}
+                style={inputStyle()} value={count}
                 onChange={e => setCount(e.target.value)}
               />
             </Field>
@@ -18353,7 +19318,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 
           {mode === "named" && (
             <Field label="Which bird">
-              <select style={inputStyle} value={birdId} onChange={e => setBirdId(e.target.value)}>
+              <select style={inputStyle()} value={birdId} onChange={e => setBirdId(e.target.value)}>
                 {namedBirds.map(b => (
                   <option key={b.id} value={b.id}>{b.name}</option>
                 ))}
@@ -18362,7 +19327,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
           )}
 
           <Field label="Move to flock">
-            <select style={inputStyle} value={destId} onChange={e => setDestId(e.target.value)}>
+            <select style={inputStyle()} value={destId} onChange={e => setDestId(e.target.value)}>
               {destOptions}
             </select>
           </Field>
@@ -18378,7 +19343,7 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={onClose} style={{ padding: "9px 16px", borderRadius: 8, background: palette.bgAlt, border: `1.5px solid ${palette.line}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Cancel</button>
-            <button onClick={doMove} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink }}>Move</button>
+            <button onClick={doMove} style={{ padding: "9px 16px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onYolk }}>Move</button>
           </div>
         </>
       )}
@@ -18387,12 +19352,17 @@ function MoveFlockBirdsModal({ hobbyId, flockId, hobby, update, onClose }) {
 }
 
 // Edit an existing flock-history entry. Lets the user fix typos in count, date, or cost.
-function EditFlockEntryModal({ hobby, index, update, onClose }) {
+// The entry can vanish while this is open (a farmhand's sync); close
+// instead of rendering, and keep the guard out of the body so its hooks
+// always run in the same order.
+function EditFlockEntryModal(props) {
+  const fh = (props.hobby.flockHistory || [])[props.index];
+  useEffect(() => { if (!fh) props.onClose(); }, [fh]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!fh) return null;
+  return <EditFlockEntryModalBody {...props} />;
+}
+function EditFlockEntryModalBody({ hobby, index, update, onClose }) {
   const fh = (hobby.flockHistory || [])[index];
-  if (!fh) {
-    onClose();
-    return null;
-  }
   const [count, setCount] = useState(String(fh.count || 0));
   const [date, setDate] = useState(fh.date || todayStr());
   const [cost, setCost] = useState(fh.cost ? String(fh.cost) : "");
@@ -18428,13 +19398,13 @@ function EditFlockEntryModal({ hobby, index, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit flock entry">
       <Field label="How many birds?">
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Date acquired">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
@@ -18455,17 +19425,20 @@ function EditFlockEntryModal({ hobby, index, update, onClose }) {
 }
 
 // Edit the current meat-chicken batch. Lets you fix the name, date, count, or cost.
-function EditBatchModal({ hobby, batchId, entries = [], update, onClose }) {
+function EditBatchModal(props) {
+  const list = props.hobby.currentBatches || [];
+  const found = list.find((b) => b.id === props.batchId) || list[0];
+  useEffect(() => { if (!found) props.onClose(); }, [found]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!found) return null;
+  return <EditBatchModalBody {...props} />;
+}
+function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
   // Push 4b — find the specific batch in currentBatches[]. batchId is
   // passed in by the caller (MeatChickensSummary). For safety on stale
   // hobby data (legacy single-batch users mid-migration, etc.) we fall
   // back to the first active batch when batchId isn't found.
   const activeBatches = hobby.currentBatches || [];
   const batch = activeBatches.find((b) => b.id === batchId) || activeBatches[0];
-  if (!batch) {
-    onClose();
-    return null;
-  }
   const BIRD_TYPES_LOCAL = ["Chicken", "Duck", "Turkey", "Quail", "Goose", "Guinea", "Peafowl", "Other"];
   const [name, setName] = useState(batch.name || "");
   // Default to Chicken for legacy batches that predate the bird-type field
@@ -18584,7 +19557,7 @@ function EditBatchModal({ hobby, batchId, entries = [], update, onClose }) {
   return (
     <Modal open onClose={onClose} title="Edit batch">
       <Field label="Batch name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -18604,10 +19577,10 @@ function EditBatchModal({ hobby, batchId, entries = [], update, onClose }) {
         </div>
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"} (started with)`}>
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Current bird count (alive now)">
-        <input type="number" inputMode="numeric" style={inputStyle} value={currentCount} onChange={(e) => setCurrentCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={currentCount} onChange={(e) => setCurrentCount(e.target.value)} />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
           {(() => {
             const t = parseInt(currentCount);
@@ -18620,10 +19593,10 @@ function EditBatchModal({ hobby, batchId, entries = [], update, onClose }) {
         </div>
       </Field>
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="$" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Btn variant="primary" onClick={save}>Save changes</Btn>
       {/* Finalize / Delete row — separated visually from the primary save
@@ -18673,7 +19646,7 @@ function HatchBatchModal({ hobby, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🐣 Hatch new batch">
       <Field label="Batch name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} />
       </Field>
       <Field label="Bird type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -18693,13 +19666,13 @@ function HatchBatchModal({ hobby, update, onClose }) {
         </div>
       </Field>
       <Field label={`Number of ${birdType === "Chicken" ? "chicks" : "birds"}`}>
-        <input type="number" inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} />
+        <input type="number" inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} />
       </Field>
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label={`Cost of ${birdType === "Chicken" ? "chicks" : "birds"} (optional)`}>
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} />
       </Field>
       <Btn variant="primary" onClick={() => {
         const n = parseInt(count);
@@ -18725,7 +19698,17 @@ function HatchBatchModal({ hobby, update, onClose }) {
   );
 }
 
-function ButcherModal({ hobby, batchId, entries, update, onClose }) {
+function ButcherModal(props) {
+  if (!(props.hobby.currentBatches || []).length) {
+    return (
+      <Modal open onClose={props.onClose} title="Remove from batch">
+        <div>No active batch. Hatch one first.</div>
+      </Modal>
+    );
+  }
+  return <ButcherModalBody {...props} />;
+}
+function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
   // Same cull-reason design as the flock-side modal (egg layers), adapted for
   // meat-bird batches. Default reason is butchered since that's the most
   // common reason birds leave a meat-chicken batch, but users can also log
@@ -18755,14 +19738,6 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
     return "";
   });
   const batch = activeBatches.find((b) => b.id === selectedBatchId) || null;
-
-  if (activeBatches.length === 0) {
-    return (
-      <Modal open onClose={onClose} title="Remove from batch">
-        <div>No active batch. Hatch one first.</div>
-      </Modal>
-    );
-  }
 
   const isButcher = reason === "butchered";
   const isSoftCull = ["sold", "rehomed", "given_away"].includes(reason);
@@ -18827,7 +19802,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
       return false;
     }
     const n = parseInt(count);
-    const w = parseFloat(avgWeight);
+    const w = isNaN(parseFloat(avgWeight)) ? NaN : lbsFromInput(avgWeight);
     if (!count || isNaN(n) || n <= 0) {
       setValidationError(`Enter the number of birds (must be greater than 0).`);
       return false;
@@ -18877,7 +19852,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           {!batchId && activeBatches.length > 1 && (
             <Field label="Which batch?">
               <select
-                style={inputStyle}
+                style={inputStyle()}
                 value={selectedBatchId}
                 onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
               >
@@ -18898,7 +19873,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           )}
 
           <Field label="What happened?">
-            <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
+            <select style={inputStyle()} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
               {reasonOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
             </select>
             <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
@@ -18907,12 +19882,12 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           </Field>
 
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
           </Field>
           <Field label="How many?">
             <input
               type="number" inputMode="numeric"
-              style={inputStyle}
+              style={inputStyle()}
               value={count}
               onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
               placeholder={batch ? `e.g. 5 (of ${remaining})` : "Pick a batch first"}
@@ -18922,22 +19897,22 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
           {/* Weight is required only for butcher; optional but useful for sold/rehomed
               if user wants to track average growth. */}
           {isButcher ? (
-            <Field label="Average weight (lbs)">
+            <Field label={`Average weight (${weightUnitLabel()})`}>
               <input
                 type="number" inputMode="decimal"
                 step="0.01"
-                style={inputStyle}
+                style={inputStyle()}
                 value={avgWeight}
                 onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }}
                 placeholder="e.g. 5.5"
               />
             </Field>
           ) : (
-            <Field label="Average weight (lbs, optional)">
+            <Field label={`Average weight (${weightUnitLabel()}, optional)`}>
               <input
                 type="number" inputMode="decimal"
                 step="0.01"
-                style={inputStyle}
+                style={inputStyle()}
                 value={avgWeight}
                 onChange={(e) => setAvgWeight(e.target.value)}
                 placeholder="optional"
@@ -18947,7 +19922,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
 
           <Field label={isSoftCull ? "Notes (who took them, etc)" : "Notes (cause, details, etc)"}>
             <textarea
-              style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
+              style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }}
               value={note}
               onChange={(e) => setNote(e.target.value)}
               placeholder={
@@ -18968,14 +19943,14 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
               background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
               fontSize: 12, color: palette.ink, lineHeight: 1.5,
             }}>
-              💡 This logs the count reduction. To record sale revenue, also add a sale on the Sales tab.
+              💡 This logs the count reduction. To record sale revenue, also add a sale in Sales & costs.
             </div>
           )}
 
           {validationError && (
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 6,
-              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               fontSize: 13, color: palette.accent,
             }}>
               {validationError}
@@ -19044,7 +20019,7 @@ function ButcherModal({ hobby, batchId, entries, update, onClose }) {
                 return;
               }
               const n = parseInt(count);
-              const w = parseFloat(avgWeight);
+              const w = isNaN(parseFloat(avgWeight)) ? NaN : lbsFromInput(avgWeight);
               const entryId = newId();
               const wantImmediate = alsoFinalize && willEmptyBatch;
               update((d) => {
@@ -19184,7 +20159,8 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
   const [cupsPerLb, setCupsPerLb] = useState(String((ft && ft.cupsPerLb) || 4));
   const [warnDays, setWarnDays] = useState(String((ft && ft.warnDays) || 5));
   const status = enabled ? computeFeedStatus(hobby, entries) : null;
-  const lbsNum = parseFloat(lbs);
+  // Typed in lbs or kg; stored in lbs.
+  const lbsNum = isNaN(parseFloat(lbs)) ? NaN : lbsFromInput(lbs);
   const lbsOk = !isNaN(lbsNum) && lbsNum >= 0;
 
   const patchTracker = (fn) => {
@@ -19220,7 +20196,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
           amount: costNum,
           category: "Feed",
           hobbyId: hobby.id,
-          note: `Feed purchase: ${lbsNum} lbs`,
+          note: `Feed purchase: ${fmtWeight1(lbsNum)}`,
           created: Date.now(),
           _feedTracker: true, // traceability tag
         });
@@ -19256,8 +20232,8 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
         <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.6, marginBottom: 14 }}>
           Tell Henalytics how much feed you have, and your regular feed logs do the rest — it learns how fast you go through it, shows days remaining, estimates the empty date, and drops a heads-up on your calendar (and weekly chore email) about {(Number(warnDays) || 5)} days before you run out. A standard bag is 50 lbs.
         </div>
-        <Field label="Feed on hand right now (lbs)">
-          <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 75" autoFocus />
+        <Field label={`Feed on hand right now (${weightUnitLabel()})`}>
+          <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 75" autoFocus />
         </Field>
         <Btn variant="accent" onClick={startTracking} disabled={!lbsOk} style={{ width: "100%" }}>Start tracking</Btn>
       </Modal>
@@ -19277,8 +20253,8 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
     <Modal open onClose={onClose} title="🌾 Feed supply">
       {status && (
         <div style={{ padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-          <strong style={{ color: palette.ink }}>{Math.max(0, status.remainingLbs).toFixed(0)} lbs on hand</strong>
-          {status.state !== "learning" && <> · ~{status.dailyBurnLbs.toFixed(1)} lbs/day · empty ~{status.runOutDate}</>}
+          <strong style={{ color: palette.ink }}>{fmtWeight(Math.max(0, status.remainingLbs), { decimals: 0, forceBig: true })} on hand</strong>
+          {status.state !== "learning" && <> · ~{fmtWeight(status.dailyBurnLbs, { forceBig: true })}/day · empty ~{status.runOutDate}</>}
           {status.state === "learning" && <> · still learning your burn rate</>}
         </div>
       )}
@@ -19290,11 +20266,11 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
 
       {mode === "add" && (
         <>
-          <Field label="Feed added (lbs)">
-            <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 50" autoFocus />
+          <Field label={`Feed added (${weightUnitLabel()})`}>
+            <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 50" autoFocus />
           </Field>
           <Field label="Cost (optional — logs a Feed expense)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 18.99" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 18.99" />
           </Field>
           <Btn variant="accent" onClick={addFeed} disabled={!lbsOk || lbsNum <= 0} style={{ width: "100%" }}>Add to supply</Btn>
         </>
@@ -19305,8 +20281,8 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
           <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.5 }}>
             If the estimate has drifted from what's actually in the bin, set the real number and the tracker re-anchors from now.
           </div>
-          <Field label="Feed on hand right now (lbs)">
-            <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 60" />
+          <Field label={`Feed on hand right now (${weightUnitLabel()})`}>
+            <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 60" />
           </Field>
           <Btn variant="accent" onClick={recount} disabled={!lbsOk} style={{ width: "100%" }}>Save recount</Btn>
         </>
@@ -19315,10 +20291,10 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
       {mode === "settings" && (
         <>
           <Field label="Cups per lb (for feedings logged in cups)">
-            <input type="number" inputMode="decimal" min={0.5} step="0.5" style={inputStyle} value={cupsPerLb} onChange={(e) => setCupsPerLb(e.target.value)} />
+            <input type="number" inputMode="decimal" min={0.5} step="0.5" style={inputStyle()} value={cupsPerLb} onChange={(e) => setCupsPerLb(e.target.value)} />
           </Field>
           <Field label="Warn me this many days before empty">
-            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={warnDays} onChange={(e) => setWarnDays(e.target.value)} />
+            <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={warnDays} onChange={(e) => setWarnDays(e.target.value)} />
           </Field>
           <div style={{ display: "flex", gap: 8 }}>
             <Btn variant="accent" onClick={saveSettings} style={{ flex: 1 }}>Save settings</Btn>
@@ -19334,7 +20310,7 @@ function FeedTrackerModal({ hobby, entries, update, onClose }) {
 // Turn eggs-on-hand tracking on/off and recount. The starting count is the
 // ground truth: on-hand = startCount ± everything logged after the moment
 // you saved it (see computeEggsOnHand). Recounting just re-anchors.
-function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
+function EggInventorySetupModal({ hobby, entries, sales, update, onClose, onContinue = null }) {
   const inv = hobby.eggInventory;
   const enabled = !!(inv && inv.enabled);
   const [count, setCount] = useState("");
@@ -19354,7 +20330,17 @@ function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
       };
       return d;
     });
-    onClose();
+    if (onContinue) onContinue(); else onClose();
+  };
+  // "Not now": remember the choice so Use Eggs goes straight to its form
+  // from now on (tracking can still be turned on from the egg screen).
+  const skip = () => {
+    update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id);
+      if (h && !h.eggInventory) h.eggInventory = { enabled: false, skipped: true };
+      return d;
+    });
+    if (onContinue) onContinue(); else onClose();
   };
 
   const turnOff = () => {
@@ -19377,7 +20363,7 @@ function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
       </div>
       <Field label={enabled ? "Recount — eggs on hand right now" : "How many eggs do you have on hand right now?"}>
         <input
-          type="number" inputMode="numeric" min={0} style={inputStyle}
+          type="number" inputMode="numeric" min={0} style={inputStyle()}
           value={count} onChange={(e) => setCount(e.target.value)}
           placeholder="e.g. 24" autoFocus
         />
@@ -19386,6 +20372,9 @@ function EggInventorySetupModal({ hobby, entries, sales, update, onClose }) {
         <Btn variant="accent" onClick={saveCount} disabled={count === "" || isNaN(parseInt(count, 10)) || parseInt(count, 10) < 0} style={{ flex: 1 }}>
           {enabled ? "Save recount" : "Start tracking"}
         </Btn>
+        {!enabled && onContinue && (
+          <Btn variant="ghost" onClick={skip}>Not now, just log</Btn>
+        )}
         {enabled && (
           <Btn variant="ghost" onClick={turnOff}>Turn off</Btn>
         )}
@@ -19530,7 +20519,7 @@ function HatchEggsModal({ hobby, update, setModal, onClose }) {
         <>
           {flocks.length > 1 && (
             <Field label="Which flock hatched them?">
-              <select style={inputStyle} value={selectedFlockId} onChange={(e) => setSelectedFlockId(e.target.value)}>
+              <select style={inputStyle()} value={selectedFlockId} onChange={(e) => setSelectedFlockId(e.target.value)}>
                 <option value="">— Select flock —</option>
                 {flocks.map((f) => (
                   <option key={f.id} value={f.id}>{f.name || f.birdType || "Flock"}</option>
@@ -19541,17 +20530,17 @@ function HatchEggsModal({ hobby, update, setModal, onClose }) {
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Chicks hatched">
-                <input type="number" min={1} inputMode="numeric" style={inputStyle} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
+                <input type="number" min={1} inputMode="numeric" style={inputStyle()} value={count} onChange={(e) => setCount(e.target.value)} placeholder="0" />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Hatch date">
-                <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+                <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
               </Field>
             </div>
           </div>
           <Field label="Notes (optional)">
-            <textarea style={{ ...inputStyle, minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Which hen, breed mix, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 56 }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Which hen, breed mix, etc." />
           </Field>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -19634,7 +20623,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       {!flock && availableFlocks.length > 1 && (
         <Field label="Which flock?">
           <select
-            style={inputStyle}
+            style={inputStyle()}
             value={selectedFlockId}
             onChange={(e) => { setSelectedFlockId(e.target.value); setValidationError(""); }}
           >
@@ -19655,7 +20644,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       )}
 
       <Field label="What happened?">
-        <select style={inputStyle} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
+        <select style={inputStyle()} value={reason} onChange={(e) => { setReason(e.target.value); setValidationError(""); }}>
           {reasonOptions.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
         </select>
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
@@ -19664,13 +20653,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       </Field>
 
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       <Field label="How many?">
         <input
           type="number" inputMode="numeric"
-          style={inputStyle}
+          style={inputStyle()}
           value={count}
           onChange={(e) => { setCount(e.target.value); setValidationError(""); }}
           placeholder={activeFlock ? `e.g. 1 (of ${remaining})` : "Pick a flock first"}
@@ -19680,18 +20669,18 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       {/* Average weight only matters for butcher (freezer log) and is optional
           for everything else. Keep it accessible for sold-for-meat scenarios. */}
       {isButcher && (
-        <Field label="Average weight (lbs)">
-          <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
+        <Field label={`Average weight (${weightUnitLabel()})`}>
+          <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={avgWeight} onChange={(e) => { setAvgWeight(e.target.value); setValidationError(""); }} placeholder="0.0" />
         </Field>
       )}
       {!isButcher && (
-        <Field label="Average weight (lbs, optional)">
-          <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
+        <Field label={`Average weight (${weightUnitLabel()}, optional)`}>
+          <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={avgWeight} onChange={(e) => setAvgWeight(e.target.value)} placeholder="0.0" />
         </Field>
       )}
 
       <Field label={isSoftCull ? "Notes (who took them, etc)" : "Notes (cause, details, etc)"}>
-        <textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder={
+        <textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={note} onChange={(e) => setNote(e.target.value)} placeholder={
           reason === "sold" ? "e.g. sold to neighbor for $15 each" :
           reason === "rehomed" ? "e.g. retired breeders, given to Sarah's farm" :
           reason === "given_away" ? "e.g. friend wanted laying hens" :
@@ -19705,7 +20694,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
       {validationError && (
         <div style={{
           padding: 10, marginBottom: 12, borderRadius: 6,
-          background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           fontSize: 13, color: palette.accent,
         }}>
           {validationError}
@@ -19721,7 +20710,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
           background: palette.yolkSoft, border: `1.5px solid ${palette.line}`,
           fontSize: 12, color: palette.ink, lineHeight: 1.5,
         }}>
-          💡 This logs the count reduction. To record the sale revenue, also add a sale on the Sales tab.
+          💡 This logs the count reduction. To record the sale revenue, also add a sale in Sales & costs.
         </div>
       )}
 
@@ -19734,7 +20723,7 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
             return;
           }
           const n = parseInt(count);
-          const w = parseFloat(avgWeight);
+          const w = isNaN(parseFloat(avgWeight)) ? NaN : lbsFromInput(avgWeight);
           if (!count || isNaN(n) || n < 1) {
             setValidationError("Enter the number of birds (must be greater than 0).");
             return;
@@ -19851,12 +20840,12 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 30);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
   const [endDate, setEndDate] = useState(() => {
     const d = new Date();
     d.setDate(d.getDate() - 1);
-    return d.toISOString().slice(0, 10);
+    return localDateStr(d);
   });
   const [mode, setMode] = useState("total"); // "total" | "perday"
   const [totalCount, setTotalCount] = useState("");
@@ -20003,7 +20992,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
 
           {flocks.length > 1 && (
             <Field label="Which flock?">
-              <select style={inputStyle} value={flockId} onChange={(e) => { setFlockId(e.target.value); setValidationError(""); }}>
+              <select style={inputStyle()} value={flockId} onChange={(e) => { setFlockId(e.target.value); setValidationError(""); }}>
                 <option value="">— pick a flock —</option>
                 {flocks.map(f => (
                   <option key={f.id} value={f.id}>{f.name} ({f.birdType || "Bird"})</option>
@@ -20015,12 +21004,12 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
           <div style={{ display: "flex", gap: 8 }}>
             <div style={{ flex: 1 }}>
               <Field label="Start date">
-                <input type="date" style={inputStyle} value={startDate} max={endDate || today} onChange={(e) => { setStartDate(e.target.value); setValidationError(""); }} />
+                <input type="date" style={inputStyle()} value={startDate} max={endDate || today} onChange={(e) => { setStartDate(e.target.value); setValidationError(""); }} />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="End date">
-                <input type="date" style={inputStyle} value={endDate} max={today} onChange={(e) => { setEndDate(e.target.value); setValidationError(""); }} />
+                <input type="date" style={inputStyle()} value={endDate} max={today} onChange={(e) => { setEndDate(e.target.value); setValidationError(""); }} />
               </Field>
             </div>
           </div>
@@ -20050,7 +21039,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
             <Field label="Total eggs across the range">
               <input
                 type="number" inputMode="numeric"
-                style={inputStyle}
+                style={inputStyle()}
                 value={totalCount}
                 onChange={(e) => { setTotalCount(e.target.value); setValidationError(""); }}
                 placeholder="e.g. 500"
@@ -20060,7 +21049,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
             <Field label="Average eggs per day">
               <input
                 type="number" inputMode="numeric"
-                style={inputStyle}
+                style={inputStyle()}
                 value={perDayCount}
                 onChange={(e) => { setPerDayCount(e.target.value); setValidationError(""); }}
                 placeholder="e.g. 18"
@@ -20109,7 +21098,7 @@ function BulkEggEntryModal({ hobby, entries, update, onClose }) {
           {validationError && (
             <div style={{
               padding: 10, marginBottom: 12, borderRadius: 6,
-              background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+              background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               fontSize: 13, color: palette.accent,
             }}>
               {validationError}
@@ -20184,14 +21173,8 @@ function carryForwardAreas(areas) {
 }
 
 function StartGardenSeasonModal({ hobby, update, onClose }) {
-  const guess = (() => {
-    const m = new Date().getMonth();
-    const y = new Date().getFullYear();
-    if (m >= 1 && m <= 5) return `Spring ${y}`;
-    if (m >= 6 && m <= 8) return `Summer ${y}`;
-    if (m >= 9 && m <= 10) return `Fall ${y}`;
-    return `Winter ${y}`;
-  })();
+  // "2027 Garden": the year it's planted (next year's from October on).
+  const guess = nextGardenSeasonName();
   const [name, setName] = useState(guess);
   const [date, setDate] = useState(todayStr());
 
@@ -20202,10 +21185,10 @@ function StartGardenSeasonModal({ hobby, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🌱 Start new garden season">
       <Field label="Season name">
-        <input style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Spring 2026" />
+        <input style={inputStyle()} value={name} onChange={(e) => setName(e.target.value)} placeholder="Spring 2026" />
       </Field>
       <Field label="Start date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       {carriable.length > 0 && (
@@ -20455,7 +21438,19 @@ function CloseOutCropsModal({ hobbyId, data, update, setModal, onClose }) {
 }
 
 // ============ LOG MODAL (DIFFERENT BY ACTION) ============
-function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry, onPlanted }) {
+// NEW_LOOK: the Undo bar's words after a log is saved.
+function undoMessage(action, f, hobby) {
+  const n = Number(f && f.count) || 0;
+  const plural = (k, one, many) => `${k} ${k === 1 ? one : many}`;
+  if ((action === "eggs" || action === "eggs_laid") && n) return `Saved ${plural(n, "egg", "eggs")}`;
+  if (action === "sold_eggs" && n) return `Saved: sold ${plural(n, "egg", "eggs")}`;
+  if (action === "used_eggs" && n) return `Saved: used ${plural(n, "egg", "eggs")}`;
+  if (action === "harvested" && f && f.plant) return `Saved: ${String(f.plant).toLowerCase()} harvest`;
+  const words = { fed: "feeding", watered: "watering", note: "note", bedding: "bedding", broody: "broody hen", death: "loss", move_tractor: "tractor move", planted: "planting" };
+  return `Saved ${words[action] ? "the " + words[action] : "it"}`;
+}
+
+function LogModal({ hobby, action, customLogId, data, update, onClose, user, existingEntry, onPlanted, onEggCount }) {
   const isEdit = !!existingEntry;
 
   // Push 4b — multi-batch support for meat chickens. Active batches live in
@@ -20605,6 +21600,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
     // only writes fields.useType when touched — same trap as sold_eggs' unit
     // select above. Persist the default so stats bucket correctly.
     if (action === "used_eggs" && !cleanFields.useType) cleanFields.useType = "ate";
+    // Harvest: the unit select shows lbs (or kg with metric units) until
+    // touched; save what it showed.
+    if (action === "harvested" && !cleanFields.unit) cleanFields.unit = defaultHarvestUnit();
 
     // We need an entry id up front so we can attach photos to it.
     // For edits, we keep the existing id so we don't create a duplicate.
@@ -20676,7 +21674,20 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       }
     }
 
+    // NEW_LOOK undo: what this hobby looked like before the save, so "Undo"
+    // can put back the entry AND its side effects (flock size, broody flags,
+    // egg counts on hand, garden annuals) exactly.
+    let undoSnap = null;
     update((d) => {
+      if (!isEdit) {
+        const hb = d.hobbies.find((x) => x.id === hobby.id);
+        undoSnap = {
+          hobby: hb ? JSON.parse(JSON.stringify(hb)) : null,
+          entries: JSON.parse(JSON.stringify(d.entries[hobby.id] || [])),
+          sales: new Set((d.sales || []).map((x) => x && x.id)),
+          expenses: new Set((d.expenses || []).map((x) => x && x.id)),
+        };
+      }
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const entry = {
         id: entryId,
@@ -20820,7 +21831,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             if (namedId) {
               const nb = (fl.namedBirds || []).find(b => b.id === namedId);
               if (nb) {
-                nb.broody = (status === "started");
+                Object.assign(nb, broodyPatch(nb, status === "started", entry.date || todayStr()));
                 // Stamp the bird's name on the entry so the activity feed
                 // and Journal can display "Henrietta — went broody" without
                 // an extra lookup later.
@@ -20954,23 +21965,23 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         d.entries[hobby.id].push(entry);
       } else {
         // Edit: replace the existing entry in place. The entry may live in
-        // data.entries[hobby.id] OR — for finalized meat-bird batches — on
-        // an archivedBatch's finalEntries snapshot. Update wherever it is.
+        // data.entries[hobby.id] OR on a finished batch's / closed garden
+        // season's finalEntries snapshot. Update wherever it is.
         const idx = d.entries[hobby.id].findIndex((e) => e.id === existingEntry.id);
         if (idx !== -1) {
           d.entries[hobby.id][idx] = entry;
         } else {
           let foundInArchive = false;
           const hForArchive = d.hobbies.find((x) => x.id === hobby.id);
-          if (hForArchive && Array.isArray(hForArchive.archivedBatches)) {
-            for (const b of hForArchive.archivedBatches) {
-              if (!Array.isArray(b.finalEntries)) continue;
-              const ai = b.finalEntries.findIndex((e) => e.id === existingEntry.id);
-              if (ai !== -1) {
-                b.finalEntries[ai] = entry;
-                foundInArchive = true;
-                break;
-              }
+          // Finished batches and closed garden seasons both keep finalEntries.
+          const closedLists = hForArchive ? [...(hForArchive.archivedBatches || []), ...(hForArchive.archivedSeasons || [])] : [];
+          for (const b of closedLists) {
+            if (!b || !Array.isArray(b.finalEntries)) continue;
+            const ai = b.finalEntries.findIndex((e) => e.id === existingEntry.id);
+            if (ai !== -1) {
+              b.finalEntries[ai] = entry;
+              foundInArchive = true;
+              break;
             }
           }
           if (!foundInArchive) {
@@ -20983,6 +21994,17 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       return d;
     });
     onClose();
+    if (!isEdit && undoSnap) {
+      const snap = undoSnap;
+      showUndo(undoMessage(action, cleanFields, hobby), () => update((d) => {
+        const i = d.hobbies.findIndex((x) => x.id === hobby.id);
+        if (i !== -1 && snap.hobby) d.hobbies[i] = snap.hobby;
+        d.entries[hobby.id] = snap.entries;
+        if (Array.isArray(d.sales)) d.sales = d.sales.filter((x) => !x || snap.sales.has(x.id));
+        if (Array.isArray(d.expenses)) d.expenses = d.expenses.filter((x) => !x || snap.expenses.has(x.id));
+        return d;
+      }));
+    }
     // Seed box follow-up for new garden plantings (see SeedUseModal).
     if (!isEdit && action === "planted" && cleanFields.plant && onPlanted) onPlanted(String(cleanFields.plant));
   };
@@ -21018,7 +22040,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
   return (
     <Modal open onClose={onClose} title={dynamicTitle}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
 
       {/* Optional weather — auto by default, hand entry when you want it. */}
@@ -21027,7 +22049,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           type="button"
           onClick={() => setWxOpen((o) => !o)}
           style={{
-            background: "none", border: "none", padding: 0, cursor: "pointer",
+            background: "none", border: "none", padding: 0, cursor: "pointer", minHeight: 36,
             fontSize: 12, color: palette.inkSoft, fontFamily: "inherit", textDecoration: "underline",
           }}
         >
@@ -21052,7 +22074,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   type="number"
                   inputMode="decimal"
                   step={k === "rain" ? "0.01" : "1"}
-                  style={{ ...inputStyle, marginTop: 4 }}
+                  style={{ ...inputStyle(), marginTop: 4 }}
                   value={wxManual[k]}
                   onChange={(e) => { const v = e.target.value; setWxManual((m) => ({ ...m, [k]: v })); }}
                 />
@@ -21078,7 +22100,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         ["fed","bedding","death","eggs","sold_eggs","note","issue","broody","custom"].includes(action) && (
         <Field label="Which flock?">
           <select
-            style={inputStyle}
+            style={inputStyle()}
             value={fields.flockId || (action === "custom" ? "__ALL__" : (hobby.flocks[0]?.id || ""))}
             onChange={(e) => set("flockId", e.target.value)}
           >
@@ -21119,7 +22141,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {needsBatchPicker && (
         <Field label="Which batch?">
           <select
-            style={inputStyle}
+            style={inputStyle()}
             value={selectedBatchId}
             onChange={(e) => { setSelectedBatchId(e.target.value); setValidationError(""); }}
           >
@@ -21145,7 +22167,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {action === "watered" && hobby.type === "garden" && (
         <Field label="Notes (amount, beds, etc.)">
-          <input style={inputStyle} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder="e.g. soaked all beds" />
+          <input style={inputStyle()} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder="e.g. soaked all beds" />
         </Field>
       )}
 
@@ -21164,7 +22186,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         return (
           <Field label={isMetric ? "Liters" : "Gallons"}>
             <input
-              type="number" inputMode="decimal" step="0.1" style={inputStyle}
+              type="number" inputMode="decimal" step="0.1" style={inputStyle()}
               value={displayValue}
               onChange={(e) => {
                 const raw = e.target.value;
@@ -21182,7 +22204,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "fertilized" && hobby.type === "garden" && (
         <>
           <Field label="Type">
-            <select style={inputStyle} value={fields.fertilizerType || "compost"} onChange={(e) => set("fertilizerType", e.target.value)}>
+            <select style={inputStyle()} value={fields.fertilizerType || "compost"} onChange={(e) => set("fertilizerType", e.target.value)}>
               <option value="compost">Compost</option>
               <option value="manure">Manure</option>
               <option value="granular">Granular (synthetic)</option>
@@ -21194,16 +22216,16 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             </select>
           </Field>
           <Field label="Product / source (optional)">
-            <input style={inputStyle} value={fields.product || ""} onChange={(e) => set("product", e.target.value)} placeholder="e.g. Espoma Plant-tone, chicken manure" />
+            <input style={inputStyle()} value={fields.product || ""} onChange={(e) => set("product", e.target.value)} placeholder="e.g. Espoma Plant-tone, chicken manure" />
           </Field>
           <Field label="Amount (optional)">
-            <input style={inputStyle} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder='e.g. "2 lbs", "1 wheelbarrow", "1 gal diluted"' />
+            <input style={inputStyle()} value={fields.amount || ""} onChange={(e) => set("amount", e.target.value)} placeholder='e.g. "2 lbs", "1 wheelbarrow", "1 gal diluted"' />
           </Field>
           <Field label="Where (optional)">
-            <input style={inputStyle} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} placeholder="All beds, tomato bed, etc." />
+            <input style={inputStyle()} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} placeholder="All beds, tomato bed, etc." />
           </Field>
           <Field label="Cost ($, optional)">
-            <input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0.00" />
+            <input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0.00" />
           </Field>
         </>
       )}
@@ -21211,17 +22233,17 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "planted" && (
         <>
           <Field label="Annual (what you planted)">
-            <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
+            <input style={inputStyle()} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
           <Field label="How many">
-            <input type="number" inputMode="numeric" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
+            <input type="number" inputMode="numeric" style={inputStyle()} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Bed / location (optional)">
-            <input style={inputStyle} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} />
+            <input style={inputStyle()} value={fields.bed || ""} onChange={(e) => set("bed", e.target.value)} />
           </Field>
           <Field label="Cost (seeds, soil — optional)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
         </>
       )}
@@ -21229,16 +22251,18 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "harvested" && (
         <>
           <Field label="Plant / crop">
-            <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
+            <input style={inputStyle()} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} placeholder="Tomato, Kale..." />
             <datalist id="plant-list">{plants.map((p) => <option key={p} value={p} />)}</datalist>
           </Field>
           <Field label="Quantity">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.quantity || ""} onChange={(e) => set("quantity", e.target.value)} />
           </Field>
           <Field label="Unit">
-            <select style={inputStyle} value={fields.unit || "lbs"} onChange={(e) => set("unit", e.target.value)}>
+            <select style={inputStyle()} value={fields.unit || defaultHarvestUnit()} onChange={(e) => set("unit", e.target.value)}>
               <option value="lbs">lbs</option>
               <option value="oz">oz</option>
+              <option value="kg">kg</option>
+              <option value="g">g</option>
               <option value="each">each</option>
               <option value="count">count</option>
               <option value="cups">cups</option>
@@ -21253,20 +22277,20 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "issue" && (
         <>
           <Field label="Type">
-            <select style={inputStyle} value={fields.issueType || "disease"} onChange={(e) => set("issueType", e.target.value)}>
+            <select style={inputStyle()} value={fields.issueType || "disease"} onChange={(e) => set("issueType", e.target.value)}>
               <option value="disease">Disease</option>
               <option value="pest">Pest</option>
               <option value="other">Other</option>
             </select>
           </Field>
           <Field label="Plant affected (optional)">
-            <input style={inputStyle} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} />
+            <input style={inputStyle()} list="plant-list" value={fields.plant || ""} onChange={(e) => set("plant", e.target.value)} />
           </Field>
           <Field label="Specific (e.g. powdery mildew, aphids)">
-            <input style={inputStyle} value={fields.detail || ""} onChange={(e) => set("detail", e.target.value)} />
+            <input style={inputStyle()} value={fields.detail || ""} onChange={(e) => set("detail", e.target.value)} />
           </Field>
           <Field label="Notes / solution">
-            <textarea style={{ ...inputStyle, minHeight: 70 }} value={fields.notes || ""} onChange={(e) => set("notes", e.target.value)} placeholder="What you'll try..." />
+            <textarea style={{ ...inputStyle(), minHeight: 70 }} value={fields.notes || ""} onChange={(e) => set("notes", e.target.value)} placeholder="What you'll try..." />
           </Field>
         </>
       )}
@@ -21339,7 +22363,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   return (
                     <input
                       type="number" inputMode="decimal" step="0.1"
-                      style={inputStyle}
+                      style={inputStyle()}
                       value={shownValue}
                       onChange={(e) => {
                         const raw = e.target.value;
@@ -21357,14 +22381,14 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             );
           })()}
           <Field label="Cost of bag (or this feeding)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
         </>
       )}
 
       {action === "free_range" && (
         <Field label="Notes (optional)">
-          <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. 4 hours in pasture" />
+          <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. 4 hours in pasture" />
         </Field>
       )}
 
@@ -21389,7 +22413,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                 <Field label="Distance per move (feet)">
                   <input
                     type="number" inputMode="numeric"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={fields.distanceFeet || ""}
                     onChange={(e) => set("distanceFeet", e.target.value)}
                     placeholder="e.g. 10"
@@ -21405,7 +22429,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                 <Field label="Distance moved (feet)">
                   <input
                     type="number" inputMode="numeric"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={fields.distanceFeet ?? ""}
                     onChange={(e) => set("distanceFeet", e.target.value)}
                     placeholder={String(defaultDist)}
@@ -21414,7 +22438,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               </>
             )}
             <Field label="Notes (optional)">
-              <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. moved to north pasture" />
+              <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. moved to north pasture" />
             </Field>
           </>
         );
@@ -21422,7 +22446,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {(action === "eggs" || action === "eggs_laid") && (
         <Field label="Eggs collected">
-          <input type="number" inputMode="numeric" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
+          <input type="number" inputMode="numeric" style={inputStyle()} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} />
         </Field>
       )}
 
@@ -21437,25 +22461,25 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           <Field label="How many butchered">
             <input
               type="number" inputMode="numeric"
-              style={inputStyle}
+              style={inputStyle()}
               value={fields.count || ""}
               onChange={(e) => set("count", e.target.value)}
               placeholder="0"
             />
           </Field>
-          <Field label="Average weight (lbs)">
+          <Field label={`Average weight (${weightUnitLabel()})`}>
             <input
               type="number" inputMode="decimal"
               step="0.01"
-              style={inputStyle}
-              value={fields.avgWeight || ""}
-              onChange={(e) => set("avgWeight", e.target.value)}
+              style={inputStyle()}
+              value={fields.avgWeight ? lbsToInput(fields.avgWeight) : ""}
+              onChange={(e) => set("avgWeight", e.target.value === "" ? "" : String(lbsFromInput(e.target.value)))}
               placeholder="0.0"
             />
           </Field>
           <Field label="Notes (optional)">
             <textarea
-              style={{ ...inputStyle, minHeight: 50, resize: "vertical" }}
+              style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }}
               value={fields.note || ""}
               onChange={(e) => set("note", e.target.value)}
               placeholder="Anything notable about this butcher day..."
@@ -21474,7 +22498,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "bedding" && (
         <>
           <Field label="Type of change">
-            <select style={inputStyle} value={fields.changeType || "Partial"} onChange={(e) => set("changeType", e.target.value)}>
+            <select style={inputStyle()} value={fields.changeType || "Partial"} onChange={(e) => set("changeType", e.target.value)}>
               <option value="Full">Full clean-out (replace bedding)</option>
               <option value="Partial">Partial / topped up</option>
               <option value="Power wash">Power wash (no bedding — wire floor)</option>
@@ -21487,13 +22511,13 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               power wash / rinse / poop tray dump don't, so keep those fields
               optional rather than removing them, in case users mix patterns. */}
           <Field label="Cubic feet of bedding (optional)">
-            <input type="number" inputMode="decimal" step="0.1" style={inputStyle} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
+            <input type="number" inputMode="decimal" step="0.1" style={inputStyle()} value={fields.cuft || ""} onChange={(e) => set("cuft", e.target.value)} placeholder="leave blank for rinse / power wash / poop tray" />
           </Field>
           <Field label="Cost (optional)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} placeholder="0 for water-only cleanings" />
           </Field>
           <Field label="Notes (optional)">
-            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. left hutch, quail run, ammonia getting strong" />
+            <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="e.g. left hutch, quail run, ammonia getting strong" />
           </Field>
         </>
       )}
@@ -21501,10 +22525,10 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "death" && (
         <>
           <Field label="How many died?">
-            <input type="number" inputMode="numeric" min="1" style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="1" />
+            <input type="number" inputMode="numeric" min="1" style={inputStyle()} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="1" />
           </Field>
           <Field label="Cause / reason (optional)">
-            <input style={inputStyle} value={fields.cause || ""} onChange={(e) => set("cause", e.target.value)} placeholder="predator, illness, unknown..." />
+            <input style={inputStyle()} value={fields.cause || ""} onChange={(e) => set("cause", e.target.value)} placeholder="predator, illness, unknown..." />
           </Field>
         </>
       )}
@@ -21516,7 +22540,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               for downstream analytics (cost/egg, etc.). Unit options match
               how eggs are actually sold at farmer's markets / farm gates. */}
           <Field label="Unit">
-            <select style={inputStyle} value={fields.unit || "dozen"} onChange={(e) => set("unit", e.target.value)}>
+            <select style={inputStyle()} value={fields.unit || "dozen"} onChange={(e) => set("unit", e.target.value)}>
               <option value="single">Single eggs (1 each)</option>
               <option value="half_dozen">Half dozen (6)</option>
               <option value="dozen">Dozen (12)</option>
@@ -21527,14 +22551,14 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
           </Field>
           {fields.unit === "custom" && (
             <Field label="Eggs per unit">
-              <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.customEggsPerUnit || ""} onChange={(e) => set("customEggsPerUnit", e.target.value)} placeholder="e.g. 24" />
+              <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.customEggsPerUnit || ""} onChange={(e) => set("customEggsPerUnit", e.target.value)} placeholder="e.g. 24" />
             </Field>
           )}
           <Field label="Number of units">
-            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.unitQty || ""} onChange={(e) => set("unitQty", e.target.value)} placeholder="how many" />
+            <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.unitQty || ""} onChange={(e) => set("unitQty", e.target.value)} placeholder="how many" />
           </Field>
-          <Field label="Price per unit ($)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
+          <Field label={`Price per unit (${currencySymbol()})`}>
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.pricePerUnit || ""} onChange={(e) => set("pricePerUnit", e.target.value)} placeholder="e.g. 6.00" />
           </Field>
           {/* Customer picker — mirrors the Sales tab. Pick an existing
               customer or add a new one. The chosen buyerId rides on the
@@ -21544,7 +22568,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             {!fields._showNewBuyer ? (
               <div style={{ display: "flex", gap: 8 }}>
                 <select
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(), flex: 1 }}
                   value={fields.buyerId || ""}
                   onChange={(e) => set("buyerId", e.target.value)}
                 >
@@ -21564,7 +22588,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             ) : (
               <div style={{ display: "flex", gap: 8 }}>
                 <input
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(), flex: 1 }}
                   value={fields.newBuyerName || ""}
                   onChange={(e) => set("newBuyerName", e.target.value)}
                   placeholder="Customer name"
@@ -21581,7 +22605,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             )}
           </Field>
           <Field label="Sold to / notes (optional)">
-            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
+            <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="neighbor, farmer's market..." />
           </Field>
           {(() => {
             const unitToCount = {
@@ -21599,7 +22623,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   padding: 10, background: palette.yolkSoft, borderRadius: 6,
                   fontSize: 13, color: palette.ink, marginBottom: 14, textAlign: "center",
                 }}>
-                  <strong>{totalEggs} eggs</strong> · Revenue: <strong>{fmtMoney(totalRevenue)}</strong>
+                  <strong>{groupDigits(totalEggs)} eggs</strong> · Revenue: <strong>{fmtMoney(totalRevenue)}</strong>
                   {price === 0 && (
                     <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4 }}>
                       $0 sale — logged as donated / given away. Egg count still counts toward your stats.
@@ -21619,24 +22643,33 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               (they carry price + customer and flow into data.sales); this
               covers everything else that takes eggs out of the fridge. */}
           <Field label="What happened to them?">
-            <select style={inputStyle} value={fields.useType || "ate"} onChange={(e) => set("useType", e.target.value)}>
+            <select style={inputStyle()} value={fields.useType || "ate"} onChange={(e) => set("useType", e.target.value)}>
               {USED_EGGS_TYPES.map((t) => (
                 <option key={t.value} value={t.value}>{t.label}</option>
               ))}
             </select>
           </Field>
           <Field label="How many eggs?">
-            <input type="number" inputMode="numeric" min={1} style={inputStyle} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 6" />
+            <input type="number" inputMode="numeric" min={1} style={inputStyle()} value={fields.count || ""} onChange={(e) => set("count", e.target.value)} placeholder="e.g. 6" />
           </Field>
           <Field label="Notes (optional)">
-            <input style={inputStyle} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="breakfast, gave to neighbor, cracked..." />
+            <input style={inputStyle()} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="breakfast, gave to neighbor, cracked..." />
           </Field>
           {(() => {
             // Live "left after this" preview — only when inventory tracking
             // is on, so folks who just want disposition stats aren't shown
             // an on-hand number they never set up.
             const inv = hobby && hobby.eggInventory;
-            if (!inv || !inv.enabled) return null;
+            if (!inv || !inv.enabled) {
+              // Tracking is off (skipped or turned off): offer it here, the
+              // one place Use Eggs people always pass through.
+              if (isEdit || !onEggCount) return null;
+              return (
+                <button type="button" onClick={onEggCount} style={{ display: "block", margin: "0 auto 14px", border: "none", background: "none", color: palette.leaf, font: "inherit", fontSize: 13, fontWeight: 600, textDecoration: "underline", cursor: "pointer", minHeight: 36 }}>
+                  Keep a count of eggs on hand
+                </button>
+              );
+            }
             const onHand = computeEggsOnHand(hobby, data.entries[hobby.id] || [], data.sales || []);
             const using = Number(fields.count) || 0;
             // On edit, the existing entry is already subtracted from onHand —
@@ -21660,13 +22693,13 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "infrastructure" && (
         <>
           <Field label="What was built / repaired / bought?">
-            <input style={inputStyle} value={fields.item || ""} onChange={(e) => set("item", e.target.value)} placeholder="new coop, run extension, fencing..." />
+            <input style={inputStyle()} value={fields.item || ""} onChange={(e) => set("item", e.target.value)} placeholder="new coop, run extension, fencing..." />
           </Field>
-          <Field label="Cost ($)">
-            <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
+          <Field label={`Cost (${currencySymbol()})`}>
+            <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={fields.cost || ""} onChange={(e) => set("cost", e.target.value)} />
           </Field>
           <Field label="Notes (optional)">
-            <textarea style={{ ...inputStyle, minHeight: 60 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="materials, who built it, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 60 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="materials, who built it, etc." />
           </Field>
         </>
       )}
@@ -21674,7 +22707,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {action === "custom" && (
         <Field label="Notes (optional)">
           <textarea
-            style={{ ...inputStyle, minHeight: 100 }}
+            style={{ ...inputStyle(), minHeight: 100 }}
             value={fields.note || ""}
             onChange={(e) => set("note", e.target.value)}
             placeholder={`What you want to remember about this ${resolvedCustomLabel || "log"}...`}
@@ -21685,7 +22718,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {action === "note" && (
         <Field label="Note">
-          <textarea style={{ ...inputStyle, minHeight: 100 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Anything you want to remember about this hobby..." autoFocus />
+          <textarea style={{ ...inputStyle(), minHeight: 100 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder="Anything you want to remember about this hobby..." autoFocus />
         </Field>
       )}
 
@@ -21721,7 +22754,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
             </Field>
             {broodyCandidates.length > 0 && (
               <Field label={`Which ${sn.female}? (optional)`}>
-                <select style={inputStyle} value={fields.namedBirdId || ""} onChange={e => set("namedBirdId", e.target.value)}>
+                <select style={inputStyle()} value={fields.namedBirdId || ""} onChange={e => set("namedBirdId", e.target.value)}>
                   <option value="">— No specific bird, just track count —</option>
                   {broodyCandidates.map(b => (
                     <option key={b.id} value={b.id}>{b.name}{b.broody ? " (currently broody)" : ""}</option>
@@ -21730,7 +22763,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
               </Field>
             )}
             <Field label="Note (optional)">
-              <textarea style={{ ...inputStyle, minHeight: 70 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder={status === "started" ? "Where she's sitting, how long, etc." : "Did chicks hatch? How many?"} />
+              <textarea style={{ ...inputStyle(), minHeight: 70 }} value={fields.note || ""} onChange={(e) => set("note", e.target.value)} placeholder={status === "started" ? "Where she's sitting, how long, etc." : "Did chicks hatch? How many?"} />
             </Field>
           </>
         );
@@ -21753,7 +22786,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                     style={{
                       position: "absolute", top: -4, right: -4,
                       width: 22, height: 22, borderRadius: 11,
-                      background: palette.accent, color: "white",
+                      background: palette.accent, color: palette.onColor,
                       border: "none", cursor: "pointer", fontSize: 12, lineHeight: 1,
                       display: "flex", alignItems: "center", justifyContent: "center",
                     }}
@@ -21781,7 +22814,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
                   <div style={{ flex: 1, minWidth: 0, fontSize: 12, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
                     {f.name} <span style={{ color: palette.inkSoft }}>({Math.round(f.size / 1024)} KB)</span>
                   </div>
-                  <button
+                  <button aria-label="Close"
                     type="button"
                     onClick={() => setPhotoFiles((files) => files.filter((_, j) => j !== i))}
                     style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
@@ -21874,7 +22907,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       {validationError && (
         <div style={{
           padding: 10, marginBottom: 12, borderRadius: 6,
-          background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           fontSize: 13, color: palette.accent,
         }}>
           {validationError}
@@ -21983,7 +23016,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
         background: palette.bg, borderRadius: 14,
         maxWidth: 460, width: "100%", maxHeight: "92vh",
         border: `2px solid ${palette.ink}`,
-        boxShadow: "6px 6px 0 " + palette.line,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         // Use overflow:auto with safe-area-aware bottom padding so iOS
         // rubber-band bounce doesn't snap users back before they can tap
         // the Done button at the bottom of the hobby list.
@@ -22067,7 +23100,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
             </p>
             <Field label="What's your homestead called? (optional)">
               <input
-                style={inputStyle}
+                style={inputStyle()}
                 value={name}
                 onChange={(e) => setName(e.target.value)}
                 placeholder="e.g. Slow Build Acres"
@@ -22091,7 +23124,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
             </p>
             <Field label="Country">
               <select
-                style={inputStyle}
+                style={inputStyle()}
                 value={country}
                 onChange={(e) => { setCountry(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
               >
@@ -22121,7 +23154,7 @@ function OnboardingWizard({ update, setModal, step, setStep, onClose }) {
             <Field label="Zip / postal code">
               <div style={{ display: "flex", gap: 6 }}>
                 <input
-                  style={{ ...inputStyle, flex: 1 }}
+                  style={{ ...inputStyle(), flex: 1 }}
                   value={zip}
                   onChange={(e) => { setZip(e.target.value); setZipResult(null); setZipLookupStatus("idle"); }}
                   placeholder="e.g. 66002"
@@ -22716,7 +23749,7 @@ function AnalyticsShareWrapper({ hobby, entries, data, children, /* ADV_ANALYTIC
             onClick={() => setShowShare(true)}
             style={{
               display:"flex",alignItems:"center",gap:6,
-              padding:"6px 12px",borderRadius:8,
+              minHeight:36,padding:"6px 12px",borderRadius:8,
               border:`1.5px solid ${palette.line}`,background:palette.card,
               fontFamily:FONT_BODY,fontWeight:600,fontSize:12,
               color:palette.ink,cursor:"pointer",
@@ -22919,7 +23952,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           return runStart <= todayStr && runEnd >= todayStr;
         }
         // For week/year, window is [oneWeekAgo/oneYearAgo, today]
-        const windowStartIso = (filter === "week" ? oneWeekAgo : oneYearAgo).toISOString().slice(0, 10);
+        const windowStartIso = localDateStr(filter === "week" ? oneWeekAgo : oneYearAgo);
         if (runEnd < windowStartIso) return false; // ended before window
         if (runStart > todayStr) return false;     // started after window (future-dated)
         return true;
@@ -23463,7 +24496,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden" }}>
 
         {/* Period filter */}
         <div style={{ padding:"16px 16px 0",display:"flex",gap:6,justifyContent:"center" }}>
@@ -23517,7 +24550,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
           <button
             onClick={handleShare}
             disabled={shareStatus === "sharing"}
-            style={{ width:"100%",padding:"13px",borderRadius:10,border:`2px solid ${palette.ink}`,background:shareStatus==="done"?palette.leaf:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:shareStatus==="sharing"?"wait":"pointer",boxShadow:"2px 2px 0 "+palette.line,opacity:shareStatus==="sharing"?0.7:1 }}
+            style={{ width:"100%",padding:"13px",borderRadius:10,border:`2px solid ${palette.ink}`,background:shareStatus==="done"?palette.leaf:palette.ink,color:palette.bg,fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:shareStatus==="sharing"?"wait":"pointer",boxShadow:"none",opacity:shareStatus==="sharing"?0.7:1 }}
           >
             {btnLabel()}
           </button>
@@ -23525,7 +24558,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
             <button
               onClick={handleShareLink}
               disabled={linkBusy}
-              style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.ink,fontFamily:FONT_BODY,fontWeight:700,fontSize:14,cursor:linkBusy?"wait":"pointer",opacity:linkBusy?0.7:1 }}
+              style={{ width:"100%",padding:"12px",borderRadius:10,border:`2px solid ${palette.ink}`,background:palette.yolk,color:palette.onYolk,fontFamily:FONT_BODY,fontWeight:700,fontSize:14,cursor:linkBusy?"wait":"pointer",opacity:linkBusy?0.7:1 }}
             >
               {linkBusy ? "Making your link…" : "🔗 Share a link (best for Facebook groups)"}
             </button>
@@ -23548,102 +24581,67 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 // ============================================================================
 // TUTORIAL MODAL — 12-slide feature walkthrough
 // ============================================================================
+// The tour (More › All settings › Take the tour), written for the 3.0 layout.
 const TUTORIAL_SLIDES = [
   {
     emoji: "🌾",
     title: "Welcome to Henalytics",
-    body: "Henalytics is the homestead notebook you actually want to use. Track eggs, harvests, livestock, costs, sales — anything you log on your homestead — without spreadsheets or forms. This quick tour covers the essentials.",
+    body: "Henalytics is the homestead notebook you actually want to use. Track eggs, harvests, livestock, costs and sales without spreadsheets. This quick tour covers the essentials.",
     tip: null,
   },
   {
-    emoji: "🔧",
-    title: "Enable the hobbies you do",
-    body: "You only see what's relevant to you. Hide meat birds if you don't raise them. Enable Goats, Pigs, Rabbits, Horses, Bees, Canning, and more when you're ready — there are 18+ hobbies to pick from.",
-    tip: "Tap 'More hobbies?' on the home screen, or go to ⚙️ Settings. You can also hide the Sales tab there if you don't sell anything.",
+    emoji: "🏡",
+    title: "Home: the hobbies you keep",
+    body: "Home has a tile for each hobby you keep, with today's numbers on it. Tap Manage hobbies at the bottom of Home to add goats, bees, canning and more, or hide the ones you don't do.",
+    tip: "Tap a hobby's name at the top of its page to jump straight to another one.",
   },
   {
-    emoji: "👆",
-    title: "Logging is one tap",
-    body: "Every hobby has a grid of quick-log tiles. Watered the garden? Tap 💧. Fed the meat birds? Tap 🍖 and pick lbs or cups. Sold eggs? Tap 💵. Most actions take 2-3 seconds, weather and date auto-attach.",
-    tip: "Logs are time-stamped from your phone. Attach photos to any note, harvest, or issue entry for visual history.",
+    emoji: "➕",
+    title: "Log anything from anywhere",
+    body: "The round + in the middle of the bottom bar logs anything: pick the hobby, then what you did. Most logs take two or three taps, and the date and weather fill in on their own.",
+    tip: "Changed your mind? Every save shows an Undo button for a few seconds.",
   },
   {
     emoji: "🥚",
-    title: "The egg basket",
-    body: "Tap + each time you collect an egg during your rounds. When you're done, hit 'Done — log N eggs' to save it to your records.",
-    tip: "The basket resets automatically each day. Each flock has its own basket.",
-  },
-  {
-    emoji: "🐔",
-    title: "Name your birds",
-    body: "Track favorites by name and band color in any flock. Optionally pick the breed — chicken, duck, turkey, quail, goose, guinea, and peafowl breeds are all in the picker. Great for breeding stock, broody hens, or birds with quirks worth remembering.",
-    tip: "Tap '+ Name a bird' on any flock to start. Multiple flock types: chickens, ducks, turkeys, quail, geese, guineas, peafowl all run separately with their own baskets and stats.",
-  },
-  {
-    emoji: "💵",
-    title: "Track what your birds cost",
-    body: "When you add a flock, log the cost and where you bought them — hatchery name, feed store, or a neighbor. Pairs with feed costs (lbs OR cups) to give you real cost-per-egg numbers later.",
-    tip: "Already added a flock? Tap it on the home screen to edit and add the cost + source.",
-  },
-  {
-    emoji: "🍗",
-    title: "Meat birds: multiple batches at once",
-    body: "Running broilers and turkeys side by side? Each batch is independent — its own feed logs, mortality, butcher records, even feed conversion ratio (FCR). When you're done with a batch, hit 'Finalize' and it moves to your Past batches archive.",
-    tip: "Past batches are tucked at the bottom of the Meat Birds home page. Full per-batch records always live in the Stats tab.",
-  },
-  {
-    emoji: "❄️",
-    title: "Butcher any bird",
-    body: "It's not just for meat birds. Process a few quail, an extra rooster, a duck — any bird from any flock can go to the freezer log with date, count, and average weight.",
-    tip: "Tap a flock on the Egg Layers home tab and choose 'Butcher' to send some birds to the freezer log.",
-  },
-  {
-    emoji: "🐐",
-    title: "Animals: pedigree & history",
-    body: "Goats, cows, pigs, sheep, rabbits, dogs, horses — each animal has its own profile, pedigree tree (sire/dam linkage), breeding records, and chronological 📜 History view of everything ever logged for them.",
-    tip: "Adding a calf, kid, lamb, or kit through the breeding flow auto-links them to the dam so the pedigree builds itself.",
-  },
-  {
-    emoji: "🐎",
-    title: "Horses: rides + apply care to many",
-    body: "Log rides with duration, type (trail, arena, lesson), and notes. Track farrier, vet, and dewormer visits — and when one visit applies to multiple horses (the whole barn got their shots), tap each horse it covers or 'Select all' to log once.",
-    tip: "Each horse's 📜 History combines rides, vet, farrier, dewormer, breeding, and sales — everything in one timeline.",
-  },
-  {
-    emoji: "🚜",
-    title: "Move the chicken tractor",
-    body: "Egg layers and meat birds have a Move Tractor tile. First move asks roughly how far you move it each time; after that it's one tap. Year-in-review tells you fun facts about your total distance moved — about football fields, marathons, even how many Rhode Islands.",
-    tip: "Your chickens have moved more than you'd think.",
-  },
-  {
-    emoji: "🗺️",
-    title: "Garden map",
-    body: "Start a garden season, then tap 'Garden Map' to upload a photo of your garden. Drop pins exactly where things grow — each pin tracks what's planted there.",
-    tip: "Use any photo: overhead photo, hand-drawn sketch, or satellite screenshot.",
+    title: "The egg counter",
+    body: "On Egg Layers › Today, tap + each time you collect eggs on your rounds. It saves to today as you go, and each flock keeps its own count.",
+    tip: "Name your favorite hens, add breeds and band colors, and log birds you bought on the Birds tab.",
   },
   {
     emoji: "📅",
-    title: "Calendar & planting dates",
-    body: "Tap the Calendar tab and plan a crop. Henalytics calculates suggested planting dates based on your hardiness zone and last frost date.",
-    tip: "All dates are editable — adjust any of them before adding to your calendar. Add custom calendar events for vet visits, hatch days, anything.",
+    title: "Each hobby has three tabs",
+    body: "Today is for logging and what needs doing. The middle tab holds your birds, animals, plants or batches. Stats shows charts, costs and fun facts, and All the numbers has every detail.",
+    tip: "Tap the share button on any fun fact to make a picture for Facebook or your story.",
   },
   {
-    emoji: "💰",
-    title: "Sales + customer directory",
-    body: "Log what you sell — eggs (by bird type, eating vs hatching), honey, meat birds, rabbits, garden produce. Build a customer directory and see which buyers come back. Track revenue over time with full breakdowns.",
-    tip: "Old 'Sold Eggs' entries from Egg Layers show up here automatically. Don't sell anything? Hide this tab in ⚙️ Settings.",
+    emoji: "🐐",
+    title: "Animals: profiles and family trees",
+    body: "Goats, cows, pigs, sheep, rabbits, horses, dogs and cats each get a profile with breeding, health, weights and a history of everything you've logged for them.",
+    tip: "Babies added through a birth or litter are linked to their mother, so the family tree builds itself.",
   },
   {
-    emoji: "📊",
-    title: "Stats tab + share cards",
-    body: "Every hobby has a Stats tab with charts, cost breakdowns, and trends. Filter by time range — today, week, 30/60/90 days, custom, or all-time. Hit 'Share Stats' to generate a shareable image with your homestead's numbers.",
-    tip: "Active batches and seasons show up in time-windowed views even if they started earlier — so feed you logged this week shows up under 'Past 7 days' even on a 35-day-old batch.",
+    emoji: "🌱",
+    title: "Garden: plants, plan and map",
+    body: "Log what you plant and harvest, then see what your garden was worth at grocery prices. The Plan tab has your garden map, seed box and what to start for your zone.",
+    tip: "Calendar shows your frost dates and suggests planting dates for each crop.",
+  },
+  {
+    emoji: "💵",
+    title: "Sales, costs and customers",
+    body: "More › Sales & costs keeps every sale and expense in one place, with a customer list and what each hobby earns after costs.",
+    tip: "Don't sell anything? Hide Sales & costs in More › All settings.",
+  },
+  {
+    emoji: "✨",
+    title: "Year in review and Wrapped",
+    body: "More › Year in review shows your year so far at any time. Every December your Homestead Wrapped tells the year as a story you can share with family.",
+    tip: "Got old records in a spreadsheet? More › Bring in old records adds them in a few taps.",
   },
   {
     emoji: "🏚",
-    title: "Barn, farmhands, Year in Review",
-    body: "Tap the 🏚 barn in the top-right to invite a farmhand (share with your partner or family in real time), set your location, and manage photos. Tap ✨ Year in Review any time to see a live summary of your year. The ❤️ next to the barn is a tip jar — leave a tip if Henalytics has saved you time.",
-    tip: "Farmhands see the same data live — great for couples running the homestead together. Want a weekly Sunday recap by email? Turn it on in ⚙️ Settings.",
+    title: "Farmhands and your homestead",
+    body: "More › Homestead details is where you set your location and zone and invite farmhands, so your partner or family can log from their own phones and see the same records.",
+    tip: "Want your week's chores or a homestead summary by email each week? Turn them on in More › All settings.",
   },
 ];
 
@@ -23666,7 +24664,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
         onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 20, maxWidth: 420, width: "100%",
-          border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+          border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, overflow: "hidden",
         }}
       >
@@ -23741,7 +24739,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
             )}
             <button
               onClick={() => isLast ? onClose() : setSlide(slide + 1)}
-              style={{ padding: "10px 20px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg, cursor: "pointer", boxShadow: "2px 2px 0 " + palette.line }}
+              style={{ padding: "10px 20px", borderRadius: 8, border: `1.5px solid ${palette.ink}`, background: palette.ink, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, color: palette.bg, cursor: "pointer", boxShadow: "none" }}
             >
               {isLast ? "Let's go! 🌾" : "Next →"}
             </button>
@@ -23767,7 +24765,7 @@ export function TutorialPrompt({ onStart, onSkip }) {
       <div
         style={{
           background: palette.bg, borderRadius: 20, maxWidth: 380, width: "100%",
-          border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`,
+          border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, padding: "32px 28px",
           textAlign: "center",
         }}
@@ -23789,7 +24787,7 @@ export function TutorialPrompt({ onStart, onSkip }) {
               padding: "12px 20px", borderRadius: 10, border: `2px solid ${palette.ink}`,
               background: palette.ink, color: palette.bg, fontFamily: FONT_BODY,
               fontWeight: 700, fontSize: 15, cursor: "pointer",
-              boxShadow: "3px 3px 0 " + palette.line,
+              boxShadow: "none",
             }}
           >
             Let's go! 🌾
@@ -23837,7 +24835,7 @@ function AddPerennialModal({ hobbyId, category: initialCategory = "plant", updat
         </div>
       </Field>
       <Field label={category === "tree" ? "Tree name" : "Plant name"}>
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder={category === "tree" ? "Apple tree, peach tree..." : "Blueberries, asparagus..."} autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder={category === "tree" ? "Apple tree, peach tree..." : "Blueberries, asparagus..."} autoFocus />
         {!name && (
           <div style={{ display:"flex",flexWrap:"wrap",gap:4,marginTop:6 }}>
             {SUGGESTIONS.slice(0,8).map(s=>(
@@ -23847,13 +24845,13 @@ function AddPerennialModal({ hobbyId, category: initialCategory = "plant", updat
         )}
       </Field>
       <Field label="Variety (optional)">
-        <input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp, Jersey Giant..." />
+        <input style={inputStyle()} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp, Jersey Giant..." />
       </Field>
       <Field label="Plant date (optional)">
-        <input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={plantDate} onChange={e=>setPlantDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, rootstock..." />
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Location, spacing, rootstock..." />
       </Field>
       <Btn variant="primary" onClick={() => {
         if (!name.trim()) return;
@@ -23913,10 +24911,10 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} autoFocus /></Field>
-      <Field label="Variety (optional)"><input style={inputStyle} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp" /></Field>
-      <Field label="Plant date (optional)"><input type="date" style={inputStyle} value={plantDate} onChange={e=>setPlantDate(e.target.value)} /></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
+      <Field label="Name"><input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} autoFocus /></Field>
+      <Field label="Variety (optional)"><input style={inputStyle()} value={variety} onChange={e=>setVariety(e.target.value)} placeholder="e.g. Honeycrisp" /></Field>
+      <Field label="Plant date (optional)"><input type="date" style={inputStyle()} value={plantDate} onChange={e=>setPlantDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
       <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
         <Btn variant="primary" onClick={save}>Save changes</Btn>
         {!confirmDelete && <Btn variant="ghost" onClick={()=>setConfirmDelete(true)}>Delete</Btn>}
@@ -23931,7 +24929,7 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
 // ============================================================================
 function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
   const [qty, setQty] = useState("");
-  const [unit, setUnit] = useState("lbs");
+  const [unit, setUnit] = useState(defaultHarvestUnit);
   const [date, setDate] = useState(todayStr());
   const [notes, setNotes] = useState("");
   return (
@@ -23939,19 +24937,19 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:2 }}>
           <Field label="Quantity">
-            <input type="number" inputMode="decimal" min={0} step="0.1" style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
+            <input type="number" inputMode="decimal" min={0} step="0.1" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" autoFocus />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Unit">
-            <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
-              {["lbs","oz","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
+            <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
+              {["lbs","oz","kg","g","each","count","cups","pints","quarts","bunch"].map(u=><option key={u}>{u}</option>)}
             </select>
           </Field>
         </div>
       </div>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} /></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} /></Field>
       <Btn onClick={() => {
         const q = Number(qty);
         if (!q) return;
@@ -23962,7 +24960,7 @@ function LogPerennialHarvestModal({ hobbyId, perennial, update, onClose }) {
           if (!p) return d;
           p.harvests = p.harvests || [];
           p.harvests.push({ id: newId(), date, qty: q, unit, notes });
-          p.totalHarvest = (p.totalHarvest||0) + (unit === "lbs" ? q : 0);
+          p.totalHarvest = (p.totalHarvest||0) + (harvestLbs({ qty: q, unit }) || 0);
           return d;
         });
         onClose();
@@ -24057,15 +25055,15 @@ function LogPerennialActionModal({ hobbyId, perennial, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Log action — ${perennial.name}`}>
       <Field label="Action">
-        <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)} autoFocus>
           {PERENNIAL_ACTION_TYPES.map(t => <option key={t}>{t}</option>)}
         </select>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how hard you pruned, etc." />
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="What you sprayed, how hard you pruned, etc." />
       </Field>
       <Btn variant="primary" onClick={() => {
         update(d => {
@@ -24105,7 +25103,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           padding: "26px 24px",
           textAlign: "center",
         }}
@@ -24126,7 +25124,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
             background: palette.ink, color: palette.bg,
             border: `1.5px solid ${palette.ink}`, cursor: "pointer",
             fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
-            boxShadow: "2px 2px 0 " + palette.line, marginBottom: 10,
+            boxShadow: "none", marginBottom: 10,
           }}
         >
           Create account
@@ -24214,13 +25212,13 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
     <div style={{
       display: "flex", alignItems: "center", justifyContent: "space-between",
       gap: 10, padding: "10px 12px", borderRadius: 10,
-      border: `1.5px solid ${palette.line}`, background: "#fff", marginBottom: 8,
+      border: `1.5px solid ${palette.line}`, background: palette.white, marginBottom: 8,
     }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, minWidth: 0 }}>
         <span style={{
           fontSize: 13, fontWeight: 700,
           color: done ? palette.leaf : palette.inkSoft,
-          background: done ? "#EAF1DD" : "#EFE8DC", borderRadius: 8,
+          background: done ? palette.goodBg : "#EFE8DC", borderRadius: 8,
           padding: "2px 8px", whiteSpace: "nowrap",
         }}>{done ? "✓" : "1 of 2"}</span>
         <span style={{ fontSize: 13.5, color: palette.ink, overflow: "hidden", textOverflow: "ellipsis" }}>{label}</span>
@@ -24229,7 +25227,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
         <span style={{ fontSize: 13, fontWeight: 700, color: palette.leaf, whiteSpace: "nowrap" }}>Done ✓</span>
       ) : (
         <button onClick={onClick} style={{
-          border: "none", background: palette.leaf, color: "#fff", fontFamily: FONT_BODY,
+          border: "none", background: palette.leaf, color: palette.onColor, fontFamily: FONT_BODY,
           fontSize: 13, fontWeight: 600, borderRadius: 8, padding: "6px 12px",
           cursor: "pointer", whiteSpace: "nowrap",
         }}>{cta}</button>
@@ -24246,7 +25244,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
       <div onClick={(e) => e.stopPropagation()} style={{
         position: "relative", width: "100%", maxWidth: 400, maxHeight: "90vh",
         overflowY: "auto", borderRadius: 20, border: `2px solid ${palette.ink}`,
-        boxShadow: "8px 10px 0 rgba(20,30,15,0.30)", background: palette.card,
+        boxShadow: "0 12px 32px rgba(0,0,0,0.22)", background: palette.card,
         fontFamily: FONT_BODY, color: palette.ink,
       }}>
         <button onClick={onClose} aria-label="Close" style={{
@@ -24257,7 +25255,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
         }}>×</button>
 
         {/* Prize images — both prizes go to one winner */}
-        <div style={{ background: "#EAF1DD", padding: "18px 16px 14px", textAlign: "center" }}>
+        <div style={{ background: palette.goodBg, padding: "18px 16px 14px", textAlign: "center" }}>
           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: 0.6, color: palette.leaf, textTransform: "uppercase", marginBottom: 4 }}>
             🍂 {GIVEAWAY.headline}
           </div>
@@ -24290,7 +25288,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
 
           {!user && (
             <div style={{
-              fontSize: 13, color: palette.accent, background: "#FBEAE3",
+              fontSize: 13, color: palette.accent, background: palette.dangerBg,
               border: `1.5px solid ${palette.accentSoft}`, borderRadius: 10,
               padding: "8px 10px", marginBottom: 12,
             }}>
@@ -24319,7 +25317,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
 
           {/* Always tappable, even once the follow step is done */}
           <button onClick={doVisitPost} style={{
-            width: "100%", background: "#fff", border: `1.5px solid ${palette.line}`,
+            width: "100%", background: palette.white, border: `1.5px solid ${palette.line}`,
             color: palette.ink, fontFamily: FONT_BODY, fontSize: 13, fontWeight: 600,
             borderRadius: 10, padding: "9px 12px", cursor: "pointer", marginBottom: 8,
           }}>📘 See the giveaway post on Facebook</button>
@@ -24334,7 +25332,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
               Once someone is entered, this becomes the main call to action. */}
           {isEntered ? (
             <div style={{
-              background: "#EAF1DD", border: `1.5px solid ${palette.leaf}`,
+              background: palette.goodBg, border: `1.5px solid ${palette.leaf}`,
               borderRadius: 12, padding: "12px 12px 10px", marginTop: 4,
             }}>
               <p style={{ fontSize: 12.5, lineHeight: 1.5, color: palette.ink, margin: "0 0 9px", textAlign: "center" }}>
@@ -24342,7 +25340,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
                 app is what pays for the prizes — it never changes your odds.
               </p>
               <button onClick={onSupport} style={{
-                width: "100%", background: palette.leaf, border: "none", color: "#fff",
+                width: "100%", background: palette.leaf, border: "none", color: palette.onColor,
                 fontFamily: FONT_BODY, fontSize: 13.5, fontWeight: 600, borderRadius: 10,
                 padding: "10px 12px", cursor: "pointer",
               }}>💚 Donate to keep awesome giveaways happening</button>
@@ -24445,7 +25443,7 @@ function AppStoreLaunchModal({ onClose, webOS }) {
           borderRadius: 22,
           overflow: "hidden",
           border: `2px solid ${palette.ink}`,
-          boxShadow: `8px 10px 0 rgba(20,30,60,0.35)`,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           background: "linear-gradient(160deg, #2F6BD8 0%, #1E47B0 100%)",
           animation: "henAppStorePop 0.32s ease-out",
         }}
@@ -24508,7 +25506,7 @@ function AppStoreLaunchModal({ onClose, webOS }) {
           {/* App icon — bird + book + leaf, recreated as SVG */}
           <div style={{
             width: 104, height: 104, margin: "0 auto 12px",
-            borderRadius: 24, background: "#F4EDE0",
+            borderRadius: 24, background: palette.bg,
             border: `2px solid ${palette.ink}`,
             boxShadow: "0 6px 16px rgba(0,0,0,0.25)",
             display: "flex", alignItems: "center", justifyContent: "center",
@@ -24645,13 +25643,13 @@ function WhatsNewModal({ onClose }) {
         style={{
           background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",
           maxHeight:"min(85vh, 600px)",
-          border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,
+          border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",
           fontFamily:FONT_BODY,overflow:"hidden",
           display:"flex",flexDirection:"column",
         }}
       >
         {/* Header — fixed, with close button */}
-        <div style={{ background:palette.ink,padding:"20px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
+        <div style={{ background:palette.deep,padding:"20px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
           <button
             onClick={onClose}
             aria-label="Close"
@@ -24659,7 +25657,7 @@ function WhatsNewModal({ onClose }) {
               position:"absolute",top:12,right:12,
               background:"rgba(255,255,255,0.1)",border:"none",borderRadius:"50%",
               width:32,height:32,display:"flex",alignItems:"center",justifyContent:"center",
-              color:palette.bg,cursor:"pointer",padding:0,
+              color:palette.onDeep,cursor:"pointer",padding:0,
             }}
           >
             <X size={18}/>
@@ -24697,7 +25695,7 @@ function WhatsNewModal({ onClose }) {
               width:"100%",padding:"12px",borderRadius:10,
               border:`2px solid ${palette.ink}`,background:palette.ink,color:palette.bg,
               fontFamily:FONT_BODY,fontWeight:700,fontSize:15,cursor:"pointer",
-              boxShadow:"2px 2px 0 "+palette.line,
+              boxShadow:"none",
             }}
           >
             Got it — let's go! 🌾
@@ -24734,7 +25732,7 @@ function WhatsNewModal({ onClose }) {
 function MilestoneModal({ config, userCount, milestone, onClose, onOpenSupport }) {
   if (!config) return null;
   const palette_local = {
-    bg: "#F4EDE0", ink: "#2C1810", inkSoft: "#5C4530",
+    bg: palette.bg, ink: "#2C1810", inkSoft: "#5C4530",
     accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547",
     card: "#FAF5EA", line: "#2C181020",
   };
@@ -24935,7 +25933,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
         <div style={{ background:palette.leaf,padding:"24px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
           <button
             onClick={onClose}
@@ -25034,12 +26032,12 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
                 borderRadius: 12,
                 border: `2px solid ${palette.ink}`,
                 background: palette.yolk,
-                color: palette.ink,
+                color: palette.onYolk,
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
                 display: "block",
                 cursor: "pointer",
               }}
@@ -25058,12 +26056,12 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
                 borderRadius: 12,
                 border: `2px solid ${palette.ink}`,
                 background: palette.leaf,
-                color: palette.bg,
+                color: palette.onColor,
                 textAlign: "center",
                 fontFamily: FONT_BODY,
                 fontWeight: 700,
                 fontSize: 14,
-                boxShadow: "2px 2px 0 " + palette.line,
+                boxShadow: "none",
                 display: "block",
                 cursor: "pointer",
               }}
@@ -25108,14 +26106,14 @@ function PhotosModal({ data, user, onClose }) {
     >
       <div
         onClick={(e) => e.stopPropagation()}
-        style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}
+        style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}
       >
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Photo library</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
-          <PhotoLibraryPage data={data} user={user} />
+          <Legacy><PhotoLibraryPage data={data} user={user} /></Legacy>
         </div>
       </div>
     </div>

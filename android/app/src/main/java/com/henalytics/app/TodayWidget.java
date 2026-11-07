@@ -100,7 +100,7 @@ public class TodayWidget extends AppWidgetProvider {
                 if (fresh && !o.isNull("frost")) {
                     JSONObject f = o.optJSONObject("frost");
                     if (f != null) {
-                        StringBuilder sb = new StringBuilder("❄️ Frost tonight, low " + f.optString("lowText"));
+                        StringBuilder sb = new StringBuilder("Frost tonight, low " + f.optString("lowText"));
                         JSONArray crops = f.optJSONArray("crops");
                         if (crops != null && crops.length() > 0) {
                             sb.append(": cover ");
@@ -114,7 +114,7 @@ public class TodayWidget extends AppWidgetProvider {
                 }
                 if (!o.isNull("eggsToday")) {
                     int n = fresh ? o.optInt("eggsToday", 0) : 0;
-                    eggs = n > 0 ? "🥚 " + n + (n == 1 ? " egg" : " eggs") + " today" : "🥚 No eggs logged yet today";
+                    eggs = n > 0 ? n + (n == 1 ? " egg" : " eggs") + " today" : "No eggs logged yet today";
                 }
                 JSONArray arr = o.optJSONArray("tasks");
                 if (arr != null) {
@@ -123,12 +123,12 @@ public class TodayWidget extends AppWidgetProvider {
                         if (t == null) continue;
                         String d = t.optString("date");
                         if (d.compareTo(today) < 0) continue;
-                        tasks[taskCount++] = "📅 " + dayLabel(d, today, tomorrow) + " · " + t.optString("title");
+                        tasks[taskCount++] = dayLabel(d, today, tomorrow) + " · " + t.optString("title");
                     }
                 }
             } catch (Exception ignored) { }
         }
-        if (taskCount == 0) tasks[taskCount++] = raw == null ? "Open Henalytics once to fill this in" : "📅 Nothing on the calendar this week";
+        if (taskCount == 0) tasks[taskCount++] = raw == null ? "Open Henalytics once to fill this in" : "Nothing on the calendar this week";
 
         v.setTextViewText(R.id.today_title, title);
         setRow(v, R.id.row_frost, frost);

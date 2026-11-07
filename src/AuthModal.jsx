@@ -1,3 +1,4 @@
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { Mail, Lock, X, UserCircle, AlertCircle } from 'lucide-react';
 import { supabase, isSupabaseConfigured } from './supabase.js';
@@ -10,7 +11,7 @@ import { loadEnabledProviders, startOAuth, isNativeApp } from './oauth.js';
 const IS_APPLE_DEVICE = typeof navigator !== 'undefined' &&
   /iPhone|iPad|iPod|Macintosh/i.test(navigator.userAgent || '');
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0",
   bgAlt: "#EBE0CC",
   ink: "#2C1810",
@@ -22,15 +23,15 @@ const palette = {
   feather: "#8B6F47",
   line: "#2C181030",
   card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 // Supabase throttles auth emails two ways: a project-wide hourly cap, and a
 // per-address cooldown (default 60s). Both come back as HTTP 429 with a raw
@@ -235,7 +236,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
           maxHeight: "90vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{
@@ -245,7 +246,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
             {mode === "signup" ? "Create account" : mode === "reset" ? "Reset password" : mode === "setNewPassword" ? "Set new password" : "Sign in"}
           </div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -346,7 +347,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                     disabled={!!oauthBusy || loading}
                     style={{
                       width: "100%", padding: "12px 18px", borderRadius: 8,
-                      background: "#fff", color: "#1f1f1f", border: "1.5px solid #747775",
+                      background: palette.white, color: "#1f1f1f", border: "1.5px solid #747775",
                       cursor: oauthBusy ? "wait" : "pointer",
                       fontFamily: "system-ui, sans-serif", fontWeight: 600, fontSize: 15,
                       opacity: oauthBusy && oauthBusy !== "google" ? 0.6 : 1,
@@ -378,7 +379,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                   </div>
                   <input
                     type="email"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     placeholder="you@example.com"
@@ -409,7 +410,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                   </div>
                   <input
                     type="password"
-                    style={inputStyle}
+                    style={inputStyle()}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder="••••••••"
@@ -441,7 +442,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
 
               {error && (
                 <div style={{
-                  padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+                  padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
                   borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
                   display: "flex", alignItems: "flex-start", gap: 8,
                 }}>
@@ -468,7 +469,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
                   border: `1.5px solid ${palette.ink}`,
                   cursor: loading ? "wait" : throttled ? "not-allowed" : "pointer",
                   fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
-                  boxShadow: "2px 2px 0 " + palette.line,
+                  boxShadow: "none",
                   opacity: (loading || throttled) ? 0.7 : 1,
                 }}
               >

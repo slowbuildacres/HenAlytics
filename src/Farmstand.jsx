@@ -12,30 +12,35 @@
 //   hobby.items[] = [{ id, name, costPerUnit, pricePerUnit, unit, archived }]
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const ITEM_UNITS = ["each", "lbs", "dozen", "quart", "pint", "bunch", "bag", "jar", "loaf"];
 
@@ -79,17 +84,17 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
-    leaf: { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
+    leaf: { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -97,11 +102,11 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -151,29 +156,29 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{item ? "Edit item" : "Add item"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
           <Field label="Item name">
-            <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Chocolate chip cookie, Strawberry jam, Sourdough loaf" autoFocus />
+            <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Chocolate chip cookie, Strawberry jam, Sourdough loaf" autoFocus />
           </Field>
           <Field label="Unit">
-            <select style={inputStyle} value={unit} onChange={e=>setUnit(e.target.value)}>
+            <select style={inputStyle()} value={unit} onChange={e=>setUnit(e.target.value)}>
               {ITEM_UNITS.map(u => <option key={u} value={u}>{u}</option>)}
             </select>
           </Field>
           <div style={{ display:"flex",gap:12 }}>
             <div style={{ flex:1 }}>
               <Field label="Cost to make / per unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} placeholder="$0.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
               </Field>
             </div>
             <div style={{ flex:1 }}>
               <Field label="Sale price / per unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder="$0.00" />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
               </Field>
             </div>
           </div>
@@ -201,13 +206,13 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
                   <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
                     Current stock ({unit})
                   </div>
-                  <input type="number" step="0.5" min={0} style={inputStyle} value={stock} onChange={e=>setStock(e.target.value)} placeholder="0" />
+                  <input type="number" step="0.5" min={0} style={inputStyle()} value={stock} onChange={e=>setStock(e.target.value)} placeholder="0" />
                 </div>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
                     Low-stock alert at
                   </div>
-                  <input type="number" step="1" min={0} style={inputStyle} value={lowStockAt} onChange={e=>setLowStockAt(e.target.value)} placeholder="3" />
+                  <input type="number" step="1" min={0} style={inputStyle()} value={lowStockAt} onChange={e=>setLowStockAt(e.target.value)} placeholder="3" />
                 </div>
               </div>
             )}
@@ -279,7 +284,7 @@ function QuickSellModal({ item, onSell, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Sold {item.name}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -289,7 +294,7 @@ function QuickSellModal({ item, onSell, onClose }) {
           {tracked && (
             <div style={{
               padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:13,
-              background: overstock ? "#FBE5DE" : palette.bgAlt,
+              background: overstock ? palette.dangerBg : palette.bgAlt,
               border: `1.5px solid ${overstock ? palette.accent : palette.line}`,
               color: overstock ? palette.accent : palette.ink,
             }}>
@@ -302,7 +307,7 @@ function QuickSellModal({ item, onSell, onClose }) {
           )}
 
           <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
-            <input type="number" step="0.1" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+            <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
 
           {/* Unit-aware preset buttons + clear */}
@@ -327,25 +332,25 @@ function QuickSellModal({ item, onSell, onClose }) {
           )}
 
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
           </Field>
           <div style={{ display:"flex",gap:12 }}>
             <div style={{ flex:1 }}>
               <Field label="Price / unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} />
               </Field>
             </div>
             <div style={{ flex:1 }}>
               <Field label="Cost / unit">
-                <input type="number" step="0.01" min={0} style={inputStyle} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} />
+                <input type="number" step="0.01" min={0} style={inputStyle()} value={costPerUnit} onChange={e=>setCostPerUnit(e.target.value)} />
               </Field>
             </div>
           </div>
           <Field label="Note (optional)">
-            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Repeat customer, payment type, etc." />
+            <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Repeat customer, payment type, etc." />
           </Field>
           <Field label="Tip (optional)">
-            <input type="number" step="0.01" min={0} style={inputStyle} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
+            <input type="number" step="0.01" min={0} style={inputStyle()} value={tip} onChange={e=>setTip(e.target.value)} placeholder="Extra the customer left, e.g. 2.00" />
           </Field>
           <div style={{ background:palette.bgAlt,borderRadius:8,padding:"12px 14px",marginBottom:14 }}>
             <div style={{ display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:4 }}>
@@ -419,7 +424,7 @@ function RestockModal({ item, onRestock, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>📦 Restock {item.name}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -433,7 +438,7 @@ function RestockModal({ item, onRestock, onClose }) {
           </div>
 
           <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
-            <input type="number" step="0.1" min={0} style={inputStyle} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+            <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
           <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:-6,marginBottom:12 }}>
             {presets.map(p => (
@@ -449,16 +454,16 @@ function RestockModal({ item, onRestock, onClose }) {
           </div>
 
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
           </Field>
           <Field label="Batch cost (optional)">
-            <input type="number" step="0.01" min={0} style={inputStyle} value={batchCost} onChange={e=>setBatchCost(e.target.value)} placeholder="Total cost of supplies for this batch" />
+            <input type="number" step="0.01" min={0} style={inputStyle()} value={batchCost} onChange={e=>setBatchCost(e.target.value)} placeholder="Total cost of supplies for this batch" />
           </Field>
 
           {hasBatchCost && (
             <div style={{
               padding:"10px 12px",borderRadius:8,marginBottom:12,fontSize:13,
-              background: significantDrift ? "#FBE5DE" : palette.bgAlt,
+              background: significantDrift ? palette.dangerBg : palette.bgAlt,
               border: `1.5px solid ${significantDrift ? palette.accent : palette.line}`,
               color: significantDrift ? palette.accent : palette.ink,
             }}>
@@ -470,7 +475,7 @@ function RestockModal({ item, onRestock, onClose }) {
           )}
 
           <Field label="Note (optional)">
-            <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Where it came from, harvest details, etc." />
+            <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Where it came from, harvest details, etc." />
           </Field>
 
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
@@ -493,9 +498,9 @@ function ItemCard({ item, onSell, onEdit, onRestock }) {
   // Pill colors per state — kept soft so the card doesn't scream when one item
   // is low. "Out" is the only one that uses the alarming accent red.
   const pillStyles = {
-    out:     { bg: "#FBE5DE", border: palette.accent, fg: palette.accent, label: `Out of stock` },
+    out:     { bg: palette.dangerBg, border: palette.accent, fg: palette.accent, label: `Out of stock` },
     low:     { bg: palette.yolkSoft, border: palette.yolk, fg: palette.ink, label: `Low — ${stock} left` },
-    healthy: { bg: "#E3EDD3", border: palette.leaf, fg: palette.leaf, label: `In stock — ${stock}` },
+    healthy: { bg: palette.goodBg, border: palette.leaf, fg: palette.leaf, label: `In stock — ${stock}` },
   };
   const pill = tracked ? pillStyles[stockState] : null;
 
@@ -582,23 +587,23 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   };
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{entry ? "Edit infrastructure" : "🔨 Log infrastructure"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
           <Field label="Date">
-            <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
           </Field>
           <Field label="What was built / repaired / bought?">
-            <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. roadside stand, signage, payment box" autoFocus />
+            <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. roadside stand, signage, payment box" autoFocus />
           </Field>
-          <Field label="Cost ($)">
-            <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+          <Field label={`Cost (${currencySymbol()})`}>
+            <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
           <Field label="Notes (optional)">
-            <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+            <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
           </Field>
           <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
             {entry && onDelete && (
@@ -615,7 +620,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function FarmstandPage({ hobby, data, update, setModal }) {
+export default function FarmstandPage({ hobby, data, update, setModal, nl = null }) {
   const [editingItem, setEditingItem] = useState(null);
   const [showItemModal, setShowItemModal] = useState(false);
   const [sellingItem, setSellingItem] = useState(null);
@@ -783,6 +788,54 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
     });
   };
 
+  if (nl) {
+    const archivedItems = (hobby?.items || []).filter((i) => i.archived);
+    const itemRow = (it) => {
+      const st = computeStockState(it);
+      const stock = Number(it.stock) || 0;
+      return {
+        id: it.id, title: it.name, left: st !== "untracked" ? stock : null, unit: it.unit || "",
+        onOpen: () => { setEditingItem(it); setShowItemModal(true); },
+        sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null].filter(Boolean).join(" · "),
+        badge: st === "out" ? { tone: "alert", text: "Out of stock" } : st === "low" ? { tone: "ready", text: `Low · ${stock} left` } : null,
+        actions: [{ label: "Sell", primary: st !== "out", run: () => setSellingItem(it) }, { label: "Restock", primary: st === "out", run: () => setRestockingItem(it) }],
+      };
+    };
+    const ctx = {
+      key: "farmstand",
+      summary: { big: fmtMoney(monthRevenue).replace(/\.00$/, ""), small: "sold this month", line: [`${fmtMoney(yearRevenue).replace(/\.00$/, "")} this year`, stockWarnings.length ? `${stockWarnings.length} item${stockWarnings.length === 1 ? "" : "s"} to restock` : null].filter(Boolean).join(" · ") },
+      newLabel: items.length ? "Email customers what's fresh" : "Add your first item", onNew: () => (items.length ? emailCustomers() : (setEditingItem(null), setShowItemModal(true))),
+      goingTitle: justRestocked ? "Just restocked" : "Needs restocking",
+      going: justRestocked
+        ? [{ id: "restocked", title: `${justRestocked.item.name} restocked`, sub: "Let your customers know it's back?", actions: [
+            { label: "Email customers", primary: true, run: () => { const it = justRestocked.item; const price = Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? `/${it.unit}` : ""}` : ""; emailCustomers({ item: it.name, qty: String(justRestocked.stock), unit: it.unit || "", price }); setJustRestocked(null); } },
+            { label: "Not now", run: () => setJustRestocked(null) }] }]
+        : stockWarnings.map(itemRow),
+      shelfTitle: "At the stand", shelfEmpty: "Add what you sell (eggs, honey, produce) with a price, and log sales in a tap.",
+      shelf: items.map(itemRow),
+      past: archivedItems.map((it) => ({ id: it.id, title: it.name, sub: "Archived · tap to put it back at the stand", onOpen: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.items || []).find((x) => x.id === it.id); if (t) t.archived = false; return d; }) })),
+      pastTitle: "Archived items",
+      extras: [
+        { key: "item", label: "Add an item", icon: NlPlus, run: () => { setEditingItem(null); setShowItemModal(true); } },
+        ...(setModal ? [{ key: "email", label: "Email your customers", sub: emailContacts ? `${emailContacts} customer${emailContacts === 1 ? "" : "s"} with an email` : "Add their emails to send what's fresh", icon: NlMail, run: () => emailCustomers() },
+          { key: "how", label: "How customer emails work", icon: NlHelp, run: () => setModal({ type: "stockEmailTutorial" }) }] : []),
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Signs, coolers, the stand itself", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {showItemModal && <ItemModal item={editingItem} onClose={() => { setShowItemModal(false); setEditingItem(null); }} onSave={saveItem} onDelete={deleteItem} />}
+        {sellingItem && <QuickSellModal item={sellingItem} onClose={() => setSellingItem(null)} onSell={(saleData) => recordSale(sellingItem, saleData)} />}
+        {restockingItem && <RestockModal item={restockingItem} onClose={() => setRestockingItem(null)} onRestock={(restockData) => recordRestock(restockingItem, restockData)} />}
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
+
   return (
     <div>
       {showItemModal && (
@@ -832,7 +885,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
       )}
 
       {justRestocked && setModal && (
-        <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:"#E3EDD3",border:`1.5px solid ${palette.line}`,borderRadius:12,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
+        <div style={{ display:"flex",alignItems:"center",gap:10,flexWrap:"wrap",background:palette.goodBg,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:"10px 14px",marginBottom:12,fontSize:13,color:palette.ink }}>
           <span style={{ flex:1,minWidth:180 }}>📦 <strong>{justRestocked.item.name}</strong> restocked. Let your customers know?</span>
           <Btn small onClick={() => {
             const it = justRestocked.item;
@@ -852,7 +905,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
 
       {/* Customer emails */}
       {setModal && (
-        <div style={{ background:palette.card,border:`2px solid ${palette.ink}`,borderRadius:14,padding:"14px 16px",marginBottom:16,boxShadow:`3px 4px 0 ${palette.line}` }}>
+        <div style={{ background:palette.card,border:`2px solid ${palette.ink}`,borderRadius:14,padding:"14px 16px",marginBottom:16,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
           <div style={{ display:"flex",alignItems:"center",gap:12,flexWrap:"wrap" }}>
             <div style={{ fontSize:30,lineHeight:1 }}>📧</div>
             <div style={{ flex:1,minWidth:180 }}>
@@ -955,7 +1008,7 @@ export default function FarmstandPage({ hobby, data, update, setModal }) {
             ))}
           </div>
           <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 8, textAlign: "center", fontStyle: "italic" }}>
-            Manage all sales from the Sales tab.
+            Manage all sales in More › Sales & costs.
           </div>
         </div>
       )}
@@ -1073,6 +1126,28 @@ function ArchivedItemsList({ hobby, update }) {
 // ============================================================================
 // FARMSTAND ANALYTICS — rendered under the Stats tab when farmstand is active
 // ============================================================================
+// 3.0 Stats: stand sales, best sellers.
+export function farmstandStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const sales = (data.sales || []).filter((x) => x && x.hobbyType === "farmstand" && inR(x.date));
+  const revenue = sales.reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const cost = sales.reduce((t, x) => t + (Number(x.totalCost) || 0), 0);
+  const by = new Map(); for (const x of sales) { const k = String(x.crop || x.item || "Other").trim(); by.set(k, (by.get(k) || 0) + (Number(x.totalRevenue) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: fmtMoney(v) }));
+  const facts = [];
+  if (sales.length >= 5) facts.push({ key: "sales", icon: "money", big: String(sales.length), line: "sales at our farm stand", title: `${sales.length} sales at the stand`, sub: `${fmtMoney(revenue / sales.length)} on average.` });
+  if (rows.length > 1) facts.push({ key: "best", icon: "trophy", big: rows[0].name, line: "our best seller", title: `Best seller: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Sold", value: fmtMoney(revenue), sub: `${sales.length} sale${sales.length === 1 ? "" : "s"}` },
+      ...(cost ? [{ label: "Profit", value: fmtMoney(revenue - cost), sub: `after ${fmtMoney(cost)} in costs` }] : []),
+    ],
+    bars: rows.length ? { title: "Best sellers", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🧺", kicker: "Our farm stand",
+  };
+}
+
 export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   // Defensive: hobby may be undefined if data is mid-load or migration hasn't
   // applied yet. Treat that as an empty state rather than crashing.
@@ -1249,7 +1324,7 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
             <ResponsiveContainer width="100%" height={220}>
               <BarChart data={monthChart}>
                 <XAxis dataKey="month" tick={{ fontSize: 11, fill: palette.inkSoft }} />
-                <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => `$${v}`} />
+                <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => fmtMoneyWhole(v)} />
                 <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ background: palette.bg, border: `1px solid ${palette.line}`, borderRadius: 8 }} />
                 <Bar dataKey="revenue" fill={palette.leaf} name="Revenue" />
                 <Bar dataKey="profit" fill={palette.feather} name="Profit" />
@@ -1296,7 +1371,7 @@ export function FarmstandAnalytics({ hobby, sales = [], entries = [], spouseMode
                   <ResponsiveContainer width="100%" height={200}>
                     <LineChart data={revMonthly}>
                       <XAxis dataKey="label" tick={{ fontSize: 11, fill: palette.inkSoft }} />
-                      <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => `$${v}`} />
+                      <YAxis tick={{ fontSize: 11, fill: palette.inkSoft }} tickFormatter={(v) => fmtMoneyWhole(v)} />
                       <Tooltip formatter={(v) => fmtMoney(v)} contentStyle={{ background: palette.bg, border: `1px solid ${palette.line}`, borderRadius: 8 }} />
                       <Line type="monotone" dataKey="revenue" stroke={palette.leaf} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
                     </LineChart>

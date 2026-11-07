@@ -1,28 +1,37 @@
 // ============================================================================
 // GOATS — per-animal tracking, dairy or meat, milk logging, kid tracking
 // ============================================================================
+import { localIso } from "./localDate.js";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
-import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit } from "./units.js";
+// NEW_LOOK (3.0): the rebuilt goat screens reuse this file's log forms.
+import { LivestockToday, LivestockHerd, LivestockProfile } from "./newlook/livestock/LivestockScreens.jsx";
+import { SPECIES, milkText } from "./newlook/livestock/livestockData.js";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
+import { fmtWeight, fmtVolume, weightUnitLabel, volumeUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, fmtMoney as fmtMoneyIntl, flozLabel, flozFromInput, currencySymbol, volumeFromGal, flozToInput } from "./units.js";
 import { photosOf, profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
   monthlySeries, filterByDateRange, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg:"#F4EDE0",bgAlt:"#EBE0CC",ink:"#2C1810",inkSoft:"#5C4530",
   accent:"#C84B31",leaf:"#5A7A3C",leafSoft:"#A8C078",
   yolk:"#E8B547",yolkSoft:"#F2D58A",
   feather:"#8B6F47",line:"#2C181030",card:"#FAF5EA",
-}; /* GOATS_UNIFY_V1 — added leafSoft */
+}); /* GOATS_UNIFY_V1 — added leafSoft */
 const FONT_DISPLAY=`'DM Serif Display', Georgia, serif`;
 const FONT_BODY=`'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle={width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"};
+const inputStyle=() => ({width:"100%",padding:"10px 12px",borderRadius:8,border:`1.5px solid ${palette.line}`,background:palette.card,fontFamily:FONT_BODY,fontSize:15,color:palette.ink,boxSizing:"border-box"});
 const newId=()=>Math.random().toString(36).slice(2,10);
 // Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
 // If the sale already has a buyerId (picked from the dropdown) this is a
@@ -44,23 +53,23 @@ const localDateStr=(d)=>{const dt=d instanceof Date?d:new Date(d);return `${dt.g
 const todayStr=()=>localDateStr(new Date());
 const parseLocalDate=(s)=>{if(!s)return new Date();const[y,m,d]=s.split("-").map(Number);return new Date(y,(m||1)-1,d||1);};
 const fmtDate=(s)=>{if(!s)return"";return parseLocalDate(s).toLocaleDateString("en-US",{month:"short",day:"numeric",year:"numeric"});};
-const fmtMoney=(n)=>`$${(Number(n)||0).toFixed(2)}`;
+const fmtMoney=(n)=>fmtMoneyIntl(Number(n)||0);
 
 const GOAT_BREEDS=["Nubian","Boer","Alpine","LaMancha","Oberhasli","Saanen","Toggenburg","Nigerian Dwarf","Kiko","Myotonic (Fainting)","Angora","Pygmy","Mixed","Other"];
 const GOAT_PURPOSES=["Dairy","Meat","Both"];
 const GOAT_SEXES=["Doe","Buck","Wether","Kid"];
 
 function Btn({children,onClick,variant="primary",small=false,style={},disabled=false}){
-  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.bg,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.ink,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.bg,border:`1.5px solid ${palette.leaf}`}}; /* GOATS_UNIFY_V1 — leaf variant */
-  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{padding:small?"6px 12px":"10px 18px",borderRadius:8,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"2px 2px 0 "+palette.line,...styles[variant],...style}}>{children}</button>;
+  const styles={primary:{background:palette.ink,color:palette.bg,border:`1.5px solid ${palette.ink}`},danger:{background:palette.accent,color:palette.onColor,border:`1.5px solid ${palette.accent}`},ghost:{background:"transparent",color:palette.ink,border:`1.5px solid ${palette.line}`},accent:{background:palette.yolk,color:palette.onYolk,border:`1.5px solid ${palette.ink}`},leaf:{background:palette.leaf,color:palette.onColor,border:`1.5px solid ${palette.leaf}`}}; /* GOATS_UNIFY_V1 — leaf variant */
+  return <button onClick={disabled?undefined:onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, padding:small?"6px 12px":"10px 18px",borderRadius:small ? 999 : 14,cursor:disabled?"not-allowed":"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:small?13:14,opacity:disabled?0.6:1,boxShadow:"none",...styles[variant],...style}}>{children}</button>;
 }
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
 function Modal({open,onClose,title,children}){
   if(!open)return null;
-  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}`,fontFamily:FONT_BODY}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`}}><div style={{fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink}}>{title}</div><button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4}}><X size={22}/></button></div><div style={{padding:20}}>{children}</div></div></div>;
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`}}><div style={{fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink}}>{title}</div><button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4}}><X size={22}/></button></div><div style={{padding:20}}>{children}</div></div></div>;
 }
-function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:accent,lineHeight:1.1}}>{value}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
-function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{title}</div>{children}</div>;}
+function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:palette.ink,lineHeight:1.1}}>{groupDigits(value)}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
+function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{plainTitle(title)}</div>{children}</div>;}
 
 // ============================================================================
 // HERD TALLY — count-only tracking that coexists with individual animals
@@ -154,7 +163,7 @@ function HerdTallyModal({hobby,update,onClose}){
       {HERD_TALLY_CATEGORIES.map(k=>(
         <Field key={k} label={k}>
           <input
-            type="number" inputMode="numeric" min={0} style={inputStyle}
+            type="number" inputMode="numeric" min={0} style={inputStyle()}
             value={counts[k]}
             onChange={e=>setOne(k,e.target.value)}
             placeholder="0"
@@ -293,7 +302,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
                 <PhotoThumb path={p.path} size={56} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
-                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    type="date" style={{ ...inputStyle(), padding: "6px 8px", fontSize: 13 }}
                     value={p.date || ""}
                     onChange={(e) => editDate(p.path, e.target.value)}
                   />
@@ -322,7 +331,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
         display: "inline-block", padding: "8px 14px", borderRadius: 8,
         background: busy ? palette.bgAlt : palette.yolk,
         border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
-        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink,
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: busy ? palette.ink : palette.onYolk,
       }}>
         {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another photo")}
         <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
@@ -363,7 +372,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?new Date().toISOString().slice(0,10):null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?localIso():null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -392,20 +401,20 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
   };
   return(
     <Modal open onClose={onClose} title={isEdit?"Edit goat":"Add a goat"}>
-      <Field label="Name"><input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Buttercup" autoFocus/></Field>
+      <Field label="Name"><input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Buttercup" autoFocus/></Field>
       <Field label="Breed">
-        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{GOAT_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
+        <select style={inputStyle()} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>{GOAT_BREEDS.map(b=><option key={b}>{b}</option>)}</select>
         {breedSelect === "Other" && (
-          <input style={{...inputStyle, marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Spanish, Pygora, San Clemente)" autoFocus />
+          <input style={{...inputStyle(), marginTop: 8}} value={breedCustom} onChange={e=>setBreedCustom(e.target.value)} placeholder="Type your breed (e.g. Spanish, Pygora, San Clemente)" autoFocus />
         )}
       </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}><Field label="Purpose"><div style={{display:"flex",gap:6,flexWrap:"wrap"}}>{GOAT_PURPOSES.map(p=><button key={p} onClick={()=>setPurpose(p)} style={{padding:"7px 12px",borderRadius:8,fontFamily:FONT_BODY,fontWeight:600,fontSize:13,cursor:"pointer",border:`1.5px solid ${purpose===p?palette.ink:palette.line}`,background:purpose===p?palette.ink:palette.card,color:purpose===p?palette.bg:palette.ink}}>{p}</button>)}</div></Field></div>
-        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>{GOAT_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
+        <div style={{flex:1}}><Field label="Sex"><select style={inputStyle()} value={sex} onChange={e=>setSex(e.target.value)}>{GOAT_SEXES.map(s=><option key={s}>{s}</option>)}</select></Field></div>
       </div>
-      <Field label="Date of birth (optional)"><input type="date" style={inputStyle} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
-      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$0.00"/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, ear tag, any notes..."/></Field>
+      <Field label="Date of birth (optional)"><input type="date" style={inputStyle()} value={dob} onChange={e=>setDob(e.target.value)}/></Field>
+      <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label="Purchase price (optional)"><input type="number" min={0} step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></div><div style={{flex:1}}><Field label="Purchase date (optional)"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e=>setPurchaseDate(e.target.value)}/></Field></div></div>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Color, ear tag, any notes..."/></Field>
 
       {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers
           show only opposite-sex same-hobby animals (does for the dam slot,
@@ -438,10 +447,10 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
             placeholder="Type the sire's name"
           />
           <Field label="Registry name (optional)">
-            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Sycamore Sky Buttercup"/>
+            <input style={inputStyle()} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Sycamore Sky Buttercup"/>
           </Field>
           <Field label="Registry number (optional)">
-            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. ADGA #1234567"/>
+            <input style={inputStyle()} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. ADGA #1234567"/>
           </Field>
         </div>
       </details>
@@ -479,7 +488,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
             Keeps the animal's history but removes them from your active list. You can restore them later.
           </div>
           <Field label="Reason">
-            <select style={inputStyle} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
+            <select style={inputStyle()} value={archiveReason} onChange={e=>setArchiveReason(e.target.value)}>
               <option value="sold">Sold</option>
               <option value="butchered">Butchered</option>
               <option value="died">Died (illness/age)</option>
@@ -520,7 +529,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
 
 function pillStyleG(active) {
   return {
-    padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
+    minHeight:36,padding:"6px 10px",borderRadius:8,fontSize:12,fontWeight:600,fontFamily:FONT_BODY,
     border: active ? `1.5px solid ${palette.ink}` : `1.5px solid ${palette.line}`,
     background: active ? palette.ink : palette.bgAlt,
     color: active ? palette.bg : palette.ink,
@@ -612,7 +621,7 @@ function FedGoatModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🌾 Log feeding">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label={`Who is this for? (${targetIds.length} goat${targetIds.length===1?"":"s"})`}>
         {selectionButtonsG({ live, mode, setMode })}
@@ -623,14 +632,14 @@ function FedGoatModal({ hobby, hobbyId, update, onClose }) {
         const shown = lbs===""||lbs==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(lbs))*100)/100) : lbs);
         return (
           <Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0"/>
           </Field>
         );
       })()}
-      <Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -641,16 +650,17 @@ function FedGoatModal({ hobby, hobbyId, update, onClose }) {
 
 // --- ⚖️ 💊 📝 LogGoatEntryModal (shared for weight / health / note) --------
 
-function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
+function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
 
   // Weight is single-select (one number per goat). Health & note are multi.
   const isMulti = action === "health" || action === "note";
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(live[0]?.id || "");
-  const [mode, setMode] = useState(live.length ? "all" : "custom");
-  const [customIds, setCustomIds] = useState([]);
+  // initialAnimalId (3.0 goat profile): start on that goat instead of the herd.
+  const [animalId, setAnimalId] = useState(initialAnimalId || live[0]?.id || "");
+  const [mode, setMode] = useState(initialAnimalId ? "custom" : live.length ? "all" : "custom");
+  const [customIds, setCustomIds] = useState(initialAnimalId ? [initialAnimalId] : []);
   const [weight, setWeight] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -710,11 +720,11 @@ function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
     <Modal open onClose={onClose} title={titles[action]}>
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>{subtexts[action]}</div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       {action === "weight" ? (
         <Field label="Goat">
-          <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
+          <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)}>
             {live.length === 0 && <option value="">— No live goats —</option>}
             {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
           </select>
@@ -730,14 +740,14 @@ function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
         const shown = weight===""||weight==null ? "" : (isMetricW ? String(Math.round(weightFromLbs(Number(weight))*100)/100) : weight);
         return (
           <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}>
-            <input type="number" min={0} step="0.1" style={inputStyle} value={shown}
+            <input type="number" min={0} step="0.1" style={inputStyle()} value={shown}
               onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}}
               placeholder="0" autoFocus inputMode="decimal"/>
           </Field>
         );
       })()}
       <Field label={noteRequired ? "Notes" : "Notes (optional)"}>
-        <input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}
+        <input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}
           placeholder={
             action === "health" ? "e.g. Ivermectin — dewormer round" :
             action === "note" ? "What happened" : ""
@@ -754,7 +764,7 @@ function LogGoatEntryModal({ hobby, hobbyId, action, update, onClose }) {
 
 // --- 🥛 MilkGoatModal -------------------------------------------------------
 
-function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
+function MilkGoatModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   // Milk is logged per-doe. Restrict the picker to does with a dairy
   // purpose (Dairy or Both); fall back to all live goats if the user
@@ -763,7 +773,7 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
   const choosable = dairy.length > 0 ? dairy : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [oz, setOz] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -778,7 +788,7 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
       d.entries[hobbyId].push({
         id: newId(), date, action: "milk",
         animalId, animalName: a?.name || "",
-        oz: Number(oz) || 0,
+        oz: flozFromInput(oz),
         notes: notes.trim(),
         created: Date.now(),
       });
@@ -792,24 +802,24 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🥛 Log milk">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Doe">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosable.length === 0 && <option value="">— No goats available —</option>}
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.purpose?` · ${a.purpose}`:""}</option>)}
         </select>
       </Field>
-      <Field label="Milk collected (oz)">
-        <input type="number" min={0} step="0.1" style={inputStyle} value={oz}
+      <Field label={`Milk collected (${flozLabel()})`}>
+        <input type="number" min={0} step="0.1" style={inputStyle()} value={oz}
           onChange={e=>setOz(e.target.value)} placeholder="0" inputMode="decimal"/>
         {oz && (
           <div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>
-            {isMetricV ? fmtVolume(Number(oz)/128) : `${(Number(oz)/128).toFixed(2)} gallons`}
+            {isMetricV ? fmtVolume(flozFromInput(oz)/128) : `${(Number(oz)/128).toFixed(2)} gallons`}
           </div>
         )}
       </Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -826,13 +836,13 @@ function MilkGoatModal({ hobby, hobbyId, update, onClose }) {
 // alive at weaning), use the 💕 Breeding tile, which opens the existing
 // rich BreedingModal — that's the canonical breeding flow for goats.
 
-function KiddingGoatModal({ hobby, hobbyId, update, onClose }) {
+function KiddingGoatModal({ hobby, hobbyId, update, onClose, initialAnimalId = null }) {
   const live = (hobby.animals||[]).filter(a=>!a.archived);
   const does = live.filter(a => a.sex === "Doe");
   const choosable = does.length > 0 ? does : live;
 
   const [date, setDate] = useState(todayStr());
-  const [animalId, setAnimalId] = useState(choosable[0]?.id || "");
+  const [animalId, setAnimalId] = useState((initialAnimalId && choosable.some(a => a.id === initialAnimalId) ? initialAnimalId : null) || choosable[0]?.id || "");
   const [count, setCount] = useState("");
   const [notes, setNotes] = useState("");
 
@@ -859,22 +869,22 @@ function KiddingGoatModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="🍼 Log kidding">
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5}}>
-        Quick log of how many kids a doe just had. For the full breed-through-kidding record (dam, sire, dates, kids alive at weaning) use the 💕 Breeding tile instead.
+        Quick log of how many kids a doe just had. For the full breed-through-kidding record (dam, sire, dates, kids alive at weaning) log it under Breeding instead.
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/>
       </Field>
       <Field label="Dam">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {choosable.length === 0 && <option value="">— No does available —</option>}
           {choosable.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}</option>)}
         </select>
       </Field>
       <Field label="Kids born">
-        <input type="number" min={1} style={inputStyle} value={count}
+        <input type="number" min={1} style={inputStyle()} value={count}
           onChange={e=>setCount(e.target.value)} placeholder="1" inputMode="numeric"/>
       </Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!canSave}>Save</Btn>
@@ -959,7 +969,7 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
           created: Date.now(),
         };
         d.entries[hobbyId].push(entry);
-        const priceStr = numericPrice > 0 ? ` for $${numericPrice.toFixed(2)}` : "";
+        const priceStr = numericPrice > 0 ? ` for ${fmtMoney(numericPrice)}` : "";
         const partyStr = partyName ? ` to ${partyName}` : "";
         target.archived = true;
         target.archivedReason = `${verb}${partyStr}${priceStr}`;
@@ -1020,7 +1030,7 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title="❄️ Remove goat">
       <Field label="Which goat?">
-        <select style={inputStyle} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
+        <select style={inputStyle()} value={animalId} onChange={e=>setAnimalId(e.target.value)} autoFocus>
           {live.length === 0 && <option value="">— No live goats —</option>}
           {live.map(a => <option key={a.id} value={a.id}>{a.name}{a.sex?` · ${a.sex}`:""}{a.breed?` · ${a.breed}`:""}</option>)}
         </select>
@@ -1038,7 +1048,7 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
           ))}
         </div>
       </Field>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
 
       {reason === "butchered" && (()=>{
         const isMetricW = getCurrentWeightUnit()==="kg";
@@ -1046,41 +1056,41 @@ function RemoveGoatModal({ hobby, hobbyId, update, onClose }) {
         return (
           <>
             <Field label={isMetricW?"Hanging weight (kg)":"Hanging weight (lbs)"}>
-              <input type="number" min={0} step="0.1" style={inputStyle} value={shownW}
+              <input type="number" min={0} step="0.1" style={inputStyle()} value={shownW}
                 onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/>
             </Field>
-            <Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>
+            <Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
           </>
         );
       })()}
 
       {reason === "sold" && (
         <>
-          <Field label="Buyer (optional)"><input style={inputStyle} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
-          <Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e=>setPrice(e.target.value)} placeholder="$0.00"/></Field>
+          <Field label="Buyer (optional)"><input style={inputStyle()} value={buyer} onChange={e=>setBuyer(e.target.value)} placeholder="Name of buyer"/></Field>
+          <Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e=>setPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>
         </>
       )}
 
       {(reason === "rehomed" || reason === "given_away") && (
-        <Field label="Recipient (optional)"><input style={inputStyle} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
+        <Field label="Recipient (optional)"><input style={inputStyle()} value={recipient} onChange={e=>setRecipient(e.target.value)} placeholder="Who took them"/></Field>
       )}
 
       {reason === "died" && (
         <Field label="Cause">
-          <select style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)}>
+          <select style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)}>
             {["Unknown","Disease","Predator","Heat stress","Cold","Injury","Kidding complications","Bloat","Parasites","Other"].map(c=><option key={c}>{c}</option>)}
           </select>
         </Field>
       )}
 
       {reason === "culled" && (
-        <Field label="Reason (optional)"><input style={inputStyle} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
+        <Field label="Reason (optional)"><input style={inputStyle()} value={cullReason} onChange={e=>setCullReason(e.target.value)} placeholder="e.g. temperament, poor producer"/></Field>
       )}
 
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
 
       <div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>
-        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This goat";})()} will move to your Archived goats list{(reason==="sold")?" and a sale record will appear in your Sales tab":""}. You can restore from there if this was a mistake.
+        {(()=>{const a = live.find(x=>x.id===animalId); return a?.name || "This goat";})()} will move to your Archived goats list{(reason==="sold")?" and a sale record will appear in Sales & costs":""}. You can restore from there if this was a mistake.
       </div>
 
       <div style={{display:"flex",gap:8,justifyContent:"flex-end"}}>
@@ -1115,7 +1125,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const[saleType,setSaleType]=useState("sold");
   const save=()=>{
     const entry={id:newId(),date,action,animalId:animal.id,animalName:animal.name,notes,created:Date.now()};
-    if(action==="milk")entry.oz=Number(oz)||0;
+    if(action==="milk")entry.oz=flozFromInput(oz);
     if(action==="fed"){entry.lbs=Number(lbs)||0;entry.cost=Number(cost)||0;}
     if(action==="kid")entry.count=Number(count)||1;
     if(action==="weight"||action==="butcher")entry.weight=Number(weight)||0;
@@ -1143,7 +1153,7 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
         if(a&&!a.archived){
           a.archived=true;
           const verb=saleType==="leased"?"Leased":saleType==="rehomed"?"Rehomed":"Sold";
-          const priceStr=Number(salePrice)>0?` for $${Number(salePrice).toFixed(2)}`:"";
+          const priceStr=Number(salePrice)>0?` for ${fmtMoney(Number(salePrice))}`:"";
           const buyerStr=saleBuyer.trim()?` to ${saleBuyer.trim()}`:"";
           a.archivedReason=`${verb}${buyerStr}${priceStr}`;
           a.archivedDate=date;
@@ -1176,33 +1186,33 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
   const isSale=action==="sale";
   return(
     <Modal open onClose={onClose} title={`${titles[action]||"Log"} — ${animal.name}`}>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)}/></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)}/></Field>
       {action==="milk"&&(()=>{
         // Milk stored in oz. In metric mode show a mL/L hint instead of the
         // gallons hint. The input value stays in oz (canonical) — only the
         // helper text adapts. (oz → mL ≈ ×29.5735)
         const isMetricV=getCurrentVolumeUnit()==="L";
-        return <Field label="Milk collected (oz)"><input type="number" min={0} step="0.1" style={inputStyle} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus/>{oz&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{isMetricV?fmtVolume(Number(oz)/128):`${(Number(oz)/128).toFixed(2)} gallons`}</div>}</Field>;
+        return <Field label={`Milk collected (${flozLabel()})`}><input type="number" min={0} step="0.1" style={inputStyle()} value={oz} onChange={e=>setOz(e.target.value)} placeholder="0" autoFocus/>{oz&&<div style={{fontSize:12,color:palette.inkSoft,marginTop:4}}>{isMetricV?fmtVolume(flozFromInput(oz)/128):`${(Number(oz)/128).toFixed(2)} gallons`}</div>}</Field>;
       })()}
       {action==="fed"&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownLbs=lbs===""||lbs==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(lbs))*100)/100):lbs);
-        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label="Cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field></div></div>;
+        return <div style={{display:"flex",gap:12}}><div style={{flex:1}}><Field label={isMetricW?"Feed (kg)":"Feed (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownLbs} onChange={e=>{const r=e.target.value;setLbs(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0"/></Field></div><div style={{flex:1}}><Field label={`Cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field></div></div>;
       })()}
-      {action==="kid"&&<Field label="Kids born (count)"><input type="number" min={1} style={inputStyle} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
+      {action==="kid"&&<Field label="Kids born (count)"><input type="number" min={1} style={inputStyle()} value={count} onChange={e=>setCount(e.target.value)} placeholder="1" autoFocus/></Field>}
       {(action==="weight"||action==="butcher")&&(()=>{
         const isMetricW=getCurrentWeightUnit()==="kg";
         const shownW=weight===""||weight==null?"":(isMetricW?String(Math.round(weightFromLbs(Number(weight))*100)/100):weight);
-        return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
+        return <Field label={isMetricW?"Weight (kg)":"Weight (lbs)"}><input type="number" min={0} step="0.1" style={inputStyle()} value={shownW} onChange={e=>{const r=e.target.value;setWeight(r===""?"":(isMetricW?String(lbsFromInput(r)):r));}} placeholder="0" autoFocus/></Field>;
       })()}
-      {action==="butcher"&&<Field label="Processing cost ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$0.00"/></Field>}
-      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
+      {action==="butcher"&&<Field label={`Processing cost (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>}
+      {isDeath&&<Field label="Cause (optional)"><input style={inputStyle()} value={cause} onChange={e=>setCause(e.target.value)} placeholder="predator, illness, unknown..." autoFocus/></Field>}
       {isSale&&<>
-        <Field label="Type"><select style={inputStyle} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
+        <Field label="Type"><select style={inputStyle()} value={saleType} onChange={e=>setSaleType(e.target.value)}><option value="sold">Sold</option><option value="leased">Leased</option><option value="rehomed">Rehomed (no payment)</option></select></Field>
         <Field label="Customer (optional)">
           {!showNewBuyer ? (
             <div style={{ display: "flex", gap: 8 }}>
-              <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+              <select style={{ ...inputStyle(), flex: 1 }} value={buyerId} onChange={e => {
                 const id = e.target.value;
                 setBuyerId(id);
                 const c = (customers || []).find(x => x.id === id);
@@ -1215,16 +1225,16 @@ function LogModal({animal,hobbyId,action,update,onClose,customers=[]}){
             </div>
           ) : (
             <div style={{ display: "flex", gap: 8 }}>
-              <input style={{ ...inputStyle, flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+              <input style={{ ...inputStyle(), flex: 1 }} value={saleBuyer} onChange={e => setSaleBuyer(e.target.value)} placeholder="New customer name" autoFocus />
               <button onClick={() => { setShowNewBuyer(false); setSaleBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
             </div>
           )}
         </Field>
-        {saleType!=="rehomed"&&<Field label="Price ($)"><input type="number" min={0} step="0.01" style={inputStyle} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder="$0.00"/></Field>}
+        {saleType!=="rehomed"&&<Field label={`Price (${currencySymbol()})`}><input type="number" min={0} step="0.01" style={inputStyle()} value={salePrice} onChange={e=>setSalePrice(e.target.value)} placeholder={`${currencySymbol()}0.00`}/></Field>}
       </>}
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e=>setNotes(e.target.value)}/></Field>
       {isDeath&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list. You can restore from there if this was a mistake.</div>}
-      {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list and {saleType!=="rehomed"?"a sale record will appear in your Sales tab":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
+      {isSale&&<div style={{fontSize:12,color:palette.inkSoft,marginBottom:10,padding:"8px 10px",background:palette.bgAlt,borderRadius:6,lineHeight:1.5}}>{animal.name} will move to your Archived goats list and {saleType!=="rehomed"?"a sale record will appear in Sales & costs":"be marked as rehomed"}. You can restore from there if this was a mistake.</div>}
       <Btn onClick={save} variant={isDeath?"danger":"primary"}>{(isDeath||isSale)?"Save & archive":"Save"}</Btn>
     </Modal>
   );
@@ -1338,11 +1348,11 @@ const addDays = (dateStr, days) => {
 };
 
 // ============ BREEDING / KIDDING MODAL ============
-function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent }) {
+function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalendarEvent, initialDamId = null }) {
   const dams = animals.filter(a => !a.archived && a.sex === "Doe");
   const sires = animals.filter(a => !a.archived && a.sex === "Buck");
 
-  const [damId, setDamId] = useState(breeding?.damId || dams[0]?.id || "");
+  const [damId, setDamId] = useState(breeding?.damId || initialDamId || dams[0]?.id || "");
   const [sireId, setSireId] = useState(breeding?.sireId || "");
   const [externalSireName, setExternalSireName] = useState(breeding?.externalSireName || "");
   const [useUnknownSire, setUseUnknownSire] = useState(
@@ -1416,7 +1426,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}>
           <Field label="Doe (dam)">
-            <select style={inputStyle} value={damId} onChange={e=>setDamId(e.target.value)}>
+            <select style={inputStyle()} value={damId} onChange={e=>setDamId(e.target.value)}>
               <option value="">— Pick one —</option>
               {dams.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
             </select>
@@ -1426,13 +1436,13 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
           <Field label="Buck (sire)">
             {useUnknownSire ? (
               <input
-                style={inputStyle}
+                style={inputStyle()}
                 value={externalSireName}
                 onChange={e => setExternalSireName(e.target.value)}
                 placeholder="External / unknown sire"
               />
             ) : (
-              <select style={inputStyle} value={sireId} onChange={e=>setSireId(e.target.value)}>
+              <select style={inputStyle()} value={sireId} onChange={e=>setSireId(e.target.value)}>
                 <option value="">— Pick a buck —</option>
                 {sires.map(a => <option key={a.id} value={a.id}>{a.name}</option>)}
               </select>
@@ -1440,7 +1450,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
             <button
               type="button"
               onClick={() => setUseUnknownSire(v => !v)}
-              style={{background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontSize:11,padding:"4px 0 0",textDecoration:"underline",fontFamily:FONT_BODY}}
+              style={{background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,fontSize:12,minHeight:36,padding:"4px 0 0",textDecoration:"underline",fontFamily:FONT_BODY}}
             >
               {useUnknownSire ? "Use a tracked buck instead" : "External / unknown sire"}
             </button>
@@ -1448,7 +1458,7 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         </div>
       </div>
       <Field label="Breeding method">
-        <select style={inputStyle} value={method} onChange={e=>setMethod(e.target.value)}>
+        <select style={inputStyle()} value={method} onChange={e=>setMethod(e.target.value)}>
           <option value="Natural">Natural / live cover</option>
           <option value="AI">AI (artificial insemination)</option>
           <option value="Embryo transfer">Embryo transfer</option>
@@ -1456,13 +1466,13 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         </select>
       </Field>
       <Field label="Breed date">
-        <input type="date" style={inputStyle} value={breedDate} onChange={e=>setBreedDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={breedDate} onChange={e=>setBreedDate(e.target.value)}/>
       </Field>
       <Field label="Expected kidding date">
         <div style={{display:"flex",gap:8,alignItems:"center"}}>
           <input
             type="date"
-            style={{...inputStyle,flex:1}}
+            style={{...inputStyle(),flex:1}}
             value={expectedBirthDate}
             onChange={e=>setExpectedBirthDate(e.target.value)}
           />
@@ -1491,22 +1501,22 @@ function BreedingModal({ animals, breeding, onSave, onDelete, onClose, addCalend
         After kidding (fill in when it happens)
       </div>
       <Field label="Kidded date">
-        <input type="date" style={inputStyle} value={birthedDate} onChange={e=>setBirthedDate(e.target.value)}/>
+        <input type="date" style={inputStyle()} value={birthedDate} onChange={e=>setBirthedDate(e.target.value)}/>
       </Field>
       <div style={{display:"flex",gap:12}}>
         <div style={{flex:1}}>
           <Field label="Kids born">
-            <input type="number" min={0} style={inputStyle} value={offspringBorn} onChange={e=>setOffspringBorn(e.target.value)} placeholder="0"/>
+            <input type="number" min={0} style={inputStyle()} value={offspringBorn} onChange={e=>setOffspringBorn(e.target.value)} placeholder="0"/>
           </Field>
         </div>
         <div style={{flex:1}}>
           <Field label="Alive at weaning">
-            <input type="number" min={0} style={inputStyle} value={offspringAlive} onChange={e=>setOffspringAlive(e.target.value)} placeholder="0"/>
+            <input type="number" min={0} style={inputStyle()} value={offspringAlive} onChange={e=>setOffspringAlive(e.target.value)} placeholder="0"/>
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{...inputStyle,minHeight:60,resize:"vertical"}} value={notes} onChange={e=>setNotes(e.target.value)}/>
+        <textarea style={{...inputStyle(),minHeight:60,resize:"vertical"}} value={notes} onChange={e=>setNotes(e.target.value)}/>
       </Field>
       <div style={{display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap"}}>
         {breeding && onDelete && (
@@ -1707,7 +1717,7 @@ export function GoatsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=nul
   const fcr=totalFeedLbs>0&&totalMeatLbs>0?(totalFeedLbs/totalMeatLbs).toFixed(2):"—";
   const byDate={};
   milkEntries.forEach(e=>{byDate[e.date]=(byDate[e.date]||0)+(Number(e.oz)||0);});
-  const milkTrend=Object.entries(byDate).sort().slice(-14).map(([date,oz])=>({date:date.slice(5),oz:Number(oz.toFixed(1))}));
+  const milkTrend=Object.entries(byDate).sort().slice(-14).map(([date,oz])=>({date:date.slice(5),oz:Number(flozToInput(oz))||0}));
   const milkByAnimal={};
   milkEntries.forEach(e=>{milkByAnimal[e.animalName||e.animalId]=(milkByAnimal[e.animalName||e.animalId]||0)+(Number(e.oz)||0);});
   const milkChart=Object.entries(milkByAnimal).map(([name,oz])=>({name,oz:Number(oz.toFixed(1))})).sort((a,b)=>b.oz-a.oz);
@@ -1720,7 +1730,7 @@ export function GoatsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=nul
   const advAllMilk = advAll.filter(e=>e.action==="milk");
   // Monthly milk series (gallons) for the line chart + record.
   const milkMonthlyOz = monthlySeries(advAllMilk, e=>e.date, e=>Number(e.oz)||0);
-  const milkMonthly = milkMonthlyOz.map(p=>({month:p.month,gal:Number((p.value/128).toFixed(2)),
+  const milkMonthly = milkMonthlyOz.map(p=>({month:p.month,gal:Number(volumeFromGal(p.value/128).toFixed(2)),
     label:(()=>{const pr=String(p.month).split("-").map(Number);const d=new Date(pr[0],pr[1]-1,1);return isNaN(d)?p.month:d.toLocaleDateString("en-US",{month:"short",year:"2-digit"});})()}));
   const milkRecord = personalRecord(milkMonthlyOz);   // best month by oz
   // Period-vs-period: current filtered milk vs. the prior equal-length window.
@@ -1761,7 +1771,7 @@ export function GoatsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=nul
                 <LineChart data={milkMonthly}>
                   <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11}/>
                   <YAxis stroke={palette.inkSoft} fontSize={11}/>
-                  <Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[`${v} gal`,"Milk"]}/>
+                  <Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[`${v} ${volumeUnitLabel()}`,"Milk"]}/>
                   <Line type="monotone" dataKey="gal" stroke={palette.leaf} strokeWidth={3} dot={{fill:palette.accent,r:4}}/>
                 </LineChart>
               </ResponsiveContainer>
@@ -1770,7 +1780,7 @@ export function GoatsAnalytics({hobby,entries,/* ADV_ANALYTICS */ allEntries=nul
         </div>
       </LockedStatOverlay>
 
-      {milkTrend.length>1&&<ChartCard title="🥛 Daily milk (oz)"><ResponsiveContainer width="100%" height={180}><BarChart data={milkTrend}><XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[`${v} oz`,"Milk"]}/><Bar dataKey="oz" fill={palette.leaf} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>}
+      {milkTrend.length>1&&<ChartCard title={`🥛 Daily milk (${flozLabel()})`}><ResponsiveContainer width="100%" height={180}><BarChart data={milkTrend}><XAxis dataKey="date" stroke={palette.inkSoft} fontSize={11}/><YAxis stroke={palette.inkSoft} fontSize={11}/><Tooltip contentStyle={{background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8}} formatter={v=>[`${v} ${flozLabel()}`,"Milk"]}/><Bar dataKey="oz" fill={palette.leaf} radius={[6,6,0,0]}/></BarChart></ResponsiveContainer></ChartCard>}
       {milkChart.length>1&&<ChartCard title="🐐 Milk by animal"><div style={{display:"flex",flexDirection:"column",gap:6}}>{milkChart.map(a=><div key={a.name} style={{display:"flex",justifyContent:"space-between",padding:"8px 12px",background:palette.bgAlt,borderRadius:8,fontSize:13}}><span>🐐 {a.name}</span><strong>{fmtVolume((Number(a.oz)||0)/128)}</strong></div>)}</div></ChartCard>}
       {animals.length===0&&<div style={{padding:24,textAlign:"center",color:palette.inkSoft,fontSize:13}}>No goat entries yet.</div>}
     </div>
@@ -1792,6 +1802,127 @@ export default function GoatsPage({hobby,data,update,user,setModal:setAppModal})
     <div>
       <GoatModalRouter modal={localModal} hobby={hobby} update={update} user={user} onClose={()=>setLocalModal(null)}/>
       <GoatHome hobby={hobby} entries={entries} sales={data.sales||[]} update={update} setModal={setLocalModal} setAppModal={setAppModal} customers={data.customers||[]}/>
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Herd / goat profile, using the same goat forms
+// ----------------------------------------------------------------------------
+// The screens live in src/newlook/goats/; this host owns the goat page's own
+// modals (milk, kidding, breeding, weight, health, note, remove, add/edit
+// goat, herd count, family tree, history) and hands the screens `act` to open
+// them. A save that adds log entries shows "Saved · Undo" instead of asking
+// first. The Log picker opens these forms via requestHobbyAction().
+// ============================================================================
+const UNDO_WORDS = { milk: "milk", fed: "feeding", weight: "weight", health: "health log", note: "note", kid: "kidding" };
+
+// Forms that save something other than a log (a breeding record, a
+// shearing, an animal): what the Undo bar says.
+const FORM_SAVED = { breeding: "Saved breeding", shearing: "Saved shearing", shear: "Saved shearing", animal: "Saved", addAnimal: "Saved", herd: "Saved herd count" };
+
+export function GoatsNewLook({ hobby, data, update, user, setModal: setAppModal, tab, onOpenJournal, onOpenCalendar }) {
+  const entries = data.entries[hobby.id] || [];
+  const [local, setLocal] = useState(null);           // add/edit goat, herd count
+  const [form, setFormRaw] = useState(null);
+  // With no goats yet, forms that need one open "Add your first goat" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["milk","fed","weight","health","note","kid","breeding","remove"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);             // { kind: "pedigree" | "history", animal }
+  const [undoCheck, setUndoCheck] = useState(null);   // ids before a log form opened
+
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const open = (kind, extra = {}) => {
+    setUndoCheck(null);
+    setForm({ kind, ...extra, before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id) });
+  };
+  const closeForm = () => { if (form && form.before) setUndoCheck({ before: form.before, snap: form.snap, kind: form.kind }); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.before.has(e.id));
+    setUndoCheck(null);
+    if (!added.length) { if (FORM_SAVED[undoCheck.kind]) offerUndoSince(update, undoCheck.snap, data, FORM_SAVED[undoCheck.kind]); return; }
+    if (!added.length || !["milk", "fed", "weight", "health", "note", "kid"].includes(added[0].action)) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const msg = e.action === "milk" ? `Saved ${milkText(e.oz)}${e.animalName ? ` from ${e.animalName}` : ""}`
+      : e.action === "weight" ? `Saved ${e.animalName ? `${e.animalName}'s ` : ""}weight`
+      : e.action === "kid" ? `Saved ${Number(e.count) || 1} kid${Number(e.count) === 1 ? "" : "s"}${e.animalName ? ` for ${e.animalName}` : ""}`
+      : `Saved ${UNDO_WORDS[e.action]}${added.length > 1 ? ` for ${added.length} goats` : ""}`;
+    offerUndoSince(update, undoCheck.snap, data, msg);
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const act = {
+    milk: (id) => open("milk", { animalId: id || null }),
+    fed: () => open("fed"),
+    weight: (id) => open("weight", { animalId: id || null }),
+    health: (id) => open("health", { animalId: id || null }),
+    note: (id) => open("note", { animalId: id || null }),
+    birth: (id) => open("kid", { animalId: id || null }),
+    breeding: (b, damId) => setForm({ kind: "breeding", before: new Set(entries.map((e) => e.id)), snap: undoSnapshot(data, hobby.id), breeding: b || null, animalId: damId || null }),
+    remove: () => setForm({ kind: "remove" }),
+    addAnimal: () => setLocal({ type: "addAnimal" }),
+    editAnimal: (id) => setLocal({ type: "editAnimal", animalId: id }),
+    herdCount: () => setLocal({ type: "herdTally" }),
+    openProfile: (id) => { setProfileId(id); try { window.scrollTo(0, 0); } catch (_) {} },
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (action) => {
+    if (action === "milk") act.milk(); else if (action === "fed") act.fed(); else if (action === "weight") act.weight();
+    else if (action === "health") act.health(); else if (action === "note") act.note(); else if (action === "kid") act.birth();
+    else if (action === "breeding") act.breeding(null); else if (action === "add") act.addAnimal();
+  });
+
+  const saveBreeding = (breeding) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;
+    if (!Array.isArray(h.breedings)) h.breedings = [];
+    const i = h.breedings.findIndex((x) => x.id === breeding.id);
+    if (i >= 0) h.breedings[i] = breeding; else h.breedings.push(breeding);
+    return d;
+  });
+  const deleteBreeding = (id) => update((d) => {
+    const h = d.hobbies.find((x) => x.id === hobby.id);
+    if (h) h.breedings = (h.breedings || []).filter((b) => b.id !== id);
+    if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter((e) => e.relatedId !== id);
+    return d;
+  });
+  const addCalendarEvent = (event) => update((d) => { if (!Array.isArray(d.calendarEvents)) d.calendarEvents = []; d.calendarEvents.push(event); return d; });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = herdTallyTotal(tally);
+  const tallyLine = HERD_TALLY_CATEGORIES.filter((k) => (Number(tally[k]) || 0) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? (hobby.animals || []).find((a) => a.id === profileId) : null;
+  const f = form || {};
+
+  return (
+    <div>
+      {needAnimal && <NeedAnimal noun="goat" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setLocal({ type: "addAnimal" }); }} />}
+      <GoatModalRouter modal={local} hobby={hobby} update={update} user={user} onClose={() => setLocal(null)} />
+      {f.kind === "milk" && <MilkGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {f.kind === "fed" && <FedGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} />}
+      {f.kind === "kid" && <KiddingGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {["weight", "health", "note"].includes(f.kind) && <LogGoatEntryModal hobby={hobby} hobbyId={hobby.id} action={f.kind} update={update} onClose={closeForm} initialAnimalId={f.animalId} />}
+      {f.kind === "remove" && <RemoveGoatModal hobby={hobby} hobbyId={hobby.id} update={update} onClose={() => setForm(null)} />}
+      {f.kind === "breeding" && <BreedingModal animals={hobby.animals || []} breeding={f.breeding} initialDamId={f.animalId} onClose={closeForm} onSave={saveBreeding} onDelete={deleteBreeding} addCalendarEvent={addCalendarEvent} />}
+      {view && view.kind === "pedigree" && (
+        <PedigreeView animal={view.animal} animals={hobby.animals || []} onClose={() => setView(null)}
+          onJumpTo={(id) => { setView(null); setProfileId(id); }} />
+      )}
+      {view && view.kind === "history" && (
+        <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="goat" onClose={() => setView(null)} />
+      )}
+
+      {tab === "animals" ? (
+        profile ? <LivestockProfile sp={SPECIES.goats} hobby={hobby} data={data} animal={profile} act={act} onBack={() => setProfileId(null)} />
+          : <LivestockHerd sp={SPECIES.goats} hobby={hobby} data={data} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <LivestockToday sp={SPECIES.goats} hobby={hobby} data={data} update={update} setModal={setAppModal} act={act} tallyTotal={tallyTotal}
+          onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
+      )}
     </div>
   );
 }

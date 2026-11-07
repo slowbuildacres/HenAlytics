@@ -34,6 +34,8 @@
 
 import React from "react";
 
+const HARVEST_LBS_PER = { lbs: 1, lb: 1, oz: 1 / 16, kg: 2.20462262, g: 0.00220462262 };
+
 // ---- Celebration catalog ----------------------------------------------------
 // Each entry: id (stable, unique, one-time), the copy (tone-guide voice), and
 // an optional `reviewWorthy` flag — these are the happy moments we also let the
@@ -272,12 +274,12 @@ export function computeCelebrationSignals(data) {
         e.qty != null ||
         e.quantity != null;
       if (!isHarvest) return false;
-      const unit = e.unit ? e.unit : "lbs";
-      return unit === "lbs";
+      // Weights only (lbs, oz, kg, g); counts and volumes don't add up.
+      return HARVEST_LBS_PER[String(e.unit || "lbs").toLowerCase()] != null;
     })
     .reduce((s, e) => {
       const raw = e.quantity != null ? e.quantity : e.qty;
-      return s + (Number(raw) || 0);
+      return s + (Number(raw) || 0) * HARVEST_LBS_PER[String(e.unit || "lbs").toLowerCase()];
     }, 0);
 
   // Sourdough: bakes are a countable array on the sourdough hobby (hobby.bakes[]).
@@ -589,7 +591,7 @@ export function CelebrationCard({ celebration, onDismiss, palette }) {
         borderRadius: 14,
         padding: "16px 18px",
         margin: "12px 0",
-        boxShadow: `2px 2px 0 ${p.line}`,
+        boxShadow: "none",
         color: p.ink,
         opacity: leaving ? 0 : mounted ? 1 : 0,
         transform: leaving
@@ -722,7 +724,10 @@ export function migrateObservationState(data) {
 // Days between an ISO date string (YYYY-MM-DD or full ISO) and now.
 function daysSince(dateStr) {
   if (!dateStr) return Infinity;
-  const then = new Date(dateStr);
+  // "2026-11-06" is a local calendar day; new Date() would read it as UTC
+  // midnight (the evening before, in the Americas).
+  const ymd = typeof dateStr === "string" && /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr.split("-").map(Number) : null;
+  const then = ymd ? new Date(ymd[0], ymd[1] - 1, ymd[2]) : new Date(dateStr);
   if (isNaN(then.getTime())) return Infinity;
   const ms = Date.now() - then.getTime();
   return Math.floor(ms / (1000 * 60 * 60 * 24));
@@ -894,7 +899,7 @@ export function ObservationCard({ observation, onDismiss, palette }) {
         borderRadius: 14,
         padding: "16px 18px",
         margin: "12px 0",
-        boxShadow: `2px 2px 0 ${p.line}`,
+        boxShadow: "none",
         color: p.ink,
         opacity: leaving ? 0 : mounted ? 1 : 0,
         transform: leaving ? "translateY(-4px)" : mounted ? "translateY(0)" : "translateY(6px)",

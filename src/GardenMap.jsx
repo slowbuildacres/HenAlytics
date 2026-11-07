@@ -18,18 +18,21 @@
 // auto-migrated to { areas: [{ name: "Garden", ... }] } on load.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useRef, useEffect } from "react";
 import { X, Trash2, Upload, ChevronLeft, ChevronRight, Plus, Edit3, Archive } from "lucide-react";
 import { CROPS, getCropFamily } from "./gardenAlmanac.js";
 import { CompanionPanel, RotationNote } from "./CompanionInfo.jsx";
 import { uploadPhoto, getPhotoUrl, deletePhoto } from "./sync.js";
+import { plusDays } from "./dayMath.js";
+import { askConfirm, askText } from "./newlook/ConfirmHost.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   card: "#FAF5EA", line: "#2C181030",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -149,7 +152,7 @@ function gardenGridGateState(config, isSupporter, now) {
   if (f.supporterEarlyAccess !== true) return "hidden";
   const days = Number(f.earlyAccessDays);
   const windowDays = (Number.isFinite(days) && days > 0) ? days : 7;
-  const earlyAt = new Date(publicAt.getTime() - windowDays * 86400000);
+  const earlyAt = plusDays(publicAt, -windowDays);
   if (today.getTime() < earlyAt.getTime()) return "hidden";
   return isSupporter ? "supporter" : "early-locked";
 }
@@ -196,13 +199,18 @@ function migrateGardenMap(map) {
 // MAIN MODAL
 // ============================================================================
 
-export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false, /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport = null }) {
-  const hobby = data.hobbies.find((h) => h.id === "garden");
+// No garden season (or it was removed while open): close. The check lives in
+// this wrapper so the map's hooks always run in the same order.
+export default function GardenMapModal(props) {
+  const hobby = props.data.hobbies.find((h) => h.id === "garden");
   const season = hobby?.currentSeason;
-  if (!season) {
-    onClose();
-    return null;
-  }
+  useEffect(() => { if (!season) props.onClose(); }, [season]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!season) return null;
+  return <GardenMapBody {...props} />;
+}
+function GardenMapBody({ data, update, user, onClose, /* GARDEN_GRID */ earlyAccessConfig = null, isSupporter = false, /* GARDEN_GRID_LOCKED_TILE */ onOpenSupport = null }) {
+  const hobby = data.hobbies.find((h) => h.id === "garden");
+  const season = hobby.currentSeason;
 
   const map = migrateGardenMap(season.gardenMap);
   const archivedSeasons = (hobby.archivedSeasons || []).filter((s) => s.gardenMap);
@@ -274,7 +282,7 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
           background: palette.bg, padding: 20, borderRadius: 12,
           maxWidth: 560, width: "100%", maxHeight: "92vh", overflowY: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "4px 4px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, color: palette.ink,
         }}
       >
@@ -323,8 +331,8 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
             update={update}
             archivedSeasons={archivedSeasons}
             pendingPins={pendingPins}
-            onRenameArea={() => {
-              const name = prompt("Rename area:", activeArea.name);
+            onRenameArea={async () => {
+              const name = await askText({ title: "Rename area", value: activeArea.name });
               if (!name?.trim()) return;
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === "garden");
@@ -333,8 +341,8 @@ export default function GardenMapModal({ data, update, user, onClose, /* GARDEN_
                 return d;
               });
             }}
-            onDeleteArea={() => {
-              if (!confirm(`Delete area "${activeArea.name}" and all its pins?`)) return;
+            onDeleteArea={async () => {
+              if (!(await askConfirm({ title: `Delete area "${activeArea.name}" and all its pins?`, confirmLabel: "Delete" }))) return;
               const oldPath = activeArea.photoPath;
               update((d) => {
                 const h = d.hobbies.find((x) => x.id === "garden");
@@ -419,7 +427,7 @@ function NewAreaModal({ gridChoiceOffered, onCancel, onCreate, /* GARDEN_GRID_LO
         textAlign: "center", fontFamily: FONT_BODY,
         border: `2px solid ${mode === value ? palette.leaf : palette.line}`,
         background: mode === value ? palette.leaf : palette.card,
-        color: mode === value ? palette.bg : palette.ink,
+        color: mode === value ? palette.onColor : palette.ink,
       }}
     >
       <div style={{ fontSize: 22, marginBottom: 2 }}>{emoji}</div>
@@ -442,7 +450,7 @@ function NewAreaModal({ gridChoiceOffered, onCancel, onCreate, /* GARDEN_GRID_LO
         style={{
           background: palette.bg, padding: 18, borderRadius: 12,
           maxWidth: 380, width: "100%",
-          border: `2px solid ${palette.ink}`, boxShadow: "4px 4px 0 " + palette.line,
+          border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
           fontFamily: FONT_BODY, color: palette.ink,
         }}
       >
@@ -616,7 +624,7 @@ function EmptyState({ onCreateFirst, archivedSeasons, onShowArchive, /* GARDEN_G
           border: "none", borderRadius: 8, cursor: "pointer",
           fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14,
           display: "inline-flex", alignItems: "center", gap: 6,
-          boxShadow: "2px 2px 0 " + palette.line,
+          boxShadow: "none",
         }}
       >
         <Plus size={16} /> Add your first area
@@ -701,7 +709,7 @@ function PendingSeedlingsBanner({ pending, update }) {
   return (
     <div style={{
       padding: "10px 12px", marginBottom: 10, borderRadius: 8,
-      background: "#EAF3DD", border: `1.5px solid ${palette.leaf}`,
+      background: palette.goodBg, border: `1.5px solid ${palette.leaf}`,
     }}>
       <div style={{ fontSize: 12.5, color: palette.ink, lineHeight: 1.45, marginBottom: 8 }}>
         🌱 <strong>Seedlings ready to place.</strong> Tap a spot, then choose one from the top of the plant list — no need to type it again.
@@ -714,7 +722,7 @@ function PendingSeedlingsBanner({ pending, update }) {
             border: `1px solid ${palette.line}`, fontSize: 12, color: palette.ink,
           }}>
             {p.plant}
-            <button onClick={() => dismiss(p.id)} title="Remove from queue" style={{
+            <button aria-label="Close" onClick={() => dismiss(p.id)} title="Remove from queue" style={{
               background: "none", border: "none", cursor: "pointer",
               color: palette.inkSoft, padding: 0, lineHeight: 1, display: "flex",
             }}>
@@ -1115,20 +1123,20 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], pendingPins =
     setShowCropPicker(null);
   };
 
-  const resizeGrid = () => {
-    const r = parseInt(window.prompt("Rows? (1-20)", String(rows)), 10);
-    if (!Number.isFinite(r) || r < 1 || r > 20) { window.alert("Rows must be 1-20."); return; }
-    const c = parseInt(window.prompt("Columns? (1-20)", String(cols)), 10);
-    if (!Number.isFinite(c) || c < 1 || c > 20) { window.alert("Columns must be 1-20."); return; }
+  const resizeGrid = async () => {
+    const rt = await askText({ title: "How many rows?", message: "1 to 20", value: String(rows), inputMode: "numeric", confirmLabel: "Next" });
+    if (rt == null) return;
+    const r = parseInt(rt, 10);
+    if (!Number.isFinite(r) || r < 1 || r > 20) { await askConfirm({ title: "Rows must be 1 to 20", confirmLabel: "OK", danger: false }); return; }
+    const ct = await askText({ title: "How many columns?", message: "1 to 20", value: String(cols), inputMode: "numeric" });
+    if (ct == null) return;
+    const c = parseInt(ct, 10);
+    if (!Number.isFinite(c) || c < 1 || c > 20) { await askConfirm({ title: "Columns must be 1 to 20", confirmLabel: "OK", danger: false }); return; }
     if (r === rows && c === cols) return;
     // Warn-and-discard: any planted cell outside the new bounds is removed.
     const orphaned = pins.filter((p) => p.row >= r || p.col >= c);
     if (orphaned.length > 0) {
-      const ok = window.confirm(
-        "Resizing to " + r + " x " + c + " will remove " + orphaned.length + " " +
-        (orphaned.length === 1 ? "planting" : "plantings") +
-        " that fall outside the new grid. Continue?"
-      );
+      const ok = await askConfirm({ title: `Resize to ${r} × ${c}?`, message: `This removes ${orphaned.length} ${orphaned.length === 1 ? "planting" : "plantings"} outside the new grid.`, confirmLabel: "Resize" });
       if (!ok) return;
     }
     update((d) => {
@@ -1231,7 +1239,12 @@ function GridEditor({ area, areaIdx, update, archivedSeasons = [], pendingPins =
 // ============================================================================
 // PIN INFO PANEL (now editable)
 // ============================================================================
-function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [], onClose }) {
+function PinInfoPanel(props) {
+  const { pin } = props;
+  if (!CROPS.find((c) => c.id === pin.cropId) && pin.cropId !== "other") return null;
+  return <PinInfoPanelBody {...props} />;
+}
+function PinInfoPanelBody({ pin, areaIdx, update, area = null, archivedSeasons = [], onClose }) {
   const crop = CROPS.find((c) => c.id === pin.cropId);
   const isCustom = pin.cropId === "other";
   const [editing, setEditing] = useState(false);
@@ -1243,9 +1256,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
 
   const companionFonts = { display: FONT_DISPLAY, body: FONT_BODY };
 
-  // Allow display for "other" pins (no crop entry in CROPS list) and for
-  // legacy/unknown cropIds (just show a placeholder rather than blank).
-  if (!crop && !isCustom) return null;
+  // Unknown crops never get here (see PinInfoPanel above).
 
   const display = pinDisplay(pin);
 
@@ -1259,7 +1270,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
   const plantedDate = new Date(date + "T12:00");
   // Custom plants don't have a known daysToHarvest, so no auto harvest date.
   const harvestDate = (crop && crop.daysToHarvest)
-    ? new Date(plantedDate.getTime() + crop.daysToHarvest * 86400000)
+    ? plusDays(plantedDate, crop.daysToHarvest)
     : null;
   const fmtDate = (d) => d.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" });
   const today = new Date(); today.setHours(0, 0, 0, 0);
@@ -1306,7 +1317,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
           <span style={{ fontSize: 22 }}>{display.emoji}</span>
           <span style={{ fontFamily: FONT_DISPLAY, fontSize: 18, color: palette.ink }}>{display.name}</span>
         </div>
-        <button
+        <button aria-label="Close"
           onClick={onClose}
           style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}
         >
@@ -1381,7 +1392,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
               style={{
                 width: "100%", padding: "8px 10px",
                 border: `1.5px solid ${palette.line}`, borderRadius: 6,
-                fontFamily: FONT_BODY, fontSize: 13, background: "white", color: palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, background: palette.white, color: palette.ink,
                 boxSizing: "border-box",
               }}
             />
@@ -1398,7 +1409,7 @@ function PinInfoPanel({ pin, areaIdx, update, area = null, archivedSeasons = [],
               style={{
                 width: "100%", padding: "8px 10px",
                 border: `1.5px solid ${palette.line}`, borderRadius: 6,
-                fontFamily: FONT_BODY, fontSize: 13, background: "white", color: palette.ink,
+                fontFamily: FONT_BODY, fontSize: 13, background: palette.white, color: palette.ink,
                 boxSizing: "border-box",
               }}
             />
@@ -1489,7 +1500,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
         <div style={{ fontSize: 14, fontWeight: 600, color: palette.ink }}>
           {customMode ? "Name your plant" : "Pick a plant"}
         </div>
-        <button onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
+        <button aria-label="Close" onClick={onCancel} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
           <X size={16} />
         </button>
       </div>
@@ -1549,7 +1560,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
           {pendingPlants.length > 0 && (
             <div style={{
               padding: "8px 10px", marginBottom: 10, borderRadius: 8,
-              background: "#EAF3DD", border: `1.5px solid ${palette.leaf}`,
+              background: palette.goodBg, border: `1.5px solid ${palette.leaf}`,
             }}>
               <div style={{ fontSize: 12, fontWeight: 700, color: palette.ink, marginBottom: 6 }}>
                 🌱 From your seed starts — tap to place here
@@ -1563,7 +1574,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
                       onClick={() => onPick(cid || "other", cid ? null : p.plant, p)}
                       style={{
                         padding: "7px 11px", borderRadius: 999,
-                        background: palette.leaf, color: palette.card, border: "none",
+                        background: palette.leaf, color: palette.onColor, border: "none",
                         cursor: "pointer", fontFamily: FONT_BODY, fontSize: 12, fontWeight: 600,
                       }}
                     >
@@ -1600,7 +1611,7 @@ function CropPicker({ onPick, onCancel, priorCropIds = [], pendingPlants = [] })
                   title={conflict ? "Grew a same-family crop here recently — consider rotating" : undefined}
                   style={{
                     padding: "8px 6px",
-                    background: conflict ? "#FBE5DE" : palette.bg,
+                    background: conflict ? palette.dangerBg : palette.bg,
                     border: `1.5px solid ${conflict ? palette.accent : palette.line}`,
                     borderRadius: 8,
                     cursor: "pointer",
@@ -1821,7 +1832,7 @@ function ReadOnlyAreaView({ area }) {
                     <span style={{ fontSize: 18 }}>{display.emoji}</span>
                     <strong style={{ fontSize: 14 }}>{display.name}</strong>
                   </div>
-                  <button onClick={() => setActivePin(null)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
+                  <button aria-label="Close" onClick={() => setActivePin(null)} style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 4 }}>
                     <X size={14} />
                   </button>
                 </div>

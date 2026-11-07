@@ -15,12 +15,18 @@
 //     is batch.jarsRemaining.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
 import { X, Edit3, Plus, AlertTriangle } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer, Receipt, Archive as ArchiveIcon, NotebookPen, Plus as PlusIcon, ShoppingBasket } from "lucide-react";
+import { groupDigits } from "./numFmt.js";
 
 // SHARED_PANTRY helper: sum cost across pantry-picker lines.
 function computePantryLinesTotal(lines, pantry) {
@@ -40,11 +46,11 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -71,11 +77,11 @@ const daysUntil = (iso) => {
   return Math.floor(ms / (1000 * 60 * 60 * 24));
 };
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const JAR_TYPES = ["Half-pint", "Pint", "Quart", "Half-gallon", "Other"];
 
@@ -95,8 +101,8 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   const variants = {
     primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
     ghost: { bg: palette.bgAlt, color: palette.ink, border: palette.line },
-    leaf: { bg: palette.leaf, color: "#fff", border: palette.leaf },
-    danger: { bg: palette.accent, color: "#fff", border: palette.accent },
+    leaf: { bg: palette.leaf, color: palette.onColor, border: palette.leaf },
+    danger: { bg: palette.accent, color: palette.onColor, border: palette.accent },
   };
   const v = variants[variant] || variants.primary;
   return (
@@ -104,13 +110,13 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
       type={type}
       onClick={onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         padding: small ? "6px 12px" : "10px 18px",
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
-        borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+        borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 12 : 14,
         opacity: disabled ? 0.6 : 1,
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -122,11 +128,11 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box",
     }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -160,7 +166,7 @@ function Modal({ open, onClose, title, children }) {
           background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%",
           maxHeight: "90vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{
@@ -168,7 +174,7 @@ function Modal({ open, onClose, title, children }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -253,11 +259,11 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit batch" : "New canning batch"}>
       <Field label="Date canned">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What did you can?">
         <input
-          style={inputStyle}
+          style={inputStyle()}
           value={item}
           onChange={e => setItem(e.target.value)}
           placeholder="e.g. Tomato sauce"
@@ -291,26 +297,26 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Jars made">
-            <input type="number" min="0" style={inputStyle} value={jarsMade} onChange={e => setJarsMade(e.target.value)} placeholder="12" />
+            <input type="number" min="0" style={inputStyle()} value={jarsMade} onChange={e => setJarsMade(e.target.value)} placeholder="12" />
           </Field>
         </div>
         {isEdit && (
           <div style={{ flex: 1 }}>
             <Field label="Jars remaining">
-              <input type="number" min="0" style={inputStyle} value={jarsRemaining} onChange={e => setJarsRemaining(e.target.value)} />
+              <input type="number" min="0" style={inputStyle()} value={jarsRemaining} onChange={e => setJarsRemaining(e.target.value)} />
             </Field>
           </div>
         )}
       </div>
       <Field label="Eat by (optional)">
-        <input type="date" style={inputStyle} value={eatByDate} onChange={e => setEatByDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={eatByDate} onChange={e => setEatByDate(e.target.value)} />
       </Field>
       <Field label="Ingredients cost ($, optional)">
         <input
           type="number"
           step="0.01"
           min="0"
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={e => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -323,7 +329,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
         />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Recipe, water bath time, pressure..." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Recipe, water bath time, pressure..." />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -400,10 +406,10 @@ function UseJarsModal({ batch, onUse, onClose }) {
       </div>
 
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="Jars used">
-        <input type="number" min="1" max={batch.jarsRemaining} style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} autoFocus />
+        <input type="number" min="1" max={batch.jarsRemaining} style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} autoFocus />
       </Field>
       <Field label="Reason">
         <div style={{ display: "flex", gap: 6 }}>
@@ -431,8 +437,8 @@ function UseJarsModal({ batch, onUse, onClose }) {
       </Field>
       {reason === "sale" && (
         <>
-          <Field label="Price per jar ($)">
-            <input type="number" step="0.01" min="0" style={inputStyle} value={pricePerJar} onChange={e => setPricePerJar(e.target.value)} placeholder="0.00" />
+          <Field label={`Price per jar (${currencySymbol()})`}>
+            <input type="number" step="0.01" min="0" style={inputStyle()} value={pricePerJar} onChange={e => setPricePerJar(e.target.value)} placeholder="0.00" />
           </Field>
           <div style={{
             padding: 12, background: palette.yolkSoft, borderRadius: 8,
@@ -443,12 +449,12 @@ function UseJarsModal({ batch, onUse, onClose }) {
         </>
       )}
       <Field label="Note (optional)">
-        <input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} placeholder={reason === "sale" ? "Buyer, occasion..." : "What did you use it for?"} />
+        <input style={inputStyle()} value={note} onChange={e => setNote(e.target.value)} placeholder={reason === "sale" ? "Buyer, occasion..." : "What did you use it for?"} />
       </Field>
 
       {exceedsStock && (
         <div style={{
-          padding: 10, background: "#FBE5DE", border: `1.5px solid ${palette.accent}`,
+          padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
           borderRadius: 8, fontSize: 13, color: palette.accent, marginBottom: 14,
           display: "flex", alignItems: "flex-start", gap: 8,
         }}>
@@ -476,6 +482,10 @@ function UseJarsModal({ batch, onUse, onClose }) {
 // PAGE
 // ============================================================================
 
+// Local calendar day (YYYY-MM-DD). This modal used todayStr() without a
+// definition here, so "Build or repair" crashed on a new entry.
+const todayStr = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
+
 function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   const [date, setDate] = useState(entry?.date || todayStr());
   const [item, setItem] = useState(entry?.item || "");
@@ -498,16 +508,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. pressure canner, jar storage shelves" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. pressure canner, jar storage shelves" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (
@@ -522,7 +532,8 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function CanningPage({ hobby, data, update, setModal }) {
+// `nl` (3.0): { tab, tabs, onOpenJournal, onSeeAll } renders the new look with these same forms.
+export default function CanningPage({ hobby, data, update, setModal, nl = null }) {
   const [editBatch, setEditBatch] = useState(null); // batch obj | "new" | null
   const [usingBatch, setUsingBatch] = useState(null);
   const [showArchived, setShowArchived] = useState(false);
@@ -535,7 +546,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["canning"] = d.entries["canning"] || [];
       const idx = d.entries["canning"].findIndex(e => e.id === entry.id);
@@ -545,7 +556,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["canning"]) {
         d.entries["canning"] = d.entries["canning"].filter(e => e.id !== id);
       }
@@ -576,7 +587,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   }).length;
 
   const saveBatch = (b) => {
-    update(d => {
+    undoable(update, `Saved ${b.item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -618,7 +629,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   };
 
   const deleteBatch = (id) => {
-    update(d => {
+    undoable(update, `Deleted ${(batches.find((x) => x.id === id) || {}).item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any stock that was deducted when this batch
@@ -633,7 +644,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   };
 
   const archiveBatch = (id) => {
-    update(d => {
+    undoable(update, `Archived ${(batches.find((x) => x.id === id) || {}).item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       const target = (h.batches || []).find(b => b.id === id);
@@ -643,7 +654,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   };
 
   const unarchiveBatch = (id) => {
-    update(d => {
+    undoable(update, `Restored ${(batches.find((x) => x.id === id) || {}).item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       const target = (h.batches || []).find(b => b.id === id);
@@ -653,7 +664,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
   };
 
   const useJars = (useData) => {
-    update(d => {
+    undoable(update, `${useData.reason === "sale" ? "Sold" : "Used"} ${useData.qty} jar${useData.qty === 1 ? "" : "s"}`)(d => {
       // Decrement remaining on the batch
       const h = d.hobbies.find(x => x.id === hobby.id);
       const target = h?.batches?.find(b => b.id === useData.batchId);
@@ -702,6 +713,49 @@ export default function CanningPage({ hobby, data, update, setModal }) {
       return d;
     });
   };
+
+  if (nl) {
+    const shortDate = (s) => { if (!s) return ""; const d = new Date(s + "T12:00"); return isNaN(d) ? s : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+    const badgeFor = (b) => {
+      const days = b.eatByDate ? daysUntil(b.eatByDate) : null;
+      if (days == null) return null;
+      if (days < 0) return { tone: "alert", text: "Past eat-by" };
+      if (days <= 30) return { tone: "ready", text: `Eat within ${days}d` };
+      return null;
+    };
+    const custom = Array.isArray(hobby.customLogs) ? hobby.customLogs : [];
+    const ctx = {
+      key: "canning", tabs: nl.tabs,
+      summary: { big: totalJarsInPantry, small: `jar${totalJarsInPantry === 1 ? "" : "s"} on the shelf`, line: [expiringSoon ? `${expiringSoon} to eat within a month` : null, expired ? `${expired} past eat-by` : null].filter(Boolean).join(" · ") || (activeBatches.length ? `${activeBatches.length} batch${activeBatches.length === 1 ? "" : "es"}` : "") },
+      newLabel: "Log a canning batch", onNew: () => setEditBatch("new"),
+      shelfTitle: "Pantry", shelfEmpty: "Nothing canned yet. Log your next canning day and the jars show up here.",
+      shelf: sortedActive.map((b) => {
+        const left = Number(b.jarsRemaining) || 0;
+        return {
+          id: b.id, title: b.item, left, unit: "jars", badge: badgeFor(b), onOpen: () => setEditBatch(b),
+          sub: [`${left} of ${Number(b.jarsMade) || 0} ${String(b.jarType || "").toLowerCase()} jars`, `canned ${shortDate(b.date)}`, b.ingredientsCost > 0 ? `${fmtMoney(b.ingredientsCost / Math.max(1, Number(b.jarsMade) || 1))} a jar` : null].filter(Boolean).join(" · "),
+          actions: left > 0 ? [{ label: "Use or sell jars", run: () => setUsingBatch(b) }] : [{ label: "Archive", run: () => archiveBatch(b.id) }],
+        };
+      }),
+      past: archivedBatches.map((b) => ({ id: b.id, title: b.item, sub: `${b.jarsMade} ${String(b.jarType || "").toLowerCase()} jars · ${shortDate(b.date)} · tap to restore`, onOpen: () => unarchiveBatch(b.id) })),
+      pastTitle: "Archived batches",
+      extras: [
+        { key: "pantry", label: "Pantry supplies", sub: "Lids, jars, sugar and what's left", icon: ShoppingBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Canners, racks and tools", icon: Hammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: Receipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...custom.map((c) => ({ key: c.id, label: c.label, icon: NotebookPen, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: PlusIcon, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        {editBatch && <BatchModal batch={editBatch === "new" ? null : editBatch} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveBatch} onDelete={deleteBatch} onClose={() => setEditBatch(null)} />}
+        {usingBatch && <UseJarsModal batch={usingBatch} onUse={useJars} onClose={() => setUsingBatch(null)} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -785,7 +839,7 @@ export default function CanningPage({ hobby, data, update, setModal }) {
                       <div style={{ fontWeight: 600, fontSize: 15, color: palette.ink }}>{b.item}</div>
                       <div style={{
                         fontSize: 10, fontWeight: 700, padding: "2px 8px", borderRadius: 10,
-                        background: exp.state === "expired" ? "#FBE5DE" : exp.state === "soon" ? palette.yolkSoft : palette.bgAlt,
+                        background: exp.state === "expired" ? palette.dangerBg : exp.state === "soon" ? palette.yolkSoft : palette.bgAlt,
                         color: exp.color, textTransform: "uppercase", letterSpacing: 0.5,
                       }}>
                         {exp.label || "No eat-by"}
@@ -889,6 +943,38 @@ export default function CanningPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+
+// 3.0 Stats: jars canned, on the shelf, used and sold, top items.
+export function canningStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const batches = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []);
+  const made = batches.filter((b) => inR(b.date));
+  const jars = made.reduce((s, b) => s + (Number(b.jarsMade) || 0), 0);
+  const shelf = batches.filter((b) => !b.archived).reduce((s, b) => s + (Number(b.jarsRemaining) || 0), 0);
+  const ents = ((data.entries && data.entries.canning) || []).filter((e) => inR(e.date));
+  const sold = ents.filter((e) => e.action === "sale").reduce((s, e) => s + (Number(e.qty) || 0), 0);
+  const revenue = ents.filter((e) => e.action === "sale").reduce((s, e) => s + (Number(e.revenue) || 0), 0);
+  const used = ents.filter((e) => e.action === "use").reduce((s, e) => s + (Number(e.qty) || 0), 0);
+  const cost = made.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0) + ents.filter((e) => e.action === "infrastructure").reduce((s, e) => s + (Number(e.cost) || 0), 0);
+  const byItem = new Map();
+  for (const b of made) { const k = String(b.item || "Other").trim(); byItem.set(k, (byItem.get(k) || 0) + (Number(b.jarsMade) || 0)); }
+  const rows = [...byItem.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} jars` }));
+  const facts = [];
+  if (jars >= 6) facts.push({ key: "jars", icon: "jar", big: String(jars), line: "jars canned on our homestead", title: `${jars} jars canned`, sub: `${made.length} canning day${made.length === 1 ? "" : "s"}.` });
+  if (rows.length > 1) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "what we canned the most", title: `Most canned: ${rows[0].name.toLowerCase()}`, sub: `${rows[0].value} jars.` });
+  if (jars >= 12) facts.push({ key: "weeks", icon: "calendar", big: `${Math.round(jars / 7)} weeks`, line: "of a jar a day", title: `That's ${Math.round(jars / 7)} weeks of a jar a day`, sub: "Summer on the shelf." });
+  return {
+    cards: [
+      { label: "Jars canned", value: jars, sub: `${made.length} batch${made.length === 1 ? "" : "es"}` },
+      { label: "On the shelf", value: shelf, sub: used || sold ? `${used} used · ${sold} sold` : "Jars left right now" },
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: `${sold} jars` }] : []),
+      ...(cost ? [{ label: "Spent", value: fmtMoney(cost), sub: jars ? `${fmtMoney(cost / jars)} a jar` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "What you canned", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🫙", kicker: "Our pantry",
+  };
+}
 
 export function CanningAnalytics({ hobby, entries = [], sales = [], spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = Array.isArray(hobby?.batches) ? hobby.batches : [];

@@ -18,6 +18,9 @@
 		AB7E1C000000000000000006 /* HenalyticsWidget.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7E1C000000000000000001 /* HenalyticsWidget.swift */; };
 		AB7E1C000000000000000007 /* HenalyticsWidget.appex in Embed Foundation Extensions */ = {isa = PBXBuildFile; fileRef = AB7E1C000000000000000003 /* HenalyticsWidget.appex */; settings = {ATTRIBUTES = (RemoveHeadersOnCopy, ); }; };
 		AB7E1C010000000000000002 /* WidgetBridge.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB7E1C010000000000000001 /* WidgetBridge.swift */; };
+		C3A1C0DE0000000000000002 /* AppIcon.swift in Sources */ = {isa = PBXBuildFile; fileRef = C3A1C0DE0000000000000001 /* AppIcon.swift */; };
+		AC03FC9B8D1D4698A89833A7 /* SceneDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = E737E8D3978E4CA1B00B8450 /* SceneDelegate.swift */; };
+		5A1C0E7D2B9F4E61A3C8D501 /* VoiceIntents.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A1C0E7D2B9F4E61A3C8D502 /* VoiceIntents.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -60,7 +63,10 @@
 		AB7E1C000000000000000003 /* HenalyticsWidget.appex */ = {isa = PBXFileReference; explicitFileType = "wrapper.app-extension"; includeInIndex = 0; path = HenalyticsWidget.appex; sourceTree = BUILT_PRODUCTS_DIR; };
 		AB7E1C000000000000000004 /* App.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = App.entitlements; sourceTree = "<group>"; };
 		AB7E1C010000000000000001 /* WidgetBridge.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WidgetBridge.swift; sourceTree = "<group>"; };
+		C3A1C0DE0000000000000001 /* AppIcon.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppIcon.swift; sourceTree = "<group>"; };
 		AB7E1C010000000000000003 /* HenalyticsWidget.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = HenalyticsWidget.entitlements; sourceTree = "<group>"; };
+		E737E8D3978E4CA1B00B8450 /* SceneDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneDelegate.swift; sourceTree = "<group>"; };
+		5A1C0E7D2B9F4E61A3C8D502 /* VoiceIntents.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VoiceIntents.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -108,12 +114,15 @@
 				50379B222058CBB4000EE86E /* capacitor.config.json */,
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				AB7E1C010000000000000001 /* WidgetBridge.swift */,
+				C3A1C0DE0000000000000001 /* AppIcon.swift */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				50B271D01FEDC1A000F3C39B /* public */,
+				E737E8D3978E4CA1B00B8450 /* SceneDelegate.swift */,
+				5A1C0E7D2B9F4E61A3C8D502 /* VoiceIntents.swift */,
 			);
 			path = App;
 			sourceTree = "<group>";
@@ -240,6 +249,9 @@
 			files = (
 				504EC3081FED79650016851F /* AppDelegate.swift in Sources */,
 				AB7E1C010000000000000002 /* WidgetBridge.swift in Sources */,
+				C3A1C0DE0000000000000002 /* AppIcon.swift in Sources */,
+				AC03FC9B8D1D4698A89833A7 /* SceneDelegate.swift in Sources */,
+				5A1C0E7D2B9F4E61A3C8D501 /* VoiceIntents.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -394,11 +406,13 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = 958DCC722DB07C7200EA8C5F /* debug.xcconfig */;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Meadow AppIcon-Barn AppIcon-Night AppIcon-Spring AppIcon-Summer AppIcon-Fall AppIcon-Winter";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 63;
 				DEVELOPMENT_TEAM = 32S8LFT6HD;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -406,7 +420,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 3.0.0;
 				OTHER_SWIFT_FLAGS = "$(inherited) \"-D\" \"COCOAPODS\" \"-DDEBUG\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.henalytics.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
@@ -420,11 +434,13 @@
 		504EC3181FED79650016851F /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
+				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = "AppIcon-Meadow AppIcon-Barn AppIcon-Night AppIcon-Spring AppIcon-Summer AppIcon-Fall AppIcon-Winter";
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				ASSETCATALOG_COMPILER_INCLUDE_ALL_APPICON_ASSETS = YES;
 				CODE_SIGN_ENTITLEMENTS = App/App.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 63;
 				DEVELOPMENT_TEAM = 32S8LFT6HD;
 				INFOPLIST_FILE = App/Info.plist;
 				IPHONEOS_DEPLOYMENT_TARGET = 15.0;
@@ -432,7 +448,7 @@
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.henalytics.app;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				PROVISIONING_PROFILE_SPECIFIER = "";
@@ -448,7 +464,7 @@
 				CODE_SIGN_ENTITLEMENTS = HenalyticsWidget/HenalyticsWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 63;
 				DEVELOPMENT_TEAM = 32S8LFT6HD;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HenalyticsWidget/Info.plist;
@@ -460,7 +476,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.henalytics.app.HenalyticsWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;
@@ -477,7 +493,7 @@
 				CODE_SIGN_ENTITLEMENTS = HenalyticsWidget/HenalyticsWidget.entitlements;
 				CODE_SIGN_IDENTITY = "Apple Development";
 				CODE_SIGN_STYLE = Automatic;
-				CURRENT_PROJECT_VERSION = 61;
+				CURRENT_PROJECT_VERSION = 63;
 				DEVELOPMENT_TEAM = 32S8LFT6HD;
 				GENERATE_INFOPLIST_FILE = YES;
 				INFOPLIST_FILE = HenalyticsWidget/Info.plist;
@@ -489,7 +505,7 @@
 					"@executable_path/Frameworks",
 					"@executable_path/../../Frameworks",
 				);
-				MARKETING_VERSION = 2.2.0;
+				MARKETING_VERSION = 3.0.0;
 				PRODUCT_BUNDLE_IDENTIFIER = com.henalytics.app.HenalyticsWidget;
 				PRODUCT_NAME = "$(TARGET_NAME)";
 				SKIP_INSTALL = YES;

@@ -18,11 +18,18 @@
 // Sales: writes to data.sales[] with hobbyType: "horse", crop: horse name.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
 import { X, Edit3 } from "lucide-react";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, lbsFromInput, weightUnitLabel, currencySymbol } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
 import { AnimalHistoryView } from "./AnimalHistoryView.jsx";
+// NEW_LOOK (3.0): the rebuilt horse screens reuse this file's forms.
+import { HorseToday, HorseHerd, HorseProfile } from "./newlook/horses/HorseScreens.jsx";
+import HerdCountSheet from "./newlook/HerdCountSheet.jsx";
+import { undoSnapshot, offerUndoSince } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { profilePhotoOf, timelineOf, addPhotoToAnimal, removePhotoFromAnimal, withProfileSet, withPhotoEdited, resolveAnimalPhotoUrl } from "./animalPhotos.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
@@ -30,21 +37,22 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 import { LineChart, Line, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
+import { groupDigits } from "./numFmt.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 // Resolves a hobby-page sale to a Sales-tab customer (data.customers[]).
@@ -95,17 +103,17 @@ const HORSE_GESTATION_DAYS = 340;
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
-    leaf: { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
+    leaf: { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -113,11 +121,11 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -135,7 +143,7 @@ function Field({ label, children }) {
 function ModalShell({ title, onClose, children, maxWidth = 460 }) {
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`,position:"sticky",top:0,background:palette.bg,zIndex:1 }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -268,7 +276,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
                 <PhotoThumb path={p.path} size={56} />
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <input
-                    type="date" style={{ ...inputStyle, padding: "6px 8px", fontSize: 13 }}
+                    type="date" style={{ ...inputStyle(), padding: "6px 8px", fontSize: 13 }}
                     value={p.date || ""}
                     onChange={(e) => editDate(p.path, e.target.value)}
                   />
@@ -297,7 +305,7 @@ function AnimalPhotoSection({ animal, hobbyId, update, user }) {
         display: "inline-block", padding: "8px 14px", borderRadius: 8,
         background: busy ? palette.bgAlt : palette.yolk,
         border: `1.5px solid ${palette.ink}`, cursor: busy ? "default" : "pointer",
-        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: palette.ink,
+        fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, color: busy ? palette.ink : palette.onYolk,
       }}>
         {busy ? "Uploading…" : (photos.length === 0 ? "+ Add photo" : "+ Add another photo")}
         <input type="file" accept="image/*" onChange={onPick} disabled={busy} style={{ display: "none" }} />
@@ -389,16 +397,16 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
   return (
     <ModalShell title={horse ? "Edit horse" : "Add horse"} onClose={onClose}>
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Thunder, Buttercup" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Thunder, Buttercup" autoFocus />
       </Field>
       <Field label="Breed (optional)">
-        <select style={inputStyle} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>
+        <select style={inputStyle()} value={breedSelect} onChange={e=>setBreedSelect(e.target.value)}>
           <option value="">— Select breed —</option>
           {HORSE_BREEDS.map(b => <option key={b} value={b}>{b}</option>)}
         </select>
         {breedSelect === "Other" && (
           <input
-            style={{ ...inputStyle, marginTop: 8 }}
+            style={{ ...inputStyle(), marginTop: 8 }}
             value={breedCustom}
             onChange={e => setBreedCustom(e.target.value)}
             placeholder="Type your breed (e.g. Friesian, Andalusian, Mustang)"
@@ -409,19 +417,19 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Color (optional)">
-            <input style={inputStyle} value={color} onChange={e=>setColor(e.target.value)} placeholder="Bay, chestnut, palomino..." />
+            <input style={inputStyle()} value={color} onChange={e=>setColor(e.target.value)} placeholder="Bay, chestnut, palomino..." />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Birthdate (optional)">
-            <input type="date" style={inputStyle} value={birthdate} onChange={e=>setBirthdate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={birthdate} onChange={e=>setBirthdate(e.target.value)} />
           </Field>
         </div>
       </div>
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Sex">
-            <select style={inputStyle} value={sex} onChange={e=>setSex(e.target.value)}>
+            <select style={inputStyle()} value={sex} onChange={e=>setSex(e.target.value)}>
               <option value="mare">Mare (female)</option>
               <option value="stallion">Stallion (intact male)</option>
               <option value="gelding">Gelding (castrated male)</option>
@@ -431,7 +439,7 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
         </div>
         <div style={{ flex:1 }}>
           <Field label="Role">
-            <select style={inputStyle} value={role} onChange={e=>setRole(e.target.value)}>
+            <select style={inputStyle()} value={role} onChange={e=>setRole(e.target.value)}>
               <option value="riding">Riding</option>
               <option value="breeding">Breeding</option>
               <option value="work">Work/draft</option>
@@ -446,17 +454,17 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Purchase cost (optional)">
-            <input type="number" step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+            <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}`} />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Where from (optional)">
-            <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, auction..." />
+            <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="Breeder, auction..." />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Markings, temperament, special needs..." />
+        <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Markings, temperament, special needs..." />
       </Field>
 
       {/* Push 7a — Pedigree section. All fields optional. Sire/Dam pickers
@@ -492,10 +500,10 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
             placeholder="Type the sire's name"
           />
           <Field label="Registry name (optional)">
-            <input style={inputStyle} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Silver Lining's Thunder" />
+            <input style={inputStyle()} value={registryName} onChange={e=>setRegistryName(e.target.value)} placeholder="e.g. Silver Lining's Thunder" />
           </Field>
           <Field label="Registry number (optional)">
-            <input style={inputStyle} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. AQHA #5123456" />
+            <input style={inputStyle()} value={registryNumber} onChange={e=>setRegistryNumber(e.target.value)} placeholder="e.g. AQHA #5123456" />
           </Field>
         </div>
       </details>
@@ -517,11 +525,11 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
 }
 
 // ============ BREEDING MODAL ============
-function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEvents, addCalendarEvent }) {
+function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEvents, addCalendarEvent, initialMareId = null }) {
   const mares = horses.filter(h => !h.archived && (h.role === "breeding" || h.sex === "mare"));
   const stallions = horses.filter(h => !h.archived && (h.role === "breeding" || h.sex === "stallion"));
 
-  const [mareId, setMareId] = useState(breeding?.mareId || mares[0]?.id || "");
+  const [mareId, setMareId] = useState(breeding?.mareId || initialMareId || mares[0]?.id || "");
   const [stallionId, setStallionId] = useState(breeding?.stallionId || stallions[0]?.id || "");
   const [bredDate, setBredDate] = useState(breeding?.bredDate || todayStr());
   const [foaledDate, setFoaledDate] = useState(breeding?.foaledDate || "");
@@ -568,19 +576,19 @@ function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEv
   return (
     <ModalShell title={breeding ? "Edit breeding" : "Log breeding"} onClose={onClose}>
       <Field label="Mare (dam)">
-        <select style={inputStyle} value={mareId} onChange={e=>setMareId(e.target.value)}>
+        <select style={inputStyle()} value={mareId} onChange={e=>setMareId(e.target.value)}>
           <option value="">— Select mare —</option>
           {mares.map(m => <option key={m.id} value={m.id}>{m.name}{m.breed ? ` (${m.breed})` : ""}</option>)}
         </select>
       </Field>
       <Field label="Stallion (sire, optional)">
-        <select style={inputStyle} value={stallionId} onChange={e=>setStallionId(e.target.value)}>
+        <select style={inputStyle()} value={stallionId} onChange={e=>setStallionId(e.target.value)}>
           <option value="">— Outside stallion / unknown —</option>
           {stallions.map(s => <option key={s.id} value={s.id}>{s.name}{s.breed ? ` (${s.breed})` : ""}</option>)}
         </select>
       </Field>
       <Field label="Bred date">
-        <input type="date" style={inputStyle} value={bredDate} onChange={e=>setBredDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={bredDate} onChange={e=>setBredDate(e.target.value)} />
       </Field>
       {expectedFoalDate && !foaledDate && (
         <div style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,fontSize:12,color:palette.inkSoft,marginBottom:12,lineHeight:1.5 }}>
@@ -588,24 +596,24 @@ function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEv
         </div>
       )}
       <Field label="Foaled date (leave blank if not yet foaled)">
-        <input type="date" style={inputStyle} value={foaledDate} onChange={e=>setFoaledDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={foaledDate} onChange={e=>setFoaledDate(e.target.value)} />
       </Field>
       {foaledDate && (
         <div style={{ display:"flex",gap:12 }}>
           <div style={{ flex:1 }}>
             <Field label="Foals born">
-              <input type="number" min={0} style={inputStyle} value={foalsBorn} onChange={e=>setFoalsBorn(e.target.value)} />
+              <input type="number" min={0} style={inputStyle()} value={foalsBorn} onChange={e=>setFoalsBorn(e.target.value)} />
             </Field>
           </div>
           <div style={{ flex:1 }}>
             <Field label="Foals alive">
-              <input type="number" min={0} style={inputStyle} value={foalsAlive} onChange={e=>setFoalsAlive(e.target.value)} placeholder={foalsBorn} />
+              <input type="number" min={0} style={inputStyle()} value={foalsAlive} onChange={e=>setFoalsAlive(e.target.value)} placeholder={foalsBorn} />
             </Field>
           </div>
         </div>
       )}
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="AI vs live cover, vet observations, foal markings..." />
+        <textarea style={{ ...inputStyle(),minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="AI vs live cover, vet observations, foal markings..." />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
         {breeding && onDelete && (
@@ -636,16 +644,16 @@ function HorseFeedModal({ onSave, onClose }) {
   return (
     <ModalShell title="🌾 Log feed" onClose={onClose}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
-      <Field label="Feed amount (lbs — hay, grain, or both)">
-        <input type="number" inputMode="decimal" min={0} style={inputStyle} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 40" autoFocus />
+      <Field label={`Feed amount (${weightUnitLabel()}, hay, grain or both)`}>
+        <input type="number" inputMode="decimal" min={0} style={inputStyle()} value={lbs} onChange={(e) => setLbs(e.target.value)} placeholder="e.g. 40" autoFocus />
       </Field>
       <Field label="Cost (optional)">
-        <input type="number" inputMode="decimal" step="0.01" style={inputStyle} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 22.50" />
+        <input type="number" inputMode="decimal" step="0.01" style={inputStyle()} value={cost} onChange={(e) => setCost(e.target.value)} placeholder="e.g. 22.50" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="2 flakes hay + scoop of grain..." />
+        <input style={inputStyle()} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="2 flakes hay + scoop of grain..." />
       </Field>
       <Btn
         variant="accent"
@@ -656,7 +664,7 @@ function HorseFeedModal({ onSave, onClose }) {
               id: newId(),
               date,
               action: "fed",
-              lbs: lbsNum,
+              lbs: lbsFromInput(lbsNum),
               cost: parseFloat(cost) || 0,
               notes: notes.trim(),
               created: Date.now(),
@@ -672,7 +680,7 @@ function HorseFeedModal({ onSave, onClose }) {
   );
 }
 
-function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
+function CareLogModal({ kind, horses, log, onSave, onDelete, onClose, initialHorseId = null }) {
   const liveHorses = horses.filter(h => !h.archived);
   // Multi-select: a single visit can apply to one horse or many.
   // - When editing an old log, prefer log.horseIds (new shape); fall back to
@@ -681,7 +689,7 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
   const initialIds = log
     ? (Array.isArray(log.horseIds) && log.horseIds.length ? log.horseIds
        : log.horseId ? [log.horseId] : [])
-    : (liveHorses[0] ? [liveHorses[0].id] : []);
+    : initialHorseId ? [initialHorseId] : (liveHorses[0] ? [liveHorses[0].id] : []);
   const [selectedIds, setSelectedIds] = useState(initialIds);
   const [date, setDate] = useState(log?.date || todayStr());
   const [type, setType] = useState(log?.type || (kind === "farrier" ? "Trim" : kind === "vet" ? "Routine checkup" : ""));
@@ -767,11 +775,11 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
         </div>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       {kind === "farrier" && (
         <Field label="Type">
-          <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)}>
+          <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)}>
             {FARRIER_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
           </select>
         </Field>
@@ -779,25 +787,25 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
       {kind === "vet" && (
         <>
           <Field label="Type of visit">
-            <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)}>
+            <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)}>
               {VET_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </Field>
           <Field label="Vet name (optional)">
-            <input style={inputStyle} value={vetName} onChange={e=>setVetName(e.target.value)} placeholder="Dr. Smith, Mobile Vet Co." />
+            <input style={inputStyle()} value={vetName} onChange={e=>setVetName(e.target.value)} placeholder="Dr. Smith, Mobile Vet Co." />
           </Field>
         </>
       )}
       {kind === "deworming" && (
         <Field label="Product">
-          <input style={inputStyle} value={product} onChange={e=>setProduct(e.target.value)} placeholder="e.g. Ivermectin, Quest Plus, Strongid" />
+          <input style={inputStyle()} value={product} onChange={e=>setProduct(e.target.value)} placeholder="e.g. Ivermectin, Quest Plus, Strongid" />
         </Field>
       )}
       <Field label="Cost (optional)">
-        <input type="number" step="0.01" style={inputStyle} value={cost} onChange={e=>setCost(e.target.value)} placeholder="$" />
+        <input type="number" step="0.01" style={inputStyle()} value={cost} onChange={e=>setCost(e.target.value)} placeholder={`${currencySymbol()}`} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Observations, follow-up needed..." />
+        <textarea style={{ ...inputStyle(),minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Observations, follow-up needed..." />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
         {log && onDelete && (
@@ -813,9 +821,9 @@ function CareLogModal({ kind, horses, log, onSave, onDelete, onClose }) {
 }
 
 // ============ RIDE LOG MODAL ============
-function RideModal({ horses, ride, onSave, onDelete, onClose }) {
+function RideModal({ horses, ride, onSave, onDelete, onClose, initialHorseId = null }) {
   const liveHorses = horses.filter(h => !h.archived);
-  const [horseId, setHorseId] = useState(ride?.horseId || liveHorses[0]?.id || "");
+  const [horseId, setHorseId] = useState(ride?.horseId || initialHorseId || liveHorses[0]?.id || "");
   const [date, setDate] = useState(ride?.date || todayStr());
   const [durationMinutes, setDurationMinutes] = useState(ride?.durationMinutes ? String(ride.durationMinutes) : "30");
   const [type, setType] = useState(ride?.type || "Training");
@@ -838,29 +846,29 @@ function RideModal({ horses, ride, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={ride ? "Edit ride" : "Log a ride"} onClose={onClose}>
       <Field label="Horse">
-        <select style={inputStyle} value={horseId} onChange={e=>setHorseId(e.target.value)}>
+        <select style={inputStyle()} value={horseId} onChange={e=>setHorseId(e.target.value)}>
           {liveHorses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
         </select>
       </Field>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Type">
-            <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)}>
+            <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)}>
               {RIDE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
             </select>
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Minutes">
-            <input type="number" min={0} style={inputStyle} value={durationMinutes} onChange={e=>setDurationMinutes(e.target.value)} />
+            <input type="number" min={0} style={inputStyle()} value={durationMinutes} onChange={e=>setDurationMinutes(e.target.value)} />
           </Field>
         </div>
       </div>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Progress, behavior, what you worked on..." />
+        <textarea style={{ ...inputStyle(),minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Progress, behavior, what you worked on..." />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
         {ride && onDelete && (
@@ -909,7 +917,7 @@ function HorseSaleModal({ horse, horses, onClose, onSave, customers = [] }) {
   const handleSave = () => {
     const id = newId();
     const verb = saleType === "leased" ? "Leased" : saleType === "rehomed" ? "Rehomed" : "Sold";
-    const priceStr = Number(price) > 0 ? ` for $${Number(price).toFixed(2)}` : "";
+    const priceStr = Number(price) > 0 ? ` for ${fmtMoney(Number(price))}` : "";
     const buyerStr = buyer.trim() ? ` to ${buyer.trim()}` : "";
     onSave({
       horseId: selectedHorse.id,
@@ -935,19 +943,19 @@ function HorseSaleModal({ horse, horses, onClose, onSave, customers = [] }) {
     <ModalShell title={horse ? `🏷️ Sell — ${selectedHorse.name}` : "🏷️ Sell a horse"} onClose={onClose}>
       {!horse && (
         <Field label="Which horse?">
-          <select style={inputStyle} value={horseId} onChange={e => setHorseId(e.target.value)}>
+          <select style={inputStyle()} value={horseId} onChange={e => setHorseId(e.target.value)}>
             {liveHorses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
           </select>
         </Field>
       )}
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.5 }}>
-        {selectedHorse.name} will move to your Archived horses list. A sale record will appear in your Sales tab.
+        {selectedHorse.name} will move to your Archived horses list. A sale record will appear in Sales & costs.
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="Type">
-        <select style={inputStyle} value={saleType} onChange={e => setSaleType(e.target.value)}>
+        <select style={inputStyle()} value={saleType} onChange={e => setSaleType(e.target.value)}>
           <option value="sold">Sold</option>
           <option value="leased">Leased</option>
           <option value="rehomed">Rehomed (no payment)</option>
@@ -956,7 +964,7 @@ function HorseSaleModal({ horse, horses, onClose, onSave, customers = [] }) {
       <Field label="Customer (optional)">
         {!showNewBuyer ? (
           <div style={{ display: "flex", gap: 8 }}>
-            <select style={{ ...inputStyle, flex: 1 }} value={buyerId} onChange={e => {
+            <select style={{ ...inputStyle(), flex: 1 }} value={buyerId} onChange={e => {
               const id = e.target.value;
               setBuyerId(id);
               const c = (customers || []).find(x => x.id === id);
@@ -969,18 +977,18 @@ function HorseSaleModal({ horse, horses, onClose, onSave, customers = [] }) {
           </div>
         ) : (
           <div style={{ display: "flex", gap: 8 }}>
-            <input style={{ ...inputStyle, flex: 1 }} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="New customer name" autoFocus />
+            <input style={{ ...inputStyle(), flex: 1 }} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="New customer name" autoFocus />
             <button onClick={() => { setShowNewBuyer(false); setBuyer(""); }} style={{ padding: "10px 12px", borderRadius: 8, border: `1.5px solid ${palette.line}`, background: palette.bgAlt, cursor: "pointer", fontFamily: FONT_BODY, fontSize: 13, color: palette.inkSoft }}>Cancel</button>
           </div>
         )}
       </Field>
       {saleType !== "rehomed" && (
-        <Field label="Price ($)">
-          <input type="number" min={0} step="0.01" style={inputStyle} value={price} onChange={e => setPrice(e.target.value)} placeholder="$0.00" />
+        <Field label={`Price (${currencySymbol()})`}>
+          <input type="number" min={0} step="0.01" style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
         </Field>
       )}
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} />
+        <input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -1033,7 +1041,7 @@ function HorseDeathModal({ horse, horses, onClose, onSave }) {
     <ModalShell title={horse ? `🪦 Log death — ${selectedHorse.name}` : "🪦 Log a horse death"} onClose={onClose}>
       {!horse && (
         <Field label="Which horse?">
-          <select style={inputStyle} value={horseId} onChange={e => setHorseId(e.target.value)}>
+          <select style={inputStyle()} value={horseId} onChange={e => setHorseId(e.target.value)}>
             {liveHorses.map(h => <option key={h.id} value={h.id}>{h.name}</option>)}
           </select>
         </Field>
@@ -1042,13 +1050,13 @@ function HorseDeathModal({ horse, horses, onClose, onSave }) {
         {selectedHorse.name} will move to your Archived horses list. You can restore from there if this was a mistake.
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="Cause (optional)">
-        <input style={inputStyle} value={cause} onChange={e => setCause(e.target.value)} placeholder="colic, age, accident, illness..." />
+        <input style={inputStyle()} value={cause} onChange={e => setCause(e.target.value)} placeholder="colic, age, accident, illness..." />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} />
+        <input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -1136,7 +1144,7 @@ function HerdTallySection({ hobby, update }) {
           {HERD_TALLY_CATEGORIES.map(k => (
             <Field key={k} label={k}>
               <input
-                type="number" inputMode="numeric" min={0} style={inputStyle}
+                type="number" inputMode="numeric" min={0} style={inputStyle()}
                 value={counts[k]}
                 onChange={e => setCounts(c => ({ ...c, [k]: e.target.value }))}
                 placeholder="0"
@@ -1838,6 +1846,108 @@ export function HorsesAnalytics({ hobby, sales = [], /* ADV_ANALYTICS */ dateRan
           </LockedStatOverlay>
         );
       })()}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Horses / one horse, with this file's own forms:
+// ride, farrier / vet / dewormer, feed, breeding (foaling date), sale, death,
+// add/edit horse, family tree, history. A new ride, care visit or feed log
+// shows "Saved · Undo".
+// ============================================================================
+const HORSE_TALLY = ["Mare", "Stallion", "Gelding", "Foal", "Unsexed"];
+const HORSE_LISTS = ["rides", "farrier", "vet", "deworming"];
+
+export function HorsesNewLook({ hobby, data, update, user, setModal, tab, onTab, onOpenJournal, onOpenCalendar }) {
+  const horses = hobby.animals || [];
+  const entries = (data.entries && data.entries[hobby.id]) || [];
+  const [form, setFormRaw] = useState(null);
+  // With no horses yet, forms that need one open "Add your first horse" instead.
+  const [needAnimal, setNeedAnimal] = useState(null);
+  const NEEDS_ANIMAL = ["ride","care","breeding","sale","death"];
+  const setForm = (v) => { if (v && NEEDS_ANIMAL.includes(v.kind) && noAnimals(hobby)) { setNeedAnimal(v.kind); return; } setFormRaw(v); };
+  const [profileId, setProfileId] = useState(null);
+  const [view, setView] = useState(null);
+  const [tallyOpen, setTallyOpen] = useState(false);
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setProfileId(null); }, [tab]);
+
+  const snap = (kind) => ({ kind, full: undoSnapshot(data, hobby.id), entries: new Set(entries.map((e) => e.id)), ...Object.fromEntries(HORSE_LISTS.map((k) => [k, new Set((hobby[k] || []).map((r) => r.id))])) });
+  const open = (kind, extra = {}) => { setUndoCheck(null); setForm({ kind, ...extra, before: snap(kind) }); };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const b = undoCheck; setUndoCheck(null);
+    const name = (id) => (horses.find((h) => h.id === id) || {}).name;
+    for (const k of HORSE_LISTS) {
+      const added = (hobby[k] || []).filter((r) => r && !b[k].has(r.id));
+      if (!added.length) continue;
+      const ids = new Set(added.map((r) => r.id));
+      const r = added[0];
+      const who = k === "rides" ? name(r.horseId) : (Array.isArray(r.horseIds) && r.horseIds.length > 1 ? `${r.horseIds.length} horses` : name((r.horseIds || [])[0] || r.horseId));
+      const what = k === "rides" ? `${Number(r.durationMinutes) || 0} min ride` : k === "deworming" ? "dewormer" : `${k} visit`;
+      void ids;
+      offerUndoSince(update, b.full, data, `Saved ${what}${who ? ` for ${who}` : ""}`);
+      return;
+    }
+    const added = entries.filter((e) => e && !b.entries.has(e.id) && e.action === "fed");
+    if (added.length) { offerUndoSince(update, b.full, data, "Saved feeding"); return; }
+    if (b.kind === "breeding") offerUndoSince(update, b.full, data, "Saved breeding");
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const save = (key) => (rec) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; if (!Array.isArray(h[key])) h[key] = []; const i = h[key].findIndex((x) => x.id === rec.id); if (i >= 0) h[key][i] = rec; else h[key].push(rec); return d; });
+  const del = (key) => (id) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (h) h[key] = (h[key] || []).filter((x) => x.id !== id); return d; });
+  const addCalendarEvent = (event) => update((d) => { if (!Array.isArray(d.calendarEvents)) d.calendarEvents = []; d.calendarEvents.push(event); return d; });
+  const openProfile = (id) => { setProfileId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} };
+  const act = {
+    ride: (id) => open("ride", { horseId: id || null }),
+    editRide: (r) => open("ride", { ride: r }),
+    care: (kind, id) => open("care", { careKind: kind, horseId: id || null }),
+    fed: () => open("fed"),
+    breeding: (b, mareId) => setForm({ kind: "breeding", breeding: b || null, horseId: mareId || null, before: snap("breeding") }),
+    sale: () => setForm({ kind: "sale" }),
+    death: () => setForm({ kind: "death" }),
+    addHorse: () => setForm({ kind: "horse", horse: null }),
+    editHorse: (id) => setForm({ kind: "horse", horse: horses.find((h) => h.id === id) || null }),
+    herdCount: () => setTallyOpen(true),
+    openProfile,
+    pedigree: (a) => setView({ kind: "pedigree", animal: a }),
+    history: (a) => setView({ kind: "history", animal: a }),
+  };
+  useHobbyRequest(hobby.id, (a) => {
+    if (a === "ride") act.ride(); else if (a === "fed") act.fed(); else if (a === "breeding") act.breeding(null);
+    else if (["farrier", "vet", "deworming"].includes(a)) act.care(a); else if (a === "add") act.addHorse();
+  });
+
+  const tally = hobby.herdTally || {};
+  const tallyTotal = HORSE_TALLY.reduce((s, k) => s + (Number(tally[k]) || 0), 0);
+  const tallyLine = HORSE_TALLY.filter((k) => Number(tally[k]) > 0).map((k) => `${Number(tally[k])} ${k}`).join(" · ");
+  const profile = profileId ? horses.find((h) => h.id === profileId) : null;
+  const f = form || {};
+  const archive = (d, payload) => { const h = d.hobbies.find((x) => x.id === hobby.id); const a = h && (h.animals || []).find((x) => x.id === payload.horseId); if (a) { a.archived = true; a.archivedReason = payload.archiveReason; a.archivedDate = payload.date; if (payload.saleId) a.saleId = payload.saleId; } };
+
+  return (
+    <div>
+      {needAnimal && <NeedAnimal noun="horse" what={({milk: "Milk", fed: "Feeding", weight: "A weight", health: "A health log", note: "A note", kid: "Kidding", breeding: "Breeding", remove: "This", bred: "Breeding", litter: "A litter", calf: "Calving", heat: "A heat", ai: "Breeding", ride: "A ride", care: "A care visit", sale: "A sale", death: "This", move: "A move"})[needAnimal]} onClose={() => setNeedAnimal(null)} onAdd={() => { setNeedAnimal(null); setFormRaw({ kind: "horse", horse: null }); }} />}
+      {f.kind === "horse" && <HorseModal horse={f.horse} horses={horses} onClose={() => setForm(null)} onSave={save("animals")} onDelete={del("animals")} update={update} user={user} hobbyId={hobby.id} />}
+      {f.kind === "ride" && <RideModal horses={horses} ride={f.ride || null} initialHorseId={f.horseId} onSave={save("rides")} onDelete={del("rides")} onClose={closeForm} />}
+      {f.kind === "care" && <CareLogModal kind={f.careKind} horses={horses} log={null} initialHorseId={f.horseId} onSave={(k, rec) => save(k)(rec)} onDelete={(k, id) => del(k)(id)} onClose={closeForm} />}
+      {f.kind === "fed" && <HorseFeedModal onClose={closeForm} onSave={(payload) => update((d) => { d.entries = d.entries || {}; d.entries[hobby.id] = d.entries[hobby.id] || []; d.entries[hobby.id].push(payload.entry); return d; })} />}
+      {f.kind === "breeding" && <BreedingModal horses={horses} breeding={f.breeding} initialMareId={f.horseId} onClose={closeForm} onSave={save("breedings")} onDelete={del("breedings")} calendarEvents={data.calendarEvents || []} addCalendarEvent={addCalendarEvent} />}
+      {f.kind === "sale" && <HorseSaleModal horse={null} horses={horses} customers={data.customers || []} onClose={() => setForm(null)}
+        onSave={(payload) => { update((d) => { archive(d, payload); d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData); return d; }); setForm(null); }} />}
+      {f.kind === "death" && <HorseDeathModal horse={null} horses={horses} onClose={() => setForm(null)}
+        onSave={(payload) => { update((d) => { d.entries = d.entries || {}; d.entries[hobby.id] = d.entries[hobby.id] || []; d.entries[hobby.id].push(payload.entry); archive(d, payload); return d; }); setForm(null); }} />}
+      <HerdCountSheet open={tallyOpen} onClose={() => setTallyOpen(false)} hobby={hobby} update={update} categories={HORSE_TALLY} noun="horses" />
+      {view && view.kind === "pedigree" && <PedigreeView animal={view.animal} animals={horses} onClose={() => setView(null)} onJumpTo={(id) => { setView(null); setProfileId(id); }} />}
+      {view && view.kind === "history" && <AnimalHistoryView update={update} animal={view.animal} hobby={hobby} entries={entries} sales={data.sales || []} species="horse" onClose={() => setView(null)} />}
+      {tab === "animals" ? (
+        profile ? <HorseProfile hobby={hobby} horse={profile} act={act} onBack={() => setProfileId(null)} />
+          : <HorseHerd hobby={hobby} act={act} tallyTotal={tallyTotal} tallyLine={tallyLine} />
+      ) : (
+        <HorseToday hobby={hobby} data={data} update={update} setModal={setModal} act={act} tallyTotal={tallyTotal} onOpenJournal={onOpenJournal} onOpenCalendar={onOpenCalendar} />
+      )}
     </div>
   );
 }

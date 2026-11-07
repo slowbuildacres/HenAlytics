@@ -1,3 +1,4 @@
+import { hobbyAllEntries } from "./allEntries.js";
 // ============================================================================
 // expenseFifo.js — per-hobby FIFO expense matching for the Sales tab
 // ----------------------------------------------------------------------------
@@ -169,8 +170,9 @@ export function extractHobbyExpenses(data, hobbyId) {
   const out = [];
   if (!data || !hobbyId) return out;
 
-  // (1) Entry-based expenses
-  const entries = (data.entries && data.entries[hobbyId]) || [];
+  // (1) Entry-based expenses: the live log plus closed garden seasons and
+  // finished batches, so closing a season doesn't drop its costs.
+  const entries = hobbyAllEntries(data, hobbyId);
   for (const e of entries) {
     if (!EXPENSE_ACTIONS.has(e.action)) continue;
     const cost = Number(e.cost) || 0;
@@ -610,3 +612,23 @@ export const WINDOW_OPTIONS = [
   { key: "twelve_months", label: "Last 12 months" },
   { key: "all",           label: "All time" },
 ];
+
+// ---------------------------------------------------------------------------
+// Building and equipment costs (coops, fencing, a new canner): logs with
+// action "infrastructure". Left out of profit on purpose (one-time capital
+// would swamp years of feed and sales), but they belong in the year-end
+// report and the list of every sale and expense. Includes closed garden
+// seasons and finished batches.
+// Returns [{ date, cost, source: "infrastructure", note }] oldest first.
+// ---------------------------------------------------------------------------
+export function extractBuildCosts(data, hobbyId) {
+  const out = [];
+  if (!data || !hobbyId) return out;
+  for (const e of hobbyAllEntries(data, hobbyId)) {
+    if (!e || e.action !== "infrastructure" || !e.date) continue;
+    const cost = Number(e.cost) || 0;
+    if (cost <= 0) continue;
+    out.push({ date: e.date, cost, source: "infrastructure", note: e.item || e.note || e.notes || "" });
+  }
+  return out.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}

@@ -16,23 +16,29 @@
 // cost per lb, and what that meat would have cost at the store.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Tag as NlTag, DollarSign as NlDollar } from "lucide-react";
 import { X } from "lucide-react";
-import { fmtMoney, fmtWeight } from "./units.js";
+import { fmtMoney, fmtWeight, lbsToInput, lbsFromInput, weightUnitLabel, currencySymbol, perWeightLabel, perLbToInput, fmtWeightWhole, platesLine } from "./units.js";
+import { groupDigits } from "./numFmt.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -67,23 +73,23 @@ export function huntingTotals(hobby, inRange = () => true) {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const v = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
-    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
       fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...v[variant], ...style,
+      boxShadow: "none", ...v[variant], ...style,
     }}>{children}</button>
   );
 }
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontFamily: FONT_BODY }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -99,7 +105,7 @@ function Field({ label, children }) {
 function ModalShell({ title, onClose, children }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%", maxHeight: "90vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}` }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%", maxHeight: "90vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`, position: "sticky", top: 0, background: palette.bg, zIndex: 1 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}><X size={22} /></button>
@@ -133,8 +139,8 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
   const [tagId, setTagId] = useState(harvest?.tagId || "");
   const [weapon, setWeapon] = useState(harvest?.weapon || "Rifle");
   const [location, setLocation] = useState(harvest?.location || "");
-  const [fieldDressedLbs, setFieldDressedLbs] = useState(harvest?.fieldDressedLbs ? String(harvest.fieldDressedLbs) : "");
-  const [meatLbs, setMeatLbs] = useState(harvest?.meatLbs ? String(harvest.meatLbs) : "");
+  const [fieldDressedLbs, setFieldDressedLbs] = useState(harvest?.fieldDressedLbs ? lbsToInput(harvest.fieldDressedLbs) : "");
+  const [meatLbs, setMeatLbs] = useState(harvest?.meatLbs ? lbsToInput(harvest.meatLbs) : "");
   const [processingCost, setProcessingCost] = useState(harvest?.processingCost ? String(harvest.processingCost) : "");
   const [processedBy, setProcessedBy] = useState(harvest?.processedBy || "self");
   const [notes, setNotes] = useState(harvest?.notes || "");
@@ -143,8 +149,8 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
     onSave({
       id: harvest?.id || newId(), date, species, sex, tagId: tagId || null, weapon,
       location: location.trim(),
-      fieldDressedLbs: parseFloat(fieldDressedLbs) || 0,
-      meatLbs: parseFloat(meatLbs) || 0,
+      fieldDressedLbs: lbsFromInput(fieldDressedLbs),
+      meatLbs: lbsFromInput(meatLbs),
       processingCost: parseFloat(processingCost) || 0,
       processedBy, notes: notes.trim(),
       created: harvest?.created || Date.now(),
@@ -155,46 +161,46 @@ function HarvestModal({ harvest, tags, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={harvest ? "Edit harvest" : "🦌 Log a harvest"} onClose={onClose}>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
         <div style={{ flex: 1 }}><Field label="Species">
-          <select style={inputStyle} value={species} onChange={e => setSpecies(e.target.value)}>
+          <select style={inputStyle()} value={species} onChange={e => setSpecies(e.target.value)}>
             {HUNT_SPECIES.map(s => <option key={s}>{s}</option>)}
           </select>
         </Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Sex (optional)">
-          <select style={inputStyle} value={sex} onChange={e => setSex(e.target.value)}>
+          <select style={inputStyle()} value={sex} onChange={e => setSex(e.target.value)}>
             <option value="">—</option><option value="male">Male / buck / tom</option><option value="female">Female / doe / hen</option>
           </select>
         </Field></div>
         <div style={{ flex: 1 }}><Field label="Weapon">
-          <select style={inputStyle} value={weapon} onChange={e => setWeapon(e.target.value)}>
+          <select style={inputStyle()} value={weapon} onChange={e => setWeapon(e.target.value)}>
             {WEAPONS.map(w => <option key={w}>{w}</option>)}
           </select>
         </Field></div>
       </div>
       <Field label="Tag used (optional)">
-        <select style={inputStyle} value={tagId} onChange={e => setTagId(e.target.value)}>
+        <select style={inputStyle()} value={tagId} onChange={e => setTagId(e.target.value)}>
           <option value="">— No tag / not required —</option>
           {openTags.map(t => <option key={t.id} value={t.id}>{t.name}{t.species ? ` (${t.species})` : ""}</option>)}
         </select>
         {tags.length === 0 && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>Add your tags in the Tags section and they'll show up here.</div>}
       </Field>
-      <Field label="Location (optional)"><input style={inputStyle} value={location} onChange={e => setLocation(e.target.value)} placeholder="Back 40, public land unit 12…" /></Field>
+      <Field label="Location (optional)"><input style={inputStyle()} value={location} onChange={e => setLocation(e.target.value)} placeholder="Back 40, public land unit 12…" /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Field-dressed lbs"><input type="number" inputMode="decimal" min={0} style={inputStyle} value={fieldDressedLbs} onChange={e => setFieldDressedLbs(e.target.value)} placeholder="optional" /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Meat packaged (lbs)"><input type="number" inputMode="decimal" min={0} style={inputStyle} value={meatLbs} onChange={e => setMeatLbs(e.target.value)} placeholder="can add later" /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Field-dressed ${weightUnitLabel()}`}><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={fieldDressedLbs} onChange={e => setFieldDressedLbs(e.target.value)} placeholder="optional" /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Meat packaged (${weightUnitLabel()})`}><input type="number" inputMode="decimal" min={0} style={inputStyle()} value={meatLbs} onChange={e => setMeatLbs(e.target.value)} placeholder="can add later" /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}><Field label="Processed by">
-          <select style={inputStyle} value={processedBy} onChange={e => setProcessedBy(e.target.value)}>
+          <select style={inputStyle()} value={processedBy} onChange={e => setProcessedBy(e.target.value)}>
             <option value="self">Myself</option><option value="processor">Processor</option>
           </select>
         </Field></div>
-        <div style={{ flex: 1 }}><Field label="Processing cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={processingCost} onChange={e => setProcessingCost(e.target.value)} placeholder="0" /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Processing cost (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={processingCost} onChange={e => setProcessingCost(e.target.value)} placeholder="0" /></Field></div>
       </div>
-      <Field label="Notes (optional)"><textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Points, conditions, cuts you got…" /></Field>
+      <Field label="Notes (optional)"><textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Points, conditions, cuts you got…" /></Field>
       <DeleteRow canDelete={!!harvest} onDelete={() => { onDelete(harvest.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!date} />
     </ModalShell>
   );
@@ -219,20 +225,20 @@ function TagModal({ tag, onSave, onDelete, onClose }) {
   };
   return (
     <ModalShell title={tag ? "Edit tag" : "🏷️ Add a tag / license"} onClose={onClose}>
-      <Field label="Tag or license name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Any-deer permit, Turkey tag #2" autoFocus /></Field>
+      <Field label="Tag or license name"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Any-deer permit, Turkey tag #2" autoFocus /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Species"><select style={inputStyle} value={species} onChange={e => setSpecies(e.target.value)}>{HUNT_SPECIES.map(s => <option key={s}>{s}</option>)}</select></Field></div>
-        <div style={{ flex: 1 }}><Field label="State / unit"><input style={inputStyle} value={state} onChange={e => setState(e.target.value)} placeholder="KS, unit 4…" /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Species"><select style={inputStyle()} value={species} onChange={e => setSpecies(e.target.value)}>{HUNT_SPECIES.map(s => <option key={s}>{s}</option>)}</select></Field></div>
+        <div style={{ flex: 1 }}><Field label="State / unit"><input style={inputStyle()} value={state} onChange={e => setState(e.target.value)} placeholder="KS, unit 4…" /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Season"><input style={inputStyle} value={seasonYear} onChange={e => setSeasonYear(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Season"><input style={inputStyle()} value={seasonYear} onChange={e => setSeasonYear(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Cost (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
       </div>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Bought"><input type="date" style={inputStyle} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Expires (optional)"><input type="date" style={inputStyle} value={expires} onChange={e => setExpires(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Bought"><input type="date" style={inputStyle()} value={purchaseDate} onChange={e => setPurchaseDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Expires (optional)"><input type="date" style={inputStyle()} value={expires} onChange={e => setExpires(e.target.value)} /></Field></div>
       </div>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Draw results, bag limits…" /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Draw results, bag limits…" /></Field>
       <DeleteRow canDelete={!!tag} onDelete={() => { onDelete(tag.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!name.trim()} />
     </ModalShell>
   );
@@ -250,13 +256,13 @@ function GearModal({ item, onSave, onDelete, onClose }) {
   };
   return (
     <ModalShell title={item ? "Edit gear / supply" : "🎒 Add equipment or supplies"} onClose={onClose}>
-      <Field label="Item"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tree stand, box of .308, game bags" autoFocus /></Field>
+      <Field label="Item"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Tree stand, box of .308, game bags" autoFocus /></Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Category"><select style={inputStyle} value={category} onChange={e => setCategory(e.target.value)}>{GEAR_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cost ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Category"><select style={inputStyle()} value={category} onChange={e => setCategory(e.target.value)}>{GEAR_CATEGORIES.map(c => <option key={c}>{c}</option>)}</select></Field></div>
+        <div style={{ flex: 1 }}><Field label={`Cost (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} /></Field></div>
       </div>
-      <Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field>
-      <Field label="Notes (optional)"><input style={inputStyle} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
+      <Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field>
+      <Field label="Notes (optional)"><input style={inputStyle()} value={notes} onChange={e => setNotes(e.target.value)} /></Field>
       <DeleteRow canDelete={!!item} onDelete={() => { onDelete(item.id); onClose(); }} onCancel={onClose} onSave={save} saveDisabled={!name.trim()} />
     </ModalShell>
   );
@@ -271,7 +277,7 @@ function tagStatus(t) {
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-export default function HuntingPage({ hobby, data, update, setModal }) {
+export default function HuntingPage({ hobby, data, update, setModal, nl = null }) {
   const [harvestModal, setHarvestModal] = useState({ open: false, item: null });
   const [tagModal, setTagModal] = useState({ open: false, item: null });
   const [gearModal, setGearModal] = useState({ open: false, item: null });
@@ -284,7 +290,9 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
   const t = huntingTotals(hobby, (d) => (d || "").startsWith(year));
   const openTags = tags.filter(x => tagStatus(x).label === "Open");
 
-  const mutate = (fn) => update(d => {
+  // `message` adds an Undo bar that puts back everything the save changed
+  // (the harvest and the tag it filled).
+  const mutate = (fn, message) => (message ? undoable(update, message) : update)(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     if (!h) return d;
     ["harvests", "tags", "gear"].forEach(k => { if (!Array.isArray(h[k])) h[k] = []; });
@@ -305,12 +313,12 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
       if (tg) tg.filledHarvestId = rec.id;
     }
     upsert(h.harvests, rec);
-  });
+  }, `Saved ${[rec.species, "harvest"].filter(Boolean).join(" ")}`);
   const deleteHarvest = (id) => mutate(h => {
     h.harvests = h.harvests.filter(x => x.id !== id);
     h.tags.forEach(tg => { if (tg.filledHarvestId === id) tg.filledHarvestId = null; });
-  });
-  const saveTag = (rec) => mutate(h => upsert(h.tags, rec));
+  }, "Deleted harvest");
+  const saveTag = (rec) => mutate(h => upsert(h.tags, rec), "Saved tag");
   const deleteTag = (id) => mutate(h => {
     h.tags = h.tags.filter(x => x.id !== id);
     h.harvests.forEach(hv => { if (hv.tagId === id) hv.tagId = null; });
@@ -320,6 +328,47 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
 
   const sectionH = { fontFamily: FONT_DISPLAY, fontSize: 18, margin: "0 0 10px", color: palette.ink };
   const row = { padding: "10px 12px", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, cursor: "pointer" };
+
+  if (nl) {
+    const harvests = (hobby.harvests || []).slice().sort((a, b) => ((b.date || "") < (a.date || "") ? -1 : 1));
+    const gear = (hobby.gear || []).slice().sort((a, b) => ((b.date || "") < (a.date || "") ? -1 : 1));
+    const ctx = {
+      key: "hunting",
+      summary: { big: t.meatLbs ? fmtWeight(t.meatLbs) : "0", small: `of meat in ${year}`, line: [`${t.harvests.length} harvest${t.harvests.length === 1 ? "" : "s"}`, t.meatLbs ? `${fmtMoney(t.costPerLb)} a lb vs. ${fmtMoney(t.valuePerLb)} at the store` : null, openTags.length ? `${openTags.length} open tag${openTags.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") },
+      newLabel: "Log a harvest", onNew: () => setHarvestModal({ open: true, item: null }),
+      goingTitle: "Open tags",
+      going: openTags.map((tg) => ({ id: tg.id, title: tg.name || `${tg.species || ""} tag`.trim(), onOpen: () => setTagModal({ open: true, item: tg }),
+        sub: [tg.species, tg.state, tg.expires ? `expires ${fmtDate(tg.expires)}` : null, Number(tg.cost) ? fmtMoney(tg.cost) : null].filter(Boolean).join(" · "),
+        actions: [{ label: "Fill it", run: () => setHarvestModal({ open: true, item: null }) }] })),
+      shelfTitle: "Harvests", shelfEmpty: "No harvests logged yet. Good luck out there.",
+      shelf: harvests.map((hv) => ({ id: hv.id, title: [hv.species, hv.sex].filter(Boolean).join(" · ") || "Harvest", onOpen: () => setHarvestModal({ open: true, item: hv }),
+        sub: [fmtDate(hv.date), hv.weapon, hv.meatLbs ? `${fmtWeight(Number(hv.meatLbs))} of meat` : null, hv.location || null].filter(Boolean).join(" · ") })),
+      past: gear.map((g) => ({ id: g.id, title: g.item || "Gear", sub: [g.category, fmtDate(g.date), Number(g.cost) ? fmtMoney(g.cost) : null].filter(Boolean).join(" · "), onOpen: () => setGearModal({ open: true, item: g }) })),
+      pastTitle: "Gear", pastSub: "Tap one to edit it.",
+      extras: [
+        { key: "tag", label: "Add a tag", sub: "Licenses and tags you bought", icon: NlTag, run: () => setTagModal({ open: true, item: null }) },
+        { key: "gear", label: "Add gear", sub: "Ammo, blinds, processing tools", icon: NlHammer, run: () => setGearModal({ open: true, item: null }) },
+        { key: "price", label: `Store meat price: ${fmtMoney(t.valuePerLb)} a lb`, sub: "What you'd pay for meat at the store", icon: NlDollar, run: () => { setPriceDraft(String(t.valuePerLb)); setEditPrice(true); } },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {harvestModal.open && <HarvestModal harvest={harvestModal.item} tags={tags} onSave={saveHarvest} onDelete={deleteHarvest} onClose={() => setHarvestModal({ open: false, item: null })} />}
+        {tagModal.open && <TagModal tag={tagModal.item} onSave={saveTag} onDelete={deleteTag} onClose={() => setTagModal({ open: false, item: null })} />}
+        {gearModal.open && <GearModal item={gearModal.item} onSave={saveGear} onDelete={deleteGear} onClose={() => setGearModal({ open: false, item: null })} />}
+        {editPrice && (
+          <ModalShell title="Store meat price" onClose={() => setEditPrice(false)}>
+            <Field label="Price per lb at the store"><input type="number" step="0.01" min={0} value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} style={inputStyle()} /></Field>
+            <Btn onClick={() => { const v = parseFloat(priceDraft); mutate((h) => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
+          </ModalShell>
+        )}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -338,7 +387,7 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 16 }}>
         {editPrice ? (
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-            Store price per lb: <input type="number" step="0.01" min={0} value={priceDraft} onChange={e => setPriceDraft(e.target.value)} style={{ ...inputStyle, width: 90, padding: "4px 8px", fontSize: 13 }} />
+            Store price per lb: <input type="number" step="0.01" min={0} value={priceDraft} onChange={e => setPriceDraft(e.target.value)} style={{ ...inputStyle(), width: 90, padding: "4px 8px", fontSize: 13 }} />
             <Btn small onClick={() => { const v = parseFloat(priceDraft); mutate(h => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
           </span>
         ) : (
@@ -426,6 +475,27 @@ export default function HuntingPage({ hobby, data, update, setModal }) {
 // dateRange — we filter harvests/tags/gear to it ourselves since these
 // records live on the hobby, not in data.entries.
 // ---------------------------------------------------------------------------
+// 3.0 Stats: harvests, meat, cost per lb vs. the store, by species.
+export function huntingStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const t = huntingTotals(hobby, (d) => range === "all" || (d || "").startsWith(year));
+  const by = new Map(); for (const h of t.harvests) { const k = h.species || "Other"; by.set(k, (by.get(k) || 0) + (Number(h.meatLbs) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).map(([name, v]) => ({ key: name, name, value: v, label: fmtWeightWhole(v) }));
+  const facts = [];
+  if (t.meatLbs >= 10) facts.push({ key: "meals", icon: "trophy", big: String(Math.round(t.meatLbs * 2)), line: "family dinners we hunted", title: `About ${Math.round(t.meatLbs * 2)} family dinners`, sub: platesLine(t.meatLbs) });
+  if (t.meatLbs && t.storeValue > t.totalCost) facts.push({ key: "saved", icon: "money", big: fmtMoney(t.storeValue - t.totalCost), line: "less than buying it at the store", title: `${fmtMoney(t.storeValue - t.totalCost)} less than the store`, sub: `At ${fmtMoney(perLbToInput(t.valuePerLb))} a ${perWeightLabel() === "kg" ? "kilo" : "lb"}.` });
+  return {
+    cards: [
+      { label: "Harvests", value: t.harvests.length, sub: rows.map((r) => r.name).slice(0, 3).join(", ") },
+      { label: "Meat", value: t.meatLbs ? fmtWeight(t.meatLbs) : "—", sub: t.meatLbs ? `store value ${fmtMoney(t.storeValue)}` : "" },
+      { label: "Spent", value: fmtMoney(t.totalCost), sub: "Tags, gear, processing" },
+      { label: `Cost per ${perWeightLabel()}`, value: t.meatLbs ? fmtMoney(perLbToInput(t.costPerLb)) : "—", sub: `vs. ${fmtMoney(perLbToInput(t.valuePerLb))} at the store` },
+    ],
+    bars: rows.length ? { title: "Meat by species", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🦌", kicker: "Our hunt",
+  };
+}
+
 export function HuntingAnalytics({ hobby, dateRange = null }) {
   if (!hobby) return null;
   const inRange = (d) => {

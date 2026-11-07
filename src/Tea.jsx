@@ -22,20 +22,26 @@
 //   data.sales[] (hobbyType="tea", batchId=...)
 // ============================================================================
 
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, ozToInput, ozFromInput, smallWeightLabel, currencySymbol, fmtSmallWeight } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -63,16 +69,16 @@ const SACHET_SIZES = [
   { value: "0.25oz", label: "0.25 oz" },
 ];
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
     padding: small ? "6px 12px" : "10px 18px",
-    borderRadius: 8, fontFamily: FONT_BODY,
+    borderRadius: small ? 999 : 14, fontFamily: FONT_BODY,
     fontWeight: 600, fontSize: small ? 12 : 14,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.5 : 1,
@@ -80,11 +86,11 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   };
   const variants = {
     primary: { background: palette.ink, color: palette.bg },
-    accent:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    accent:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    danger:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
   };
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{minHeight: small ? 36 : 44,  ...base, ...variants[variant], ...style }}>{children}</button>;
 }
 
 function Field({ label, children }) {
@@ -100,7 +106,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}><X size={22} /></button>
@@ -113,9 +119,9 @@ function Modal({ open, onClose, title, children }) {
 
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -123,8 +129,8 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -137,7 +143,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const isEdit = !!batch;
   const [name, setName] = useState(batch?.name || "");
   const [ingredients, setIngredients] = useState(batch?.ingredients || "");
-  const [totalWeightOz, setTotalWeightOz] = useState(batch?.totalWeightOz ? String(batch.totalWeightOz) : "");
+  const [totalWeightOz, setTotalWeightOz] = useState(batch?.totalWeightOz ? ozToInput(batch.totalWeightOz) : "");
   const [packaging, setPackaging] = useState(batch?.packaging || "bulk");
   const [sachetsMade, setSachetsMade] = useState(batch?.sachetsMade ? String(batch.sachetsMade) : "");
   const [sachetSize, setSachetSize] = useState(batch?.sachetSize || "1tsp");
@@ -149,9 +155,9 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     if (!name.trim()) return;
     const id = batch?.id || newId();
-    const weight = Number(totalWeightOz) || 0;
+    const weight = ozFromInput(totalWeightOz);
     const sachets = Number(sachetsMade) || 0;
-    update(d => {
+    undoable(update, "Saved blend")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -172,7 +178,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         madeDate,
         ingredientsCost: Number(ingredientsCost) || 0,
         notes: notes.trim(),
-        events: batch?.events || [{ id: newId(), kind: "made", date: madeDate, note: packaging === "bulk" ? `${weight} oz` : `${sachets} × ${sachetSize}` }],
+        events: batch?.events || [{ id: newId(), kind: "made", date: madeDate, note: packaging === "bulk" ? fmtSmallWeight(weight) : `${sachets} × ${sachetSize}` }],
         archived: batch?.archived || false,
         created: batch?.created || Date.now(),
       };
@@ -189,7 +195,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted blend")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       if (Array.isArray(d.sales)) d.sales = d.sales.filter(s => s.batchId !== batch.id);
@@ -201,17 +207,17 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit tea blend" : "New tea blend"}>
       <Field label="Blend name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calm Belly, Cold & Flu Support, Sleepytime" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Calm Belly, Cold & Flu Support, Sleepytime" autoFocus />
       </Field>
       <Field label="Ingredients / recipe">
         <textarea
-          style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
           value={ingredients} onChange={e => setIngredients(e.target.value)}
           placeholder="e.g. 2 parts chamomile, 1 part lemon balm, 1 part lavender, 1/2 part valerian"
         />
       </Field>
       <Field label="Made on">
-        <input type="date" style={inputStyle} value={madeDate} onChange={e => setMadeDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={madeDate} onChange={e => setMadeDate(e.target.value)} />
       </Field>
       <Field label="Packaging">
         <div style={{ display: "flex", gap: 6 }}>
@@ -234,37 +240,37 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
         </div>
       </Field>
       {packaging === "bulk" ? (
-        <Field label="Total weight (oz)">
-          <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
+        <Field label={`Total weight (${smallWeightLabel()})`}>
+          <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
         </Field>
       ) : (
         <>
           <div style={{ display: "flex", gap: 12 }}>
             <div style={{ flex: 1 }}>
               <Field label="Sachets made">
-                <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle} value={sachetsMade} onChange={e => setSachetsMade(e.target.value)} placeholder="0" />
+                <input type="number" min={0} step="1" inputMode="numeric" style={inputStyle()} value={sachetsMade} onChange={e => setSachetsMade(e.target.value)} placeholder="0" />
               </Field>
             </div>
             <div style={{ flex: 1 }}>
               <Field label="Sachet size">
-                <select style={inputStyle} value={sachetSize} onChange={e => setSachetSize(e.target.value)}>
+                <select style={inputStyle()} value={sachetSize} onChange={e => setSachetSize(e.target.value)}>
                   {SACHET_SIZES.map(s => <option key={s.value} value={s.value}>{s.label}</option>)}
                 </select>
               </Field>
             </div>
           </div>
-          <Field label="Total weight (oz, optional)">
-            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
+          <Field label={`Total weight (${smallWeightLabel()}, optional)`}>
+            <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalWeightOz} onChange={e => setTotalWeightOz(e.target.value)} placeholder="0" />
             <div style={{ fontSize: 10, color: palette.inkSoft, marginTop: 2, lineHeight: 1.3 }}>For analytics. The grand total of all your sachets combined.</div>
           </Field>
         </>
       )}
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 60, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Brewing instructions, flavor notes, etc."
         />
@@ -307,7 +313,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     const n = Number(qty);
     if (!n || n <= 0 || n > max) return;
-    update(d => {
+    undoable(update, "Saved")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -360,25 +366,25 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         {max} {unitLabelPlural} remaining{!isBulk && ` (${batch.sachetSize} each)`}
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label={`${isBulk ? "Ounces" : "Sachets"} (max ${max})`}>
-            <input type="number" min={0.1} max={max} step={isBulk ? "0.1" : "1"} inputMode={isBulk ? "decimal" : "numeric"} style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} placeholder="1" autoFocus />
+            <input type="number" min={0.1} max={max} step={isBulk ? "0.1" : "1"} inputMode={isBulk ? "decimal" : "numeric"} style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} placeholder="1" autoFocus />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label={`Price per ${unitLabel}`}>
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </div>
       </div>
       <Field label="Buyer (optional)">
-        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+        <input style={inputStyle()} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
+        <input style={inputStyle()} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
       </Field>
       {total > 0 && (
         <div style={{ background: palette.yolkSoft, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: palette.ink, marginBottom: 12 }}>
@@ -436,7 +442,7 @@ function BatchCard({ batch, hobbyId, sales, update, setLocalModal }) {
           {isBulk ? (
             <div>
               <strong>{batch.totalWeightOz}</strong> oz blend
-              {remaining < made && <span style={{ color: palette.inkSoft }}> · {remaining.toFixed(1)} oz remaining</span>}
+              {remaining < made && <span style={{ color: palette.inkSoft }}> · {fmtSmallWeight(remaining)} remaining</span>}
             </div>
           ) : (
             <div>
@@ -503,7 +509,7 @@ function TeaModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function TeaPage({ hobby, data, update, setModal }) {
+export default function TeaPage({ hobby, data, update, setModal, nl = null }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
@@ -523,6 +529,36 @@ export default function TeaPage({ hobby, data, update, setModal }) {
     const made = b.packaging === "bulk" ? (b.totalWeightOz || 0) : (b.sachetsMade || 0);
     return remaining <= 0 && made > 0;
   });
+
+  if (nl) {
+    const archived = batches.filter((b) => b.archived);
+    const bulk = (b) => b.packaging === "bulk";
+    const leftOf = (b) => (bulk(b) ? Number(b.bulkRemainingOz) || 0 : Number(b.sachetsRemaining) || 0);
+    const sachets = active.filter((b) => !bulk(b)).reduce((s, b) => s + leftOf(b), 0);
+    const oz = active.filter(bulk).reduce((s, b) => s + leftOf(b), 0);
+    const ctx = {
+      key: "tea", tabs: nl.tabs,
+      summary: { big: sachets || fmtSmallWeight(oz), small: sachets ? `sachet${sachets === 1 ? "" : "s"} on the shelf` : "of loose tea on the shelf", line: sachets && oz ? `plus ${Math.round(oz)} oz loose` : active.length ? `${active.length} blend${active.length === 1 ? "" : "s"}` : "" },
+      newLabel: "Make a blend", onNew: () => setLocalModal({ type: "addBatch" }),
+      shelfTitle: "Blends", shelfEmpty: "No blends yet. Make one and it shows up here.",
+      shelf: active.map((b) => ({ id: b.id, title: b.name || "Tea blend", left: Math.round(leftOf(b)), unit: bulk(b) ? "oz" : "sachets",
+        onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [bulk(b) ? `${Math.round(leftOf(b))} of ${b.totalWeightOz || 0} oz loose` : `${leftOf(b)} of ${b.sachetsMade || 0} × ${b.sachetSize || "sachet"}`, b.madeDate ? `made ${fmtDate(b.madeDate)}` : null, b.ingredients ? String(b.ingredients).slice(0, 50) : null].filter(Boolean).join(" · "),
+        actions: leftOf(b) > 0 ? [{ label: "Sell or use", run: () => setLocalModal({ type: "sell", batchId: b.id }) }] : [] })),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Tea blend", sub: `made ${fmtDate(b.madeDate)}`, onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }) })),
+      extras: [
+        { key: "expense", label: "Expense", sub: "Herbs, tins, labels", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        <TeaModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -546,7 +582,7 @@ export default function TeaPage({ hobby, data, update, setModal }) {
               ➕ Custom
             </button>
           )}
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onYolk, display: "flex", alignItems: "center", gap: 6 }}>
             <Plus size={14} />New blend
           </button>
         </div>
@@ -559,7 +595,7 @@ export default function TeaPage({ hobby, data, update, setModal }) {
           <div style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
             Track your blends — recipe, weight, and packaging (bulk or sachets).
           </div>
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.ink }}>Create first blend</button>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.onYolk }}>Create first blend</button>
         </div>
       ) : (
         <>
@@ -588,6 +624,30 @@ export default function TeaPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: blends made, sachets and loose tea, sold.
+export function teaStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.madeDate));
+  const sachets = bs.reduce((s, b) => s + (Number(b.sachetsMade) || 0), 0);
+  const oz = bs.reduce((s, b) => s + (Number(b.totalWeightOz) || 0), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "tea" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const rows = bs.map((b) => ({ key: b.id, name: b.name || "Blend", value: Number(b.totalWeightOz) || Number(b.sachetsMade) || 0, label: b.packaging === "bulk" ? fmtSmallWeight(b.totalWeightOz || 0) : `${b.sachetsMade || 0} sachets` })).sort((a, b) => b.value - a.value).slice(0, 8);
+  const facts = [];
+  if (sachets >= 10) facts.push({ key: "cups", icon: "drop", big: String(sachets), line: "cups of tea from our blends", title: `${sachets} cups of tea`, sub: "One sachet, one cup." });
+  if (oz >= 4) facts.push({ key: "oz", icon: "leaf", big: fmtSmallWeight(oz), line: "of loose tea blended", title: `${fmtSmallWeight(oz)} of tea blended`, sub: `About ${Math.round(oz * 14)} cups at 2 g a cup.` });
+  return {
+    cards: [
+      { label: "Blends", value: bs.length, sub: [sachets ? `${sachets} sachets` : null, oz ? fmtSmallWeight(oz) : null].filter(Boolean).join(" · ") || "" },
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Tea sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: "Herbs and packaging" }] : []),
+    ],
+    bars: rows.length ? { title: "Your blends", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🍵", kicker: "Our apothecary",
+  };
+}
+
 export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;
@@ -618,7 +678,7 @@ export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessCo
     <div>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Total blends" value={totalBatches} accent={palette.leaf} />
-        {totalWeightOz > 0 && <StatCard label="Total weight" value={`${totalWeightOz.toFixed(1)} oz`} accent={palette.yolk} />}
+        {totalWeightOz > 0 && <StatCard label="Total weight" value={fmtSmallWeight(totalWeightOz)} accent={palette.yolk} />}
         {totalSachetsMade > 0 && <StatCard label="Sachets made" value={totalSachetsMade} accent={palette.feather} />}
         {totalCost > 0 && <StatCard label="Ingredients spent" value={fmtMoney(totalCost)} accent={palette.accent} />}
       </div>
@@ -653,7 +713,7 @@ export function TeaAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessCo
             <BarChart data={chart}>
               <XAxis dataKey="name" stroke={palette.inkSoft} fontSize={11} />
               <YAxis stroke={palette.inkSoft} fontSize={11} />
-              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={(v) => `${v} oz`} />
+              <Tooltip contentStyle={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 8 }} formatter={(v) => fmtSmallWeight(v)} />
               <Bar dataKey="oz" fill={palette.leaf} radius={[6, 6, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>

@@ -56,6 +56,22 @@ export function fmtMoney(n) {
   }
 }
 
+// Whole amounts ("$46", "€46") for headlines, fun facts and chart axes.
+export function fmtMoneyWhole(n) {
+  const num = Math.round(Number(n) || 0);
+  try {
+    return new Intl.NumberFormat(CURRENCY_LOCALES[_currentCurrency] || "en-US", {
+      style: "currency",
+      currency: _currentCurrency,
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0,
+    }).format(num);
+  } catch (e) {
+    const sym = CURRENCY_SYMBOLS[_currentCurrency] || "$";
+    return `${num < 0 ? "-" : ""}${sym}${Math.abs(num).toLocaleString("en-US")}`;
+  }
+}
+
 // fmtTemp takes Fahrenheit (the canonical storage unit, since weather APIs
 // return F here) and renders in user's preferred unit.
 export function fmtTemp(f) {
@@ -66,6 +82,22 @@ export function fmtTemp(f) {
   }
   return `${Math.round(num)}°F`;
 }
+
+// Temperature fields: stored in Fahrenheit, typed and shown in the
+// person's unit.
+export function tempUnitLabel() { return _currentTempUnit === "C" ? "°C" : "°F"; }
+export function tempFromF(f) {
+  if (f === null || f === undefined || f === "" || isNaN(Number(f))) return "";
+  const n = Number(f);
+  return _currentTempUnit === "C" ? Math.round((n - 32) * 5 / 9) : n;
+}
+export function fFromInput(v) {
+  if (v === null || v === undefined || v === "" || isNaN(Number(v))) return null;
+  const n = Number(v);
+  return _currentTempUnit === "C" ? Math.round(n * 9 / 5 + 32) : n;
+}
+// A typical Fahrenheit value written for the person's unit (placeholders).
+export function tempHint(f) { return String(tempFromF(f)); }
 
 export function currencySymbol() {
   return CURRENCY_SYMBOLS[_currentCurrency] || "$";
@@ -117,6 +149,37 @@ export function fmtWeight(lbs, opts = {}) {
   return `${n.toFixed(decimals == null ? 1 : decimals)} lbs`;
 }
 
+// A total stored in pounds as a whole number in the person's big unit, with
+// thousands grouped: "1,204 lbs" / "546 kg".
+export function fmtWeightWhole(lbs) {
+  const n = Math.round(weightFromLbs(lbs));
+  return `${n.toLocaleString("en-US")} ${weightUnitLabel()}`;
+}
+// Same, one decimal: "18.5 lbs" / "8.4 kg".
+export function fmtWeight1(lbs) {
+  return `${Number(weightFromLbs(lbs).toFixed(1)).toLocaleString("en-US")} ${weightUnitLabel()}`;
+}
+// "40 lbs at roughly half a pound a plate." in the person's units.
+export function platesLine(lbs) {
+  return _currentWeightUnit === "kg" ? `${fmtWeightWhole(lbs)} at roughly 225 g a plate.` : `${fmtWeightWhole(lbs)} at roughly half a pound a plate.`;
+}
+// A harvest's amount in pounds, from whatever unit it was logged in, or null
+// for counts, bunches and jars.
+export function harvestAmountLbs(qty, unit) {
+  const n = Number(qty) || 0;
+  switch (String(unit || "lbs").toLowerCase()) {
+    case "lbs": case "lb": return n;
+    case "oz": return n / OZ_PER_LB;
+    case "kg": return n * LBS_PER_KG;
+    case "g": return n / G_PER_LB;
+    default: return null;
+  }
+}
+// A volume total stored in gallons, whole or one decimal: "12 gal" / "45.4 L".
+export function fmtVolumeBig(gal, decimals = 1) {
+  return `${Number(volumeFromGal(gal).toFixed(decimals)).toLocaleString("en-US")} ${volumeUnitLabel()}`;
+}
+
 // Just the unit label (no number). Useful for placeholders in forms.
 // Returns "lbs" or "kg" depending on user preference.
 export function weightUnitLabel() {
@@ -138,6 +201,34 @@ export function lbsFromInput(n) {
   const v = Number(n) || 0;
   return _currentWeightUnit === "kg" ? v * LBS_PER_KG : v;
 }
+
+// ---- Form fields -------------------------------------------------------------
+// A stored value written in the person's unit for an input box (rounded for
+// typing, "" when empty), and the typed value back in storage units.
+const r2 = (n) => Math.round(n * 100) / 100;
+const blank = (v) => v === null || v === undefined || v === "" || isNaN(Number(v));
+export function lbsToInput(lbs) { return blank(lbs) ? "" : String(r2(weightFromLbs(lbs))); }
+// Prices per weight (meat sold by the pound): per lb or per kg.
+export function perWeightLabel() { return _currentWeightUnit === "kg" ? "kg" : "lb"; }
+export function perLbToInput(p) { return blank(p) ? "" : String(r2(_currentWeightUnit === "kg" ? Number(p) * LBS_PER_KG : Number(p))); }
+export function perLbFromInput(v) { const n = Number(v) || 0; return _currentWeightUnit === "kg" ? n / LBS_PER_KG : n; }
+// Small weights stored in ounces (salve wax, tea, dried output): oz or g.
+const G_PER_OZ = 28.3495;
+export function smallWeightLabel() { return _currentWeightUnit === "kg" ? "g" : "oz"; }
+export function ozToInput(oz) { return blank(oz) ? "" : String(_currentWeightUnit === "kg" ? Math.round(Number(oz) * G_PER_OZ) : r2(Number(oz))); }
+export function ozToKg(oz) { return (Number(oz) || 0) * G_PER_OZ / 1000; }
+export function ozFromInput(v) { const n = Number(v) || 0; return _currentWeightUnit === "kg" ? n / G_PER_OZ : n; }
+// Show a small weight stored in ounces: "12 oz" / "1.5 lb" (US), "340 g" / "1.2 kg".
+export function fmtSmallWeight(oz) {
+  const n = Number(oz) || 0;
+  if (_currentWeightUnit === "kg") { const g = n * G_PER_OZ; return Math.abs(g) >= 1000 ? `${(g / 1000).toFixed(1)} kg` : `${Math.round(g)} g`; }
+  return Math.abs(n) >= 16 ? `${(n / 16).toFixed(1)} lb` : `${Math.round(n * 10) / 10} oz`;
+}
+// Liquids stored in fluid ounces (milk, tinctures, oils): fl oz or ml.
+const ML_PER_FLOZ = 29.5735;
+export function flozLabel() { return _currentVolumeUnit === "L" ? "ml" : "fl oz"; }
+export function flozToInput(fl) { return blank(fl) ? "" : String(_currentVolumeUnit === "L" ? Math.round(Number(fl) * ML_PER_FLOZ) : r2(Number(fl))); }
+export function flozFromInput(v) { const n = Number(v) || 0; return _currentVolumeUnit === "L" ? n / ML_PER_FLOZ : n; }
 
 // ============================================================================
 // VOLUME
@@ -183,6 +274,8 @@ export function volumeFromGal(gal) {
   const n = Number(gal) || 0;
   return _currentVolumeUnit === "L" ? n * L_PER_GAL : n;
 }
+
+export function galToInput(gal) { return gal === null || gal === undefined || gal === "" || isNaN(Number(gal)) ? "" : String(Math.round(volumeFromGal(gal) * 100) / 100); }
 
 export function galFromInput(n) {
   const v = Number(n) || 0;

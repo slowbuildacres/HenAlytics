@@ -1,28 +1,34 @@
-import React, { useState } from "react";
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
+import React, { useState, useEffect } from "react";
+// NEW_LOOK (3.0): the rebuilt bee screens reuse this file's forms.
+import { BeeToday, BeeHives, BeeHive, HivePicker } from "./newlook/bees/BeeScreens.jsx";
+import { showUndo } from "./newlook/UndoBar.jsx";
+import { useHobbyRequest } from "./newlook/hobbyRequests.js";
 import { X, Edit3, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol, fmtWeight, fmtWeight1, weightFromLbs, weightUnitLabel, lbsToInput, lbsFromInput } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
   honey: "#E8961A", honeySoft: "#F5C96A",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const HIVE_TYPES = ["Langstroth", "Top Bar", "Warré", "Flow Hive", "Long Langstroth", "Other"];
 const HIVE_SOURCES = ["Package", "Nucleus (nuc)", "Swarm", "Split", "Purchased colony", "Other"];
@@ -41,17 +47,17 @@ const fmtDate = (s) => { if (!s) return ""; return parseLocalDate(s).toLocaleDat
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
     honey: { background: palette.honey, color: palette.bg, border: `1.5px solid ${palette.honey}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -59,11 +65,11 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -71,8 +77,8 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -103,7 +109,7 @@ function HiveModal({ hive, onSave, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{hive ? "Edit Hive" : "Add Hive"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -111,43 +117,43 @@ function HiveModal({ hive, onSave, onClose }) {
         <div style={{ padding:20,display:"flex",flexDirection:"column",gap:14 }}>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive Name</div>
-            <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Hive 1, Back yard, East meadow" autoFocus />
+            <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Hive 1, Back yard, East meadow" autoFocus />
           </label>
           <div style={{ display:"flex",gap:12 }}>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive Type</div>
-              <select style={inputStyle} value={type} onChange={e=>setType(e.target.value)}>
+              <select style={inputStyle()} value={type} onChange={e=>setType(e.target.value)}>
                 {HIVE_TYPES.map(t => <option key={t} value={t}>{t}</option>)}
               </select>
             </label>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Source</div>
-              <select style={inputStyle} value={source} onChange={e=>setSource(e.target.value)}>
+              <select style={inputStyle()} value={source} onChange={e=>setSource(e.target.value)}>
                 {HIVE_SOURCES.map(s => <option key={s} value={s}>{s}</option>)}
               </select>
             </label>
           </div>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Install / Start Date</div>
-            <input style={inputStyle} type="date" value={installDate} onChange={e=>setInstallDate(e.target.value)} />
+            <input style={inputStyle()} type="date" value={installDate} onChange={e=>setInstallDate(e.target.value)} />
           </label>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Location / spot (optional)</div>
-            <input style={inputStyle} value={location} onChange={e=>setLocation(e.target.value)} placeholder="e.g. Back of orchard, facing east" />
+            <input style={inputStyle()} value={location} onChange={e=>setLocation(e.target.value)} placeholder="e.g. Back of orchard, facing east" />
           </label>
           <div style={{ display:"flex",gap:12 }}>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Hive cost (optional)</div>
-              <input type="number" step="0.01" style={inputStyle} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder="$" />
+              <input type="number" step="0.01" style={inputStyle()} value={purchaseCost} onChange={e=>setPurchaseCost(e.target.value)} placeholder={`${currencySymbol()}`} />
             </label>
             <label style={{ flex:1 }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Where from (optional)</div>
-              <input style={inputStyle} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Mann Lake, local apiary" />
+              <input style={inputStyle()} value={purchasedFrom} onChange={e=>setPurchasedFrom(e.target.value)} placeholder="e.g. Mann Lake, local apiary" />
             </label>
           </div>
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-            <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything notable about this hive..." />
+            <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="Anything notable about this hive..." />
           </label>
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -179,7 +185,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
   const [supersedureCells, setSupersedureCells] = useState(!!e.supersedureCells);
   const [swarmCells, setSwarmCells] = useState(!!e.swarmCells);
   // Harvest fields
-  const [harvestLbs, setHarvestLbs] = useState(e.lbs != null ? String(e.lbs) : "");
+  const [harvestLbs, setHarvestLbs] = useState(e.lbs != null ? lbsToInput(e.lbs) : "");
   const [harvestJars, setHarvestJars] = useState(e.jars != null ? String(e.jars) : "");
   const [harvestRevenue, setHarvestRevenue] = useState(e.revenue != null ? String(e.revenue) : "");
   // Feed fields
@@ -211,7 +217,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
     if (action === "inspect") {
       entry = { ...entry, queenSeen, broodPattern, temperament, honeyStores, population, supersedureCells, swarmCells, note };
     } else if (action === "harvest") {
-      entry = { ...entry, lbs: Number(harvestLbs)||0, jars: Number(harvestJars)||0, revenue: Number(harvestRevenue)||0, note };
+      entry = { ...entry, lbs: harvestLbs === "" ? 0 : lbsFromInput(harvestLbs), jars: Number(harvestJars)||0, revenue: Number(harvestRevenue)||0, note };
     } else if (action === "feed") {
       entry = { ...entry, feedType, qty: Number(feedQty)||0, cost: Number(feedCost)||0 };
     } else if (action === "treatment") {
@@ -243,7 +249,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit " : ""}{titles[action]||action}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -252,7 +258,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
 
           <label style={{ display:"block" }}>
             <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Date</div>
-            <input style={inputStyle} type="date" value={date} onChange={e=>setDate(e.target.value)} />
+            <input style={inputStyle()} type="date" value={date} onChange={e=>setDate(e.target.value)} />
           </label>
 
           {action === "inspect" && <>
@@ -271,13 +277,13 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Brood pattern</div>
-                <select style={inputStyle} value={broodPattern} onChange={e=>setBroodPattern(e.target.value)}>
+                <select style={inputStyle()} value={broodPattern} onChange={e=>setBroodPattern(e.target.value)}>
                   {["Excellent","Good","Spotty","Poor","None"].map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Temperament</div>
-                <select style={inputStyle} value={temperament} onChange={e=>setTemperament(e.target.value)}>
+                <select style={inputStyle()} value={temperament} onChange={e=>setTemperament(e.target.value)}>
                   {TEMPERAMENT.map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
@@ -285,13 +291,13 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Honey stores</div>
-                <select style={inputStyle} value={honeyStores} onChange={e=>setHoneyStores(e.target.value)}>
+                <select style={inputStyle()} value={honeyStores} onChange={e=>setHoneyStores(e.target.value)}>
                   {["Plentiful","Adequate","Low","Critical"].map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
               <label style={{ flex:1,minWidth:140 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Population</div>
-                <select style={inputStyle} value={population} onChange={e=>setPopulation(e.target.value)}>
+                <select style={inputStyle()} value={population} onChange={e=>setPopulation(e.target.value)}>
                   {["Strong","Medium","Weak","Critical"].map(v=><option key={v}>{v}</option>)}
                 </select>
               </label>
@@ -310,46 +316,46 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes</div>
-              <textarea style={{ ...inputStyle,minHeight:70,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you observe?" autoFocus />
+              <textarea style={{ ...inputStyle(),minHeight:70,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you observe?" autoFocus />
             </label>
           </>}
 
           {action === "harvest" && <>
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
-                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Pounds harvested</div>
-                <input style={inputStyle} type="number" min={0} step="0.1" value={harvestLbs} onChange={e=>setHarvestLbs(e.target.value)} placeholder="0.0" />
+                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>{weightUnitLabel() === "kg" ? "Kilos harvested" : "Pounds harvested"}</div>
+                <input style={inputStyle()} type="number" min={0} step="0.1" value={harvestLbs} onChange={e=>setHarvestLbs(e.target.value)} placeholder="0.0" />
               </label>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Jars filled</div>
-                <input style={inputStyle} type="number" min={0} value={harvestJars} onChange={e=>setHarvestJars(e.target.value)} placeholder="0" />
+                <input style={inputStyle()} type="number" min={0} value={harvestJars} onChange={e=>setHarvestJars(e.target.value)} placeholder="0" />
               </label>
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Revenue (optional)</div>
-              <input style={inputStyle} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder="$0.00" />
+              <input style={inputStyle()} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Color, flavor, which super..." />
+              <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Color, flavor, which super..." />
             </label>
           </>}
 
           {action === "feed" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Feed type</div>
-              <select style={inputStyle} value={feedType} onChange={e=>setFeedType(e.target.value)}>
+              <select style={inputStyle()} value={feedType} onChange={e=>setFeedType(e.target.value)}>
                 {["Sugar syrup (1:1)","Sugar syrup (2:1)","Dry sugar","Pollen patty","Fondant","Protein supplement","Other"].map(v=><option key={v}>{v}</option>)}
               </select>
             </label>
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Quantity (lbs or oz)</div>
-                <input style={inputStyle} type="number" min={0} step="0.1" value={feedQty} onChange={e=>setFeedQty(e.target.value)} placeholder="0" />
+                <input style={inputStyle()} type="number" min={0} step="0.1" value={feedQty} onChange={e=>setFeedQty(e.target.value)} placeholder="0" />
               </label>
               <label style={{ flex:1 }}>
-                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
-                <input style={inputStyle} type="number" min={0} step="0.01" value={feedCost} onChange={e=>setFeedCost(e.target.value)} placeholder="0.00" />
+                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ({currencySymbol()})</div>
+                <input style={inputStyle()} type="number" min={0} step="0.01" value={feedCost} onChange={e=>setFeedCost(e.target.value)} placeholder="0.00" />
               </label>
             </div>
           </>}
@@ -357,23 +363,23 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
           {action === "treatment" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Treatment type</div>
-              <select style={inputStyle} value={treatmentType} onChange={e=>setTreatmentType(e.target.value)}>
+              <select style={inputStyle()} value={treatmentType} onChange={e=>setTreatmentType(e.target.value)}>
                 {MITE_TREATMENTS.map(v=><option key={v}>{v}</option>)}
               </select>
             </label>
             <div style={{ display:"flex",gap:12 }}>
               <label style={{ flex:1 }}>
                 <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Mite count (per 100 bees)</div>
-                <input style={inputStyle} type="number" min={0} step="0.1" value={miteCount} onChange={e=>setMiteCount(e.target.value)} placeholder="0" />
+                <input style={inputStyle()} type="number" min={0} step="0.1" value={miteCount} onChange={e=>setMiteCount(e.target.value)} placeholder="0" />
               </label>
               <label style={{ flex:1 }}>
-                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
-                <input style={inputStyle} type="number" min={0} step="0.01" value={treatmentCost} onChange={e=>setTreatmentCost(e.target.value)} placeholder="0.00" />
+                <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ({currencySymbol()})</div>
+                <input style={inputStyle()} type="number" min={0} step="0.01" value={treatmentCost} onChange={e=>setTreatmentCost(e.target.value)} placeholder="0.00" />
               </label>
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Dosage, conditions, result..." />
+              <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Dosage, conditions, result..." />
             </label>
           </>}
 
@@ -383,7 +389,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </div>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Method</div>
-              <select style={inputStyle} value={varroaMethod} onChange={e=>setVarroaMethod(e.target.value)}>
+              <select style={inputStyle()} value={varroaMethod} onChange={e=>setVarroaMethod(e.target.value)}>
                 <option value="Sugar roll">Sugar roll</option>
                 <option value="Alcohol wash">Alcohol wash</option>
                 <option value="Sticky board">Sticky board (24hr drop)</option>
@@ -391,10 +397,10 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Mite count (optional — per 100 bees)</div>
-              <input style={inputStyle} type="number" min={0} step="0.1" value={varroaCount} onChange={e=>setVarroaCount(e.target.value)} placeholder="e.g. 2 = 2 mites per 100 bees" />
+              <input style={inputStyle()} type="number" min={0} step="0.1" value={varroaCount} onChange={e=>setVarroaCount(e.target.value)} placeholder="e.g. 2 = 2 mites per 100 bees" />
             </label>
             {Number(varroaCount) >= 3 && (
-              <div style={{ padding:"10px 12px",background:palette.accent,color:palette.bg,borderRadius:8,fontSize:13,fontWeight:600,lineHeight:1.5 }}>
+              <div style={{ padding:"10px 12px",background:palette.accent,color:palette.onColor,borderRadius:8,fontSize:13,fontWeight:600,lineHeight:1.5 }}>
                 ⚠️ {Number(varroaCount).toFixed(1)} mites/100 bees is at or above the 3% treatment threshold. Most beekeepers recommend treating soon to protect the hive heading into winter.
               </div>
             )}
@@ -404,49 +410,49 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <input style={inputStyle} value={note} onChange={e=>setNote(e.target.value)} placeholder="Sample size, conditions, treatment plan..." />
+              <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Sample size, conditions, treatment plan..." />
             </label>
           </>}
 
           {action === "infrastructure" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Item</div>
-              <input style={inputStyle} value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. New super, frames, hive stand..." />
+              <input style={inputStyle()} value={item} onChange={e=>setItem(e.target.value)} placeholder="e.g. New super, frames, hive stand..." />
             </label>
             <label style={{ display:"block" }}>
-              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ($)</div>
-              <input style={inputStyle} type="number" min={0} step="0.01" value={infraCost} onChange={e=>setInfraCost(e.target.value)} placeholder="0.00" />
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Cost ({currencySymbol()})</div>
+              <input style={inputStyle()} type="number" min={0} step="0.01" value={infraCost} onChange={e=>setInfraCost(e.target.value)} placeholder="0.00" />
             </label>
           </>}
 
           {(action === "split" || action === "swarm") && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Details</div>
-              <input style={inputStyle} value={splitDetails} onChange={e=>setSplitDetails(e.target.value)} placeholder={action==="split"?"Where did the split go?":"Where did the swarm land?"} />
+              <input style={inputStyle()} value={splitDetails} onChange={e=>setSplitDetails(e.target.value)} placeholder={action==="split"?"Where did the split go?":"Where did the swarm land?"} />
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
-              <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} />
+              <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} />
             </label>
           </>}
 
           {action === "death" && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Likely cause</div>
-              <select style={inputStyle} value={deathCause} onChange={e=>setDeathCause(e.target.value)}>
+              <select style={inputStyle()} value={deathCause} onChange={e=>setDeathCause(e.target.value)}>
                 {["Unknown","Varroa mites","Starvation","Winter loss","Queen failure","Pesticides","Disease","Absconded","Other"].map(v=><option key={v}>{v}</option>)}
               </select>
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes</div>
-              <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What you observed..." />
+              <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What you observed..." />
             </label>
           </>}
 
           {(action === "note" || action === "winter_prep" || action === "spring_buildup") && <>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes</div>
-              <textarea style={{ ...inputStyle,minHeight:90,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you do / observe?" autoFocus />
+              <textarea style={{ ...inputStyle(),minHeight:90,resize:"vertical" }} value={note} onChange={e=>setNote(e.target.value)} placeholder="What did you do / observe?" autoFocus />
             </label>
           </>}
 
@@ -507,7 +513,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
               <button onClick={() => setConfirmingDelete(true)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.accent,padding:4 }} title="Delete hive"><Trash2 size={16}/></button>
             ) : (
               <div style={{ display:"flex",gap:6,alignItems:"center" }}>
-                <button onClick={onDelete} style={{ background:palette.accent,color:palette.bg,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,fontFamily:FONT_BODY }}>Confirm delete</button>
+                <button onClick={onDelete} style={{ background:palette.accent,color:palette.onColor,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontWeight:600,fontFamily:FONT_BODY }}>Confirm delete</button>
                 <button onClick={() => setConfirmingDelete(false)} style={{ background:"rgba(255,255,255,0.15)",color:palette.bg,border:"none",cursor:"pointer",padding:"4px 10px",borderRadius:6,fontSize:12,fontFamily:FONT_BODY }}>Cancel</button>
               </div>
             )}
@@ -517,7 +523,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
 
       {showHighMiteAlert && (
         <div style={{
-          background:palette.accent, color:palette.bg,
+          background:palette.accent, color:palette.onColor,
           border:`1.5px solid ${palette.ink}`, borderRadius:10,
           padding:"12px 14px", marginBottom:12, fontSize:13, lineHeight:1.5,
         }}>
@@ -542,7 +548,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
         <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
           {totalHarvestLbs > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
             <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:4 }}>Honey</div>
-            <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.honey }}>{totalHarvestLbs.toFixed(1)} lbs</div>
+            <div style={{ fontFamily:FONT_DISPLAY,fontSize:24,color:palette.honey }}>{fmtWeight1(totalHarvestLbs)}</div>
             <div style={{ fontSize:11,color:palette.inkSoft }}>{totalJars} jars</div>
           </div>}
           {totalInspections > 0 && <div style={{ flex:"1 1 120px",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:10,padding:12 }}>
@@ -584,7 +590,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>{emoji}</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>{label}</div>
@@ -598,7 +604,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>💵</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>Add Expense</div>
@@ -611,7 +617,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>{c.emoji || "📝"}</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>{c.label}</div>
@@ -622,7 +628,7 @@ function HiveDetail({ hive, entries, onLog, onEdit, onDelete, onBack, onDeleteEn
             background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,
             padding:"14px 10px",display:"flex",flexDirection:"column",alignItems:"center",
             gap:6,cursor:"pointer",fontFamily:FONT_BODY,color:palette.ink,
-            boxShadow:`2px 3px 0 ${palette.line}`,minHeight:80,
+            boxShadow:"none",minHeight:80,
           }}>
             <div style={{ fontSize:22 }}>➕</div>
             <div style={{ fontSize:12,fontWeight:600,textAlign:"center",lineHeight:1.2 }}>+ Custom</div>
@@ -669,7 +675,7 @@ function BeeEntryRow({ entry, onDelete, onEdit }) {
     if (entry.temperament && entry.temperament !== "Calm") bits.push(entry.temperament);
     detail = bits.join(" · ");
   } else if (entry.action==="harvest") {
-    detail = `${entry.lbs||0} lbs · ${entry.jars||0} jars${entry.revenue>0?" · "+fmtMoney(entry.revenue):""}`;
+    detail = `${fmtWeight(Number(entry.lbs)||0, { forceBig: true })} · ${entry.jars||0} jars${entry.revenue>0?" · "+fmtMoney(entry.revenue):""}`;
   } else if (entry.action==="feed") {
     detail = `${entry.feedType||""} · ${fmtMoney(entry.cost)}`;
   } else if (entry.action==="treatment") {
@@ -741,7 +747,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
       harvestByMonth[key] = (harvestByMonth[key]||0) + (Number(e.lbs)||0);
     }
   });
-  const harvestChart = Object.entries(harvestByMonth).sort().map(([month,lbs]) => ({ month: month.slice(5), lbs: parseFloat(lbs.toFixed(1)) }));
+  const harvestChart = Object.entries(harvestByMonth).sort().map(([month,lbs]) => ({ month: month.slice(5), lbs: Number(weightFromLbs(lbs).toFixed(1)) }));
 
   // Per-hive breakdown
   const hiveStats = hives.map(h => {
@@ -765,7 +771,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
     <div>
       <h3 style={{ fontFamily:FONT_DISPLAY,fontSize:20,margin:"0 0 12px",color:palette.ink }}>honey production</h3>
       <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:16 }}>
-        <StatCard label="Total Harvested" value={`${totalHarvestLbs.toFixed(1)} lbs`} accent={palette.honey} />
+        <StatCard label="Total Harvested" value={fmtWeight1(totalHarvestLbs)} accent={palette.honey} />
         <StatCard label="Total Jars" value={totalJars} sub="filled" accent={palette.honey} />
         {totalRevenue > 0 && <StatCard label="Honey Revenue" value={fmtMoney(totalRevenue)} accent={palette.leaf} />}
         <StatCard label="Inspections" value={allInspections.length} accent={palette.feather} />
@@ -778,7 +784,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
               <XAxis dataKey="month" stroke={palette.inkSoft} fontSize={11} />
               <YAxis stroke={palette.inkSoft} fontSize={11} />
               <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} />
-              <Bar dataKey="lbs" fill={palette.honey} radius={[6,6,0,0]} name="lbs honey" />
+              <Bar dataKey="lbs" fill={palette.honey} radius={[6,6,0,0]} name={`${weightUnitLabel()} honey`} />
             </BarChart>
           </ResponsiveContainer>
         </ChartCard>
@@ -821,11 +827,11 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
               <div key={h.name} style={{ padding:"10px 12px",background:palette.bgAlt,borderRadius:8,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:6 }}>
                 <div>
                   <strong>{h.name}</strong>
-                  {h.dead && <span style={{ background:palette.accent,color:palette.bg,fontSize:10,padding:"2px 6px",borderRadius:4,marginLeft:8 }}>LOST</span>}
+                  {h.dead && <span style={{ background:palette.accent,color:palette.onColor,fontSize:10,padding:"2px 6px",borderRadius:4,marginLeft:8 }}>LOST</span>}
                   <div style={{ fontSize:12,color:palette.inkSoft }}>{h.inspections} inspection{h.inspections!==1?"s":""}</div>
                 </div>
                 <div style={{ fontSize:12,color:palette.inkSoft,textAlign:"right" }}>
-                  {h.lbs > 0 && <div>{h.lbs.toFixed(1)} lbs honey</div>}
+                  {h.lbs > 0 && <div>{fmtWeight1(h.lbs)} honey</div>}
                   {h.cost > 0 && <div>{fmtMoney(h.cost)} spent</div>}
                   {h.lbs===0 && h.cost===0 && <div style={{ fontStyle:"italic" }}>No data yet</div>}
                 </div>
@@ -843,7 +849,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
         if (advHarvests.length === 0) return null;
         const honeyMonthlyRaw = monthlySeries(advHarvests, e => e.date, e => Number(e.lbs) || 0);
         const honeyMonthly = honeyMonthlyRaw.map(p => ({
-          month: p.month, lbs: Number(p.value.toFixed(1)),
+          month: p.month, lbs: Number(weightFromLbs(p.value).toFixed(1)),
           label: (() => { const pr = String(p.month).split("-").map(Number); const d = new Date(pr[0], pr[1] - 1, 1); return isNaN(d) ? p.month : d.toLocaleDateString("en-US", { month: "short", year: "2-digit" }); })(),
         }));
         const honeyRecord = personalRecord(honeyMonthlyRaw);
@@ -856,11 +862,11 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
           <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
             <div>
               <div style={{ display:"flex",gap:10,flexWrap:"wrap",marginBottom:12 }}>
-                {honeyRecord && <StatCard label="Best harvest month" value={`${honeyRecord.value.toFixed(1)} lbs`} sub={honeyRecord.label} accent={palette.honey} />}
+                {honeyRecord && <StatCard label="Best harvest month" value={fmtWeight1(honeyRecord.value)} sub={honeyRecord.label} accent={palette.honey} />}
                 {honeyDelta && (
                   <div style={{ flex:"1 1 130px",minWidth:130,boxSizing:"border-box",background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:12,padding:14 }}>
                     <div style={{ fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6 }}>Harvest vs. prior period</div>
-                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.honey,lineHeight:1.1 }}>{totalHarvestLbs.toFixed(1)} lbs</div>
+                    <div style={{ fontSize:22,fontFamily:FONT_DISPLAY,color:palette.honey,lineHeight:1.1 }}>{fmtWeight1(totalHarvestLbs)}</div>
                     <div style={{ marginTop:4 }}><StatTrend delta={honeyDelta} palette={palette} fonts={pFonts} /></div>
                   </div>
                 )}
@@ -871,7 +877,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
                     <LineChart data={honeyMonthly}>
                       <XAxis dataKey="label" stroke={palette.inkSoft} fontSize={11} />
                       <YAxis stroke={palette.inkSoft} fontSize={11} />
-                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} lbs`, "Honey"]} />
+                      <Tooltip contentStyle={{ background:palette.card,border:`1.5px solid ${palette.ink}`,borderRadius:8 }} formatter={v => [`${v} ${weightUnitLabel()}`, "Honey"]} />
                       <Line type="monotone" dataKey="lbs" stroke={palette.honey} strokeWidth={3} dot={{ fill:palette.accent,r:4 }} />
                     </LineChart>
                   </ResponsiveContainer>
@@ -974,9 +980,9 @@ export default function BeesPage({ hobby, data, update, setModal }) {
                         {hive.type} · {hive.source} · since {fmtDate(hive.installDate)}
                       </div>
                       <div style={{ display:"flex",gap:10,marginTop:4,flexWrap:"wrap" }}>
-                        {totalLbs > 0 && <span style={{ fontSize:11,background:palette.honeySoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍯 {totalLbs.toFixed(1)} lbs</span>}
+                        {totalLbs > 0 && <span style={{ fontSize:11,background:palette.honeySoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🍯 {fmtWeight1(totalLbs)}</span>}
                         {lastInspect && <span style={{ fontSize:11,background:palette.bgAlt,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>🔍 {daysSinceInspect}d ago</span>}
-                        {isDead && <span style={{ fontSize:11,background:palette.accent,color:palette.bg,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>Lost</span>}
+                        {isDead && <span style={{ fontSize:11,background:palette.accent,color:palette.onColor,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>Lost</span>}
                         {daysSinceInspect !== null && daysSinceInspect > 14 && !isDead && <span style={{ fontSize:11,background:palette.yolkSoft,color:palette.ink,padding:"2px 6px",borderRadius:4,fontWeight:600 }}>⚠️ Due for inspection</span>}
                       </div>
                     </div>
@@ -987,6 +993,81 @@ export default function BeesPage({ hobby, data, update, setModal }) {
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// NEW_LOOK (3.0) — Today / Hives / one hive with this file's own forms
+// (HiveModal, LogEntryModal). A log started without a hive asks which hive
+// first. New logs and a deleted hive show "Saved · Undo" / "Deleted · Undo".
+// ============================================================================
+const BEE_UNDO = { inspect: "inspection", harvest: "harvest", varroa: "mite test", feed: "feeding", treatment: "treatment", split: "split", swarm: "swarm", winter_prep: "winter prep", spring_buildup: "spring check", infrastructure: "equipment", death: "colony loss", note: "note" };
+
+export function BeesNewLook({ hobby, data, update, setModal, tab, onTab, onOpenJournal }) {
+  const hives = hobby.hives || [];
+  const entries = data.entries[hobby.id] || [];
+  const [hiveId, setHiveId] = useState(null);
+  const [form, setForm] = useState(null);   // { kind: "log"|"edit"|"hive", action, hiveId, entry, hive }
+  const [pick, setPick] = useState(null);   // action waiting for a hive
+  const [undoCheck, setUndoCheck] = useState(null);
+  useEffect(() => { if (tab !== "animals") setHiveId(null); }, [tab]);
+
+  const startLog = (action, id) => {
+    const target = id || (hives.filter((h) => !entries.some((e) => e.hiveId === h.id && e.action === "death")).length === 1 ? hives.find((h) => !entries.some((e) => e.hiveId === h.id && e.action === "death")).id : null);
+    if (!target) { setPick(action); return; }
+    setUndoCheck(null);
+    setForm({ kind: "log", action, hiveId: target, before: new Set(entries.map((e) => e.id)) });
+  };
+  const closeForm = () => { if (form && form.before) setUndoCheck(form.before); setForm(null); };
+  useEffect(() => {
+    if (!undoCheck) return;
+    const added = entries.filter((e) => e && !undoCheck.has(e.id));
+    setUndoCheck(null);
+    if (!added.length) return;
+    const ids = new Set(added.map((e) => e.id));
+    const e = added[0];
+    const hn = (hives.find((h) => h.id === e.hiveId) || {}).name;
+    showUndo(`Saved ${BEE_UNDO[e.action] || "log"}${hn ? ` for ${hn}` : ""}`, () => update((d) => { d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => !ids.has(x.id)); return d; }));
+  }, [undoCheck]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const saveHive = (hive) => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; if (!h.hives) h.hives = []; const i = h.hives.findIndex((x) => x.id === hive.id); if (i >= 0) h.hives[i] = hive; else h.hives.push(hive); return d; });
+  const deleteHive = (hive) => {
+    const removed = entries.filter((e) => e.hiveId === hive.id);
+    const idx = hives.findIndex((x) => x.id === hive.id);
+    update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; h.hives = (h.hives || []).filter((x) => x.id !== hive.id); d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.hiveId !== hive.id); return d; });
+    setHiveId(null);
+    showUndo(`Deleted ${hive.name}`, () => update((d) => {
+      const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;
+      h.hives = h.hives || []; h.hives.splice(Math.max(0, idx), 0, hive);
+      d.entries[hobby.id] = [...(d.entries[hobby.id] || []), ...removed];
+      return d;
+    }));
+  };
+  const act = {
+    log: startLog,
+    addHive: () => setForm({ kind: "hive", hive: null }),
+    editHive: (hive) => setForm({ kind: "hive", hive }),
+    openHive: (id) => { setHiveId(id); if (tab !== "animals" && onTab) onTab("animals"); try { window.scrollTo(0, 0); } catch (_) {} },
+    editEntry: (entry, id) => setForm({ kind: "edit", entry, action: entry.action, hiveId: id }),
+    deleteHive,
+  };
+  useHobbyRequest(hobby.id, (a) => { if (a === "add") act.addHive(); else startLog(a); });
+
+  const f = form || {};
+  const formHive = hives.find((h) => h.id === f.hiveId);
+  const hive = hiveId ? hives.find((h) => h.id === hiveId) : null;
+  return (
+    <div>
+      {f.kind === "hive" && <HiveModal hive={f.hive} onSave={saveHive} onClose={() => setForm(null)} />}
+      {f.kind === "log" && formHive && <LogEntryModal hive={formHive} action={f.action} onSave={(entry) => update((d) => { if (!d.entries[hobby.id]) d.entries[hobby.id] = []; d.entries[hobby.id].push(entry); return d; })} onClose={closeForm} />}
+      {f.kind === "edit" && formHive && <LogEntryModal hive={formHive} action={f.action} existingEntry={f.entry} onSave={(entry) => update((d) => { const i = (d.entries[hobby.id] || []).findIndex((e) => e.id === entry.id); if (i !== -1) d.entries[hobby.id][i] = entry; return d; })} onClose={() => setForm(null)} />}
+      <HivePicker open={!!pick} onClose={() => setPick(null)} hives={hives} entries={entries} action={pick} onPick={(id) => { const a = pick; setPick(null); startLog(a, id); }} onAddHive={() => { setPick(null); act.addHive(); }} />
+      {tab === "animals" ? (
+        hive ? <BeeHive hobby={hobby} data={data} hive={hive} act={act} onBack={() => setHiveId(null)} /> : <BeeHives hobby={hobby} data={data} act={act} />
+      ) : (
+        <BeeToday hobby={hobby} data={data} setModal={setModal} act={act} onOpenJournal={onOpenJournal} />
       )}
     </div>
   );

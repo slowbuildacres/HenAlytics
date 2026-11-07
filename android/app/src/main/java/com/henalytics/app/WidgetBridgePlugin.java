@@ -9,8 +9,9 @@ import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
 /**
- * Receives the "Today" widget snapshot from the web app (src/widgetBridge.js)
- * and refreshes any placed TodayWidget. Registered in MainActivity.
+ * Receives the widget snapshot from the web app (src/widgetBridge.js) and
+ * refreshes the Today and Egg Counter widgets; hands Egg Counter taps back
+ * to the app (takeTally). Registered in MainActivity.
  */
 @CapacitorPlugin(name = "WidgetBridge")
 public class WidgetBridgePlugin extends Plugin {
@@ -26,8 +27,18 @@ public class WidgetBridgePlugin extends Plugin {
         ctx.getSharedPreferences(TodayWidget.PREFS, Context.MODE_PRIVATE)
                 .edit().putString(TodayWidget.KEY, json).apply();
         TodayWidget.refreshAll(ctx);
+        EggTallyWidget.refreshAll(ctx);
         JSObject ret = new JSObject();
         ret.put("ok", true);
+        call.resolve(ret);
+    }
+
+    /** Egg Counter taps waiting for the app (JSON), cleared once taken. */
+    @PluginMethod
+    public void takeTally(PluginCall call) {
+        String json = EggTallyWidget.take(getContext());
+        JSObject ret = new JSObject();
+        ret.put("json", json);
         call.resolve(ret);
     }
 }

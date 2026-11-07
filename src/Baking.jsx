@@ -14,27 +14,35 @@
 // "Sell" action, which writes to data.sales[] with hobbyType="baking".
 // ============================================================================
 
+import { localIso } from "./localDate.js";
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, ExternalLink, Star } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import {
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
   PANTRY_UNIT_LABELS, pantryItemCostForUsage, computeRecipeCost,
   convertPantryUnit, pantryItemDensity,
 } from "./pantry.js";
 import { applyPantryRefunds } from "./PantryQuickCost.jsx";
+import { groupDigits } from "./numFmt.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   priorDateRange, computeDelta, StatTrend, personalRecord,
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -46,11 +54,11 @@ const todayIso = () => {
   return `${d.getFullYear()}-${m}-${day}`;
 };
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const RECIPE_TYPES = [
   { id: "bread", label: "🍞 Bread", unit: "loaves" },
@@ -71,8 +79,8 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   const variants = {
     primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
     ghost: { bg: palette.bgAlt, color: palette.ink, border: palette.line },
-    leaf: { bg: palette.leaf, color: "#fff", border: palette.leaf },
-    danger: { bg: palette.accent, color: "#fff", border: palette.accent },
+    leaf: { bg: palette.leaf, color: palette.onColor, border: palette.leaf },
+    danger: { bg: palette.accent, color: palette.onColor, border: palette.accent },
   };
   const v = variants[variant] || variants.primary;
   return (
@@ -80,13 +88,13 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
       type={type}
       onClick={onClick}
       disabled={disabled}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         padding: small ? "6px 12px" : "10px 18px",
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
-        borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+        borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 12 : 14,
         opacity: disabled ? 0.6 : 1,
-        boxShadow: "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -98,11 +106,11 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box",
     }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -136,7 +144,7 @@ function Modal({ open, onClose, title, children }) {
           background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%",
           maxHeight: "90vh", overflow: "auto",
           border: `2px solid ${palette.ink}`,
-          boxShadow: "6px 8px 0 " + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{
@@ -144,7 +152,7 @@ function Modal({ open, onClose, title, children }) {
           padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`,
         }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
-          <button onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -156,16 +164,19 @@ function Modal({ open, onClose, title, children }) {
 
 function StarRating({ value, onChange, readOnly = false }) {
   return (
-    <div style={{ display: "flex", gap: 4 }}>
+    <div role="group" aria-label="Rating" style={{ display: "flex", gap: 0 }}>
       {[1, 2, 3, 4, 5].map(n => (
         <button
           key={n}
           type="button"
+          aria-label={`${n} star${n === 1 ? "" : "s"}`}
+          aria-pressed={n <= value}
           onClick={readOnly ? undefined : () => onChange(n === value ? 0 : n)}
           style={{
-            background: "none", border: "none", padding: 2,
+            background: "none", border: "none", padding: 0, width: 40, height: 40,
+            display: "flex", alignItems: "center", justifyContent: "center",
             cursor: readOnly ? "default" : "pointer",
-            color: n <= value ? palette.yolk : palette.line,
+            color: n <= value ? palette.yolk : palette.inkSoft,
           }}
         >
           <Star size={20} fill={n <= value ? palette.yolk : "none"} />
@@ -261,7 +272,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit recipe" : "Add recipe"}>
       <Field label="Recipe name">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Mom's banana bread" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Mom's banana bread" autoFocus />
       </Field>
       <Field label="Type">
         <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>
@@ -284,7 +295,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
         </div>
       </Field>
       <Field label="Link (optional)">
-        <input style={inputStyle} value={link} onChange={e => setLink(e.target.value)} placeholder="https://... or paste a URL" />
+        <input style={inputStyle()} value={link} onChange={e => setLink(e.target.value)} placeholder="https://... or paste a URL" />
       </Field>
 
       {/* SHARED_PANTRY: structured ingredients section. Each row can
@@ -313,7 +324,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                 <div key={ing.id} style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 8, padding: 8 }}>
                   <div style={{ display: "grid", gridTemplateColumns: "1fr auto", gap: 6, alignItems: "center", marginBottom: 6 }}>
                     <input
-                      style={{ ...inputStyle, marginBottom: 0 }}
+                      style={{ ...inputStyle(), marginBottom: 0 }}
                       value={ing.name}
                       onChange={e => updateIngredient(ing.id, { name: e.target.value })}
                       placeholder="Ingredient name (e.g. flour)"
@@ -321,8 +332,8 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                     <button
                       type="button"
                       onClick={() => removeIngredient(ing.id)}
-                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4, fontSize: 11 }}
-                      title="Remove"
+                      style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, width: 40, height: 40, flexShrink: 0, fontSize: 13 }}
+                      title="Remove" aria-label="Remove ingredient"
                     >
                       ✕
                     </button>
@@ -332,13 +343,13 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                       type="number"
                       step="0.01"
                       min="0"
-                      style={{ ...inputStyle, marginBottom: 0 }}
+                      style={{ ...inputStyle(), marginBottom: 0 }}
                       value={ing.amount}
                       onChange={e => updateIngredient(ing.id, { amount: e.target.value })}
                       placeholder="Amount"
                     />
                     <select
-                      style={{ ...inputStyle, marginBottom: 0 }}
+                      style={{ ...inputStyle(), marginBottom: 0 }}
                       value={ing.unit}
                       onChange={e => updateIngredient(ing.id, { unit: e.target.value })}
                     >
@@ -354,7 +365,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
                     </select>
                   </div>
                   <select
-                    style={{ ...inputStyle, marginBottom: 0, fontSize: 12 }}
+                    style={{ ...inputStyle(), marginBottom: 0, fontSize: 12 }}
                     value={ing.pantryId || ""}
                     onChange={e => handlePantryLink(ing.id, e.target.value)}
                   >
@@ -392,7 +403,7 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
       </div>
 
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Method, tweaks, anything else..." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Method, tweaks, anything else..." />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -428,7 +439,8 @@ function RecipeModal({ recipe, pantry = [], onSave, onDelete, onClose }) {
 
 function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose }) {
   const [date, setDate] = useState(todayIso());
-  const [recipeId, setRecipeId] = useState(presetRecipeId || "");
+  // No saved recipes yet: start on "one-off" so the name box is right there.
+  const [recipeId, setRecipeId] = useState(presetRecipeId || ((recipes || []).some((r) => !r.archived) ? "" : "__custom"));
   const [customName, setCustomName] = useState("");
   const [qty, setQty] = useState("1");
   const [cost, setCost] = useState("");
@@ -487,10 +499,10 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
   return (
     <Modal open onClose={onClose} title="Log a bake">
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="Recipe">
-        <select style={inputStyle} value={recipeId} onChange={e => setRecipeId(e.target.value)}>
+        <select style={inputStyle()} value={recipeId} onChange={e => setRecipeId(e.target.value)}>
           <option value="">— pick a recipe —</option>
           {activeRecipes.map(r => (
             <option key={r.id} value={r.id}>{r.name}</option>
@@ -499,23 +511,23 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
         </select>
       </Field>
       {usingCustom && (
-        <Field label="One-off name">
-          <input style={inputStyle} value={customName} onChange={e => setCustomName(e.target.value)} placeholder="What did you bake?" />
+        <Field label="What did you bake?">
+          <input style={inputStyle()} value={customName} onChange={e => setCustomName(e.target.value)} placeholder="e.g. Apple pie" />
         </Field>
       )}
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Quantity (${effectiveUnit})`}>
-            <input type="number" step="0.5" min="0" style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} />
+            <input type="number" step="0.5" min="0" style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Cost ($)">
+          <Field label={`Cost (${currencySymbol()})`}>
             <input
               type="number"
               step="0.01"
               min="0"
-              style={inputStyle}
+              style={inputStyle()}
               value={cost}
               onChange={e => { setCost(e.target.value); setCostTouched(true); }}
               placeholder="0.00"
@@ -534,7 +546,7 @@ function LogBakeModal({ recipes, pantry = [], presetRecipeId, onSave, onClose })
         <StarRating value={rating} onChange={setRating} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="How did it turn out?" />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="How did it turn out?" />
       </Field>
 
       <div style={{ display: "flex", gap: 8, marginTop: 16 }}>
@@ -580,22 +592,22 @@ function SellBakeModal({ bake, onSell, onClose }) {
   return (
     <Modal open onClose={onClose} title={`Sell ${bake.recipeName}`}>
       <Field label="Sale date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Quantity (${bake.unit || "items"})`}>
-            <input type="number" step="0.5" min="0" style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} />
+            <input type="number" step="0.5" min="0" style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
-          <Field label="Price per unit ($)">
-            <input type="number" step="0.01" min="0" style={inputStyle} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} autoFocus />
+          <Field label={`Price per unit (${currencySymbol()})`}>
+            <input type="number" step="0.01" min="0" style={inputStyle()} value={pricePerUnit} onChange={e => setPricePerUnit(e.target.value)} autoFocus />
           </Field>
         </div>
       </div>
       <Field label="Note (optional)">
-        <input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} placeholder="Buyer, occasion..." />
+        <input style={inputStyle()} value={note} onChange={e => setNote(e.target.value)} placeholder="Buyer, occasion..." />
       </Field>
       <div style={{
         padding: 12, background: palette.yolkSoft, borderRadius: 8,
@@ -640,16 +652,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. stand mixer, new oven, baking sheets" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. stand mixer, new oven, baking sheets" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (
@@ -664,7 +676,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function BakingPage({ hobby, data, update, setModal }) {
+export default function BakingPage({ hobby, data, update, setModal, nl = null }) {
   const [editRecipe, setEditRecipe] = useState(null); // recipe obj or "new"
   const [logBake, setLogBake] = useState(false);
   const [logBakeRecipeId, setLogBakeRecipeId] = useState("");
@@ -681,7 +693,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   const recentBakes = [...bakes].sort((a, b) => (b.date || "").localeCompare(a.date || "") || (b.created || 0) - (a.created || 0)).slice(0, 12);
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       if (!d.entries) d.entries = {};
       d.entries["baking"] = d.entries["baking"] || [];
       const idx = d.entries["baking"].findIndex(e => e.id === entry.id);
@@ -691,7 +703,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       if (d.entries?.["baking"]) {
         d.entries["baking"] = d.entries["baking"].filter(e => e.id !== id);
       }
@@ -700,7 +712,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   };
 
   const saveRecipe = (rec) => {
-    update(d => {
+    undoable(update, `Saved ${rec.name || "recipe"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.recipes)) h.recipes = [];
@@ -711,7 +723,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   };
 
   const deleteRecipe = (id) => {
-    update(d => {
+    undoable(update, "Deleted recipe")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h && Array.isArray(h.recipes)) h.recipes = h.recipes.filter(r => r.id !== id);
       return d;
@@ -719,7 +731,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   };
 
   const saveBake = (bake) => {
-    update(d => {
+    undoable(update, `Saved ${bake.item || bake.name || "bake"}`)(d => {
       if (!d.entries) d.entries = {};
       if (!Array.isArray(d.entries["baking"])) d.entries["baking"] = [];
       d.entries["baking"].push(bake);
@@ -776,7 +788,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   };
 
   const deleteBake = (id) => {
-    update(d => {
+    undoable(update, "Deleted bake")(d => {
       if (d.entries?.["baking"]) {
         // SHARED_PANTRY: refund any deducted stock from this bake.
         const target = d.entries["baking"].find(b => b.id === id);
@@ -790,7 +802,7 @@ export default function BakingPage({ hobby, data, update, setModal }) {
   };
 
   const recordSale = (saleData) => {
-    update(d => {
+    undoable(update, "Saved sale")(d => {
       if (!Array.isArray(d.sales)) d.sales = [];
       d.sales.push({
         id: newId(),
@@ -812,6 +824,42 @@ export default function BakingPage({ hobby, data, update, setModal }) {
       return d;
     });
   };
+
+  if (nl) {
+    const made = bakes.filter((b) => b.action !== "infrastructure");
+    const monthAgo = localIso(new Date(Date.now() - 30 * 864e5));
+    const lastMonth = made.filter((b) => (b.date || "") >= monthAgo).reduce((t, b) => t + (Number(b.qty) || 0), 0);
+    const ctx = {
+      key: "baking",
+      summary: { big: lastMonth, small: "baked in the last 30 days", line: made.length ? `${made.length} bake${made.length === 1 ? "" : "s"} logged` : "" },
+      newLabel: "Log a bake", onNew: () => { setLogBakeRecipeId(""); setLogBake(true); },
+      goingTitle: "Recipes",
+      going: activeRecipes.map((r) => ({ id: r.id, title: r.name || "Recipe", onOpen: () => setEditRecipe(r),
+        sub: [String(typeFor(r.type).label || "").replace(/\p{Extended_Pictographic}\uFE0F?/gu, "").trim(), r.notes ? (r.notes.length > 60 ? r.notes.slice(0, 60) + "…" : r.notes) : null].filter(Boolean).join(" · "),
+        actions: [{ label: "Bake this", run: () => { setLogBakeRecipeId(r.id); setLogBake(true); } }] })),
+      shelfTitle: "Recent bakes", shelfEmpty: "No bakes yet. Log one and it shows up here.",
+      shelf: recentBakes.filter((b) => b.action !== "infrastructure").map((b) => ({ id: b.id, title: b.recipeName || "Bake",
+        sub: [b.date ? new Date(b.date + "T12:00").toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "", `${b.qty || 0} ${b.unit || "items"}`, b.cost > 0 ? fmtMoney(b.cost) : null, b.rating > 0 ? `${b.rating} of 5` : null].filter(Boolean).join(" · "),
+        actions: [{ label: "Sell", run: () => setSellingBake(b) }] })),
+      extras: [
+        { key: "recipe", label: "Add a recipe", icon: NlPlus, run: () => setEditRecipe("new") },
+        { key: "pantry", label: "Pantry supplies", sub: "Flour, sugar and what's left", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Pans, mixers and tools", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        {editRecipe && <RecipeModal recipe={editRecipe === "new" ? null : editRecipe} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveRecipe} onDelete={deleteRecipe} onClose={() => setEditRecipe(null)} />}
+        {logBake && <LogBakeModal recipes={recipes} pantry={Array.isArray(data.pantry) ? data.pantry : []} presetRecipeId={logBakeRecipeId} onSave={saveBake} onClose={() => { setLogBake(false); setLogBakeRecipeId(""); }} />}
+        {sellingBake && <SellBakeModal bake={sellingBake} onSell={recordSale} onClose={() => setSellingBake(null)} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -946,8 +994,8 @@ export default function BakingPage({ hobby, data, update, setModal }) {
               </div>
               <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
                 <Btn small variant="leaf" onClick={() => setSellingBake(b)}>Sell</Btn>
-                <button
-                  onClick={() => { if (window.confirm("Delete this bake entry?")) deleteBake(b.id); }}
+                <button aria-label="Close"
+                  onClick={async () => { if (await askConfirm({ title: "Delete this bake?", confirmLabel: "Delete" })) deleteBake(b.id); }}
                   style={{ background: "none", border: "none", cursor: "pointer", color: palette.accent, padding: 4 }}
                   title="Delete entry"
                 >
@@ -992,6 +1040,30 @@ export default function BakingPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+
+// 3.0 Stats: bakes, items, sold, favorites.
+export function bakingStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const made = ((data.entries && data.entries.baking) || []).filter((b) => b && b.action !== "infrastructure" && inR(b.date));
+  const items = made.reduce((t, b) => t + (Number(b.qty) || 0), 0);
+  const cost = made.reduce((t, b) => t + (Number(b.cost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "baking" && inR(x.date)).reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const by = new Map(); for (const b of made) { const k = String(b.recipeName || "Bake").trim(); by.set(k, (by.get(k) || 0) + (Number(b.qty) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} made` }));
+  const facts = [];
+  if (items >= 12) facts.push({ key: "items", icon: "bread", big: String(items), line: "baked goods from our kitchen", title: `${items} baked goods`, sub: `From ${made.length} bake${made.length === 1 ? "" : "s"}.` });
+  if (rows.length > 1 && rows[0].value >= 2) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "our most-baked recipe", title: `Most baked: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Baked", value: items, sub: `${made.length} bake${made.length === 1 ? "" : "s"}` },
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Baked goods sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: items ? `${fmtMoney((cost / items))} each` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🥧", kicker: "Our kitchen",
+  };
+}
 
 export function BakingAnalytics({ hobby, entries = [], sales = [], spouseMode = false, /* ADV_ANALYTICS */ allEntries = null, dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const bakingSales = useMemo(() => sales.filter(s => s.hobbyType === "baking"), [sales]);

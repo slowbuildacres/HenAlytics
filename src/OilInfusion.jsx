@@ -25,20 +25,26 @@
 //   data.sales[] (hobbyType="oil_infusion", batchId=...)
 // ============================================================================
 
+import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, flozToInput, flozFromInput, flozLabel, currencySymbol } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 // ADV_ANALYTICS: shared advanced-analytics layer (see analytics.js).
 import {
   personalRecord, monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -128,16 +134,16 @@ function containersSummary(batch) {
   return getContainers(batch).map(c => `${c.count} × ${sizeLabel(c.size)}`).join(" · ");
 }
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const base = {
     padding: small ? "6px 12px" : "10px 18px",
-    borderRadius: 8, fontFamily: FONT_BODY,
+    borderRadius: small ? 999 : 14, fontFamily: FONT_BODY,
     fontWeight: 600, fontSize: small ? 12 : 14,
     cursor: disabled ? "not-allowed" : "pointer",
     opacity: disabled ? 0.5 : 1,
@@ -145,11 +151,11 @@ function Btn({ children, onClick, variant = "primary", small = false, style = {}
   };
   const variants = {
     primary: { background: palette.ink, color: palette.bg },
-    accent:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    accent:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost:   { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    danger:  { background: palette.accent, color: "#fff", border: `1.5px solid ${palette.accent}` },
+    danger:  { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
   };
-  return <button onClick={onClick} disabled={disabled} style={{ ...base, ...variants[variant], ...style }}>{children}</button>;
+  return <button onClick={onClick} disabled={disabled} style={{minHeight: small ? 36 : 44,  ...base, ...variants[variant], ...style }}>{children}</button>;
 }
 
 function Field({ label, children }) {
@@ -165,7 +171,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}`, fontFamily: FONT_BODY }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}><X size={22} /></button>
@@ -178,9 +184,9 @@ function Modal({ open, onClose, title, children }) {
 
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4 }}>{sub}</div>}
     </div>
   );
@@ -188,8 +194,8 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
 
 function ChartCard({ title, children }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, marginBottom: 12 }}>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{title}</div>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, marginBottom: 12 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 18, marginBottom: 10, color: palette.ink }}>{plainTitle(title)}</div>
       {children}
     </div>
   );
@@ -220,7 +226,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     if (!herb.trim()) return;
     const id = batch?.id || newId();
-    update(d => {
+    undoable(update, `Saved ${herb.trim()} infusion`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -259,7 +265,7 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted infusion")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       // Strip sales tied to this batch (they'd be orphaned)
@@ -272,42 +278,42 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={isEdit ? "Edit oil infusion" : "Start an oil infusion"}>
       <Field label="Herb / botanical">
-        <input style={inputStyle} value={herb} onChange={e => setHerb(e.target.value)} placeholder="e.g. Calendula, St. John's wort, Plantain" autoFocus />
+        <input style={inputStyle()} value={herb} onChange={e => setHerb(e.target.value)} placeholder="e.g. Calendula, St. John's wort, Plantain" autoFocus />
       </Field>
       <Field label="Batch name (optional)">
-        <input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder={herb ? `${herb} in ${carrierForSave || "oil"}` : "e.g. Summer Calendula"} />
+        <input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder={herb ? `${herb} in ${carrierForSave || "oil"}` : "e.g. Summer Calendula"} />
       </Field>
       <Field label="Carrier oil">
-        <select style={inputStyle} value={carrierOil} onChange={e => setCarrierOil(e.target.value)}>
+        <select style={inputStyle()} value={carrierOil} onChange={e => setCarrierOil(e.target.value)}>
           {CARRIER_OILS.map(o => <option key={o} value={o}>{o}</option>)}
         </select>
         {carrierOil === "Other" && (
-          <input style={{ ...inputStyle, marginTop: 8 }} value={carrierCustom} onChange={e => setCarrierCustom(e.target.value)} placeholder="e.g. Tamanu, Argan, etc." />
+          <input style={{ ...inputStyle(), marginTop: 8 }} value={carrierCustom} onChange={e => setCarrierCustom(e.target.value)} placeholder="e.g. Tamanu, Argan, etc." />
         )}
       </Field>
       <Field label="Method">
-        <select style={inputStyle} value={method} onChange={e => setMethod(e.target.value)}>
+        <select style={inputStyle()} value={method} onChange={e => setMethod(e.target.value)}>
           {METHODS.map(m => <option key={m.id} value={m.id}>{m.label}</option>)}
         </select>
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label="Start date">
-            <input type="date" style={inputStyle} value={startDate} onChange={e => setStartDate(e.target.value)} />
+            <input type="date" style={inputStyle()} value={startDate} onChange={e => setStartDate(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Jars (optional)">
-            <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle} value={jarsStarted} onChange={e => setJarsStarted(e.target.value)} placeholder="1" />
+            <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle()} value={jarsStarted} onChange={e => setJarsStarted(e.target.value)} placeholder="1" />
           </Field>
         </div>
       </div>
       <Field label="Ingredient cost (optional)">
-        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder="$0.00" />
+        <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={ingredientsCost} onChange={e => setIngredientsCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 70, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 70, resize: "vertical" }}
           value={notes} onChange={e => setNotes(e.target.value)}
           placeholder="Where the herb came from, intended use (salve base, massage oil, etc.)"
         />
@@ -338,7 +344,7 @@ function StrainModal({ batch, hobbyId, update, onClose }) {
   const [strainNotes, setStrainNotes] = useState(batch.strainNotes || "");
 
   const save = () => {
-    update(d => {
+    undoable(update, "Strained")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -360,11 +366,11 @@ function StrainModal({ batch, hobbyId, update, onClose }) {
         Press the oil out of the herb. Cheesecloth, nut milk bag, or a press all work — get as much liquid as you can.
       </div>
       <Field label="Strain date">
-        <input type="date" style={inputStyle} value={strainDate} onChange={e => setStrainDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={strainDate} onChange={e => setStrainDate(e.target.value)} />
       </Field>
       <Field label="Notes (optional)">
         <textarea
-          style={{ ...inputStyle, minHeight: 80, resize: "vertical" }}
+          style={{ ...inputStyle(), minHeight: 80, resize: "vertical" }}
           value={strainNotes} onChange={e => setStrainNotes(e.target.value)}
           placeholder="Color, aroma, how much oil you recovered, etc."
         />
@@ -397,7 +403,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
     }
     return [{ id: newId(), sizeSel: "4oz", customSize: "", count: "" }];
   });
-  const [totalYieldOz, setTotalYieldOz] = useState(batch.totalYieldOz ? String(batch.totalYieldOz) : "");
+  const [totalYieldOz, setTotalYieldOz] = useState(batch.totalYieldOz ? flozToInput(batch.totalYieldOz) : "");
 
   const resolveSize = (r) => (r.sizeSel === "custom" ? (r.customSize.trim() || "custom") : r.sizeSel);
   const totalMade = rows.reduce((s, r) => s + (Number(r.count) || 0), 0);
@@ -414,7 +420,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
       .filter(r => (Number(r.count) || 0) >= 1)
       .map(r => ({ id: r.id, size: resolveSize(r), count: Number(r.count) }));
     const made = containers.reduce((s, c) => s + c.count, 0);
-    update(d => {
+    undoable(update, `Bottled ${made}`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -427,7 +433,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
         b.bottlesMade = made;
         b.bottlesRemaining = Math.max(0, made - soldSoFar);
         b.bottleSize = containers.length === 1 ? containers[0].size : "mixed";
-        b.totalYieldOz = Number(totalYieldOz) || 0;
+        b.totalYieldOz = flozFromInput(totalYieldOz);
         b.status = "bottled";
         b.events = b.events || [];
         b.events.push({
@@ -445,7 +451,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
   return (
     <Modal open onClose={onClose} title={`${isEdit ? "Edit bottling" : "Bottle"} — ${batch.name}`}>
       <Field label="Bottled date">
-        <input type="date" style={inputStyle} value={bottledDate} onChange={e => setBottledDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={bottledDate} onChange={e => setBottledDate(e.target.value)} />
       </Field>
       <Field label="Containers">
         <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -454,11 +460,11 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
               <div style={{ display: "flex", gap: 8, alignItems: "flex-end" }}>
                 <div style={{ width: 84 }}>
                   <div style={{ fontSize: 10, color: palette.inkSoft, marginBottom: 3 }}>Count</div>
-                  <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle} value={r.count} onChange={e => setRow(r.id, { count: e.target.value })} placeholder="0" autoFocus={i === 0} />
+                  <input type="number" min={1} step="1" inputMode="numeric" style={inputStyle()} value={r.count} onChange={e => setRow(r.id, { count: e.target.value })} placeholder="0" autoFocus={i === 0} />
                 </div>
                 <div style={{ flex: 1 }}>
                   <div style={{ fontSize: 10, color: palette.inkSoft, marginBottom: 3 }}>Size</div>
-                  <select style={inputStyle} value={r.sizeSel} onChange={e => setRow(r.id, { sizeSel: e.target.value })}>
+                  <select style={inputStyle()} value={r.sizeSel} onChange={e => setRow(r.id, { sizeSel: e.target.value })}>
                     {BOTTLE_SIZES.map(b => <option key={b.value} value={b.value}>{b.label}</option>)}
                   </select>
                 </div>
@@ -467,7 +473,7 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
                 )}
               </div>
               {r.sizeSel === "custom" && (
-                <input style={inputStyle} value={r.customSize} onChange={e => setRow(r.id, { customSize: e.target.value })} placeholder="e.g. 16oz jar, 0.75 oz dropper" />
+                <input style={inputStyle()} value={r.customSize} onChange={e => setRow(r.id, { customSize: e.target.value })} placeholder="e.g. 16oz jar, 0.75 oz dropper" />
               )}
             </div>
           ))}
@@ -477,8 +483,8 @@ function BottleModal({ batch, hobbyId, update, onClose }) {
           Mix sizes freely — e.g. a few 4 oz bottles plus a 16 oz jar. Total: <strong>{totalMade}</strong> container{totalMade === 1 ? "" : "s"}.
         </div>
       </Field>
-      <Field label="Total yield in fl oz (optional)">
-        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 16.5" />
+      <Field label={`Total yield in ${flozLabel()} (optional)`}>
+        <input type="number" min={0} step="0.1" inputMode="decimal" style={inputStyle()} value={totalYieldOz} onChange={e => setTotalYieldOz(e.target.value)} placeholder="e.g. 16.5" />
         <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>
           For analytics. Helps track recovery rate per batch. Decimals are fine (e.g. 5.5).
         </div>
@@ -504,7 +510,7 @@ function SellModal({ batch, hobbyId, update, onClose }) {
   const save = () => {
     const n = Number(count);
     if (!n || n < 1 || n > max) return;
-    update(d => {
+    undoable(update, `Logged ${count}`)(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (!h) return d;
       const b = (h.batches || []).find(x => x.id === batch.id);
@@ -553,25 +559,25 @@ function SellModal({ batch, hobbyId, update, onClose }) {
         {max} of {batch.bottlesMade} remaining{getContainers(batch).length > 1 ? ` · ${containersSummary(batch)}` : ` · ${sizeLabel(batch.bottleSize)}`}
       </div>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
         <div style={{ flex: 1 }}>
           <Field label={`Bottles (max ${max})`}>
-            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
+            <input type="number" min={1} max={max} step="1" inputMode="numeric" style={inputStyle()} value={count} onChange={e => setCount(e.target.value)} placeholder="1" autoFocus />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Price per bottle">
-            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle} value={pricePerBottle} onChange={e => setPricePerBottle(e.target.value)} placeholder="$0.00" />
+            <input type="number" min={0} step="0.01" inputMode="decimal" style={inputStyle()} value={pricePerBottle} onChange={e => setPricePerBottle(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
           </Field>
         </div>
       </div>
       <Field label="Buyer (optional)">
-        <input style={inputStyle} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
+        <input style={inputStyle()} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="Name of buyer" />
       </Field>
       <Field label="Notes (optional)">
-        <input style={inputStyle} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
+        <input style={inputStyle()} value={saleNotes} onChange={e => setSaleNotes(e.target.value)} placeholder="Anything to remember..." />
       </Field>
       {total > 0 && (
         <div style={{ background: palette.yolkSoft, borderRadius: 8, padding: "8px 12px", fontSize: 13, color: palette.ink, marginBottom: 12 }}>
@@ -738,15 +744,55 @@ function OilModalRouter({ modal, hobby, update, onClose }) {
 // ============================================================================
 // MAIN PAGE
 // ============================================================================
-export default function OilInfusionPage({ hobby, data, update, setModal }) {
+export default function OilInfusionPage({ hobby, data, update, setModal, nl = null }) {
   const [localModal, setLocalModal] = useState(null);
   const batches = hobby.batches || [];
   const active = batches.filter(b => !b.archived);
+  const archived = batches.filter(b => b.archived);
   const sales = (data.sales || []).filter(s => s.hobbyType === "oil_infusion");
 
   const infusing = active.filter(b => b.status === "infusing");
   const ready = active.filter(b => b.status === "ready");
   const bottled = active.filter(b => b.status === "bottled");
+
+  if (nl) {
+    const minDays = (b) => (METHODS.find((m) => m.id === b.method) || METHODS[0]).defaultDays || 28;
+    const going = active.filter((b) => b.status === "infusing" || b.status === "ready").map((b) => {
+      const day = daysSince(b.startDate);
+      const min = minDays(b);
+      if (b.status === "ready") return { id: b.id, title: b.name || "Infused oil", onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: `Strained ${fmtDate(b.readyDate)}${b.totalYieldOz ? ` · ${b.totalYieldOz} oz` : ""}`, badge: { tone: "ready", text: "Ready to bottle" },
+        actions: [{ label: "Bottle it", primary: true, run: () => setLocalModal({ type: "bottle", batchId: b.id }) }] };
+      return { id: b.id, title: b.name || "Infused oil", onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [`Day ${day} of about ${min}`, `ready around ${fmtDate(addDaysIso(b.startDate, min))}`].join(" · "), pct: (day / min) * 100,
+        badge: day >= min ? { tone: "ready", text: "Ready to strain" } : null,
+        actions: [{ label: "Strain", primary: day >= min, run: () => setLocalModal({ type: "strain", batchId: b.id }) }] };
+    });
+    const bottled = active.filter((b) => b.status === "bottled");
+    const left = bottled.reduce((s, b) => s + (Number(b.bottlesRemaining) || 0), 0);
+    const ctx = {
+      key: "oil_infusion", tabs: nl.tabs,
+      summary: { big: left, small: `bottle${left === 1 ? "" : "s"} on the shelf`, line: going.length ? `${going.length} infusing` : "" },
+      newLabel: "Start a batch", onNew: () => setLocalModal({ type: "addBatch" }),
+      goingTitle: "Infusing", going,
+      shelfTitle: "Bottled", shelfEmpty: "Nothing bottled yet. Strain and bottle a batch and it shows up here.",
+      shelf: bottled.map((b) => ({ id: b.id, title: b.name || "Infused oil", left: Number(b.bottlesRemaining) || 0, unit: "bottles", onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }),
+        sub: [`${Number(b.bottlesRemaining) || 0} of ${b.bottlesMade || 0} × ${b.bottleSize || "4oz"}`, b.bottledDate ? `bottled ${fmtDate(b.bottledDate)}` : null].filter(Boolean).join(" · "),
+        actions: [...((Number(b.bottlesRemaining) || 0) > 0 ? [{ label: "Sell or use", run: () => setLocalModal({ type: "sell", batchId: b.id }) }] : []), { label: "Edit bottling", run: () => setLocalModal({ type: "bottle", batchId: b.id }) }] })),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Infused oil", sub: [b.bottledDate ? `bottled ${fmtDate(b.bottledDate)}` : `started ${fmtDate(b.startDate)}`, b.bottlesMade ? `${b.bottlesMade} bottles` : null].filter(Boolean).join(" · "), onOpen: () => setLocalModal({ type: "editBatch", batchId: b.id }) })),
+      extras: [
+        { key: "expense", label: "Expense", sub: "Herbs, bottles, labels", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        <OilModalRouter modal={localModal} hobby={hobby} update={update} onClose={() => setLocalModal(null)} />
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -770,7 +816,7 @@ export default function OilInfusionPage({ hobby, data, update, setModal }) {
               ➕ Custom
             </button>
           )}
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.ink, display: "flex", alignItems: "center", gap: 6 }}>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "7px 14px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer", color: palette.onYolk, display: "flex", alignItems: "center", gap: 6 }}>
             <Plus size={14} />New batch
           </button>
         </div>
@@ -783,7 +829,7 @@ export default function OilInfusionPage({ hobby, data, update, setModal }) {
           <div style={{ fontSize: 13, marginBottom: 14, lineHeight: 1.5 }}>
             Start a batch — pick your herb, carrier oil, and method, then follow it through to bottled.
           </div>
-          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.ink }}>Start first batch</button>
+          <button onClick={() => setLocalModal({ type: "addBatch" })} style={{ padding: "10px 18px", borderRadius: 8, background: palette.yolk, border: `1.5px solid ${palette.ink}`, fontFamily: FONT_BODY, fontWeight: 600, fontSize: 14, cursor: "pointer", color: palette.onYolk }}>Start first batch</button>
         </div>
       ) : (
         <>
@@ -814,6 +860,31 @@ export default function OilInfusionPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS
 // ============================================================================
+// 3.0 Stats: batches started, bottles made and sold, favorite herbs.
+export function oilInfusionStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.startDate));
+  const made = bs.reduce((s, b) => s + (Number(b.bottlesMade) || 0), 0);
+  const sold = bs.reduce((s, b) => s + Math.max(0, (Number(b.bottlesMade) || 0) - (Number(b.bottlesRemaining) || 0)), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "oil_infusion" && inR(x.date)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
+  const by = new Map(); for (const b of bs) { const k = String(b.herb || b.name || "Oil").trim(); by.set(k, (by.get(k) || 0) + (Number(b.bottlesMade) || 1)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} bottle${v === 1 ? "" : "s"}` }));
+  const facts = [];
+  if (made >= 4) facts.push({ key: "made", icon: "drop", big: String(made), line: "bottles made by hand", title: `${made} bottles made by hand`, sub: `From ${bs.length} batch${bs.length === 1 ? "" : "es"}.` });
+  if (rows.length > 1 && rows[0].value >= 2) facts.push({ key: "top", icon: "leaf", big: rows[0].name, line: "our most-used herb", title: `Most made: ${rows[0].name}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Batches", value: bs.length, sub: `${made} bottles made` },
+      { label: revenue ? "Sold" : "Gone", value: revenue ? fmtMoney(revenue) : sold, sub: revenue ? `${sold} bottles` : "Sold or used" },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: made ? `${fmtMoney((cost / made))} a bottle` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By herb", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🌿", kicker: "Our apothecary",
+  };
+}
+
 export function OilInfusionAnalytics({ hobby, entries, /* ADV_ANALYTICS */ earlyAccessConfig = null, isSupporter = false }) {
   const batches = hobby.batches || [];
   const totalBatches = batches.length;

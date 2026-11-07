@@ -14,6 +14,7 @@
 // via dynamic import so they live in their own chunks, not the main bundle.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { X, Trophy, MapPin, Pencil } from "lucide-react";
 import {
@@ -24,12 +25,12 @@ import {
 // component, same supporter gating, same computeStats source of truth.
 import { BadgesCard, StandingsLockedCard, computeStats } from "./YearInReview.jsx";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -40,11 +41,11 @@ const RIBBON = [
   { fill: "#C98A5B", edge: "#8B5A2B", label: "3rd" },
 ];
 
-const selectStyle = {
+const selectStyle = () => ({
   width: "100%", padding: "11px 12px", borderRadius: 10,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 function Card({ children, accent, style }) {
   return (
@@ -204,7 +205,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
         <select
           value={country}
           onChange={(e) => { setCountry(e.target.value); setSubdivision(""); setCounty(""); }}
-          style={{ ...selectStyle, marginBottom: 13 }}
+          style={{ ...selectStyle(), marginBottom: 13 }}
         >
           {countryList.map(([cc, name]) => (
             <option key={cc} value={cc}>{countryFlag(cc)} {name}</option>
@@ -219,7 +220,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
             <select
               value={subdivision}
               onChange={(e) => { setSubdivision(e.target.value); setCounty(""); }}
-              style={{ ...selectStyle, marginBottom: 13 }}
+              style={{ ...selectStyle(), marginBottom: 13 }}
             >
               <option value="">Choose…</option>
               {subs.map(([code, name]) => (
@@ -237,7 +238,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
             <select
               value={county}
               onChange={(e) => setCounty(e.target.value)}
-              style={{ ...selectStyle, marginBottom: 13 }}
+              style={{ ...selectStyle(), marginBottom: 13 }}
             >
               <option value="">Skip for now</option>
               {countyList.map(([fips, name]) => (
@@ -276,7 +277,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
           disabled={saving}
           style={{
             width: "100%", padding: "13px 0", borderRadius: 12, border: "none",
-            background: palette.leaf, color: palette.card, fontFamily: FONT_BODY,
+            background: palette.leaf, color: palette.onColor, fontFamily: FONT_BODY,
             fontWeight: 700, fontSize: 15, cursor: saving ? "default" : "pointer",
             opacity: saving ? 0.7 : 1,
           }}
@@ -294,12 +295,14 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
 function Pill({ active, onClick, children }) {
   return (
     <button
+      type="button"
+      aria-pressed={!!active}
       onClick={onClick}
       style={{
         padding: "7px 13px", borderRadius: 999, whiteSpace: "nowrap",
         border: `1.5px solid ${active ? palette.leaf : palette.line}`,
         background: active ? palette.leaf : palette.card,
-        color: active ? palette.card : palette.ink,
+        color: active ? palette.onColor : palette.ink,
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13, cursor: "pointer",
       }}
     >
@@ -333,7 +336,7 @@ function LevelSeg({ level, onChange }) {
           <button key={o.key} onClick={() => onChange(o.key)} style={{
             flex: 1, padding: "8px 4px", borderRadius: 9, border: "none",
             background: on ? palette.leaf : "transparent",
-            color: on ? palette.card : palette.inkSoft,
+            color: on ? palette.onColor : palette.inkSoft,
             fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13,
             cursor: "pointer", whiteSpace: "nowrap",
           }}>
@@ -431,7 +434,7 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold, l
             fontSize: 11, fontWeight: 700, padding: "3px 9px", borderRadius: 999,
             maxWidth: "55%", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
             background: chip.good ? palette.leaf : palette.bgAlt,
-            color: chip.good ? palette.card : palette.inkSoft,
+            color: chip.good ? palette.onColor : palette.inkSoft,
             border: chip.good ? "none" : `1px solid ${palette.line}`,
           }}>
             {myName ? `${myName} · ${chip.text}` : chip.text}
@@ -519,8 +522,17 @@ function CategoryBoard({ cat, rows, myRow, myRank, myCode, nameOf, kThreshold, l
 // ============================================================================
 // Page
 // ============================================================================
+// The Games started in 2026; earlier years have no boards.
+const GAMES_FIRST_YEAR = 2026;
+
 export default function GamesHubPage({ data, user, isSupporter = false, onOpenSupport }) {
-  const year = new Date().getFullYear();
+  // Through January, open on last year's final standings (they're still
+  // taking late logs); the new year's board fills in as people log.
+  const now = new Date();
+  const thisYear = now.getFullYear();
+  const inJanuary = now.getMonth() === 0;
+  const gameYears = [thisYear, thisYear - 1, thisYear - 2].filter((y) => y >= GAMES_FIRST_YEAR);
+  const [year, setYear] = useState(() => (inJanuary && thisYear - 1 >= GAMES_FIRST_YEAR ? thisYear - 1 : thisYear));
   const [loading, setLoading] = useState(true);
   const [region, setRegion] = useState(null);
   const [boards, setBoards] = useState([]);
@@ -546,11 +558,9 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const [r, b] = await Promise.all([loadMyRegion(), fetchRegionBoards(year)]);
+      const r = await loadMyRegion();
       if (cancelled) return;
       setRegion(r);
-      setBoards(b);
-      setLoading(false);
       if (!r || r.display_mode !== "hidden") {
         // May auto-place a US/CA homestead from its weather location —
         // re-read the row afterward so the boards reflect it immediately.
@@ -570,6 +580,14 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
     return () => { cancelled = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // The boards for the year picked (reloaded when the year changes).
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    fetchRegionBoards(year).then((b) => { if (!cancelled) { setBoards(b); setLoading(false); } });
+    return () => { cancelled = true; };
+  }, [year]);
 
   // County names load lazily, only when the counties tab is opened.
   useEffect(() => {
@@ -678,10 +696,17 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
           Homestead Games
         </div>
       </div>
-      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 14 }}>
-        {year} standings, built from what the community logs. Anonymous always —
-        regions compete, never names.
+      <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 10 }}>
+        {year < thisYear
+          ? (inJanuary && year === thisYear - 1 ? `${year} final standings. Logs you add for ${year} still count through January 31.` : `${year} final standings.`)
+          : `${year} standings, built from what the community logs.${inJanuary ? " The new year's board fills in as people log." : ""}`}
+        {" "}Anonymous always: regions compete, never names.
       </div>
+      {gameYears.length > 1 && (
+        <div role="group" aria-label="Year" style={{ display: "flex", gap: 8, marginBottom: 14 }}>
+          {gameYears.map((y) => <Pill key={y} active={y === year} onClick={() => setYear(y)}>{y}</Pill>)}
+        </div>
+      )}
 
       {/* Tab bar: regional standings vs personal achievements */}
       <div style={{ display: "flex", gap: 8, marginBottom: 14 }}>
@@ -732,7 +757,7 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
             onClick={() => setShowRegionModal(true)}
             style={{
               width: "100%", padding: "12px 0", borderRadius: 12, border: "none",
-              background: palette.leaf, color: palette.card, fontWeight: 700,
+              background: palette.leaf, color: palette.onColor, fontWeight: 700,
               fontFamily: FONT_BODY, fontSize: 15, cursor: "pointer",
             }}
           >
@@ -756,7 +781,7 @@ export default function GamesHubPage({ data, user, isSupporter = false, onOpenSu
                   onClick={dismissAutoJoin}
                   style={{
                     flex: 1, padding: "9px 0", borderRadius: 10, border: "none",
-                    background: palette.leaf, color: palette.card,
+                    background: palette.leaf, color: palette.onColor,
                     fontFamily: FONT_BODY, fontWeight: 700, fontSize: 13, cursor: "pointer",
                   }}
                 >

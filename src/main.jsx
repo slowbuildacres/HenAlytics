@@ -4,6 +4,7 @@ import ReactDOM from 'react-dom/client';
 import { Analytics } from '@vercel/analytics/react';
 import { SpeedInsights } from '@vercel/speed-insights/react';
 import HomesteadApp from './HomesteadApp.jsx';
+import { installNativeShare } from './nativeShare.js';
 // Vercel Web Analytics: tracks page views privately (no cookies, no PII).
 // Vercel Speed Insights: collects Core Web Vitals from real users so we can
 // see how the app actually performs in the wild (LCP, FID, CLS, etc.).
@@ -17,6 +18,9 @@ const isNative = !!(window.Capacitor?.isNativePlatform?.());
 if (isNative) {
   window.__HENALYTICS_USE_IAP__ = true;
   TextZoom.set({ value: 1 }).catch(() => {});
+  // Android's web view has no share sheet or downloads; give it the
+  // native one so file exports and share buttons work.
+  installNativeShare();
 }
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>

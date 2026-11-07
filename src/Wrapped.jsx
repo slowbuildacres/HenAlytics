@@ -22,7 +22,7 @@ import { collectGardenHarvests } from "./analytics.js";
 import { computeHarvestValue } from "./gardenValue.js";
 import { buildYearReport } from "./Sales.jsx";
 import { loadMyRegion, fetchRegionBoards, GAMES_CATEGORIES } from "./games.js";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, weightFromLbs, weightUnitLabel, volumeFromGal, volumeUnitLabel } from "./units.js";
 import { renderNodeToBlob, canShareFiles, createShareLink, shareUrl } from "./shareCard.js";
 
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
@@ -87,15 +87,15 @@ export function wrappedNumbers(data, year) {
 }
 
 // The "and that's not all" list: whatever else the homestead made this year.
-function moreFacts(s) {
+export function moreFacts(s) {
   const f = [];
   const add = (cond, emoji, big, label) => { if (cond) f.push({ emoji, big, label }); };
   add(s.incubatorEggsHatched > 0, "🐣", int(s.incubatorEggsHatched), plural(s.incubatorEggsHatched, "chick") + " hatched");
-  add(s.honeyHarvestedLbs > 0, "🍯", one(s.honeyHarvestedLbs), "lbs of honey");
+  add(s.honeyHarvestedLbs > 0, "🍯", one(weightFromLbs(s.honeyHarvestedLbs)), `${weightUnitLabel()} of honey`);
   const goatGal = (Number(s.goatMilkOz) || 0) / 128;
-  add(goatGal >= 1, "🐐", one(goatGal), "gallons of goat milk");
-  add(s.cowMilkGal > 0, "🐄", one(s.cowMilkGal), "gallons of milk");
-  add(s.totalMeatLbs > 0, "🍗", one(s.totalMeatLbs), "lbs of home-raised chicken");
+  add(goatGal >= 1, "🐐", one(volumeFromGal(goatGal)), volumeUnitLabel() === "L" ? "liters of goat milk" : "gallons of goat milk");
+  add(s.cowMilkGal > 0, "🐄", one(volumeFromGal(s.cowMilkGal)), volumeUnitLabel() === "L" ? "liters of milk" : "gallons of milk");
+  add(s.totalMeatLbs > 0, "🍗", one(weightFromLbs(s.totalMeatLbs)), `${weightUnitLabel()} of home-raised chicken`);
   add(s.totalKitsAlive > 0, "🐇", int(s.totalKitsAlive), "rabbit " + plural(s.totalKitsAlive, "kit"));
   const babies = (Number(s.goatKids) || 0) + (Number(s.cowCalves) || 0) + (Number(s.sheepLambsAlive) || 0);
   add(babies > 0, "🍼", int(babies), "goat kids, calves & lambs");
@@ -144,16 +144,18 @@ export function buildWrappedSlides(data, year, extras = {}) {
     });
   }
 
-  const gardenLbs = Number(s.totalHarvestLbs) || 0;
+  // Harvest weight in the homestead's unit (lbs or kg).
+  const gardenLbs = weightFromLbs(Number(s.totalHarvestLbs) || 0);
+  const wUnit = weightUnitLabel();
   if (garden.total > 0 || gardenLbs > 0) {
     const top = garden.rows[0] || (s.topPlants || [])[0];
     slides.push({
       key: "garden", theme: "pine", emoji: "🌱",
       kicker: "From the garden",
       big: garden.total > 0 ? money(garden.total) : one(gardenLbs),
-      line: garden.total > 0 ? "worth of food grown" : "lbs harvested",
+      line: garden.total > 0 ? "worth of food grown" : `${wUnit} harvested`,
       rows: [
-        garden.total > 0 && gardenLbs > 0 ? `${one(gardenLbs)} lbs harvested` : null,
+        garden.total > 0 && gardenLbs > 0 ? `${one(gardenLbs)} ${wUnit} harvested` : null,
         top ? `Top crop: ${top.plant}` : null,
         garden.rows.length > 1 ? `${garden.rows.length} different crops` : null,
       ].filter(Boolean),
@@ -221,7 +223,7 @@ export function buildWrappedSlides(data, year, extras = {}) {
   const best = [];
   if (s.eggsCollected > 0) best.push({ emoji: "🥚", big: int(s.eggsCollected), label: "eggs" });
   if (garden.total > 0) best.push({ emoji: "🌱", big: money(garden.total), label: "of food grown" });
-  else if (gardenLbs > 0) best.push({ emoji: "🌱", big: one(gardenLbs), label: "lbs harvested" });
+  else if (gardenLbs > 0) best.push({ emoji: "🌱", big: one(gardenLbs), label: `${wUnit} harvested` });
   more.slice(0, 2).forEach((m) => best.push({ emoji: m.emoji, big: m.big, label: m.label }));
   if (revenue > 0) best.push({ emoji: "💵", big: money(revenue), label: "in sales" });
   if (s.activeDays > 0) best.push({ emoji: "📅", big: int(s.activeDays), label: plural(s.activeDays, "day") + " logged" });
@@ -405,7 +407,7 @@ function Snowfall() {
 }
 
 // ---- viewer ------------------------------------------------------------------------
-async function shareFiles(files, { title, text }) {
+export async function shareFiles(files, { title, text }) {
   if (canShareFiles()) {
     try {
       if (!navigator.canShare || navigator.canShare({ files })) {

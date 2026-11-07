@@ -19,6 +19,7 @@
 //   localDateStr()              — local YYYY-MM-DD (matches HomesteadApp's).
 // ============================================================================
 import React from "react";
+import { plusDays } from "./dayMath.js";
 
 // One flag gates ALL advanced analytics across every hobby. A single
 // earlyAccessConfig.features.advancedAnalytics edit controls the whole rollout.
@@ -88,7 +89,7 @@ export function priorDateRange(range) {
   if (isNaN(startMs) || isNaN(endMs) || endMs < startMs) return null;
   const spanDays = Math.round((endMs - startMs) / 86400000);
   const priorEnd = new Date(startMs - 86400000);
-  const priorStart = new Date(priorEnd.getTime() - spanDays * 86400000);
+  const priorStart = plusDays(priorEnd, -spanDays);
   return { start: localDateStr(priorStart), end: localDateStr(priorEnd) };
 }
 
@@ -371,13 +372,21 @@ export function collectGardenHarvests(data, opts) {
 // "totalHarvestLbs" reducer that summed `quantity` regardless of unit.
 //
 // Pass the output of collectGardenHarvests() (or any compatible list).
+// One harvest record's weight in pounds, or null for counts and volumes
+// (each, bunches, cups…). Weights may be logged in lbs, oz, kg or g.
+const LBS_PER_UNIT = { lbs: 1, lb: 1, oz: 1 / 16, kg: 2.20462262, g: 0.00220462262 };
+export function harvestLbs(r) {
+  if (!r) return null;
+  const per = LBS_PER_UNIT[String(r.unit || "lbs").toLowerCase()];
+  if (per == null) return null;
+  return (Number(r.quantity != null ? r.quantity : r.qty) || 0) * per;
+}
+
 export function totalHarvestLbs(harvestRecords) {
   let total = 0;
   for (const r of harvestRecords || []) {
-    if (!r) continue;
-    const unit = r.unit || "lbs";
-    if (unit !== "lbs") continue;
-    total += Number(r.quantity != null ? r.quantity : r.qty) || 0;
+    const lbs = harvestLbs(r);
+    if (lbs != null) total += lbs;
   }
   return total;
 }

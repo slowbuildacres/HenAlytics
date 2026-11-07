@@ -15,23 +15,29 @@
 // Sold bars are derived from data.sales where batchId === batch.id.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
+import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, DollarSign as NlDollar, Gift as NlGift } from "lucide-react";
 import { X, Trash2 } from "lucide-react";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
+import { groupDigits } from "./numFmt.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (d) => `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-${String(d.getDate()).padStart(2,"0")}`;
@@ -74,23 +80,23 @@ export function soapBatchStats(batch, sales = []) {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, disabled = false }) {
   const v = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
   };
   return (
-    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8, cursor: disabled ? "not-allowed" : "pointer",
+    <button type="button" onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14, cursor: disabled ? "not-allowed" : "pointer",
       fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...v[variant], ...style,
+      boxShadow: "none", ...v[variant], ...style,
     }}>{children}</button>
   );
 }
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
-    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
+    <div style={{ background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16, padding: 14, flex: "1 1 130px", minWidth: 130, boxSizing: "border-box" }}>
       <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6, fontFamily: FONT_BODY }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -106,7 +112,7 @@ function Field({ label, children }) {
 function ModalShell({ title, onClose, children }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 200, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "90vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: `6px 8px 0 ${palette.line}` }}>
+      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "90vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}`, position: "sticky", top: 0, background: palette.bg, zIndex: 1 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}><X size={22} /></button>
@@ -156,9 +162,9 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
 
   return (
     <ModalShell title={batch ? "Edit batch" : "🧼 New soap batch"} onClose={onClose}>
-      <Field label="Batch / recipe name"><input style={inputStyle} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Oatmeal honey, Lavender goat milk" autoFocus /></Field>
+      <Field label="Batch / recipe name"><input style={inputStyle()} value={name} onChange={e => setName(e.target.value)} placeholder="e.g. Oatmeal honey, Lavender goat milk" autoFocus /></Field>
       <Field label="Method">
-        <select style={inputStyle} value={method} onChange={e => {
+        <select style={inputStyle()} value={method} onChange={e => {
           setMethod(e.target.value);
           const m = METHODS.find(x => x.id === e.target.value);
           if (m && !batch) setCureWeeks(String(m.cureWeeks));
@@ -167,25 +173,25 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
         </select>
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Made on"><input type="date" style={inputStyle} value={madeDate} onChange={e => setMadeDate(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Cure (weeks)"><input type="number" inputMode="decimal" min={0} step="0.5" style={inputStyle} value={cureWeeks} onChange={e => setCureWeeks(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Made on"><input type="date" style={inputStyle()} value={madeDate} onChange={e => setMadeDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Cure (weeks)"><input type="number" inputMode="decimal" min={0} step="0.5" style={inputStyle()} value={cureWeeks} onChange={e => setCureWeeks(e.target.value)} /></Field></div>
       </div>
       {cureDate && (
         <div style={{ padding: "8px 12px", background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, marginBottom: 12 }}>
           📅 Ready on <strong style={{ color: palette.ink }}>{fmtDate(cureDate)}</strong>{!batch ? " — we'll put a reminder on your calendar." : ""}
         </div>
       )}
-      <Field label="Bars made"><input type="number" inputMode="numeric" min={0} style={inputStyle} value={bars} onChange={e => setBars(e.target.value)} placeholder="e.g. 12" /></Field>
+      <Field label="Bars made"><input type="number" inputMode="numeric" min={0} style={inputStyle()} value={bars} onChange={e => setBars(e.target.value)} placeholder="e.g. 12" /></Field>
 
       <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 6, textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600 }}>Ingredients</div>
       <div style={{ display: "flex", flexDirection: "column", gap: 6, marginBottom: 8 }}>
         {ingredients.map(i => (
           <div key={i.id} style={{ display: "grid", gridTemplateColumns: "1fr 64px 72px 72px 28px", gap: 4, alignItems: "center" }}>
-            <input style={{ ...inputStyle, padding: "8px", fontSize: 13 }} value={i.name} onChange={e => setIng(i.id, "name", e.target.value)} placeholder="Olive oil" />
-            <input style={{ ...inputStyle, padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} value={i.amount} onChange={e => setIng(i.id, "amount", e.target.value)} placeholder="Amt" />
-            <select style={{ ...inputStyle, padding: "8px 4px", fontSize: 13 }} value={i.unit} onChange={e => setIng(i.id, "unit", e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
-            <input style={{ ...inputStyle, padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder="$" />
-            <button onClick={() => setIngredients(arr => arr.filter(x => x.id !== i.id))} aria-label="Remove ingredient" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, padding: 2 }}><Trash2 size={15} /></button>
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} value={i.name} onChange={e => setIng(i.id, "name", e.target.value)} placeholder="Olive oil" />
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} value={i.amount} onChange={e => setIng(i.id, "amount", e.target.value)} placeholder="Amt" />
+            <select style={{ ...inputStyle(), padding: "8px 4px", fontSize: 13 }} value={i.unit} onChange={e => setIng(i.id, "unit", e.target.value)}>{UNITS.map(u => <option key={u}>{u}</option>)}</select>
+            <input style={{ ...inputStyle(), padding: "8px", fontSize: 13 }} type="number" inputMode="decimal" min={0} step="0.01" value={i.cost} onChange={e => setIng(i.id, "cost", e.target.value)} placeholder={`${currencySymbol()}`} />
+            <button onClick={() => setIngredients(arr => arr.filter(x => x.id !== i.id))} aria-label="Remove ingredient" style={{ background: "none", border: "none", cursor: "pointer", color: palette.inkSoft, width: 40, height: 40, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}><Trash2 size={15} /></button>
           </div>
         ))}
       </div>
@@ -196,7 +202,7 @@ function BatchModal({ batch, onSave, onDelete, onClose }) {
           {parseInt(bars, 10) > 0 ? ` · ${fmtMoney(totalCost / parseInt(bars, 10))}/bar` : ""}
         </span>
       </div>
-      <Field label="Notes (optional)"><textarea style={{ ...inputStyle, minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Superfat %, fragrance, how it traced…" /></Field>
+      <Field label="Notes (optional)"><textarea style={{ ...inputStyle(), minHeight: 50, resize: "vertical" }} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Superfat %, fragrance, how it traced…" /></Field>
 
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {batch && (!confirm
@@ -255,7 +261,7 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
   return (
     <ModalShell title={mode === "sell" ? "💵 Sell bars" : "🧺 Use / give bars"} onClose={onClose}>
       <Field label="Batch">
-        <select style={inputStyle} value={batchId} onChange={e => setBatchId(e.target.value)}>
+        <select style={inputStyle()} value={batchId} onChange={e => setBatchId(e.target.value)}>
           {(presetBatchId ? batches.filter(b => b.id === presetBatchId) : avail).map(b => (
             <option key={b.id} value={b.id}>{b.name} — {soapBatchStats(b, sales).remaining} left</option>
           ))}
@@ -263,30 +269,30 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
         {st && !st.cured && <div style={{ fontSize: 11, color: palette.accent, marginTop: 4 }}>Heads up: still curing — {st.daysLeft} day{st.daysLeft === 1 ? "" : "s"} to go.</div>}
       </Field>
       <div style={{ display: "flex", gap: 12 }}>
-        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
-        <div style={{ flex: 1 }}><Field label="Bars"><input type="number" inputMode="numeric" min={1} max={st?.remaining || undefined} style={inputStyle} value={qty} onChange={e => setQty(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Date"><input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} /></Field></div>
+        <div style={{ flex: 1 }}><Field label="Bars"><input type="number" inputMode="numeric" min={1} max={st?.remaining || undefined} style={inputStyle()} value={qty} onChange={e => setQty(e.target.value)} /></Field></div>
       </div>
       {mode === "sell" ? (
         <>
-          <Field label="Price per bar ($)"><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle} value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 7.00" /></Field>
+          <Field label={`Price per bar (${currencySymbol()})`}><input type="number" inputMode="decimal" step="0.01" min={0} style={inputStyle()} value={price} onChange={e => setPrice(e.target.value)} placeholder="e.g. 7.00" /></Field>
           <Field label="Customer (optional)">
-            <select style={inputStyle} value={buyerId} onChange={e => { setBuyerId(e.target.value); setBuyer(""); }}>
+            <select style={inputStyle()} value={buyerId} onChange={e => { setBuyerId(e.target.value); setBuyer(""); }}>
               <option value="">— No customer / new below —</option>
               {(customers || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
             </select>
-            {!buyerId && <input style={{ ...inputStyle, marginTop: 6 }} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="New customer name (optional)" />}
+            {!buyerId && <input style={{ ...inputStyle(), marginTop: 6 }} value={buyer} onChange={e => setBuyer(e.target.value)} placeholder="New customer name (optional)" />}
           </Field>
           {n > 0 && <div style={{ padding: 10, background: palette.yolkSoft, borderRadius: 6, fontSize: 13, textAlign: "center", marginBottom: 12 }}>Revenue <strong>{fmtMoney((parseFloat(price) || 0) * n)}</strong>{st?.costPerBar > 0 ? ` · cost ${fmtMoney(st.costPerBar * n)}` : ""}</div>}
         </>
       ) : (
         <Field label="What happened to them?">
-          <select style={inputStyle} value={kind} onChange={e => setKind(e.target.value)}>
+          <select style={inputStyle()} value={kind} onChange={e => setKind(e.target.value)}>
             <option value="used">Used at home</option>
             <option value="gifted">Gave away / gifted</option>
           </select>
         </Field>
       )}
-      <Field label="Note (optional)"><input style={inputStyle} value={note} onChange={e => setNote(e.target.value)} /></Field>
+      <Field label="Note (optional)"><input style={inputStyle()} value={note} onChange={e => setNote(e.target.value)} /></Field>
       {batch && n > (st?.remaining || 0) && <div style={{ fontSize: 12, color: palette.accent, marginBottom: 8 }}>Only {st.remaining} left in this batch.</div>}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end" }}>
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -299,7 +305,7 @@ function MoveBarsModal({ mode, batches, sales, customers, presetBatchId, onSale,
 // ---------------------------------------------------------------------------
 // Page
 // ---------------------------------------------------------------------------
-export default function SoapMakingPage({ hobby, data, update, setModal }) {
+export default function SoapMakingPage({ hobby, data, update, setModal, nl = null }) {
   const [batchModal, setBatchModal] = useState({ open: false, batch: null });
   const [moveModal, setMoveModal] = useState({ open: false, mode: "sell", batchId: null });
   if (!hobby) return null;
@@ -314,7 +320,7 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
   const year = String(new Date().getFullYear());
   const yearRevenue = sales.filter(s => s.hobbyType === "soap" && (s.date || "").startsWith(year)).reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
 
-  const saveBatch = (rec) => update(d => {
+  const saveBatch = (rec) => undoable(update, `Saved ${rec.name || "batch"}`)(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     if (!h) return d;
     if (!Array.isArray(h.batches)) h.batches = [];
@@ -332,19 +338,19 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
     }
     return d;
   });
-  const deleteBatch = (id) => update(d => {
+  const deleteBatch = (id) => undoable(update, "Deleted batch")(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     if (h) h.batches = (h.batches || []).filter(b => b.id !== id);
     if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => e.soapBatchId !== id);
     return d;
   });
-  const setArchived = (id, val) => update(d => {
+  const setArchived = (id, val) => undoable(update, val ? "Archived batch" : "Restored batch")(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     const b = h && (h.batches || []).find(x => x.id === id);
     if (b) b.archived = val;
     return d;
   });
-  const addSale = (sale) => update(d => {
+  const addSale = (sale) => undoable(update, "Saved sale")(d => {
     d.sales = d.sales || [];
     if (!sale.buyerId && sale.buyer) {
       d.customers = d.customers || [];
@@ -355,7 +361,7 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
     d.sales.push(sale);
     return d;
   });
-  const addUse = (batchId, use) => update(d => {
+  const addUse = (batchId, use) => undoable(update, "Saved")(d => {
     const h = d.hobbies.find(x => x.id === hobby.id);
     const b = h && (h.batches || []).find(x => x.id === batchId);
     if (b) { if (!Array.isArray(b.uses)) b.uses = []; b.uses.push(use); }
@@ -395,6 +401,44 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
       </div>
     );
   };
+
+  if (nl) {
+    const shortDate = (x) => (x ? fmtDate(x) : "");
+    const row = (b) => {
+      const st = soapBatchStats(b, sales);
+      return {
+        id: b.id, title: b.name || "Soap", left: st.remaining, unit: "bars", onOpen: () => setBatchModal({ open: true, batch: b }),
+        sub: [`${st.remaining} of ${st.bars} bars`, b.madeDate ? `made ${shortDate(b.madeDate)}` : null, st.costPerBar ? `${fmtMoney(st.costPerBar)} a bar` : null].filter(Boolean).join(" · "),
+        pct: !st.cured && b.madeDate && b.cureWeeks ? (1 - st.daysLeft / (b.cureWeeks * 7)) * 100 : null,
+        badge: st.cured ? null : { tone: "ready", text: `Ready ${shortDate(b.expectedCureDate)}` },
+        actions: st.remaining > 0 ? [{ label: "Sell", run: () => setMoveModal({ open: true, mode: "sell", batchId: b.id }) }, { label: "Use or gift", run: () => setMoveModal({ open: true, mode: "use", batchId: b.id }) }] : [{ label: "Archive", run: () => setArchived(b.id, true) }],
+      };
+    };
+    const ctx = {
+      key: "soap",
+      summary: { big: readyBars, small: `bar${readyBars === 1 ? "" : "s"} ready to use or sell`, line: [curingBars ? `${curingBars} still curing` : null, yearRevenue ? `${fmtMoney(yearRevenue)} sold this year` : null].filter(Boolean).join(" · ") },
+      newLabel: "Make a batch", onNew: () => setBatchModal({ open: true, batch: null }),
+      goingTitle: "Curing", going: curing.map(row),
+      shelfTitle: "Ready", shelfEmpty: "No cured bars yet.",
+      shelf: active.filter((b) => soapBatchStats(b, sales).cured).map(row),
+      past: archived.map((b) => ({ id: b.id, title: b.name || "Soap", sub: `${b.bars || 0} bars · made ${shortDate(b.madeDate)} · tap to restore`, onOpen: () => setArchived(b.id, false) })),
+      pastTitle: "Archived batches",
+      extras: [
+        { key: "sell", label: "Sell bars", icon: NlDollar, run: () => setMoveModal({ open: true, mode: "sell", batchId: null }) },
+        { key: "use", label: "Use or gift bars", icon: NlGift, run: () => setMoveModal({ open: true, mode: "use", batchId: null }) },
+        { key: "expense", label: "Expense", sub: "Lye, oils, molds", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {batchModal.open && <BatchModal batch={batchModal.batch} onSave={saveBatch} onDelete={deleteBatch} onClose={() => setBatchModal({ open: false, batch: null })} />}
+        {moveModal.open && <MoveBarsModal mode={moveModal.mode} batches={batches} sales={sales} customers={data.customers || []} presetBatchId={moveModal.batchId} onSale={addSale} onUse={addUse} onClose={() => setMoveModal({ open: false, mode: "sell", batchId: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -443,6 +487,33 @@ export default function SoapMakingPage({ hobby, data, update, setModal }) {
 // ---------------------------------------------------------------------------
 // Analytics — filters by batch madeDate and sale date within dateRange.
 // ---------------------------------------------------------------------------
+// 3.0 Stats: bars made, sold, used, revenue, by batch.
+export function soapStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const sales = data.sales || [];
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.madeDate));
+  const st = bs.map((b) => ({ b, s: soapBatchStats(b, sales) }));
+  const bars = st.reduce((t, x) => t + x.s.bars, 0);
+  const sold = st.reduce((t, x) => t + x.s.sold, 0);
+  const revenue = sales.filter((x) => x && x.hobbyType === "soap" && inR(x.date)).reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const cost = st.reduce((t, x) => t + x.s.cost, 0);
+  const gifted = st.reduce((t, x) => t + x.s.gifted, 0);
+  const rows = st.map(({ b, s }) => ({ key: b.id, name: b.name || "Soap", value: s.bars, label: `${s.bars} bars` })).sort((a, b) => b.value - a.value).slice(0, 8);
+  const facts = [];
+  if (bars >= 10) facts.push({ key: "bars", icon: "spark", big: String(bars), line: "bars of soap made by hand", title: `${bars} bars of soap`, sub: `That's about ${Math.round(bars * 30)} showers.` });
+  if (gifted >= 3) facts.push({ key: "gifts", icon: "spark", big: String(gifted), line: "bars given as gifts", title: `${gifted} bars given away`, sub: "Lucky friends." });
+  return {
+    cards: [
+      { label: "Bars made", value: bars, sub: `${bs.length} batch${bs.length === 1 ? "" : "es"}` },
+      { label: "Sold", value: revenue ? fmtMoney(revenue) : sold, sub: `${sold} bars` },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: bars ? `${fmtMoney((cost / bars))} a bar` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "Your batches", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🧼", kicker: "Our soap",
+  };
+}
+
 export function SoapMakingAnalytics({ hobby, sales = [], dateRange = null }) {
   if (!hobby) return null;
   const inRange = (d) => {

@@ -17,12 +17,19 @@
 // so we don't surface countdown UI).
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { showUndo, undoable } from "./newlook/UndoBar.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, ozToInput, ozFromInput, smallWeightLabel, currencySymbol, fmtSmallWeight, ozToKg } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
+import { groupDigits } from "./numFmt.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -41,11 +48,11 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", yolk: "#E8B547", yolkSoft: "#F2D58A",
   feather: "#8B6F47", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
@@ -63,21 +70,21 @@ const todayIso = () => {
 function Btn({ children, onClick, variant = "primary", small = false, style = {}, type = "button", disabled = false }) {
   const variants = {
     primary: { bg: palette.ink, color: palette.bg, border: palette.ink },
-    leaf: { bg: palette.leaf, color: "#FAF5EA", border: palette.leaf },
-    accent: { bg: palette.accent, color: "#FAF5EA", border: palette.accent },
+    leaf: { bg: palette.leaf, color: palette.onColor, border: palette.leaf },
+    accent: { bg: palette.accent, color: palette.onColor, border: palette.accent },
     ghost: { bg: "transparent", color: palette.ink, border: palette.line },
-    danger: { bg: palette.accent, color: palette.bg, border: palette.accent },
+    danger: { bg: palette.accent, color: palette.onColor, border: palette.accent },
   };
   const v = variants[variant] || variants.primary;
   return (
     <button
       type={type} disabled={disabled} onClick={onClick}
-      style={{
+      style={{minHeight: small ? 36 : 44, 
         background: v.bg, color: v.color, border: `1.5px solid ${v.border}`,
-        borderRadius: 10, padding: small ? "8px 12px" : "10px 16px",
+        borderRadius: small ? 999 : 14, padding: small ? "8px 12px" : "10px 16px",
         fontFamily: FONT_BODY, fontWeight: 600, fontSize: small ? 13 : 14,
         cursor: disabled ? "not-allowed" : "pointer", opacity: disabled ? 0.5 : 1,
-        boxShadow: variant === "ghost" ? "none" : "2px 2px 0 " + palette.line,
+        boxShadow: "none",
         ...style,
       }}
     >
@@ -91,10 +98,10 @@ function StatCard({ label, value, sub, accent = palette.accent }) {
     <div style={{
       flex: 1, minWidth: 100, padding: "12px 14px",
       background: palette.card, border: `1.5px solid ${palette.line}`,
-      borderRadius: 12,
+      borderRadius: 16,
     }}>
       <div style={{ fontSize: 11, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 0.6, fontWeight: 600 }}>{label}</div>
-      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: accent, lineHeight: 1.1, marginTop: 2 }}>{value}</div>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, lineHeight: 1.1, marginTop: 2 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 2 }}>{sub}</div>}
     </div>
   );
@@ -136,11 +143,11 @@ function Modal({ open, onClose, title, children }) {
   );
 }
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 // ============================================================================
 // BATCH MODAL — create/edit a freeze-drying batch
@@ -151,7 +158,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   const [item, setItem] = useState(batch?.item || "");
   const [runHours, setRunHours] = useState(batch?.runHours?.toString() || "");
   const [trays, setTrays] = useState(batch?.trays?.toString() || "");
-  const [outputOz, setOutputOz] = useState(batch?.outputOz?.toString() || "");
+  const [outputOz, setOutputOz] = useState(ozToInput(batch?.outputOz));
   const [containerType, setContainerType] = useState(batch?.containerType || "mylar");
   const [ingredientsCost, setIngredientsCost] = useState(batch?.ingredientsCost?.toString() || "");
   const [costTouched, setCostTouched] = useState(false);
@@ -175,7 +182,7 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
       date, item: item.trim(),
       runHours: parseFloat(runHours) || 0,
       trays: parseInt(trays, 10) || 0,
-      outputOz: parseFloat(outputOz) || 0,
+      outputOz: ozFromInput(outputOz),
       containerType,
       ingredientsCost: parseFloat(ingredientsCost) || 0,
       notes: notes.trim(),
@@ -189,28 +196,28 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
   return (
     <Modal open onClose={onClose} title={editing ? "✏️ Edit batch" : "❄️ New freeze-drying batch"}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={(e) => setDate(e.target.value)} />
       </Field>
       <Field label="Item">
-        <input style={inputStyle} value={item} onChange={(e) => setItem(e.target.value)} placeholder="e.g. Strawberries, beef stew, scrambled eggs" autoFocus />
+        <input style={inputStyle()} value={item} onChange={(e) => setItem(e.target.value)} placeholder="e.g. Strawberries, beef stew, scrambled eggs" autoFocus />
       </Field>
       <div style={{ display: "flex", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <Field label="Run hours">
-            <input type="number" step="0.5" min={0} style={inputStyle} value={runHours} onChange={(e) => setRunHours(e.target.value)} placeholder="0" inputMode="decimal" />
+            <input type="number" step="0.5" min={0} style={inputStyle()} value={runHours} onChange={(e) => setRunHours(e.target.value)} placeholder="0" inputMode="decimal" />
           </Field>
         </div>
         <div style={{ flex: 1 }}>
           <Field label="Trays">
-            <input type="number" min={0} style={inputStyle} value={trays} onChange={(e) => setTrays(e.target.value)} placeholder="0" inputMode="numeric" />
+            <input type="number" min={0} style={inputStyle()} value={trays} onChange={(e) => setTrays(e.target.value)} placeholder="0" inputMode="numeric" />
           </Field>
         </div>
       </div>
-      <Field label="Output weight (oz)">
-        <input type="number" step="0.1" min={0} style={inputStyle} value={outputOz} onChange={(e) => setOutputOz(e.target.value)} placeholder="0" inputMode="decimal" />
+      <Field label={`Output weight (${smallWeightLabel()})`}>
+        <input type="number" step="0.1" min={0} style={inputStyle()} value={outputOz} onChange={(e) => setOutputOz(e.target.value)} placeholder="0" inputMode="decimal" />
       </Field>
       <Field label="Storage container">
-        <select style={inputStyle} value={containerType} onChange={(e) => setContainerType(e.target.value)}>
+        <select style={inputStyle()} value={containerType} onChange={(e) => setContainerType(e.target.value)}>
           <option value="mylar">Mylar bag</option>
           <option value="jar">Mason jar</option>
           <option value="vacuum">Vacuum-sealed bag</option>
@@ -218,12 +225,12 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
           <option value="other">Other</option>
         </select>
       </Field>
-      <Field label="Ingredient cost ($)">
+      <Field label={`Ingredient cost (${currencySymbol()})`}>
         <input
           type="number"
           step="0.01"
           min={0}
-          style={inputStyle}
+          style={inputStyle()}
           value={ingredientsCost}
           onChange={(e) => { setIngredientsCost(e.target.value); setCostTouched(true); }}
           placeholder="0.00"
@@ -237,11 +244,11 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
         />
       </Field>
       <Field label="Notes">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, freezing notes, runtime quirks…" />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical", fontFamily: FONT_BODY }} value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Pretreatment, freezing notes, runtime quirks…" />
       </Field>
       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14 }}>
         {editing && onDelete ? (
-          <Btn variant="ghost" onClick={() => { if (confirm("Delete this batch?")) { onDelete(batch.id); onClose(); } }}>Delete</Btn>
+          <Btn variant="ghost" onClick={() => { onDelete(batch.id); onClose(); }}>Delete</Btn>
         ) : <div />}
         <div style={{ display: "flex", gap: 8 }}>
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
@@ -255,14 +262,14 @@ function BatchModal({ batch, pantry = [], onSave, onDelete, onClose }) {
 // ============================================================================
 // FREEZE DRYING PAGE
 // ============================================================================
-export default function FreezeDryingPage({ hobby, data, update, setModal }) {
+export default function FreezeDryingPage({ hobby, data, update, setModal, nl = null }) {
   const [batchModal, setBatchModal] = useState({ open: false, batch: null });
   const batches = (hobby?.batches || []).slice().sort((a, b) => (b.date || "").localeCompare(a.date || ""));
   const active = batches.filter(b => !b.archived);
   const archived = batches.filter(b => b.archived);
 
   const saveBatch = (batch) => {
-    update(d => {
+    undoable(update, `Saved ${batch.item || "batch"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.batches)) h.batches = [];
@@ -296,7 +303,7 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
   };
 
   const deleteBatch = (id) => {
-    update(d => {
+    undoable(update, "Deleted batch")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any deducted stock.
@@ -323,6 +330,35 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
   const totalCost = active.reduce((s, b) => s + (b.ingredientsCost || 0), 0);
   const avgRun = active.length > 0 ? active.reduce((s, b) => s + (b.runHours || 0), 0) / active.length : 0;
 
+  if (nl) {
+    const nlOz = (oz) => fmtSmallWeight(oz);
+    const shortDate = (s) => { if (!s) return ""; const d = new Date(s + "T12:00"); return isNaN(d) ? s : d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
+    const archiveWithUndo = (b) => { archiveBatch(b.id); showUndo(`Archived ${b.item || "batch"}`, () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.batches || []).find((x) => x.id === b.id); if (t) t.archived = false; return d; })); };
+    const ctx = {
+      key: "freeze_drying", tabs: nl.tabs,
+      summary: { big: nlOz(totalOz), small: "freeze dried and stored", line: active.length ? `${active.length} batch${active.length === 1 ? "" : "es"}${avgRun ? ` · about ${avgRun.toFixed(0)} hr a run` : ""}` : "" },
+      newLabel: "Log a freeze-dryer run", onNew: () => setBatchModal({ open: true, batch: null }),
+      shelfTitle: "Stored", shelfEmpty: "No runs yet. Log your next freeze-dryer run and it shows up here.",
+      shelf: active.map((b) => ({ id: b.id, title: b.item || "Batch", onOpen: () => setBatchModal({ open: true, batch: b }),
+        sub: [shortDate(b.date), b.outputOz ? nlOz(b.outputOz) : null, b.trays ? `${b.trays} trays` : null, b.runHours ? `${b.runHours} hr` : null, b.containerType || null].filter(Boolean).join(" · "),
+        actions: [{ label: "Archive", run: () => archiveWithUndo(b) }] })),
+      past: archived.map((b) => ({ id: b.id, title: b.item || "Batch", sub: `${shortDate(b.date)} · ${nlOz(b.outputOz)}`, onOpen: () => setBatchModal({ open: true, batch: b }) })),
+      extras: [
+        { key: "pantry", label: "Pantry supplies", sub: "What's left and what it cost", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {batchModal.open && <BatchModal batch={batchModal.batch} pantry={Array.isArray(data.pantry) ? data.pantry : []} onSave={saveBatch} onDelete={batchModal.batch ? deleteBatch : null} onClose={() => setBatchModal({ open: false, batch: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
+
   return (
     <div style={{ paddingBottom: 100 }}>
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14, flexWrap: "wrap", gap: 8 }}>
@@ -346,7 +382,7 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
 
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Active batches" value={active.length} accent={palette.leaf} />
-        <StatCard label="Total output" value={`${totalOz.toFixed(1)} oz`} accent={palette.feather} />
+        <StatCard label="Total output" value={fmtSmallWeight(totalOz)} accent={palette.feather} />
         <StatCard label="Avg run" value={`${avgRun.toFixed(1)} hr`} accent={palette.yolk} />
         <StatCard label="Cost" value={fmtMoney(totalCost)} accent={palette.accent} />
       </div>
@@ -375,7 +411,7 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
                 </div>
                 {b.notes && <div style={{ fontSize: 12, color: palette.inkSoft, marginTop: 4, fontStyle: "italic" }}>{b.notes}</div>}
               </div>
-              <button onClick={(e) => { e.stopPropagation(); if (confirm("Archive this batch?")) archiveBatch(b.id); }} style={{
+              <button onClick={async (e) => { e.stopPropagation(); if (await askConfirm({ title: "Archive this batch?", confirmLabel: "Archive", danger: false })) archiveBatch(b.id); }} style={{
                 background: "none", border: "none", color: palette.inkSoft, cursor: "pointer", fontSize: 11, padding: 4,
               }}>Archive</button>
             </div>
@@ -412,6 +448,30 @@ export default function FreezeDryingPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // ANALYTICS — basic counts and trend chart
 // ============================================================================
+// 3.0 Stats: runs, ounces stored, hours, top foods.
+export function freezeDryingStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bs = (hobby && Array.isArray(hobby.batches) ? hobby.batches : []).filter((b) => inR(b.date));
+  const oz = bs.reduce((s, b) => s + (Number(b.outputOz) || 0), 0);
+  const hours = bs.reduce((s, b) => s + (Number(b.runHours) || 0), 0);
+  const cost = bs.reduce((s, b) => s + (Number(b.ingredientsCost) || 0), 0);
+  const by = new Map(); for (const b of bs) { const k = String(b.item || "Other").trim(); by.set(k, (by.get(k) || 0) + (Number(b.outputOz) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: fmtSmallWeight(v) }));
+  const facts = [];
+  if (hours >= 24) facts.push({ key: "hours", icon: "clock", big: `${Math.round(hours)} hr`, line: "our freeze dryer has run", title: `${Math.round(hours)} hours of freeze drying`, sub: `That's ${(hours / 24).toFixed(1)} days of humming.` });
+  if (rows.length > 1) facts.push({ key: "top", icon: "trophy", big: rows[0].name, line: "what we freeze dry the most", title: `Most freeze dried: ${rows[0].name.toLowerCase()}`, sub: rows[0].label });
+  return {
+    cards: [
+      { label: "Stored", value: fmtSmallWeight(oz), sub: `${bs.length} run${bs.length === 1 ? "" : "s"}` },
+      { label: "Run time", value: `${Math.round(hours)} hr`, sub: bs.length ? `${(hours / bs.length).toFixed(0)} hr a run` : "" },
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: oz ? (smallWeightLabel() === "g" ? `${fmtMoney(cost / ozToKg(oz))} a kilo` : `${fmtMoney((cost / oz))} an ounce`) : "" }] : []),
+    ],
+    bars: rows.length ? { title: "What you freeze dried", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "❄️", kicker: "Our pantry",
+  };
+}
+
 export function FreezeDryingAnalytics({ hobby, spouseMode = false, /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   const batches = (hobby?.batches || []).filter(b => !b.archived);
   const totalOz = batches.reduce((s, b) => s + (b.outputOz || 0), 0);
@@ -455,7 +515,7 @@ export function FreezeDryingAnalytics({ hobby, spouseMode = false, /* ADV_ANALYT
       <h1 style={{ fontFamily: FONT_DISPLAY, fontSize: 26, margin: "0 0 14px", color: palette.ink }}>❄️ Freeze Drying Stats</h1>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 20 }}>
         <StatCard label="Batches" value={batches.length} accent={palette.leaf} />
-        <StatCard label="Total output" value={`${totalOz.toFixed(1)} oz`} accent={palette.feather} />
+        <StatCard label="Total output" value={fmtSmallWeight(totalOz)} accent={palette.feather} />
         <StatCard label="Run hours" value={totalHours.toFixed(1)} accent={palette.yolk} />
         {!spouseMode && <StatCard label="Cost" value={fmtMoney(totalCost)} accent={palette.accent} />}
       </div>
@@ -463,11 +523,11 @@ export function FreezeDryingAnalytics({ hobby, spouseMode = false, /* ADV_ANALYT
       <LockedStatOverlay earlyAccessConfig={earlyAccessConfig} isSupporter={isSupporter} palette={palette} fonts={pFonts}>
         <div>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-            {ozRecord && <StatCard label="Best output month" value={`${ozRecord.value.toFixed(1)} oz`} sub={ozRecord.label} accent={palette.feather} />}
+            {ozRecord && <StatCard label="Best output month" value={fmtSmallWeight(ozRecord.value)} sub={ozRecord.label} accent={palette.feather} />}
             {ozDelta && (
               <div style={{ flex: "1 1 130px", minWidth: 130, boxSizing: "border-box", background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
                 <div style={{ fontSize: 10, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>Output vs. prior period</div>
-                <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.feather, lineHeight: 1.1 }}>{curOz.toFixed(1)} oz</div>
+                <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.feather, lineHeight: 1.1 }}>{fmtSmallWeight(curOz)}</div>
                 <div style={{ marginTop: 4 }}><StatTrend delta={ozDelta} palette={palette} fonts={pFonts} /></div>
               </div>
             )}
@@ -480,7 +540,7 @@ export function FreezeDryingAnalytics({ hobby, spouseMode = false, /* ADV_ANALYT
                   <LineChart data={ozMonthly}>
                     <XAxis dataKey="label" style={{ fontSize: 11 }} />
                     <YAxis style={{ fontSize: 11 }} />
-                    <Tooltip formatter={v => [`${v} oz`, "Output"]} />
+                    <Tooltip formatter={v => [fmtSmallWeight(v), "Output"]} />
                     <Line type="monotone" dataKey="oz" stroke={palette.feather} strokeWidth={3} dot={{ fill: palette.accent, r: 4 }} />
                   </LineChart>
                 </ResponsiveContainer>

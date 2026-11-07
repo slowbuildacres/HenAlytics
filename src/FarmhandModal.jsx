@@ -1,24 +1,27 @@
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from 'react';
 import { X, UserPlus, Trash2, Mail, AlertCircle, CheckCircle, MailCheck, MailX } from 'lucide-react';
+import { friendlyError } from "./friendlyError.js";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 import {
   listMembers, listPendingInvites, createInvite, cancelInvite,
   removeMember, sendFarmhandInvite, getActiveHomesteadId,
   updateMemberChoreEmails,
 } from './sync.js';
 
-const palette = {
-  bg: '#F4EDE0', bgAlt: '#EBE0CC', ink: '#2C1810', inkSoft: '#5C4530',
+const palette = legacyPalette({
+  bg: "#F4EDE0", bgAlt: '#EBE0CC', ink: '#2C1810', inkSoft: '#5C4530',
   accent: '#C84B31', leaf: '#5A7A3C', leafSoft: '#A8C078',
   yolk: '#E8B547', yolkSoft: '#F2D58A', feather: '#8B6F47',
   line: '#2C181030', card: '#FAF5EA',
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = () => ({
   width: '100%', padding: '10px 12px', borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: 'border-box',
-};
+});
 
 export default function FarmhandModal({ user, homesteadName, role, onClose }) {
   const [members, setMembers] = useState([]);
@@ -36,7 +39,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       setMembers(m);
       setInvites(i);
     } catch (e) {
-      setError(e.message || 'Could not load members');
+      setError(friendlyError(e, 'Could not load members'));
     } finally {
       setLoading(false);
     }
@@ -67,20 +70,20 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       setInviteEmail('');
       refresh();
     } catch (e) {
-      setError(e.message || 'Could not send invite');
+      setError(friendlyError(e, 'Could not send invite'));
     } finally {
       setBusy(false);
     }
   };
 
   const removeFarmhand = async (member) => {
-    if (!confirm(`Remove this farmhand from your homestead?`)) return;
+    if (!(await askConfirm({ title: "Remove this farmhand from your homestead?", confirmLabel: "Remove" }))) return;
     setBusy(true);
     try {
       await removeMember(getActiveHomesteadId(), member.user_id);
       refresh();
     } catch (e) {
-      setError(e.message || 'Could not remove member');
+      setError(friendlyError(e, 'Could not remove member'));
     } finally {
       setBusy(false);
     }
@@ -92,7 +95,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
       await cancelInvite(invite.id);
       refresh();
     } catch (e) {
-      setError(e.message || 'Could not cancel invite');
+      setError(friendlyError(e, 'Could not cancel invite'));
     } finally {
       setBusy(false);
     }
@@ -116,7 +119,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
         ? "Chore emails turned ON for this member"
         : "Chore emails turned OFF for this member");
     } catch (e) {
-      setError(e.message || 'Could not update preference');
+      setError(friendlyError(e, 'Could not update preference'));
     } finally {
       setBusy(false);
     }
@@ -139,7 +142,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
           background: palette.bg, borderRadius: 16, maxWidth: 460, width: '100%',
           maxHeight: '90vh', overflow: 'auto',
           border: `2px solid ${palette.ink}`,
-          boxShadow: '6px 8px 0 ' + palette.line,
+          boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         }}
       >
         <div style={{
@@ -149,7 +152,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>
             Farmhands
           </div>
-          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.ink, padding: 4 }}>
+          <button aria-label="Close" onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: palette.ink, padding: 4 }}>
             <X size={22} />
           </button>
         </div>
@@ -177,7 +180,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
               <div style={{ display: 'flex', gap: 8 }}>
                 <input
                   type="email"
-                  style={inputStyle}
+                  style={inputStyle()}
                   value={inviteEmail}
                   onChange={(e) => setInviteEmail(e.target.value)}
                   placeholder="farmhand@example.com"
@@ -192,7 +195,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
                     border: `1.5px solid ${palette.ink}`,
                     cursor: busy ? 'wait' : 'pointer',
                     fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
-                    boxShadow: '2px 2px 0 ' + palette.line,
+                    boxShadow: "none",
                     opacity: busy || !inviteEmail.trim() ? 0.6 : 1,
                     display: 'flex', alignItems: 'center', gap: 6,
                     flexShrink: 0,
@@ -209,7 +212,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
 
           {error && (
             <div style={{
-              padding: 10, background: '#FBE5DE', border: `1.5px solid ${palette.accent}`,
+              padding: 10, background: palette.dangerBg, border: `1.5px solid ${palette.accent}`,
               borderRadius: 8, fontSize: 12, color: palette.accent, marginBottom: 14,
               display: 'flex', alignItems: 'flex-start', gap: 8, lineHeight: 1.5,
             }}>
@@ -339,7 +342,7 @@ export default function FarmhandModal({ user, homesteadName, role, onClose }) {
                         Expires {new Date(inv.expires_at).toLocaleDateString()}
                       </div>
                     </div>
-                    <button
+                    <button aria-label="Close"
                       onClick={() => cancelPending(inv)}
                       disabled={busy}
                       title="Cancel invite"

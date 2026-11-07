@@ -244,7 +244,12 @@ export async function pushGamesContribution(data, { force = false } = {}) {
     // user has explicitly hidden contributes nothing.
     if (region.display_mode === "hidden") return;
 
-    const year = new Date().getFullYear();
+    // This year, plus last year during January: the nightly rollup keeps
+    // recomputing last year's final standings through January, so logs added
+    // late (or on December 31 after the last push) still count.
+    const now = new Date();
+    const year = now.getFullYear();
+    const years = now.getMonth() === 0 ? [year, year - 1] : [year];
 
     // computeStats is a proven export; extractCommunityMetrics is read the same
     // guarded way GamesHub does, so a missing/renamed export can never hard-throw
@@ -256,19 +261,16 @@ export async function pushGamesContribution(data, { force = false } = {}) {
       console.warn("[games] stats helpers unavailable — skipping contribution");
       return;
     }
-    const metrics = extractCommunityMetrics(computeStats(data, year)) || {};
+    const rows = years.map((y) => ({
+      user_id: session.user.id,
+      year: y,
+      metrics: extractCommunityMetrics(computeStats(data, y)) || {},
+      updated_at: new Date().toISOString(),
+    }));
 
     const { error } = await supabase
       .from("community_contributions")
-      .upsert(
-        {
-          user_id: session.user.id,
-          year,
-          metrics,
-          updated_at: new Date().toISOString(),
-        },
-        { onConflict: "user_id,year" }
-      );
+      .upsert(rows, { onConflict: "user_id,year" });
 
     // Only arm the throttle on a genuinely successful write. The old code set it
     // unconditionally, so a single failed push soft-locked all retries for six

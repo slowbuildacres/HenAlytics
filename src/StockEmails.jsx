@@ -18,24 +18,25 @@
 //   data.tutorialsSeen.stockEmails = true once the tutorial's been shown
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useEffect, useMemo, useRef, useState } from "react";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { getActiveHomesteadId, compressImage } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { buildStockEmail, defaultSubject, stockFromName, STOCK_EMAIL_LIMITS } from "./stockEmail.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 const newId = () => Math.random().toString(36).slice(2, 10);
 const todayIso = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`; };
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -119,7 +120,7 @@ const btn = (variant = "primary", disabled = false) => ({
   color: variant === "primary" ? palette.bg : palette.ink, textAlign: "center",
 });
 const Label = ({ children }) => <div style={{ fontSize: 12, color: palette.inkSoft, margin: "12px 0 6px", fontWeight: 700 }}>{children}</div>;
-const linkBtn = { background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY, fontSize: 13 };
+const linkBtn = () => ({ background: "none", border: "none", padding: 0, color: palette.leaf, fontWeight: 600, cursor: "pointer", textDecoration: "underline", fontFamily: FONT_BODY, fontSize: 13 });
 
 // ---- Tutorial ---------------------------------------------------------------
 const TUTORIAL = [
@@ -135,7 +136,7 @@ export function StockEmailTutorial({ onClose, onStart }) {
   const last = i === TUTORIAL.length - 1;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 220, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 18, padding: "22px 20px 18px", fontFamily: FONT_BODY, textAlign: "center", boxShadow: `5px 6px 0 ${palette.line}` }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 18, padding: "22px 20px 18px", fontFamily: FONT_BODY, textAlign: "center", boxShadow: "0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: palette.inkSoft, marginBottom: 8 }}>New · Customer emails</div>
         <div style={{ fontSize: 46, lineHeight: 1, marginBottom: 10 }}>{s.icon}</div>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, marginBottom: 8 }}>{s.title}</div>
@@ -148,7 +149,7 @@ export function StockEmailTutorial({ onClose, onStart }) {
           {!last && <button type="button" onClick={() => setI(i + 1)} style={{ ...btn("primary"), flex: 2 }}>Next</button>}
           {last && <button type="button" onClick={() => { onClose(); onStart && onStart(); }} style={{ ...btn("primary"), flex: 2 }}>Set up my customers</button>}
         </div>
-        <button type="button" onClick={onClose} style={{ ...linkBtn, color: palette.inkSoft, marginTop: 12, fontWeight: 400 }}>{last ? "Maybe later" : "Skip"}</button>
+        <button type="button" onClick={onClose} style={{ ...linkBtn(), color: palette.inkSoft, marginTop: 12, fontWeight: 400 }}>{last ? "Maybe later" : "Skip"}</button>
       </div>
     </div>
   );
@@ -163,9 +164,9 @@ function ContactForm({ initial, lists, onSave, onCancel, onDelete }) {
   const valid = name.trim() && okEmail;
   return (
     <div style={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
-      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ ...inputStyle, marginBottom: 8 }} autoFocus={!initial} />
+      <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ ...inputStyle(), marginBottom: 8 }} autoFocus={!initial} />
       <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" inputMode="email" autoCapitalize="off"
-        style={{ ...inputStyle, borderColor: okEmail ? undefined : palette.accent }} />
+        style={{ ...inputStyle(), borderColor: okEmail ? undefined : palette.accent }} />
       {lists.length > 0 && (
         <>
           <Label>Lists</Label>
@@ -180,7 +181,7 @@ function ContactForm({ initial, lists, onSave, onCancel, onDelete }) {
         <button type="button" disabled={!valid} onClick={() => onSave({ ...(initial || {}), id: initial?.id || newId(), name: name.trim(), email: email.trim().toLowerCase(), groups: [...sel] })}
           style={{ ...btn("primary", !valid), flex: 1 }}>{initial ? "Save" : "Add contact"}</button>
         <button type="button" onClick={onCancel} style={btn("ghost")}>Cancel</button>
-        {onDelete && <button type="button" onClick={onDelete} style={{ ...linkBtn, color: palette.accent, fontWeight: 400 }}>Delete</button>}
+        {onDelete && <button type="button" onClick={onDelete} style={{ ...linkBtn(), color: palette.accent, fontWeight: 400 }}>Delete</button>}
       </div>
     </div>
   );
@@ -198,7 +199,7 @@ function PasteList({ lists, onAdd, onCancel }) {
   return (
     <div style={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
       <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 6 }}>One per line, like "Pat Smith pat@email.com". Pasting from a spreadsheet works too.</div>
-      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} style={{ ...inputStyle, fontSize: 14 }} placeholder={"Pat Smith pat@email.com\nJo Miller jo@email.com"} />
+      <textarea value={text} onChange={(e) => setText(e.target.value)} rows={5} style={{ ...inputStyle(), fontSize: 14 }} placeholder={"Pat Smith pat@email.com\nJo Miller jo@email.com"} />
       {lists.length > 0 && (
         <>
           <Label>Add them to</Label>
@@ -350,7 +351,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
               {options.map((o) => <Chip key={o.key} active={picked.some((p) => p.key === o.key)} onClick={() => togglePick(o)}>{o.fromStand ? "🧺 " : ""}{o.name}</Chip>)}
             </div>
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
-              <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Something else (e.g. Duck eggs)" style={{ ...inputStyle, padding: "8px 10px", fontSize: 14 }}
+              <input value={customName} onChange={(e) => setCustomName(e.target.value)} placeholder="Something else (e.g. Duck eggs)" style={{ ...inputStyle(), padding: "8px 10px", fontSize: 14 }}
                 onKeyDown={(e) => { if (e.key === "Enter" && customName.trim()) { togglePick({ key: `custom:${newId()}`, name: customName.trim(), unit: "", qty: "", price: "" }); setCustomName(""); } }} />
               <button type="button" disabled={!customName.trim()} onClick={() => { togglePick({ key: `custom:${newId()}`, name: customName.trim(), unit: "", qty: "", price: "" }); setCustomName(""); }} style={{ ...btn("ghost", !customName.trim()), padding: "8px 12px" }}>Add</button>
             </div>
@@ -364,8 +365,8 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
                       <button type="button" onClick={() => setPicked((x) => x.filter((y) => y.key !== p.key))} aria-label={`Remove ${p.name}`} style={{ background: "none", border: "none", cursor: "pointer", fontSize: 18, color: palette.inkSoft }}>×</button>
                     </div>
                     <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6 }}>
-                      <input value={p.qty} onChange={(e) => setPickField(p.key, "qty", e.target.value)} placeholder={p.unit ? `How many (${p.unit}s)` : "How many"} style={{ ...inputStyle, padding: "8px 10px", fontSize: 14 }} />
-                      <input value={p.price} onChange={(e) => setPickField(p.key, "price", e.target.value)} placeholder="Price (optional)" style={{ ...inputStyle, padding: "8px 10px", fontSize: 14 }} />
+                      <input value={p.qty} onChange={(e) => setPickField(p.key, "qty", e.target.value)} placeholder={p.unit ? `How many (${p.unit}s)` : "How many"} style={{ ...inputStyle(), padding: "8px 10px", fontSize: 14 }} />
+                      <input value={p.price} onChange={(e) => setPickField(p.key, "price", e.target.value)} placeholder="Price (optional)" style={{ ...inputStyle(), padding: "8px 10px", fontSize: 14 }} />
                     </div>
                   </div>
                 ))}
@@ -373,7 +374,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             )}
 
             <Label>Note (optional)</Label>
-            <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, STOCK_EMAIL_LIMITS.note))} rows={3} placeholder="Porch cooler is stocked until 6 tonight. Cash or Venmo!" style={{ ...inputStyle, fontSize: 14 }} />
+            <textarea value={note} onChange={(e) => setNote(e.target.value.slice(0, STOCK_EMAIL_LIMITS.note))} rows={3} placeholder="Porch cooler is stocked until 6 tonight. Cash or Venmo!" style={{ ...inputStyle(), fontSize: 14 }} />
 
             <Label>Photos (optional, up to {STOCK_EMAIL_LIMITS.photos})</Label>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -392,7 +393,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             </div>
 
             <Label>Send to</Label>
-            {lists.length === 0 && <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 6 }}>No lists yet. <button type="button" onClick={() => setTab("lists")} style={linkBtn}>Make lists</button> like Eggs or Milk, or send to all contacts.</div>}
+            {lists.length === 0 && <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 6 }}>No lists yet. <button type="button" onClick={() => setTab("lists")} style={linkBtn()}>Make lists</button> like Eggs or Milk, or send to all contacts.</div>}
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <Chip active={everyone} onClick={() => setEveryone((v) => !v)}>👥 All contacts</Chip>
               {!everyone && lists.map((g) => {
@@ -402,20 +403,20 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             </div>
 
             <Label>Subject</Label>
-            <input value={subject} onChange={(e) => setSubject(e.target.value.slice(0, STOCK_EMAIL_LIMITS.subject))} placeholder={defaultSubject(fromName, draft.items)} style={{ ...inputStyle, fontSize: 14 }} />
+            <input value={subject} onChange={(e) => setSubject(e.target.value.slice(0, STOCK_EMAIL_LIMITS.subject))} placeholder={defaultSubject(fromName, draft.items)} style={{ ...inputStyle(), fontSize: 14 }} />
 
             <div style={{ marginTop: 12, padding: "10px 12px", background: palette.card, border: `1.5px solid ${needAddress ? palette.accent : palette.line}`, borderRadius: 10 }}>
-              <button type="button" onClick={() => setShowSender((v) => !v)} style={{ ...linkBtn, color: palette.ink, textDecoration: "none", width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
+              <button type="button" onClick={() => setShowSender((v) => !v)} style={{ ...linkBtn(), color: palette.ink, textDecoration: "none", width: "100%", textAlign: "left", display: "flex", justifyContent: "space-between" }}>
                 <span>Sender details{needAddress ? " (mailing address needed)" : ""}</span><span>{showSender ? "▲" : "▼"}</span>
               </button>
               {showSender && (
                 <div>
                   <Label>From name</Label>
-                  <input defaultValue={settings.fromName || data.homesteadName || ""} onBlur={(e) => setSettings({ fromName: e.target.value.trim().slice(0, 60) })} placeholder="Slow Build Acres" style={{ ...inputStyle, fontSize: 14 }} />
+                  <input defaultValue={settings.fromName || data.homesteadName || ""} onBlur={(e) => setSettings({ fromName: e.target.value.trim().slice(0, 60) })} placeholder="Slow Build Acres" style={{ ...inputStyle(), fontSize: 14 }} />
                   <Label>Replies go to</Label>
-                  <input type="email" defaultValue={settings.replyTo || (status && status.accountEmail) || (user && user.email) || ""} onBlur={(e) => { const v = e.target.value.trim(); if (!v || validEmail(v)) setSettings({ replyTo: v }); }} placeholder="you@email.com" style={{ ...inputStyle, fontSize: 14 }} />
+                  <input type="email" defaultValue={settings.replyTo || (status && status.accountEmail) || (user && user.email) || ""} onBlur={(e) => { const v = e.target.value.trim(); if (!v || validEmail(v)) setSettings({ replyTo: v }); }} placeholder="you@email.com" style={{ ...inputStyle(), fontSize: 14 }} />
                   <Label>Mailing address</Label>
-                  <input defaultValue={settings.mailingAddress || ""} onBlur={(e) => setSettings({ mailingAddress: e.target.value.trim().slice(0, 200) })} placeholder="PO Box 12, Lawrence, KS 66044" style={{ ...inputStyle, fontSize: 14 }} />
+                  <input defaultValue={settings.mailingAddress || ""} onBlur={(e) => setSettings({ mailingAddress: e.target.value.trim().slice(0, 200) })} placeholder="PO Box 12, Lawrence, KS 66044" style={{ ...inputStyle(), fontSize: 14 }} />
                   <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, lineHeight: 1.4 }}>US law (CAN-SPAM) requires a mailing address at the bottom of promotional emails. A PO box is fine.</div>
                 </div>
               )}
@@ -426,13 +427,13 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
               <button type="button" onClick={sendTest} disabled={!user || !canCompose || !!busy} style={{ ...btn("yolk", !user || !canCompose || !!busy), flex: 1 }}>{busy === "test" ? "Sending…" : "📨 Send me a test"}</button>
             </div>
             {showPreview && canCompose && (
-              <div style={{ marginTop: 10, border: `1.5px solid ${palette.line}`, borderRadius: 12, overflow: "hidden", background: "#F4EDE0" }}>
+              <div style={{ marginTop: 10, border: `1.5px solid ${palette.line}`, borderRadius: 12, overflow: "hidden", background: palette.bg }}>
                 <div style={{ fontSize: 12, padding: "8px 10px", background: palette.card, borderBottom: `1px solid ${palette.line}` }}><strong>Subject:</strong> {preview.subject}</div>
                 <iframe title="Email preview" srcDoc={preview.html} sandbox="" style={{ width: "100%", height: 520, border: 0, display: "block" }} />
               </div>
             )}
 
-            {msg && <div style={{ marginTop: 10, fontSize: 13, padding: "9px 12px", borderRadius: 10, background: msg.kind === "ok" ? "#E3EDD3" : "#FBE5DE", color: msg.kind === "ok" ? palette.leaf : palette.accent, fontWeight: 600 }}>{msg.text}</div>}
+            {msg && <div style={{ marginTop: 10, fontSize: 13, padding: "9px 12px", borderRadius: 10, background: msg.kind === "ok" ? palette.goodBg : palette.dangerBg, color: msg.kind === "ok" ? palette.leaf : palette.accent, fontWeight: 600 }}>{msg.text}</div>}
 
             <div style={{ marginTop: 12 }}>
               {!confirm ? (
@@ -518,7 +519,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
               })}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input value={newList} onChange={(e) => setNewList(e.target.value)} placeholder="New list (e.g. Duck eggs)" style={inputStyle}
+              <input value={newList} onChange={(e) => setNewList(e.target.value)} placeholder="New list (e.g. Duck eggs)" style={inputStyle()}
                 onKeyDown={(e) => { if (e.key === "Enter" && newList.trim()) { const nm = newList.trim(); mutate((d) => { if (!d.customerGroups.some((g) => g.name.toLowerCase() === nm.toLowerCase())) d.customerGroups.push({ id: newId(), name: nm.slice(0, 30), emoji: "🏷️" }); }); setNewList(""); } }} />
               <button type="button" onClick={() => { const nm = newList.trim(); if (!nm) return; mutate((d) => { if (!d.customerGroups.some((g) => g.name.toLowerCase() === nm.toLowerCase())) d.customerGroups.push({ id: newId(), name: nm.slice(0, 30), emoji: "🏷️" }); }); setNewList(""); }} style={btn("primary")}>Add</button>
             </div>

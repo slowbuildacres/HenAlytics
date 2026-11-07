@@ -14,8 +14,8 @@ android {
         applicationId "com.henalytics.app"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 61
-        versionName "2.2.0"
+        versionCode 63
+        versionName "3.0.0"
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
@@ -33,8 +33,15 @@ android {
     }
     buildTypes {
         release {
-            minifyEnabled false
-            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            // R8 shrinks + obfuscates release code (Play Console's "DEX code
+            // optimization" check). Keep rules: @capacitor/android's consumer
+            // rules cover every Capacitor plugin (incl. WidgetBridgePlugin),
+            // the default optimize file keeps @JavascriptInterface methods, and
+            // manifest-declared widgets/activities are kept automatically.
+            // proguard-rules.pro adds only what those miss. Resource shrinking
+            // stays off: plugins look up icons/splash by name at runtime.
+            minifyEnabled true
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
             signingConfig signingConfigs.release
         }
     }

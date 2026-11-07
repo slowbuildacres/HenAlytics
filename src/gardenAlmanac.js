@@ -1,3 +1,4 @@
+import { plusDays } from "./dayMath.js";
 // ============================================================================
 // GARDEN ALMANAC DATA
 // ----------------------------------------------------------------------------
@@ -846,7 +847,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null, s
     : {};
 
   // Helper: add weeks to a Date
-  const addWeeks = (d, w) => new Date(d.getTime() + w * 7 * dayMs);
+  const addWeeks = (d, w) => plusDays(d, w * 7);
 
   // Fall planting follows entirely different timing math (anchored to the
   // FIRST frost, counted backwards), so hand it off to its own generator.
@@ -885,7 +886,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null, s
 
       // Estimated harvest start
       if (harvestDays) {
-        const harvestDate = new Date(transplantDate.getTime() + harvestDays * dayMs);
+        const harvestDate = plusDays(transplantDate, harvestDays);
         events.push({
           id: `crop-${cropId}${varietySuffix}-harvest-${harvestDate.getTime()}`,
           date: dateToISO(harvestDate),
@@ -921,7 +922,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null, s
     });
 
     if (harvestDays) {
-      const harvestDate = new Date(sowDate.getTime() + harvestDays * dayMs);
+      const harvestDate = plusDays(sowDate, harvestDays);
       events.push({
         id: `crop-${cropId}${varietySuffix}-harvest-${harvestDate.getTime()}`,
         date: dateToISO(harvestDate),
@@ -947,7 +948,7 @@ export function generateCropEvents(cropId, method, frostDates, variety = null, s
     });
 
     if (harvestDays) {
-      const harvestDate = new Date(transplantDate.getTime() + harvestDays * dayMs);
+      const harvestDate = plusDays(transplantDate, harvestDays);
       events.push({
         id: `crop-${cropId}${varietySuffix}-harvest-${harvestDate.getTime()}`,
         date: dateToISO(harvestDate),
@@ -1014,7 +1015,7 @@ function generateFallCropEvents(crop, method, frostDates, ctx) {
       "Plant around your first frost and mulch well. Roots establish before the ground freezes."
     ));
     if (harvestDays) {
-      const harvestDate = new Date(plantDate.getTime() + harvestDays * dayMs);
+      const harvestDate = plusDays(plantDate, harvestDays);
       events.push(mk(
         "harvest", harvestDate,
         `🧺 ${displayName} should be ready to harvest`,
@@ -1027,8 +1028,8 @@ function generateFallCropEvents(crop, method, frostDates, ctx) {
   // --- Standard fall crops -------------------------------------------------
   const buffer = FALL_FROST_BUFFER[cfg.hardiness] ?? 0;
   const fallDays = (harvestDays || 60) + FALL_FACTOR_DAYS;
-  const groundDate = new Date(ff.getTime() - (buffer + fallDays) * dayMs);
-  const harvestDate = new Date(groundDate.getTime() + fallDays * dayMs);
+  const groundDate = plusDays(ff, -((buffer + fallDays)));
+  const harvestDate = plusDays(groundDate, fallDays);
 
   const harvestNote = cfg.hardiness === "veryhardy"
     ? "Frost-hardy — flavor sweetens after a frost. Harvest as needed; it holds in the ground."
@@ -1037,7 +1038,7 @@ function generateFallCropEvents(crop, method, frostDates, ctx) {
   if (method === "indoor" && (cfg.methods || []).includes("indoor")) {
     // Reuse the spring indoor lead time (weeks before transplant) if defined.
     const leadWeeks = crop.methods.indoor?.weeksBeforeLastFrost || 5;
-    const indoorDate = new Date(groundDate.getTime() - leadWeeks * 7 * dayMs);
+    const indoorDate = plusDays(groundDate, -(leadWeeks * 7));
     events.push(mk(
       "indoor", indoorDate,
       `🌱 Start ${displayName} seeds indoors (fall crop)`,

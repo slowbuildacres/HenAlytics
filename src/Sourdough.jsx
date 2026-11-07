@@ -15,12 +15,18 @@
 // Year in Review and weekly digest read these to surface stats.
 // ============================================================================
 
+import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo } from "react";
+// NEW_LOOK (3.0): shared kitchen & craft screens.
+import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
+import { showUndo, undoable } from "./newlook/UndoBar.jsx";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
 import { X, Edit3, Plus, Trash2, ChevronDown } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
-import { fmtMoney } from "./units.js";
+import { fmtMoney, currencySymbol } from "./units.js";
 import PantryQuickCost, { applyPantryDeductions, applyPantryRefunds } from "./PantryQuickCost.jsx";
 import { pantryItemCostForUsage } from "./pantry.js";
+import { groupDigits } from "./numFmt.js";
 
 function computePantryLinesTotal(lines, pantry) {
   if (!Array.isArray(lines) || !Array.isArray(pantry)) return 0;
@@ -39,20 +45,20 @@ import {
   monthlySeries, LockedStatOverlay,
 } from "./analytics.js";
 
-const palette = {
+const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
   accent: "#C84B31", leaf: "#5A7A3C", leafSoft: "#A8C078",
   yolk: "#E8B547", yolkSoft: "#F2D58A", feather: "#8B6F47", featherSoft: "#C9A77B",
   line: "#2C181030", card: "#FAF5EA",
-};
+});
 const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
 const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
 
-const inputStyle = {
+const inputStyle = () => ({
   width: "100%", padding: "10px 12px", borderRadius: 8,
   border: `1.5px solid ${palette.line}`, background: palette.card,
   fontFamily: FONT_BODY, fontSize: 15, color: palette.ink, boxSizing: "border-box",
-};
+});
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
@@ -79,17 +85,17 @@ const RECIPE_SUGGESTIONS = [
 function Btn({ children, onClick, variant="primary", small=false, style={}, type="button", disabled=false }) {
   const styles = {
     primary: { background: palette.ink, color: palette.bg, border: `1.5px solid ${palette.ink}` },
-    danger: { background: palette.accent, color: palette.bg, border: `1.5px solid ${palette.accent}` },
+    danger: { background: palette.accent, color: palette.onColor, border: `1.5px solid ${palette.accent}` },
     ghost: { background: "transparent", color: palette.ink, border: `1.5px solid ${palette.line}` },
-    accent: { background: palette.yolk, color: palette.ink, border: `1.5px solid ${palette.ink}` },
-    leaf: { background: palette.leaf, color: palette.bg, border: `1.5px solid ${palette.leaf}` },
+    accent: { background: palette.yolk, color: palette.onYolk, border: `1.5px solid ${palette.ink}` },
+    leaf: { background: palette.leaf, color: palette.onColor, border: `1.5px solid ${palette.leaf}` },
   };
   return (
-    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{
-      padding: small ? "6px 12px" : "10px 18px", borderRadius: 8,
+    <button type={type} onClick={disabled ? undefined : onClick} disabled={disabled} style={{minHeight: small ? 36 : 44, 
+      padding: small ? "6px 12px" : "10px 18px", borderRadius: small ? 999 : 14,
       cursor: disabled ? "not-allowed" : "pointer", fontFamily: FONT_BODY,
       fontWeight: 600, fontSize: small ? 13 : 14, opacity: disabled ? 0.6 : 1,
-      boxShadow: "2px 2px 0 " + palette.line, ...styles[variant], ...style,
+      boxShadow: "none", ...styles[variant], ...style,
     }}>{children}</button>
   );
 }
@@ -97,11 +103,11 @@ function Btn({ children, onClick, variant="primary", small=false, style={}, type
 function StatCard({ label, value, sub, accent = palette.accent }) {
   return (
     <div style={{
-      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12,
+      background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 16,
       padding: 14, flex: "1 1 140px", minWidth: 140, boxSizing: "border-box", wordBreak: "break-word",
     }}>
       <div style={{ fontSize: 10, fontFamily: FONT_BODY, color: palette.inkSoft, textTransform: "uppercase", letterSpacing: 1, marginBottom: 6 }}>{label}</div>
-      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: accent, lineHeight: 1.1 }}>{value}</div>
+      <div style={{ fontSize: 22, fontFamily: FONT_DISPLAY, color: palette.ink, lineHeight: 1.1 }}>{groupDigits(value)}</div>
       {sub && <div style={{ fontSize: 11, color: palette.inkSoft, marginTop: 4, fontFamily: FONT_BODY }}>{sub}</div>}
     </div>
   );
@@ -119,7 +125,7 @@ function Field({ label, children }) {
 function ModalShell({ title, onClose, children, maxWidth = 460 }) {
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:`6px 8px 0 ${palette.line}` }}>
+      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`,position:"sticky",top:0,background:palette.bg,zIndex:1 }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -155,13 +161,13 @@ function StarterModal({ starter, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={starter ? "Edit starter" : "New starter"} onClose={onClose}>
       <Field label="Name">
-        <input style={inputStyle} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Doris, Yeasty Boys, Backup" autoFocus />
+        <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="e.g. Doris, Yeasty Boys, Backup" autoFocus />
       </Field>
       <Field label="Hydration % (optional)">
-        <input type="number" style={inputStyle} value={hydration} onChange={e=>setHydration(e.target.value)} placeholder="100" />
+        <input type="number" style={inputStyle()} value={hydration} onChange={e=>setHydration(e.target.value)} placeholder="100" />
       </Field>
       <Field label="Notes (origin, flour type, etc.)">
-        <textarea style={{ ...inputStyle,minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Started from neighbor's culture, fed with KA bread flour" />
+        <textarea style={{ ...inputStyle(),minHeight:60,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Started from neighbor's culture, fed with KA bread flour" />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap" }}>
         {starter && onDelete && (
@@ -226,10 +232,10 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
   return (
     <ModalShell title={bake ? "Edit bake" : "Log a bake"} onClose={onClose}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e=>setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
       </Field>
       <Field label="Recipe / loaf type">
-        <input style={inputStyle} list="recipe-suggestions" value={recipe} onChange={e=>setRecipe(e.target.value)} placeholder="Country Loaf" />
+        <input style={inputStyle()} list="recipe-suggestions" value={recipe} onChange={e=>setRecipe(e.target.value)} placeholder="Country Loaf" />
         <datalist id="recipe-suggestions">
           {RECIPE_SUGGESTIONS.map(r => <option key={r} value={r} />)}
         </datalist>
@@ -237,12 +243,12 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
       <div style={{ display:"flex",gap:12 }}>
         <div style={{ flex:1 }}>
           <Field label="Loaves baked">
-            <input type="number" min={1} style={inputStyle} value={loafCount} onChange={e=>setLoafCount(e.target.value)} />
+            <input type="number" min={1} style={inputStyle()} value={loafCount} onChange={e=>setLoafCount(e.target.value)} />
           </Field>
         </div>
         <div style={{ flex:1 }}>
           <Field label="Weight each (g, optional)">
-            <input type="number" style={inputStyle} value={weightPerLoafG} onChange={e=>setWeightPerLoafG(e.target.value)} placeholder="900" />
+            <input type="number" style={inputStyle()} value={weightPerLoafG} onChange={e=>setWeightPerLoafG(e.target.value)} placeholder="900" />
           </Field>
         </div>
       </div>
@@ -250,7 +256,7 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
         <input
           type="number"
           step="0.01"
-          style={inputStyle}
+          style={inputStyle()}
           value={costPerLoaf}
           onChange={e => { setCostPerLoaf(e.target.value); setCostTouched(true); }}
           placeholder="2.50"
@@ -269,7 +275,7 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
       </Field>
       {liveStarters.length > 1 && (
         <Field label="Which starter?">
-          <select style={inputStyle} value={starterId} onChange={e=>setStarterId(e.target.value)}>
+          <select style={inputStyle()} value={starterId} onChange={e=>setStarterId(e.target.value)}>
             {liveStarters.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
           </select>
         </Field>
@@ -292,7 +298,7 @@ function BakeModal({ bake, starters, pantry = [], onSave, onDelete, onClose }) {
         </div>
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle,minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Great oven spring, slight gummy crumb" />
+        <textarea style={{ ...inputStyle(),minHeight:50,resize:"vertical" }} value={notes} onChange={e=>setNotes(e.target.value)} placeholder="e.g. Great oven spring, slight gummy crumb" />
       </Field>
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap" }}>
         {bake && onDelete && (
@@ -330,16 +336,16 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   return (
     <ModalShell title={entry ? "Edit infrastructure" : "🔨 Log infrastructure"} onClose={onClose}>
       <Field label="Date">
-        <input type="date" style={inputStyle} value={date} onChange={e => setDate(e.target.value)} />
+        <input type="date" style={inputStyle()} value={date} onChange={e => setDate(e.target.value)} />
       </Field>
       <Field label="What was built / repaired / bought?">
-        <input style={inputStyle} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. proofing cabinet, new oven, banneton set" autoFocus />
+        <input style={inputStyle()} value={item} onChange={e => setItem(e.target.value)} placeholder="e.g. proofing cabinet, new oven, banneton set" autoFocus />
       </Field>
-      <Field label="Cost ($)">
-        <input type="number" min={0} step="0.01" style={inputStyle} value={cost} onChange={e => setCost(e.target.value)} placeholder="$0.00" />
+      <Field label={`Cost (${currencySymbol()})`}>
+        <input type="number" min={0} step="0.01" style={inputStyle()} value={cost} onChange={e => setCost(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
       </Field>
       <Field label="Notes (optional)">
-        <textarea style={{ ...inputStyle, minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
+        <textarea style={{ ...inputStyle(), minHeight: 60, resize: "vertical" }} value={note} onChange={e => setNote(e.target.value)} placeholder="Materials, supplier, etc." />
       </Field>
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", flexWrap: "wrap" }}>
         {entry && onDelete && (
@@ -354,7 +360,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   );
 }
 
-export default function SourdoughPage({ hobby, data, update, setModal }) {
+export default function SourdoughPage({ hobby, data, update, setModal, nl = null }) {
   const [starterModal, setStarterModal] = useState({ open: false, starter: null });
   const [bakeModal, setBakeModal] = useState({ open: false, bake: null });
   const [infraModal, setInfraModal] = useState({ open: false, entry: null });
@@ -363,7 +369,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
   const recentInfra = infraEntries.slice().sort((a,b) => (b.date||"").localeCompare(a.date||"")).slice(0, 3);
 
   const saveInfra = (entry) => {
-    update(d => {
+    undoable(update, "Saved equipment")(d => {
       d.entries[hobby.id] = d.entries[hobby.id] || [];
       const idx = d.entries[hobby.id].findIndex(e => e.id === entry.id);
       if (idx >= 0) d.entries[hobby.id][idx] = entry;
@@ -372,7 +378,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteInfra = (id) => {
-    update(d => {
+    undoable(update, "Deleted equipment")(d => {
       d.entries[hobby.id] = (d.entries[hobby.id] || []).filter(e => e.id !== id);
       return d;
     });
@@ -395,7 +401,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
 
   // Save / delete handlers
   const saveStarter = (starter) => {
-    update(d => {
+    undoable(update, `Saved ${starter.name || "starter"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.starters)) h.starters = [];
@@ -405,7 +411,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteStarter = (id) => {
-    update(d => {
+    undoable(update, "Deleted starter")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.starters = (h.starters||[]).filter(s => s.id !== id);
       return d;
@@ -420,7 +426,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
     });
   };
   const saveBake = (bake) => {
-    update(d => {
+    undoable(update, `Saved ${bake.item || bake.name || "bake"}`)(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       if (!Array.isArray(h.bakes)) h.bakes = [];
@@ -453,7 +459,7 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
     });
   };
   const deleteBake = (id) => {
-    update(d => {
+    undoable(update, "Deleted bake")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
       // SHARED_PANTRY: refund any deducted stock.
@@ -474,6 +480,48 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
       // Don't auto-create — leave it up to user. Empty state will guide them.
     }
   }, [hobby]);
+
+  if (nl) {
+    const fedWithUndo = (st) => {
+      const prev = st.lastFedAt || null;
+      feedStarter(st.id);
+      showUndo(`Fed ${st.name || "starter"}`, () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.starters || []).find((x) => x.id === st.id); if (t) t.lastFedAt = prev; return d; }));
+    };
+    const ctx = {
+      key: "sourdough",
+      summary: { big: last30dLoaves, small: `loa${last30dLoaves === 1 ? "f" : "ves"} in the last 30 days`, line: totalBakes ? `${totalLoaves} loaves from ${totalBakes} bake${totalBakes === 1 ? "" : "s"} so far` : "" },
+      newLabel: "Log a bake", onNew: () => setBakeModal({ open: true, bake: null }),
+      goingTitle: "Starters",
+      going: liveStarters.map((st) => {
+        const days = daysSince(st.lastFedAt);
+        return { id: st.id, title: st.name || "Starter", onOpen: () => setStarterModal({ open: true, starter: st }),
+          sub: [days === null ? "Not fed yet" : days === 0 ? "Fed today" : days === 1 ? "Fed yesterday" : `Fed ${days} days ago`, st.flour || st.flourType || null, st.hydration ? `${st.hydration}% hydration` : null].filter(Boolean).join(" · "),
+          badge: days != null && days >= 3 ? { tone: "alert", text: "Hungry" } : null,
+          actions: [{ label: "Fed it", primary: days == null || days >= 1, run: () => fedWithUndo(st) }] };
+      }),
+      shelfTitle: "Recent bakes", shelfEmpty: "No bakes yet. Log your next loaf.",
+      shelf: bakes.map((b) => ({ id: b.id, title: b.recipe || "Bake", onOpen: () => setBakeModal({ open: true, bake: b }),
+        sub: [fmtDate(b.date), `${Number(b.loafCount) || 0} loa${Number(b.loafCount) === 1 ? "f" : "ves"}`, b.crumbRating ? `crumb ${b.crumbRating} of 5` : null, b.costPerLoaf ? `${fmtMoney(Number(b.costPerLoaf))} a loaf` : null].filter(Boolean).join(" · ") })),
+      past: archivedStarters.map((st) => ({ id: st.id, title: st.name || "Starter", sub: "Retired starter", onOpen: () => setStarterModal({ open: true, starter: st }) })),
+      pastTitle: "Retired starters",
+      extras: [
+        { key: "starter", label: "Add a starter", icon: NlPlus, run: () => setStarterModal({ open: true, starter: null }) },
+        { key: "pantry", label: "Pantry supplies", sub: "Flour, salt and what's left", icon: NlBasket, run: () => setModal && setModal({ type: "pantry" }) },
+        { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Dutch ovens, bannetons, tools", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
+        { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
+        ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
+        { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
+      ],
+    };
+    return (
+      <div>
+        {starterModal.open && <StarterModal starter={starterModal.starter} onClose={() => setStarterModal({ open: false, starter: null })} onSave={saveStarter} onDelete={deleteStarter} />}
+        {bakeModal.open && <BakeModal bake={bakeModal.bake} starters={starters} pantry={Array.isArray(data.pantry) ? data.pantry : []} onClose={() => setBakeModal({ open: false, bake: null })} onSave={saveBake} onDelete={deleteBake} />}
+        {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
+        <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
+      </div>
+    );
+  }
 
   return (
     <div>
@@ -650,6 +698,31 @@ export default function SourdoughPage({ hobby, data, update, setModal }) {
 // ============================================================================
 // SOURDOUGH ANALYTICS
 // ============================================================================
+// 3.0 Stats: bakes, loaves, best rated, sold.
+export function sourdoughStats(hobby, data, range = "year") {
+  const year = String(new Date().getFullYear());
+  const inR = (d) => range === "all" || String(d || "").startsWith(year);
+  const bakes = (hobby && Array.isArray(hobby.bakes) ? hobby.bakes : []).filter((b) => inR(b.date));
+  const loaves = bakes.reduce((t, b) => t + (Number(b.loafCount) || 0), 0);
+  const cost = bakes.reduce((t, b) => t + (Number(b.costPerLoaf) || 0) * (Number(b.loafCount) || 0), 0);
+  const revenue = (data.sales || []).filter((x) => x && x.hobbyType === "sourdough" && inR(x.date)).reduce((t, x) => t + (Number(x.totalRevenue) || 0), 0);
+  const rated = bakes.filter((b) => Number(b.crumbRating) > 0);
+  const by = new Map(); for (const b of bakes) { const k = String(b.recipe || "Bake").trim(); by.set(k, (by.get(k) || 0) + (Number(b.loafCount) || 0)); }
+  const rows = [...by.entries()].sort((a, b) => b[1] - a[1]).slice(0, 8).map(([name, v]) => ({ key: name, name, value: v, label: `${v} loa${v === 1 ? "f" : "ves"}` }));
+  const facts = [];
+  if (loaves >= 4) facts.push({ key: "loaves", icon: "bread", big: String(loaves), line: "loaves of sourdough baked", title: `${loaves} loaves baked`, sub: `About ${Math.round(loaves * 12)} slices.` });
+  if (rated.length >= 3) facts.push({ key: "crumb", icon: "trophy", big: `${(rated.reduce((t, b) => t + Number(b.crumbRating), 0) / rated.length).toFixed(1)} of 5`, line: "our average crumb", title: `Average crumb: ${(rated.reduce((t, b) => t + Number(b.crumbRating), 0) / rated.length).toFixed(1)} of 5`, sub: `Across ${rated.length} rated bakes.` });
+  return {
+    cards: [
+      { label: "Loaves", value: loaves, sub: `${bakes.length} bake${bakes.length === 1 ? "" : "s"}` },
+      ...(revenue ? [{ label: "Sold", value: fmtMoney(revenue), sub: "Bread sales" }] : []),
+      ...(cost ? [{ label: "Ingredients", value: fmtMoney(cost), sub: loaves ? `${fmtMoney((cost / loaves))} a loaf` : "" }] : []),
+    ],
+    bars: rows.length ? { title: "By recipe", right: range === "all" ? "All time" : year, rows } : null,
+    facts, emoji: "🍞", kicker: "Our kitchen",
+  };
+}
+
 export function SourdoughAnalytics({ hobby, sales = [], entries = [], /* ADV_ANALYTICS */ dateRange = null, earlyAccessConfig = null, isSupporter = false }) {
   if (!hobby) {
     return <div style={{ padding:40,textAlign:"center",color:palette.inkSoft }}>Loading…</div>;

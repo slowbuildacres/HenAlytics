@@ -22,6 +22,7 @@
 // ============================================================================
 
 import React, { useState } from "react";
+import { fmtMoney } from "./units.js";
 import {
   PANTRY_WEIGHT_UNITS, PANTRY_VOLUME_UNITS, PANTRY_COUNT_UNITS,
   PANTRY_UNIT_LABELS, pantryItemCostForUsage,
@@ -52,7 +53,7 @@ const inputStyle = {
 
 function fmtMoneyLocal(n) {
   const v = Number(n) || 0;
-  return `$${v.toFixed(2)}`;
+  return fmtMoney(v);
 }
 
 // `lines` is the controlled list of { id, pantryId, amount, unit }.
