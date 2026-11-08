@@ -1054,9 +1054,9 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
   // cause "Rendered fewer hooks than expected" on the next render. So we
   // call all hooks unconditionally with safe defaults, then handle the
   // missing-event case in a useEffect.
-  const [title, setTitle] = useState(event?.title || "");
-  const [date, setDate] = useState(event?.date || "");
-  const [notes, setNotes] = useState(event?.notes || "");
+  const [title, setTitle] = useState(typeof event?.title === "string" ? event.title : (event?.title != null ? String(event.title) : ""));
+  const [date, setDate] = useState(typeof event?.date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(event.date) ? event.date : "");
+  const [notes, setNotes] = useState(typeof event?.notes === "string" ? event.notes : "");
   const [recurrence, setRecurrence] = useState(event?.recurrence || "none");
   const [recurEnd, setRecurEnd] = useState(event?.recurEnd || "");
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -1071,7 +1071,7 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
   if (!event) return null;
 
   const save = () => {
-    if (!title.trim()) return;
+    if (!title.trim() || !date) return;
     update((d) => {
       const evt = (d.calendarEvents || []).find((e) => e.id === eventId);
       if (evt) {
@@ -1133,7 +1133,7 @@ export function EditCalendarEventModal({ data, update, eventId, onClose }) {
         />
       </Field>
       <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-        <Btn variant="primary" onClick={save}>Save changes</Btn>
+        <Btn variant="primary" onClick={save} disabled={!title.trim() || !date}>Save changes</Btn>
         {!confirmDelete && (
           <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
         )}

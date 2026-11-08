@@ -25,6 +25,7 @@ import {
   HARDINESS_SYSTEMS, estimateZoneForSystem, getZoneInfo,
 } from "./hardiness.js";
 import { getUserFrostDates } from "./CalendarModals.jsx";
+import { askConfirm } from "./newlook/ConfirmHost.jsx";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -60,8 +61,16 @@ export default function CalendarPage({ data, update, setModal }) {
     [userZone, year, userSystem, frostKey]
   );
 
-  // Combine user events with almanac frost events
-  const userEvents = data.calendarEvents || [];
+  // Combine user events with almanac frost events. Only events with a real
+  // calendar day are drawn: one record with no date, a date the app can't
+  // read, or a note saved as something other than text used to stop the
+  // whole page. Events without a date are listed below the calendar so they
+  // can be given one or deleted.
+  const userEvents = useMemo(
+    () => (Array.isArray(data.calendarEvents) ? data.calendarEvents : []).filter((e) => e && typeof e === "object"),
+    [data.calendarEvents]
+  );
+  const undated = userEvents.filter((e) => !hasDay(e));
   const allEvents = useMemo(() => {
     // When the user set their own frost dates, relabel the markers so they
     // don't read as regional averages.
@@ -71,8 +80,8 @@ export default function CalendarPage({ data, update, setModal }) {
         : e
     );
     // Expand recurring user events into per-date occurrences before merging.
-    const expanded = expandRecurring(userEvents);
-    return [...expanded, ...frostEvts].sort((a, b) => a.date.localeCompare(b.date));
+    const expanded = expandRecurring(userEvents.filter(hasDay));
+    return [...expanded, ...frostEvts].filter(hasDay).map(forDisplay).sort((a, b) => a.date.localeCompare(b.date));
   }, [userEvents, frostDates]);
 
   return (
@@ -108,6 +117,82 @@ export default function CalendarPage({ data, update, setModal }) {
       {view === "month" && (
         <MonthView events={allEvents} update={update} setModal={setModal} userEvents={userEvents} />
       )}
+
+      {undated.length > 0 && <UndatedEvents events={undated} update={update} setModal={setModal} />}
+    </div>
+  );
+}
+
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+function hasDay(e) {
+  if (!e || typeof e.date !== "string" || !ISO_DAY.test(e.date)) return false;
+  const [, m, d] = e.date.split("-").map(Number);
+  return m >= 1 && m <= 12 && d >= 1 && d <= 31;
+}
+function asText(v) {
+  if (typeof v === "string") return v;
+  if (typeof v === "number" && Number.isFinite(v)) return String(v);
+  return "";
+}
+// A copy safe to draw: text fields are always text.
+function forDisplay(e) {
+  const title = asText(e.title) || "Event";
+  const notes = asText(e.notes);
+  return title === e.title && notes === (e.notes || "") ? e : { ...e, title, notes };
+}
+
+// Events saved without a usable date (older versions, imports, sync hiccups).
+function UndatedEvents({ events, update, setModal }) {
+  const removeAll = async () => {
+    const ok = await askConfirm({
+      title: `Delete ${events.length === 1 ? "this event" : `these ${events.length} events`}?`,
+      message: "They have no date, so they don't show on the calendar.",
+      confirmLabel: "Delete",
+    });
+    if (!ok) return;
+    update((d) => {
+      d.calendarEvents = (Array.isArray(d.calendarEvents) ? d.calendarEvents : []).filter((e) => e && typeof e === "object" && hasDay(e));
+      return d;
+    });
+  };
+  return (
+    <div style={{ marginTop: 18, background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 12, padding: 14 }}>
+      <div style={{ fontFamily: FONT_DISPLAY, fontSize: 17, color: palette.ink, marginBottom: 4 }}>
+        {events.length === 1 ? "1 event needs a date" : `${events.length} events need a date`}
+      </div>
+      <div style={{ fontSize: 13, color: palette.inkSoft, lineHeight: 1.45, marginBottom: 10 }}>
+        Tap one to give it a date, or delete them.
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+        {events.map((e, i) => (
+          <button
+            key={e.id || `undated-${i}`}
+            type="button"
+            disabled={!e.id}
+            onClick={() => e.id && setModal({ type: "editCalendarEvent", eventId: e.id })}
+            style={{
+              textAlign: "left", minHeight: 44, padding: "8px 12px", borderRadius: 8,
+              border: `1.5px solid ${palette.line}`, background: palette.bg, color: palette.ink,
+              fontFamily: FONT_BODY, fontSize: 14, cursor: e.id ? "pointer" : "default",
+              display: "flex", alignItems: "center", gap: 8,
+            }}
+          >
+            <span style={{ flex: 1, minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{asText(e.title) || "Untitled event"}</span>
+            {e.id && <Edit3 size={14} color={palette.inkSoft} />}
+          </button>
+        ))}
+      </div>
+      <button
+        type="button"
+        onClick={removeAll}
+        style={{
+          marginTop: 10, minHeight: 40, padding: "0 14px", borderRadius: 999, cursor: "pointer",
+          border: `1.5px solid ${palette.line}`, background: "transparent", color: palette.ink,
+          fontFamily: FONT_BODY, fontWeight: 600, fontSize: 13,
+        }}
+      >
+        {events.length === 1 ? "Delete it" : "Delete them all"}
+      </button>
     </div>
   );
 }
@@ -563,7 +648,8 @@ function expandRecurring(events) {
       out.push(e);
       continue;
     }
-    const stop = (e.recurEnd && e.recurEnd < horizon) ? e.recurEnd : horizon;
+    const end = typeof e.recurEnd === "string" && ISO_DAY.test(e.recurEnd) ? e.recurEnd : null;
+    const stop = (end && end < horizon) ? end : horizon;
     // Each occurrence is computed as (anchor + step*n) so monthly/yearly stay
     // pinned to the original day-of-month — e.g. a "31st monthly" event reads
     // Jan 31, Feb 28, Mar 31, ... rather than collapsing to the 28th once it

@@ -43,6 +43,9 @@ export function readDay(v) {
       const [y, m, d] = s.split("-").map(Number);
       return m >= 1 && m <= 12 && d >= 1 && d <= 31 ? s : null;
     }
+    // "2026-11-5" (no leading zeros)
+    const loose = s.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+    if (loose) return readDay(`${loose[1]}-${pad(loose[2])}-${pad(loose[3])}`);
     // "2026-11-05T14:00:00Z" style: keep the calendar day it names.
     const iso = s.match(/^(\d{4}-\d{2}-\d{2})T/);
     if (iso) return readDay(iso[1]);
@@ -63,7 +66,7 @@ function tidyDated(rec) {
   if (!rec || typeof rec !== "object") return;
   if ("date" in rec && !(typeof rec.date === "string" && ISO_DAY.test(rec.date))) {
     const day = readDay(rec.date) || readDay(rec.created) || readDay(rec.createdAt);
-    if (day) rec.date = day; else delete rec.date;
+    if (day) rec.date = day;
   }
 }
 
