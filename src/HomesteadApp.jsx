@@ -1809,11 +1809,11 @@ function giveawayWeekKey(d) {
 // everyone who taps Sure gets it. We just filter who we bother with the
 // request based on engagement signals, which is the standard pattern.
 function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
-  const palette = { bg: palette.bg, card: "#FAF5EA", ink: "#2C1810", inkSoft: "#5C4530", accent: "#C84B31", leaf: "#5A7A3C", line: "#2C181030" };
   const FONT_DISPLAY = `'DM Serif Display', Georgia, serif`;
   const FONT_BODY = `'Be Vietnam Pro', -apple-system, sans-serif`;
+  const store = getNativePlatform() === "android" ? "Google Play" : "the App Store";
   return (
-    <div style={{
+    <div role="dialog" aria-modal="true" aria-labelledby="review-ask-title" style={{
       position: "fixed", inset: 0, background: "rgba(0,0,0,0.5)",
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 10000, padding: 20,
@@ -1823,22 +1823,26 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
         maxWidth: 360, width: "100%", boxShadow: "0 8px 32px rgba(0,0,0,0.18)",
         fontFamily: FONT_BODY, color: palette.ink,
       }}>
-        <div style={{ fontSize: 36, textAlign: "center", marginBottom: 10 }}>💚</div>
-        <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, textAlign: "center", marginBottom: 10, lineHeight: 1.2 }}>
-          Enjoying Henalytics?
+        <div style={{ fontSize: 36, textAlign: "center", marginBottom: 10 }} aria-hidden="true">💚</div>
+        <div id="review-ask-title" style={{ fontFamily: FONT_DISPLAY, fontSize: 22, textAlign: "center", marginBottom: 10, lineHeight: 1.2 }}>
+          Could you help Henalytics grow?
+        </div>
+        <div style={{ fontSize: 14, lineHeight: 1.5, color: palette.inkSoft, textAlign: "center", marginBottom: 8 }}>
+          Henalytics is just me, a homesteader building it in the evenings. There's no company and no ad budget behind it.
         </div>
         <div style={{ fontSize: 14, lineHeight: 1.5, color: palette.inkSoft, textAlign: "center", marginBottom: 22 }}>
-          A quick review on the App Store really helps other homesteaders find the app.
+          A review on {store} is one of the very best ways to help it spread, so more folks find it.
+          <span style={{ display: "block", marginTop: 8, fontStyle: "italic" }}>Thanks so much,<br />Riley</span>
         </div>
         <button onClick={onSure} style={{
-          width: "100%", padding: "12px 16px", borderRadius: 10, border: "none",
+          width: "100%", minHeight: 48, padding: "12px 16px", borderRadius: 10, border: "none",
           background: palette.accent, color: palette.onColor, fontFamily: FONT_BODY,
           fontSize: 15, fontWeight: 600, cursor: "pointer", marginBottom: 8,
         }}>
-          Sure, I'll leave a review
+          Leave a review
         </button>
         <button onClick={onLater} style={{
-          width: "100%", padding: "12px 16px", borderRadius: 10,
+          width: "100%", minHeight: 48, padding: "12px 16px", borderRadius: 10,
           border: `1.5px solid ${palette.line}`, background: "transparent",
           color: palette.ink, fontFamily: FONT_BODY, fontSize: 14,
           cursor: "pointer", marginBottom: 8,
@@ -1846,7 +1850,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
           Maybe later
         </button>
         <button onClick={onNoThanks} style={{
-          width: "100%", padding: "10px 16px", borderRadius: 10, border: "none",
+          width: "100%", minHeight: 44, padding: "10px 16px", borderRadius: 10, border: "none",
           background: "transparent", color: palette.inkSoft,
           fontFamily: FONT_BODY, fontSize: 13, cursor: "pointer",
         }}>
@@ -2028,11 +2032,17 @@ const requestNativeReview = async () => {
 const REVIEW_MIN_ACCOUNT_AGE_DAYS = 20;
 const REVIEW_MAX_PROMPTS_PER_YEAR = 3;
 const REVIEW_COOLDOWN_DAYS = 60;
+// A new ask round gives everyone who hasn't tapped "Leave a review" one more
+// ask, even if they tapped "Maybe later" or "No thanks" before (the popup was
+// also broken in 3.0.0 and 3.0.1, so many never saw it). Once they answer in
+// this round, the usual rules apply again. Change this to run another round.
+const REVIEW_ASK_ROUND = "2026-11";
 function shouldPromptForReview(reviewPrompt, accountAgeDays) {
   if (!isNativeApp()) return false;
   if (typeof accountAgeDays !== "number" || accountAgeDays < REVIEW_MIN_ACCOUNT_AGE_DAYS) return false;
   const r = reviewPrompt || {};
   if (r.userTappedReview === true) return false;
+  if (r.askRound !== REVIEW_ASK_ROUND) return true;
   if (r.permanentlyDismissed === true) return false;
   const currentYear = new Date().getFullYear();
   const promptCount = (r.lastPromptYear === currentYear) ? (Number(r.promptCount) || 0) : 0;
@@ -3904,12 +3914,12 @@ useEffect(() => {
   // STEP3_REVIEW_PROMPT: helper used by both triggers to actually open the
   // pre-prompt. Centralizes all the guards so the trigger effects stay
   // small. Returns true if the prompt was opened.
-  const tryOpenReviewPrompt = React.useCallback(() => {
+  const tryOpenReviewPrompt = React.useCallback((delayMs = 600) => {
     if (reviewPromptShownRef.current) return false;
     if (!shouldPromptForReview(data?.reviewPrompt, accountAgeDays)) return false;
     reviewPromptShownRef.current = true;
     // Small delay so the prompt lands after any concurrent modal/toast settles.
-    setTimeout(() => setShowReviewPrompt(true), 600);
+    setTimeout(() => setShowReviewPrompt(true), delayMs);
     return true;
   }, [data?.reviewPrompt, accountAgeDays]);
 
@@ -4025,6 +4035,19 @@ useEffect(() => {
       tryOpenReviewPrompt();
     }
   }, [page, tryOpenReviewPrompt]);
+
+  // Review ask after a new log is saved: right after someone logs is when the
+  // app has just been useful. tryOpenReviewPrompt holds every rule (phone app,
+  // account 20+ days old, cooldown, yearly cap, once per session).
+  const reviewEntryBaselineRef = React.useRef(null);
+  useEffect(() => {
+    if (!data?.entries) return;
+    const total = Object.values(data.entries).reduce((sum, arr) => sum + (Array.isArray(arr) ? arr.length : 0), 0);
+    const prev = reviewEntryBaselineRef.current;
+    reviewEntryBaselineRef.current = total;
+    if (prev === null || total <= prev) return; // first look, or nothing new
+    tryOpenReviewPrompt(1800); // after the log sheet closes and the saved note shows
+  }, [data?.entries, tryOpenReviewPrompt]);
 
   // Trigger: watch total entry count. Fires when count INCREASES (a new log
   // saved) AND all gating conditions are met. The ref guards against
@@ -5993,7 +6016,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           egg-count milestone). Guarded by shouldPromptForReview() inside
           tryOpenReviewPrompt — so platform/age/cooldown/quota are already
           enforced by the time showReviewPrompt is true. */}
-      {showReviewPrompt && !showWhatsNew && !showSupporterThanks && !showMilestone && (
+      {showReviewPrompt && !modal && !showWhatsNew && !showSupporterThanks && !showMilestone && (
         <ReviewPromptModal
           onSure={() => {
             setShowReviewPrompt(false);
@@ -6002,6 +6025,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
                 d.reviewPrompt = { promptCount: 0, lastPromptedAt: null, lastPromptYear: null, userTappedReview: false, permanentlyDismissed: false };
               }
               d.reviewPrompt.userTappedReview = true;
+              d.reviewPrompt.askRound = REVIEW_ASK_ROUND;
               const now = new Date();
               d.reviewPrompt.lastPromptedAt = now.toISOString();
               const yr = now.getFullYear();
@@ -6031,6 +6055,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
               }
               d.reviewPrompt.promptCount = (Number(d.reviewPrompt.promptCount) || 0) + 1;
               d.reviewPrompt.lastPromptedAt = now.toISOString();
+              d.reviewPrompt.askRound = REVIEW_ASK_ROUND;
               return d;
             });
           }}
@@ -6041,6 +6066,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
                 d.reviewPrompt = { promptCount: 0, lastPromptedAt: null, lastPromptYear: null, userTappedReview: false, permanentlyDismissed: false };
               }
               d.reviewPrompt.permanentlyDismissed = true;
+              d.reviewPrompt.askRound = REVIEW_ASK_ROUND;
               d.reviewPrompt.lastPromptedAt = new Date().toISOString();
               return d;
             });
