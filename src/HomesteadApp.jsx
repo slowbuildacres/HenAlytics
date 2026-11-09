@@ -6016,7 +6016,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           egg-count milestone). Guarded by shouldPromptForReview() inside
           tryOpenReviewPrompt — so platform/age/cooldown/quota are already
           enforced by the time showReviewPrompt is true. */}
-      {showReviewPrompt && !showWhatsNew && !showSupporterThanks && !showMilestone && (
+      {showReviewPrompt && !modal && !showWhatsNew && !showSupporterThanks && !showMilestone && (
         <ReviewPromptModal
           onSure={() => {
             setShowReviewPrompt(false);
