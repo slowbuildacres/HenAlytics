@@ -1864,6 +1864,9 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🛍️ Orders — let customers order ahead. Turn on your order page (More › Orders), list what people can request (eggs, bread, meat birds, anything), and share the link or print the QR sign for your stand. Requests show up in Orders, where you accept them, mark them ready and picked up, and Henalytics can email the customer at each step. People can also ask to join your \"what's fresh\" email list. No payments, just an easy way to talk.",  // ORDERS_WHATSNEW
+  "🧺 Farm stand back stock — made something that isn't going out yet, like cold-process soap that's still curing? Put it in back stock with a ready date, then move it to the stand when it's ready. Out-of-stock items can be taken off the stand too, and their sales history stays.",
+  "♻️ Compost tracking (Garden › More, or the Plan tab) — log what goes in, turning, temperature and finished compost, with a reminder when a pile is due for a turn.",
   "✨ A whole new Henalytics — every screen rebuilt to make things easier to find. Home shows what needs you today, each hobby has Today, its animals or plants, and Stats, and the yellow Log button logs anything in two taps. Saves show a few seconds of Undo instead of \"Are you sure?\" popups. Your animals, logs and numbers are exactly where you left them.",  // NEWLOOK_30_WHATSNEW
   "🌙 Dark mode for everyone (More › Look & app icon). Supporters also get Meadow and Barn colors, new app icons on iPhone, and a Wrapped of their month on the 1st of every month.",
   "🎓 4-H & FFA — start a project and the record book fills itself in from what you already log: animals, production, costs, sales, health and photos. Log project hours and shows, write goals and the project story, then download a PDF ready to sign. FFA projects get an AET summary to type from.",
