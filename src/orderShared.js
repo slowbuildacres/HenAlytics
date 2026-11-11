@@ -185,8 +185,9 @@ export function cleanRequest(fields, menu, payIds = [], rules = {}) {
   const pickup = /^\d{4}-\d{2}-\d{2}$/.test(String(fields.pickupDate || '')) ? String(fields.pickupDate) : '';
   if (!name) return { error: 'Please add your name.' };
   if (!EMAIL_RE.test(email)) return { error: 'Please add an email address that works, so they can reply.' };
+  // "OK to text" only counts with a phone number; without one it's ignored
+  // (the phone stays optional).
   const textOk = !!(fields.textOk === true || fields.textOk === '1') && phone.replace(/[^0-9]/g, '').length >= 7;
-  if ((fields.textOk === true || fields.textOk === '1') && !textOk) return { error: 'Add a phone number so they can text you.' };
   if (kind === 'join') {
     const row = { kind, customer_name: name, email, phone: textOk ? phone : '', items: [], note: '', pickup_date: null };
     if (textOk) row.text_ok = true;
