@@ -147,7 +147,7 @@ import { planAnnualConfirm } from "./gardenPlanting.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
 import { CROPS as ALMANAC_CROPS } from "./gardenAlmanac.js";
 import { autoDetectHardiness } from "./hardiness.js";
-import { SeasonalDecorations, getTimeOfDayAccent } from "./seasons.jsx";
+import { getTimeOfDayAccent } from "./seasons.jsx";
 import YearInReviewPage from "./YearInReview.jsx";
 import GamesHubPage from "./GamesHub.jsx";              // HOMESTEAD_GAMES
 import { pushGamesContribution } from "./games.js";     // HOMESTEAD_GAMES
@@ -5827,7 +5827,6 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
       )}
       {/* Seasonal ambient decorations (spring flowers, fall leaves, winter snow) */}
       {/* Off unless the user turns it on in Settings. */}
-      {data.seasonalDecorations === true && <SeasonalDecorations />}
 
       {/* Toast host — listens for window "henalytics-toast" events */}
       <ToastHost />
@@ -14809,21 +14808,6 @@ function SettingsModal({ data, update, onClose, setModal, user }) {
         sub="Put your homestead reminders on the calendar you already use"
         accent={palette.feather}
         onClick={() => setModal({ type: "calendarSync" })}
-      />
-
-      <SectionBtn
-        icon={Leaf}
-        label={data.seasonalDecorations === true ? "Seasonal decorations: ON" : "Seasonal decorations: off"}
-        sub={data.seasonalDecorations === true
-          ? "Falling leaves, snowflakes and petals drift across the screen"
-          : "Turn on falling leaves, snowflakes and other seasonal effects"}
-        accent={data.seasonalDecorations === true ? palette.leaf : palette.inkSoft}
-        onClick={() => {
-          update((d) => {
-            d.seasonalDecorations = d.seasonalDecorations !== true;
-            return d;
-          });
-        }}
       />
 
       {isNativeApp() && (
