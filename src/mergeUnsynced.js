@@ -14,7 +14,8 @@
 //     entries.meat_chickens that the cloud copy has never seen)
 //   - Never modifies an entry that exists in both (except newer-wins by
 //     updatedAt)
-//   - Never removes anything from cloud
+//   - Never removes anything from cloud, EXCEPT records the user deleted:
+//     see DELETIONS below
 //   - For non-id'd arrays and scalars: cloud wins, no merging attempted
 //
 // The merge is intentionally CONSERVATIVE. We only add things we can be
@@ -31,6 +32,7 @@
 // fetched-once metadata blobs (weather snapshots, location lookups) where
 // recursion would be pointless and confusing.
 const SKIP_RECURSE_KEYS = new Set([
+  'deletedRecords',     // handled on its own (see DELETIONS)
   'weather',
   'homesteadLocation',  // {lat, lon, label} — scalar bundle
   'cloudBaselineAt',
@@ -228,14 +230,113 @@ function mergeRecursive(cloud, local) {
   return { merged: result, addedCount: totalAdded, changed: true };
 }
 
+// ============================================================================
+// DELETIONS
+// ----------------------------------------------------------------------------
+// The merge above only ever adds, so a record deleted on one device came back
+// whenever the cloud still had it: the app was swiped away before the delete
+// synced, or another device saved first and the stale-write recovery merged.
+// ("I deleted a customer, closed the app, and it's back.")
+//
+// Fix: update() notes each deletion in data.deletedRecords[key][id] = time,
+// for the top-level lists below. The note syncs like everything else, the
+// merge unions both sides' notes, and any record with a note newer than its
+// own updatedAt is dropped from the result. Editing a record on another
+// device after the delete (newer updatedAt) keeps it; restoring a record
+// (Undo) clears its note. Notes older than 180 days are pruned.
+// ============================================================================
+export const TOMBSTONE_KEYS = ['customers', 'customerGroups', 'sales', 'expenses', 'calendarEvents'];
+const TOMBSTONE_MAX_AGE = 180 * 86400000;
+
+const idsOf = (arr) => new Set((Array.isArray(arr) ? arr : []).filter((x) => isPlainObject(x) && x.id).map((x) => x.id));
+
+// Called by update() with the before/after data. Mutates `next`.
+export function noteDeletions(prev, next, now = Date.now()) {
+  if (!isPlainObject(prev) || !isPlainObject(next)) return;
+  const book = isPlainObject(next.deletedRecords) ? { ...next.deletedRecords } : {};
+  let touched = false;
+  for (const key of TOMBSTONE_KEYS) {
+    if (!Array.isArray(prev[key]) && !Array.isArray(next[key])) continue;
+    const before = idsOf(prev[key]);
+    const after = idsOf(next[key]);
+    const notes = isPlainObject(book[key]) ? { ...book[key] } : {};
+    let changed = false;
+    before.forEach((id) => { if (!after.has(id)) { notes[id] = now; changed = true; } });
+    after.forEach((id) => { if (id in notes) { delete notes[id]; changed = true; } });
+    if (changed) { book[key] = notes; touched = true; }
+  }
+  // Prune old notes (any device that was going to resurrect it has long since
+  // synced or been caught by the no-baseline guard).
+  for (const key of Object.keys(book)) {
+    if (!isPlainObject(book[key])) { delete book[key]; touched = true; continue; }
+    for (const id of Object.keys(book[key])) {
+      if (!(Number(book[key][id]) > now - TOMBSTONE_MAX_AGE)) { if (!touched) book[key] = { ...book[key] }; delete book[key][id]; touched = true; }
+    }
+    if (!Object.keys(book[key]).length) { delete book[key]; touched = true; }
+  }
+  if (touched) {
+    if (Object.keys(book).length) next.deletedRecords = book;
+    else delete next.deletedRecords;
+  }
+}
+
+function unionNotes(a, b) {
+  const out = {};
+  for (const src of [a, b]) {
+    if (!isPlainObject(src)) continue;
+    for (const key of Object.keys(src)) {
+      if (!isPlainObject(src[key])) continue;
+      out[key] = out[key] || {};
+      for (const id of Object.keys(src[key])) {
+        const t = Number(src[key][id]) || 0;
+        if (t > (out[key][id] || 0)) out[key][id] = t;
+      }
+    }
+  }
+  return out;
+}
+
+// Drops deleted records from `data` (a fresh object; doesn't mutate input).
+// Returns { data, removed }.
+function applyDeletions(data, notes) {
+  let removed = 0;
+  let out = data;
+  for (const key of TOMBSTONE_KEYS) {
+    const n = notes[key];
+    if (!n || !Array.isArray(data[key])) continue;
+    const kept = data[key].filter((x) => {
+      if (!isPlainObject(x) || !x.id || !(x.id in n)) return true;
+      return (Number(x.updatedAt) || 0) > n[x.id];
+    });
+    if (kept.length !== data[key].length) {
+      if (out === data) out = { ...data };
+      out[key] = kept;
+      removed += data[key].length - kept.length;
+    }
+  }
+  return { data: out, removed };
+}
+
 export function mergeUnsyncedEntries(cloudData, localData) {
   if (!isPlainObject(cloudData)) return { merged: cloudData, mergedCount: 0 };
   if (!isPlainObject(localData)) return { merged: cloudData, mergedCount: 0 };
   const { merged, addedCount } = mergeRecursive(cloudData, localData);
-  return { merged, mergedCount: addedCount };
+  // Deletions: union both sides' notes and drop deleted records. A removal
+  // counts toward mergedCount so the caller keeps (and saves) the result.
+  const notes = unionNotes(cloudData.deletedRecords, localData.deletedRecords);
+  if (!Object.keys(notes).length) return { merged, mergedCount: addedCount };
+  const { data, removed } = applyDeletions(merged, notes);
+  const cloudNotes = JSON.stringify(cloudData.deletedRecords || {});
+  const notesChanged = JSON.stringify(notes) !== cloudNotes;
+  if (!removed && !notesChanged) return { merged, mergedCount: addedCount };
+  const out = data === cloudData ? { ...cloudData } : data;
+  out.deletedRecords = notes;
+  return { merged: out, mergedCount: addedCount + removed + (notesChanged && !removed && !addedCount ? 1 : 0) };
 }
 
 export const __testing = {
+  unionNotes,
+  applyDeletions,
   mergeRecursive,
   isIdArrayOfObjects,
   mergeIdArrays,
