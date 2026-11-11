@@ -10,7 +10,9 @@
 //   data.orderPage = {
 //     on, token,                       // token = 40 hex chars, the link
 //     intro, pickup,                   // short text shown on the page
-//     menu: [{ id, name, unit, price, note, available }],
+//     menu: [{ id, name, unit, price, note, available,
+//              cost, credit, standItemId }],   // last three: owner only,
+//                                               // see src/orderSales.js
 //     joinList, joinGroupId,           // "Get our what's fresh emails"
 //     emailMe,                         // email the owner on each request
 //   }
