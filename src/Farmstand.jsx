@@ -9,14 +9,21 @@
 // every time, then pipes that straight into data.sales.
 //
 // Data shape:
-//   hobby.items[] = [{ id, name, costPerUnit, pricePerUnit, unit, archived }]
+//   hobby.items[] = [{ id, name, costPerUnit, pricePerUnit, unit, archived,
+//                      trackStock, stock, lowStockAt,
+//                      onStand,     // false = made but not put out yet (missing = true)
+//                      backStock: [{ id, qty, madeOn, readyOn, note }] }]
+//   "stock" is what's at the stand. Back stock is made and waiting at home:
+//   cold-process soap curing for weeks, a batch of jam not put out yet. Each
+//   back-stock batch can have a "ready on" date; "Move to the stand" takes
+//   from the ready batches first.
 // ============================================================================
 
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
-import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp } from "lucide-react";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp, Package as NlPackage } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
@@ -71,6 +78,17 @@ const computeStockState = (item) => {
   return "healthy";
 };
 
+// Back stock helpers. Batches are cleaned up on read so odd saved data
+// (missing qty, bad dates) never breaks the page.
+const ISO_DAY = /^\d{4}-\d{2}-\d{2}$/;
+export const backBatches = (item) => (Array.isArray(item?.backStock) ? item.backStock : [])
+  .filter((b) => b && typeof b === "object" && (Number(b.qty) || 0) > 0)
+  .map((b) => ({ ...b, qty: Number(b.qty) || 0, readyOn: typeof b.readyOn === "string" && ISO_DAY.test(b.readyOn) ? b.readyOn : "" }));
+export const backTotal = (item) => backBatches(item).reduce((n, b) => n + b.qty, 0);
+const isReady = (b, today) => !b.readyOn || b.readyOn <= today;
+export const isOnStand = (item) => !!item && !item.archived && item.onStand !== false;
+const roundQty = (n) => Math.round(n * 100) / 100;
+
 const newId = () => Math.random().toString(36).slice(2, 10);
 const localDateStr = (date) => {
   const d = date instanceof Date ? date : new Date(date);
@@ -122,7 +140,7 @@ function Field({ label, children }) {
 }
 
 // ============ ADD / EDIT ITEM MODAL ============
-function ItemModal({ item, onSave, onDelete, onClose }) {
+function ItemModal({ item, onSave, onDelete, onArchive, onClose, startPlace = "stand" }) {
   const isNew = !item;
   const [name, setName] = useState(item?.name || "");
   const [unit, setUnit] = useState(item?.unit || "each");
@@ -134,17 +152,27 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
   const [stock, setStock] = useState(item?.stock != null ? String(item.stock) : "0");
   const [lowStockAt, setLowStockAt] = useState(item?.lowStockAt != null ? String(item.lowStockAt) : "3");
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // New items: at the stand now, or made but waiting (curing soap…).
+  const [place, setPlace] = useState(startPlace);
+  const [readyOn, setReadyOn] = useState("");
 
   const handleSave = () => {
     if (!name.trim()) return;
+    const waiting = isNew && place === "home";
+    const qtyNow = parseFloat(stock) || 0;
     onSave({
+      ...(item || {}),
+      ...(waiting ? {
+        onStand: false,
+        backStock: qtyNow > 0 ? [{ id: newId(), qty: qtyNow, madeOn: todayStr(), readyOn: ISO_DAY.test(readyOn) ? readyOn : "", note: "" }] : [],
+      } : {}),
       id: item?.id || newId(),
       name: name.trim(),
       unit,
       costPerUnit: parseFloat(costPerUnit) || 0,
       pricePerUnit: parseFloat(pricePerUnit) || 0,
       trackStock,
-      stock: trackStock ? (parseFloat(stock) || 0) : (item?.stock ?? 0),
+      stock: waiting ? 0 : trackStock ? (parseFloat(stock) || 0) : (item?.stock ?? 0),
       lowStockAt: trackStock ? (parseFloat(lowStockAt) || 0) : (item?.lowStockAt ?? 3),
       archived: item?.archived || false,
     });
@@ -156,7 +184,7 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" aria-label={item ? "Edit item" : "Add item"} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{item ? "Edit item" : "Add item"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -189,6 +217,23 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
             </div>
           )}
 
+          {isNew && (
+            <div role="radiogroup" aria-label="Where is it right now?" style={{ marginBottom:12 }}>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Where is it right now?</div>
+              <div style={{ display:"flex",gap:8,flexWrap:"wrap" }}>
+                {[["stand","At the stand"],["home","Made, not out yet"]].map(([k,l]) => (
+                  <button key={k} type="button" role="radio" aria-checked={place===k} onClick={() => { setPlace(k); if (k === "home") setTrackStock(true); }} style={{
+                    minHeight:44,padding:"8px 14px",borderRadius:999,cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:13,
+                    border:`1.5px solid ${place===k?palette.ink:palette.line}`,background:place===k?palette.ink:palette.card,color:place===k?palette.bg:palette.ink,
+                  }}>{l}</button>
+                ))}
+              </div>
+              {place === "home" && (
+                <div style={{ fontSize:12,color:palette.inkSoft,marginTop:6,lineHeight:1.4 }}>It waits in back stock (curing soap, a batch you haven't put out) until you move it to the stand.</div>
+              )}
+            </div>
+          )}
+
           {/* Inventory section */}
           <div style={{ background:palette.bgAlt,borderRadius:8,padding:12,marginBottom:12,border:`1.5px solid ${palette.line}` }}>
             <label style={{ display:"flex",alignItems:"center",gap:8,cursor:"pointer",fontSize:14,fontWeight:600,color:palette.ink,marginBottom: trackStock ? 10 : 0 }}>
@@ -204,19 +249,36 @@ function ItemModal({ item, onSave, onDelete, onClose }) {
               <div style={{ display:"flex",gap:12 }}>
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
-                    Current stock ({unit})
+                    {isNew && place === "home" ? `How many made (${unit})` : `At the stand (${unit})`}
                   </div>
                   <input type="number" step="0.5" min={0} style={inputStyle()} value={stock} onChange={e=>setStock(e.target.value)} placeholder="0" />
                 </div>
+                {isNew && place === "home" ? (
+                  <div style={{ flex:1 }}>
+                    <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
+                      Ready on (optional)
+                    </div>
+                    <input type="date" style={inputStyle()} value={readyOn} onChange={e=>setReadyOn(e.target.value)} />
+                  </div>
+                ) : (
                 <div style={{ flex:1 }}>
                   <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>
                     Low-stock alert at
                   </div>
                   <input type="number" step="1" min={0} style={inputStyle()} value={lowStockAt} onChange={e=>setLowStockAt(e.target.value)} placeholder="3" />
                 </div>
+                )}
               </div>
             )}
           </div>
+
+          {item && onArchive && !item.archived && (
+            <div style={{ background:palette.bgAlt,borderRadius:8,padding:12,marginBottom:12,border:`1.5px solid ${palette.line}` }}>
+              <div style={{ fontSize:14,fontWeight:600,color:palette.ink,marginBottom:4 }}>Not selling this right now?</div>
+              <div style={{ fontSize:12,color:palette.inkSoft,marginBottom:10,lineHeight:1.4 }}>Take it off the stand. Its sales stay in your numbers, and you can put it back anytime from Archived items.</div>
+              <Btn small variant="ghost" onClick={() => { onArchive(item.id); onClose(); }}>Take off the stand</Btn>
+            </div>
+          )}
 
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
             {item && onDelete && (
@@ -385,9 +447,11 @@ function QuickSellModal({ item, onSell, onClose }) {
 // ============ RESTOCK MODAL ============
 // Opened from a tracked item's "Restock" button. Adds to current stock and
 // pushes an entry into data.entries[hobby.id] so RecentRestocks can show it.
-function RestockModal({ item, onRestock, onClose }) {
+function RestockModal({ item, onRestock, onClose, startPlace = "stand" }) {
   const [qty, setQty] = useState("0");
   const [date, setDate] = useState(todayStr());
+  const [place, setPlace] = useState(startPlace);
+  const [readyOn, setReadyOn] = useState("");
   const [batchCost, setBatchCost] = useState("");
   const [note, setNote] = useState("");
 
@@ -395,7 +459,7 @@ function RestockModal({ item, onRestock, onClose }) {
   const bc = parseFloat(batchCost);
   const hasBatchCost = batchCost.trim() !== "" && !Number.isNaN(bc) && bc > 0 && q > 0;
   const perUnitCost = hasBatchCost ? bc / q : null;
-  const currentStock = Number(item.stock) || 0;
+  const currentStock = place === "home" ? backTotal(item) : (Number(item.stock) || 0);
   const afterRestock = currentStock + q;
 
   // Flag the implied per-unit cost when it drifts significantly (>30%) from
@@ -418,23 +482,33 @@ function RestockModal({ item, onRestock, onClose }) {
       perUnitCost: perUnitCost ?? 0,
       date,
       note: note.trim(),
+      place,
+      readyOn: place === "home" && ISO_DAY.test(readyOn) ? readyOn : "",
     });
     onClose();
   };
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" aria-label={`Made more ${item.name}`} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
-          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>📦 Restock {item.name}</div>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>📦 Made more {item.name}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
         </div>
         <div style={{ padding:20 }}>
+          <div role="radiogroup" aria-label="Where does it go?" style={{ display:"flex",gap:8,flexWrap:"wrap",marginBottom:12 }}>
+            {[["stand","Straight to the stand"],["home","Back stock for now"]].map(([k,l]) => (
+              <button key={k} type="button" role="radio" aria-checked={place===k} onClick={() => setPlace(k)} style={{
+                minHeight:44,padding:"8px 14px",borderRadius:999,cursor:"pointer",fontFamily:FONT_BODY,fontWeight:600,fontSize:13,
+                border:`1.5px solid ${place===k?palette.ink:palette.line}`,background:place===k?palette.ink:palette.card,color:place===k?palette.bg:palette.ink,
+              }}>{l}</button>
+            ))}
+          </div>
           <div style={{
             padding:"10px 12px",borderRadius:8,marginBottom:14,fontSize:13,
             background:palette.bgAlt,border:`1.5px solid ${palette.line}`,color:palette.ink,
           }}>
-            Current stock: <strong>{currentStock}</strong> → After restock: <strong>{afterRestock}</strong>
+            {place === "home" ? "In back stock" : "At the stand"}: <strong>{currentStock}</strong> → After: <strong>{afterRestock}</strong>
           </div>
 
           <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
@@ -453,9 +527,15 @@ function RestockModal({ item, onRestock, onClose }) {
             }}>Clear</button>
           </div>
 
-          <Field label="Date">
+          <Field label="Date made">
             <input type="date" style={inputStyle()} value={date} onChange={e=>setDate(e.target.value)} />
           </Field>
+          {place === "home" && (
+            <Field label="Ready for the stand on (optional)">
+              <input type="date" style={inputStyle()} value={readyOn} onChange={e=>setReadyOn(e.target.value)} />
+              <div style={{ fontSize:12,color:palette.inkSoft,marginTop:6 }}>Soap curing for 4 to 6 weeks? Set the day it's ready and it'll show as ready then.</div>
+            </Field>
+          )}
           <Field label="Batch cost (optional)">
             <input type="number" step="0.01" min={0} style={inputStyle()} value={batchCost} onChange={e=>setBatchCost(e.target.value)} placeholder="Total cost of supplies for this batch" />
           </Field>
@@ -480,7 +560,72 @@ function RestockModal({ item, onRestock, onClose }) {
 
           <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
             <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
-            <Btn variant="leaf" onClick={handleSubmit} disabled={q<=0}>Log restock</Btn>
+            <Btn variant="leaf" onClick={handleSubmit} disabled={q<=0}>{place === "home" ? "Add to back stock" : "Add to the stand"}</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ PICK WHICH ITEM GOES INTO BACK STOCK ============
+function PickItemModal({ items, onPick, onClose }) {
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div role="dialog" aria-modal="true" aria-label="Add to back stock" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Add to back stock</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20,display:"flex",flexDirection:"column",gap:8 }}>
+          <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:4 }}>What did you make?</div>
+          {items.map((it) => (
+            <button key={it.id} type="button" onClick={() => onPick(it)} style={{ minHeight:48,padding:"10px 14px",borderRadius:10,border:`1.5px solid ${palette.line}`,background:palette.card,color:palette.ink,fontFamily:FONT_BODY,fontSize:15,textAlign:"left",cursor:"pointer" }}>
+              {it.name}{backTotal(it) > 0 ? <span style={{ color:palette.inkSoft,fontSize:13 }}> · {groupDigits(roundQty(backTotal(it)))} {it.unit || ""} waiting</span> : null}
+            </button>
+          ))}
+          <Btn variant="ghost" onClick={() => onPick(null)} style={{ marginTop:4 }}>+ Something new</Btn>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ============ MOVE BACK STOCK TO THE STAND ============
+function MoveToStandModal({ item, onMove, onClose }) {
+  const today = todayStr();
+  const batches = backBatches(item);
+  const readyQty = roundQty(batches.filter((b) => isReady(b, today)).reduce((n, b) => n + b.qty, 0));
+  const total = roundQty(batches.reduce((n, b) => n + b.qty, 0));
+  const [qty, setQty] = useState(String(readyQty > 0 ? readyQty : total));
+  const q = Math.min(total, Math.max(0, parseFloat(qty) || 0));
+  const notReady = roundQty(Math.max(0, q - readyQty));
+  const unit = item.unit || "";
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div role="dialog" aria-modal="true" aria-label={`Move ${item.name} to the stand`} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Move to the stand</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20 }}>
+          <div style={{ fontSize:15,fontWeight:600,color:palette.ink,marginBottom:6 }}>{item.name}</div>
+          <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:14,lineHeight:1.5 }}>
+            {batches.map((b) => (
+              <div key={b.id || `${b.qty}-${b.readyOn}`}>{groupDigits(b.qty)} {unit} · {isReady(b, today) ? "ready now" : `ready ${fmtDate(b.readyOn)}`}</div>
+            ))}
+          </div>
+          <Field label={`How many to put out (${unit})`}>
+            <input type="number" step="0.5" min={0} max={total} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+          </Field>
+          {notReady > 0 && (
+            <div style={{ padding:"10px 12px",borderRadius:8,marginBottom:12,fontSize:13,background:palette.bgAlt,border:`1.5px solid ${palette.line}`,color:palette.ink }}>
+              {groupDigits(notReady)} of these {notReady === 1 ? "isn't" : "aren't"} marked ready yet. Putting them out early is fine if they're done.
+            </div>
+          )}
+          <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn variant="leaf" onClick={() => { if (q > 0) { onMove(q); onClose(); } }} disabled={q<=0}>Put {groupDigits(q)} out</Btn>
           </div>
         </div>
       </div>
@@ -642,7 +787,12 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
   const emailCustomers = (preset) => setModal && setModal({ type: "stockEmails", preset: preset || {} });
   const emailContacts = (Array.isArray(data.customers) ? data.customers : []).filter(c => c && /@/.test(String(c.email || ""))).length;
 
-  const items = (hobby?.items || []).filter(i => !i.archived);
+  const items = (hobby?.items || []).filter(i => i && !i.archived);
+  const standItems = items.filter(isOnStand);
+  const backItems = items.filter((i) => i.onStand === false || backTotal(i) > 0);
+  const [movingItem, setMovingItem] = useState(null);
+  const [pickingBack, setPickingBack] = useState(false);
+  const [newItemPlace, setNewItemPlace] = useState("stand");
   const farmstandSales = useMemo(
     () => (data.sales || []).filter(s => s.hobbyType === "farmstand"),
     [data.sales]
@@ -674,13 +824,13 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
   // threshold. Surfaced as a banner above the revenue stats so it's the first
   // thing a user sees walking into the page.
   const stockWarnings = useMemo(
-    () => items.filter(i => {
+    () => standItems.filter(i => {
       if (!i.trackStock) return false;
       const stock = Number(i.stock) || 0;
       const low = Number(i.lowStockAt) || 0;
       return stock <= 0 || (low > 0 && stock <= low);
     }),
-    [items]
+    [standItems]
   );
 
   // Month / year revenue
@@ -754,8 +904,16 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       const target = h?.items?.find(x => x.id === item.id);
+      const toHome = restockData.place === "home";
       if (target) {
-        target.stock = (Number(target.stock) || 0) + (Number(restockData.qty) || 0);
+        if (toHome) {
+          target.backStock = backBatches(target);
+          target.backStock.push({ id: newId(), qty: Number(restockData.qty) || 0, madeOn: restockData.date || todayStr(), readyOn: restockData.readyOn || "", note: restockData.note || "" });
+          target.trackStock = true;
+        } else {
+          target.stock = (Number(target.stock) || 0) + (Number(restockData.qty) || 0);
+          target.onStand = true;
+        }
       }
       // Push a restock entry into data.entries[hobby.id] for the RecentRestocks
       // history list. We use the generic entries bucket so other hobbies could
@@ -773,11 +931,54 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
         perUnitCost: restockData.perUnitCost || 0,
         date: restockData.date,
         note: restockData.note || "",
+        ...(toHome ? { place: "home", readyOn: restockData.readyOn || "" } : {}),
         created: Date.now(),
       });
       return d;
     });
-    setJustRestocked({ item, stock: (Number(item.stock) || 0) + (Number(restockData.qty) || 0) });
+    // Only offer to email customers when it's actually out at the stand.
+    if (restockData.place !== "home") setJustRestocked({ item, stock: (Number(item.stock) || 0) + (Number(restockData.qty) || 0) });
+  };
+
+  // Back stock to the stand: ready batches first, then oldest.
+  const moveToStand = (item, qty) => {
+    const today = todayStr();
+    let left = Number(qty) || 0;
+    if (left <= 0) return;
+    let moved = 0;
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      const target = h?.items?.find(x => x.id === item.id);
+      if (!target) return d;
+      const batches = backBatches(target).sort((a, b) => {
+        const ra = isReady(a, today) ? 0 : 1, rb = isReady(b, today) ? 0 : 1;
+        if (ra !== rb) return ra - rb;
+        return String(a.readyOn || a.madeOn || "").localeCompare(String(b.readyOn || b.madeOn || ""));
+      });
+      for (const b of batches) {
+        if (left <= 0) break;
+        const take = Math.min(b.qty, left);
+        b.qty = roundQty(b.qty - take);
+        left = roundQty(left - take);
+        moved = roundQty(moved + take);
+      }
+      target.backStock = batches.filter((b) => b.qty > 0);
+      target.stock = roundQty((Number(target.stock) || 0) + moved);
+      target.trackStock = true;
+      target.onStand = true;
+      return d;
+    });
+    setJustRestocked({ item, stock: roundQty((Number(item.stock) || 0) + (Number(qty) || 0)) });
+  };
+
+  // Off the stand, history kept. Restored from Archived items.
+  const archiveItem = (itemId) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      const t = h?.items?.find(x => x.id === itemId);
+      if (t) t.archived = true;
+      return d;
+    });
   };
 
   const deleteRestockEntry = (entryId) => {
@@ -789,34 +990,61 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
   };
 
   if (nl) {
-    const archivedItems = (hobby?.items || []).filter((i) => i.archived);
+    const archivedItems = (hobby?.items || []).filter((i) => i && i.archived);
+    const today = todayStr();
     const itemRow = (it) => {
       const st = computeStockState(it);
       const stock = Number(it.stock) || 0;
+      const waiting = backTotal(it);
       return {
         id: it.id, title: it.name, left: st !== "untracked" ? stock : null, unit: it.unit || "",
         onOpen: () => { setEditingItem(it); setShowItemModal(true); },
-        sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null].filter(Boolean).join(" · "),
+        sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null, waiting > 0 ? `${groupDigits(roundQty(waiting))} more in back stock` : null].filter(Boolean).join(" · "),
         badge: st === "out" ? { tone: "alert", text: "Out of stock" } : st === "low" ? { tone: "ready", text: `Low · ${stock} left` } : null,
-        actions: [{ label: "Sell", primary: st !== "out", run: () => setSellingItem(it) }, { label: "Restock", primary: st === "out", run: () => setRestockingItem(it) }],
+        actions: st === "out"
+          ? [waiting > 0 ? { label: "Move from back stock", primary: true, run: () => setMovingItem(it) } : { label: "Made more", primary: true, run: () => setRestockingItem({ ...it, _place: "stand" }) },
+             { label: "Take off the stand", run: () => archiveItem(it.id) }]
+          : [{ label: "Sell", primary: true, run: () => setSellingItem(it) }, { label: "Made more", run: () => setRestockingItem({ ...it, _place: "stand" }) }],
       };
     };
+    const backRow = (it) => {
+      const batches = backBatches(it);
+      const total = roundQty(batches.reduce((n, x) => n + x.qty, 0));
+      const ready = roundQty(batches.filter((x) => isReady(x, today)).reduce((n, x) => n + x.qty, 0));
+      const nextReady = batches.filter((x) => !isReady(x, today)).map((x) => x.readyOn).sort()[0];
+      const unit = it.unit || "";
+      const days = nextReady ? Math.max(1, Math.round((parseLocalDate(nextReady) - parseLocalDate(today)) / 86400000)) : 0;
+      return {
+        id: `back-${it.id}`, title: it.name, left: total, unit,
+        onOpen: () => { setEditingItem(it); setShowItemModal(true); },
+        sub: total <= 0 ? "None waiting. Add a batch when you make more."
+          : [ready > 0 ? `${groupDigits(ready)} ready now` : null, nextReady ? `${groupDigits(roundQty(total - ready))} ready ${fmtDate(nextReady).replace(/, \d{4}$/, "")}` : null].filter(Boolean).join(" · "),
+        badge: total <= 0 ? null : ready > 0 ? { tone: "good", text: "Ready" } : { tone: "ready", text: `Curing · ${days} day${days === 1 ? "" : "s"}` },
+        actions: [
+          ...(total > 0 ? [{ label: "Move to the stand", primary: ready > 0, run: () => setMovingItem(it) }] : []),
+          { label: "Add a batch", primary: total <= 0, run: () => setRestockingItem({ ...it, _place: "home" }) },
+        ],
+      };
+    };
+    const readyCount = backItems.filter((it) => backBatches(it).some((x) => isReady(x, today))).length;
     const ctx = {
       key: "farmstand",
-      summary: { big: fmtMoney(monthRevenue).replace(/\.00$/, ""), small: "sold this month", line: [`${fmtMoney(yearRevenue).replace(/\.00$/, "")} this year`, stockWarnings.length ? `${stockWarnings.length} item${stockWarnings.length === 1 ? "" : "s"} to restock` : null].filter(Boolean).join(" · ") },
+      summary: { big: fmtMoney(monthRevenue).replace(/\.00$/, ""), small: "sold this month", line: [`${fmtMoney(yearRevenue).replace(/\.00$/, "")} this year`, stockWarnings.length ? `${stockWarnings.length} item${stockWarnings.length === 1 ? "" : "s"} running low` : null, readyCount ? `${readyCount} ready to put out` : null].filter(Boolean).join(" · ") },
       newLabel: items.length ? "Email customers what's fresh" : "Add your first item", onNew: () => (items.length ? emailCustomers() : (setEditingItem(null), setShowItemModal(true))),
-      goingTitle: justRestocked ? "Just restocked" : "Needs restocking",
-      going: justRestocked
-        ? [{ id: "restocked", title: `${justRestocked.item.name} restocked`, sub: "Let your customers know it's back?", actions: [
-            { label: "Email customers", primary: true, run: () => { const it = justRestocked.item; const price = Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? `/${it.unit}` : ""}` : ""; emailCustomers({ item: it.name, qty: String(justRestocked.stock), unit: it.unit || "", price }); setJustRestocked(null); } },
-            { label: "Not now", run: () => setJustRestocked(null) }] }]
-        : stockWarnings.map(itemRow),
+      notice: justRestocked ? {
+        title: `${justRestocked.item.name} is at the stand`, sub: "Let your customers know it's there?", action: "Email customers",
+        onAction: () => { const it = justRestocked.item; const price = Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? `/${it.unit}` : ""}` : ""; emailCustomers({ item: it.name, qty: String(justRestocked.stock), unit: it.unit || "", price }); setJustRestocked(null); },
+        onDismiss: () => setJustRestocked(null),
+      } : null,
+      goingTitle: "Back stock (made, not out yet)",
+      going: backItems.map(backRow),
       shelfTitle: "At the stand", shelfEmpty: "Add what you sell (eggs, honey, produce) with a price, and log sales in a tap.",
-      shelf: items.map(itemRow),
-      past: archivedItems.map((it) => ({ id: it.id, title: it.name, sub: "Archived · tap to put it back at the stand", onOpen: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.items || []).find((x) => x.id === it.id); if (t) t.archived = false; return d; }) })),
-      pastTitle: "Archived items",
+      shelf: standItems.map(itemRow),
+      past: archivedItems.map((it) => ({ id: it.id, title: it.name, sub: "Off the stand · tap to put it back", onOpen: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.items || []).find((x) => x.id === it.id); if (t) { t.archived = false; t.onStand = true; } return d; }) })),
+      pastTitle: "Off the stand",
       extras: [
         { key: "item", label: "Add an item", icon: NlPlus, run: () => { setEditingItem(null); setShowItemModal(true); } },
+        { key: "back", label: "Add to back stock", sub: "Made something that isn't going out yet? Curing soap, extra jam", icon: NlPackage, run: () => setPickingBack(true) },
         ...(setModal ? [{ key: "email", label: "Email your customers", sub: emailContacts ? `${emailContacts} customer${emailContacts === 1 ? "" : "s"} with an email` : "Add their emails to send what's fresh", icon: NlMail, run: () => emailCustomers() },
           { key: "how", label: "How customer emails work", icon: NlHelp, run: () => setModal({ type: "stockEmailTutorial" }) }] : []),
         { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Signs, coolers, the stand itself", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
@@ -827,9 +1055,11 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
     };
     return (
       <div>
-        {showItemModal && <ItemModal item={editingItem} onClose={() => { setShowItemModal(false); setEditingItem(null); }} onSave={saveItem} onDelete={deleteItem} />}
+        {showItemModal && <ItemModal item={editingItem} onClose={() => { setShowItemModal(false); setEditingItem(null); setNewItemPlace("stand"); }} onSave={saveItem} onDelete={deleteItem} onArchive={archiveItem} startPlace={newItemPlace} />}
         {sellingItem && <QuickSellModal item={sellingItem} onClose={() => setSellingItem(null)} onSell={(saleData) => recordSale(sellingItem, saleData)} />}
-        {restockingItem && <RestockModal item={restockingItem} onClose={() => setRestockingItem(null)} onRestock={(restockData) => recordRestock(restockingItem, restockData)} />}
+        {restockingItem && <RestockModal item={restockingItem} startPlace={restockingItem._place || "stand"} onClose={() => setRestockingItem(null)} onRestock={(restockData) => recordRestock(restockingItem, restockData)} />}
+        {movingItem && <MoveToStandModal item={movingItem} onClose={() => setMovingItem(null)} onMove={(q) => moveToStand(movingItem, q)} />}
+        {pickingBack && <PickItemModal items={items} onClose={() => setPickingBack(false)} onPick={(it) => { setPickingBack(false); if (it) setRestockingItem({ ...it, _place: "home" }); else { setEditingItem(null); setNewItemPlace("home"); setShowItemModal(true); } }} />}
         {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
         <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
       </div>

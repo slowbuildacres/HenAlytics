@@ -59,7 +59,7 @@ const fmtPrice = (n, unit) => {
 function inventoryOptions(data) {
   const out = [];
   const fs = (data.hobbies || []).find((h) => h && h.type === "farmstand");
-  (fs && Array.isArray(fs.items) ? fs.items : []).filter((i) => i && !i.archived && i.name).forEach((i) => {
+  (fs && Array.isArray(fs.items) ? fs.items : []).filter((i) => i && !i.archived && i.onStand !== false && i.name).forEach((i) => {
     const qty = i.trackStock && Number(i.stock) > 0 ? String(i.stock) : "";
     out.push({ key: `fs:${i.id}`, name: i.name, unit: i.unit || "", qty, price: fmtPrice(i.pricePerUnit, i.unit), fromStand: true });
   });
