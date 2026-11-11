@@ -208,9 +208,14 @@ function payBlock(page, row) {
   if (page.op.payWhen === 'accepted') {
     return `<p class="soft">You picked ${esc(payLabel(row.pay_method))}. Once ${esc(page.farm)} accepts your order, they'll email you how to pay${total != null ? ` (about ${esc(moneyText(total))})` : ''}.</p>`;
   }
+  // No total yet (they wrote what they want in the note): don't ask them to
+  // pay an unknown amount. The accepted email carries the pay button.
+  if (total == null) {
+    return `<p class="soft">You picked ${esc(payLabel(row.pay_method))}. ${esc(page.farm)} will confirm the total and send you how to pay when they accept your order.</p>`;
+  }
   const p = payInstructions({ method: row.pay_method, op: page.op, amount: total, farm: page.farm });
   if (!p) return none;
-  return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}${total == null ? ` ${esc(page.farm)} will confirm the total.` : ''}</p>
+  return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}</p>
 ${p.link ? `<a class="btn link" href="${esc(p.link)}" rel="noopener">${esc(p.button)}</a><p class="soft" style="margin:8px 0 0">Opens the app on your phone. If it doesn't, send it to the name above.</p>` : ''}
 ${['venmo', 'cashapp', 'paypal', 'zelle'].includes(row.pay_method) ? `<p class="soft" style="margin:8px 0 0">Check the name before you send. If ${esc(page.farm)} can't fill the order, they'll send your money back.</p>` : ''}
 <p class="soft" style="margin:8px 0 0;font-size:13px">Payments go straight to ${esc(page.farm)}. Henalytics doesn't process, hold or refund payments.</p></div>`;
