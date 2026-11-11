@@ -10,7 +10,7 @@
 // ============================================================================
 
 import React, { useEffect, useMemo, useState } from "react";
-import { DollarSign, Users, Mail, ListOrdered, History, FileText, ChevronLeft, Lightbulb, MessageSquare } from "lucide-react";
+import { DollarSign, Users, Mail, ListOrdered, History, FileText, ChevronLeft, Lightbulb } from "lucide-react";
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, Button, Legacy } from "../ui.jsx";
 import HobbyGlyph from "../HobbyGlyph.jsx";
@@ -21,7 +21,6 @@ import { fmtMoney } from "../../units.js";
 import { cleanName } from "../hobbies.js";
 import { isoDay, prettyDay, parseDay, DAY } from "../eggs/eggFacts.js";
 import SalesLog from "./SalesLog.jsx";
-import TextCustomersSheet, { textable } from "../../TextCustomers.jsx";
 
 const WINDOWS = [
   { key: "month", label: "This month" },
@@ -38,11 +37,10 @@ const when = (date, today) => {
   return n === 1 ? "yesterday" : prettyDay(date);
 };
 
-export default function SalesScreen({ data, update, setModal, onEmailCustomers, onPurchaseHistory, onOpenHobby, onBack }) {
+export default function SalesScreen({ data, update, setModal, onCustomers, onEmailCustomers, onPurchaseHistory, onOpenHobby, onBack }) {
   const today = isoDay();
   const [win, setWin] = useState("year");
   const [detail, setDetail] = useState(null);      // null | "charts" | "log" | "customers"
-  const [texting, setTexting] = useState(false);
   const [form, setForm] = useState(null);          // "sale" | "expense"
   const [check, setCheck] = useState(null);
   const mode = data.profitMode || "simple";
@@ -217,11 +215,9 @@ export default function SalesScreen({ data, update, setModal, onEmailCustomers, 
 
       <Card>
         <Row first icon={ic(Users)} title={`Customers${customers.length ? ` · ${customers.length}` : ""}`}
-          sub={top ? `Top: ${top.name}, ${money(top.spent)} ${win === "all" ? "all time" : label === "This month" ? "this month" : `in ${label === "12 months" ? "12 months" : label}`}` : "Add them when you log a sale"}
-          onClick={() => setDetail("customers")} chevron />
+          sub={top ? `Top: ${top.name}, ${money(top.spent)} ${win === "all" ? "all time" : label === "This month" ? "this month" : `in ${label === "12 months" ? "12 months" : label}`}` : "Emails, phone numbers and lists, in Orders"}
+          onClick={() => (onCustomers ? onCustomers() : setDetail("customers"))} chevron />
         {onEmailCustomers && <Row icon={ic(Mail)} title="Email your customers" sub="Let them know what's in stock" onClick={onEmailCustomers} chevron />}
-        <Row icon={ic(MessageSquare)} title="Text your customers" sub={(() => { const n = customers.filter(textable).length; return n ? `${n} said it's OK to text` : "From your own phone, one at a time"; })()} onClick={() => setTexting(true)} chevron />
-        {texting && <TextCustomersSheet open onClose={() => setTexting(false)} data={data} />}
       </Card>
 
       <Card>

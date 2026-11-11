@@ -72,7 +72,7 @@ export default function MoreScreen({
       {groupLabel("Your homestead")}
       <Card>
         {!data.salesHidden && <Row first icon={ic(DollarSign)} title="Sales & costs" onClick={onSales} chevron />}
-        {onOrders && <Row first={!!data.salesHidden} icon={ic(ShoppingBag)} title="Orders" sub={ordersLine || (data.orderPage && data.orderPage.on ? "Pre-order requests from customers" : "Let customers send pre-orders")} onClick={onOrders}
+        {onOrders && <Row first={!!data.salesHidden} icon={ic(ShoppingBag)} title="Orders & customers" sub={ordersLine || (data.orderPage && data.orderPage.on ? "Pre-orders, customers, emails and texts" : "Customers, emails, texts and pre-orders")} onClick={onOrders}
           trailing={ordersNew > 0 ? <span aria-label={`${ordersNew} new`} style={{ minWidth: 24, height: 24, padding: "0 7px", borderRadius: 12, background: nl.alert, color: "#fff", fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>{ordersNew}</span> : null} chevron />}
         <Row first={!!data.salesHidden && !onOrders} icon={ic(Sparkles)} title="Year in review" onClick={onYear} chevron />
         <Row icon={ic(BookOpen)} title="Journal" onClick={onJournal} chevron />

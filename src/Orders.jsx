@@ -22,7 +22,7 @@ import { getActiveHomesteadId } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { shareImageBlob, shareUrl } from "./shareCard.js";
 import { cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate, PAY_METHODS, cleanHandle, cleanPay, payLabel, payLink, payInstructions, WEEKDAYS, cleanDays, smsHref, orderText } from "./orderShared.js";
-import TextCustomersSheet from "./TextCustomers.jsx";
+import CustomersPanel from "./Customers.jsx";
 import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
@@ -638,7 +638,7 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, custome
 }
 
 // ---------------------------------------------------------------- screen
-export default function OrdersScreen({ data, update, user, onBack, onSignIn, onCountChange }) {
+export default function OrdersScreen({ data, update, user, onBack, onSignIn, onCountChange, initialTab = "orders", onEmailCustomers }) {
   const op = cleanPageSettings(data.orderPage || {});
   const farm = String(((data.stockEmailSettings || {}).fromName) || data.homesteadName || "").trim() || "Our farm stand";
   const url = op.token ? `${ORDER_SITE}${op.token}` : "";
@@ -668,7 +668,8 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     setSettings(true);
   };
   const [pickup, setPickup] = useState(null);
-  const [texting, setTexting] = useState(false);
+  const [tab, setTab] = useState(initialTab === "customers" ? "customers" : "orders");
+  useEffect(() => { setTab(initialTab === "customers" ? "customers" : "orders"); }, [initialTab]);
   const saveOne = (req) => {
     update((d) => { saveCustomerInto(d, req); return d; });
     setToast(`${req.customer_name} saved to your customers.`);
@@ -709,14 +710,39 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
           <ChevronLeft size={24} strokeWidth={2} />
         </button>
       )}
-      <h1 style={{ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: type.title }}>Orders</h1>
+      <h1 style={{ margin: 0, fontFamily: font.display, fontWeight: 400, fontSize: type.title }}>{tab === "customers" ? "Customers" : "Orders"}</h1>
     </div>
   );
+  const nCust = Array.isArray(data.customers) ? data.customers.filter((c) => c && c.id).length : 0;
+  const tabs = (
+    <div role="tablist" aria-label="Orders and customers" style={{ display: "flex", gap: 4, padding: 4, background: nl.chip, borderRadius: 14 }}>
+      {[["orders", groupsCountLabel()], ["customers", `Customers${nCust ? ` (${nCust})` : ""}`]].map(([id, label]) => (
+        <button key={id} type="button" role="tab" aria-selected={tab === id} onClick={() => setTab(id)} style={{ flex: 1, minHeight: 44, borderRadius: 11, border: "none", background: tab === id ? nl.card : "transparent", boxShadow: tab === id ? "0 1px 3px rgba(0,0,0,.08)" : "none", color: nl.ink, font: `600 15px ${font.body}`, cursor: "pointer" }}>{label}</button>
+      ))}
+    </div>
+  );
+  function groupsCountLabel() {
+    const n = groups.fresh.length + groups.joins.length;
+    return `Orders${n ? ` (${n} new)` : ""}`;
+  }
+  const toastEl = toast ? <div role="status" style={{ background: nl.deep, color: nl.onDeep, borderRadius: 14, padding: "10px 14px", fontSize: 14 }}>{toast}</div> : null;
+
+  if (tab === "customers") {
+    return (
+      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+        {header}
+        {tabs}
+        {toastEl}
+        <CustomersPanel data={data} update={update} onEmail={onEmailCustomers} toast={setToast} />
+      </div>
+    );
+  }
 
   if (!signedIn || !op.on) {
     return (
       <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
         {header}
+        {tabs}
         <Card padded>
           <div style={{ fontFamily: font.display, fontSize: 22 }}>Take pre-orders from customers</div>
           <div style={{ fontSize: 15, color: nl.soft, marginTop: 6, lineHeight: 1.5 }}>
@@ -735,14 +761,14 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       {header}
-      {toast && <div role="status" style={{ background: nl.deep, color: nl.onDeep, borderRadius: 14, padding: "10px 14px", fontSize: 14 }}>{toast}</div>}
+      {tabs}
+      {toastEl}
 
       <Card>
         <CardHeader title="Your order page" right={op.paused ? <Badge tone="ready">Paused</Badge> : <Badge tone="good">On</Badge>} />
         <Row icon={ic(Link2)} title="Share your link" sub={url.replace(/^https:\/\//, "")} onClick={async () => { const r = await shareUrl(url, `Order from ${farm}:`); if (r === "copied") setToast("Link copied."); }} chevron />
         <Row icon={ic(QrCode)} title="QR code sign for the stand" sub="Print it and tape it up" onClick={() => setQr(true)} chevron />
         <Row icon={ic(Settings2)} title="Menu and page settings" sub={op.menu.length ? `${op.menu.filter((m) => m.available).length} of ${op.menu.length} items taking orders` : "Add what people can order"} onClick={() => setSettings(true)} chevron />
-        <Row icon={ic(MessageSquare)} title="Text your customers" sub="Share what's fresh, from your own phone" onClick={() => setTexting(true)} chevron />
         <Row icon={ic(Copy)} title="Copy link" onClick={async () => { try { await navigator.clipboard.writeText(url); setToast("Link copied."); } catch (_) { setToast(url); } }} />
       </Card>
 
@@ -798,7 +824,6 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       )}
 
       <PageSettingsSheet open={settings} onClose={() => setSettings(false)} data={data} update={update} />
-      {texting && <TextCustomersSheet open onClose={() => setTexting(false)} data={data} />}
       <QrSheet open={qr} onClose={() => setQr(false)} url={url} farm={farm} />
       {pickup && <PickedUpSheet key={pickup.req.id} req={pickup.req} addOnly={pickup.addOnly} data={data} update={update} onClose={() => setPickup(null)} onDone={(m) => { setPickup(null); setToast(m); load(); }} />}
       {step && <UpdateSheet req={step.req} step={step.s} data={data} onClose={() => setStep(null)} onDone={(m) => { setStep(null); setToast(m); load(); }} />}
