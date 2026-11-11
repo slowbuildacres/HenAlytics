@@ -4,12 +4,15 @@
 // The homestead's side of customer order requests (src/Orders.jsx).
 // Body: { action, homesteadId, ... }
 //
-//   action "count"  → { newOrders, newJoins }            (for the badge)
+//   action "count"  → { newOrders, newJoins, pickups }   (for the badge;
+//                     pickups = orders to hand over on body.today)
 //   action "list"   → { requests: [...] }                 (last 180 days)
 //   action "update" → { id, status, message, notify }     sets the status;
 //                     for orders, emails the customer when notify is true
 //                     and the status is accepted, ready or declined
 //   action "remove" → { id }                              deletes it
+//   action "paid"   → { id, paid }                        marks it paid or not
+//   (update also takes an optional paid: true|false)
 //
 // Safety:
 //   • Signed-in members of the homestead only (JWT + homestead_members).
@@ -53,7 +56,16 @@ async function getUser(req) {
   return u && u.id ? u : null;
 }
 
-const FIELDS = 'id,kind,status,customer_name,email,phone,items,note,pickup_date,owner_message,created_at,updated_at';
+const BASE_FIELDS = 'id,kind,status,customer_name,email,phone,items,note,pickup_date,owner_message,created_at,updated_at';
+const FIELDS = `${BASE_FIELDS},pay_method,paid,text_ok`;
+// Reads that still work if the pay columns haven't been added yet.
+const missingPayCols = (e) => /pay_method|text_ok|column .*paid|paid.*column|'paid'/.test(String(e && e.message));
+async function readRows(query) {
+  try { return await rest(query.replace('{F}', FIELDS)); } catch (e) {
+    if (!missingPayCols(e)) throw e;
+    return rest(query.replace('{F}', BASE_FIELDS));
+  }
+}
 
 export default async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Origin', getCorsOrigin(req));
@@ -72,7 +84,7 @@ export default async function handler(req, res) {
   body = body || {};
   const action = body.action;
   const hid = String(body.homesteadId || '');
-  if (!['count', 'list', 'update', 'remove'].includes(action) || !UUID_RE.test(hid)) return res.status(400).json({ error: 'Bad request' });
+  if (!['count', 'list', 'update', 'remove', 'paid'].includes(action) || !UUID_RE.test(hid)) return res.status(400).json({ error: 'Bad request' });
 
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: 'Please sign in to see orders.' });
@@ -83,23 +95,36 @@ export default async function handler(req, res) {
 
     if (action === 'count') {
       const rows = await rest(`order_requests?select=kind&homestead_id=eq.${hid}&status=eq.new&limit=500`) || [];
-      return res.status(200).json({ newOrders: rows.filter((r) => r.kind === 'order').length, newJoins: rows.filter((r) => r.kind === 'join').length });
+      const today = /^\d{4}-\d{2}-\d{2}$/.test(String(body.today || '')) ? String(body.today) : '';
+      const pickups = today ? (await rest(`order_requests?select=id,customer_name&homestead_id=eq.${hid}&kind=eq.order&status=in.(accepted,ready)&pickup_date=eq.${today}&limit=50`) || []).map((r) => ({ id: r.id, name: r.customer_name })) : [];
+      return res.status(200).json({ newOrders: rows.filter((r) => r.kind === 'order').length, newJoins: rows.filter((r) => r.kind === 'join').length, pickups });
     }
 
     if (action === 'list') {
       const since = new Date(Date.now() - 180 * 86400000).toISOString();
-      const rows = await rest(`order_requests?select=${FIELDS}&homestead_id=eq.${hid}&or=(status.in.(new,accepted,ready),created_at.gte.${encodeURIComponent(since)})&order=created_at.desc&limit=300`) || [];
+      const rows = await readRows(`order_requests?select={F}&homestead_id=eq.${hid}&or=(status.in.(new,accepted,ready),created_at.gte.${encodeURIComponent(since)})&order=created_at.desc&limit=300`) || [];
       return res.status(200).json({ requests: rows });
     }
 
     const id = String(body.id || '');
     if (!UUID_RE.test(id)) return res.status(400).json({ error: 'Bad request' });
-    const found = await rest(`order_requests?select=${FIELDS}&id=eq.${id}&homestead_id=eq.${hid}&limit=1`);
+    const found = await readRows(`order_requests?select={F}&id=eq.${id}&homestead_id=eq.${hid}&limit=1`);
     const row = Array.isArray(found) ? found[0] : null;
     if (!row) return res.status(404).json({ error: "That request isn't here anymore." });
 
     if (action === 'remove') {
       await rest(`order_requests?id=eq.${id}&homestead_id=eq.${hid}`, { method: 'DELETE', headers: { Prefer: 'return=minimal' } });
+      return res.status(200).json({ ok: true });
+    }
+
+    if (action === 'paid') {
+      if (row.kind !== 'order') return res.status(400).json({ error: 'Bad request' });
+      try {
+        await rest(`order_requests?id=eq.${id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ paid: body.paid === true, updated_at: new Date().toISOString() }) });
+      } catch (e) {
+        if (missingPayCols(e)) return res.status(409).json({ error: 'Paid tracking needs a quick database update first.' });
+        throw e;
+      }
       return res.status(200).json({ ok: true });
     }
 
@@ -110,7 +135,7 @@ export default async function handler(req, res) {
     const message = String(body.message || '').trim().slice(0, ORDER_LIMITS.message);
     await rest(`order_requests?id=eq.${id}&homestead_id=eq.${hid}`, {
       method: 'PATCH', headers: { Prefer: 'return=minimal' },
-      body: JSON.stringify({ status, owner_message: message || row.owner_message || null, updated_at: new Date().toISOString() }),
+      body: JSON.stringify({ status, owner_message: message || row.owner_message || null, updated_at: new Date().toISOString(), ...(typeof body.paid === 'boolean' && row.kind === 'order' && 'paid' in row ? { paid: body.paid } : {}) }),
     });
 
     let emailed = false;
@@ -127,7 +152,7 @@ export default async function handler(req, res) {
           const farm = String(settings.fromName || h.farm || '').replace(/[<>"\r\n]/g, '').trim().slice(0, 60) || 'Our farm stand';
           const replyTo = EMAIL_RE.test(String(settings.replyTo || '')) ? String(settings.replyTo) : user.email;
           const op = cleanPageSettings(h.op || {});
-          const mail = buildCustomerEmail({ status, farmName: farm, items: row.items, note: row.note, pickupDate: row.pickup_date, message, pickupText: op.pickup });
+          const mail = buildCustomerEmail({ status, farmName: farm, items: row.items, note: row.note, pickupDate: row.pickup_date, message, pickupText: op.pickup, pay: row.pay_method ? { method: row.pay_method, op, paid: row.paid === true } : null, orderUrl: op.on && op.token && !op.paused ? `${process.env.APP_BASE_URL || 'https://henalytics.com'}/o/${op.token}` : '' });
           const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
           const r = await fetch('https://api.resend.com/emails', {
             method: 'POST',

@@ -14,14 +14,15 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { ChevronLeft, Link2, QrCode, Settings2, Mail, Phone, Check, X as XIcon, ShoppingBag, UserPlus, Plus, Trash2, ChevronDown, Share2, Copy, Lock, Receipt } from "lucide-react";
+import { ChevronLeft, Link2, QrCode, Settings2, Mail, Phone, Check, X as XIcon, ShoppingBag, UserPlus, Plus, Trash2, ChevronDown, Share2, Copy, Lock, Receipt, MessageSquare } from "lucide-react";
 import { nl, font, type } from "./newlook/theme.js";
 import { Card, CardHeader, Row, Button, Badge, Sheet, Chip } from "./newlook/ui.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { getActiveHomesteadId } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { shareImageBlob, shareUrl } from "./shareCard.js";
-import { cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate } from "./orderShared.js";
+import { cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate, PAY_METHODS, cleanHandle, cleanPay, payLabel, payLink, payInstructions, WEEKDAYS, cleanDays, smsHref, orderText } from "./orderShared.js";
+import TextCustomersSheet from "./TextCustomers.jsx";
 import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
@@ -62,10 +63,10 @@ export async function callOrders(action, payload = {}) {
 // open, when the app comes back to the front, and every 5 minutes.
 export function useOrderCount(data, user) {
   const on = !!(data && data.orderPage && data.orderPage.on) && !!user;
-  const [count, setCount] = useState({ newOrders: 0, newJoins: 0 });
+  const [count, setCount] = useState({ newOrders: 0, newJoins: 0, pickups: [] });
   const refresh = useCallback(() => {
-    if (!on) { setCount({ newOrders: 0, newJoins: 0 }); return; }
-    callOrders("count").then((c) => setCount({ newOrders: Number(c.newOrders) || 0, newJoins: Number(c.newJoins) || 0 })).catch(() => {});
+    if (!on) { setCount({ newOrders: 0, newJoins: 0, pickups: [] }); return; }
+    callOrders("count", { today: isoToday() }).then((c) => setCount({ newOrders: Number(c.newOrders) || 0, newJoins: Number(c.newJoins) || 0, pickups: Array.isArray(c.pickups) ? c.pickups : [] })).catch(() => {});
   }, [on]);
   useEffect(() => {
     refresh();
@@ -145,6 +146,60 @@ function PrivateBox({ m, setItem, credits, stand, data }) {
   );
 }
 
+// "How customers can pay": the farm's handles and which ways it takes money.
+// Customers pay the farm directly; Henalytics only shows the handle and a
+// link that opens the app with the amount filled in.
+// Opens a link outside the app (the system browser on phones, so Venmo or
+// Cash App can take over). window.Capacitor is set by the native shell.
+function openOutside(url) {
+  const cap = typeof window !== "undefined" ? window.Capacitor : null;
+  if (cap && typeof cap.isNativePlatform === "function" && cap.isNativePlatform()) {
+    import("@capacitor/browser").then(({ Browser }) => Browser.open({ url })).catch(() => { window.location.href = url; });
+    return;
+  }
+  window.open(url, "_blank", "noopener");
+}
+
+const HANDLE_HINT = { venmo: "@username", cashapp: "$cashtag", paypal: "paypal.me name", zelle: "Phone or email for Zelle" };
+function PaySettings({ pay, setPay, payWhen, setPayWhen }) {
+  const any = PAY_METHODS.some((m) => (m.handle ? String(pay[m.id] || "").trim() : pay[m.id] === true));
+  return (
+    <>
+      <div style={{ ...labelStyle, marginTop: 18 }}>How customers can pay</div>
+      <p style={{ margin: "0 4px 8px", fontSize: 13, color: nl.soft, lineHeight: 1.45 }}>Customers pick one when they order, and see your username and a pay button. The money goes straight to you. Henalytics never touches it and can't see when someone pays, so mark orders paid here.</p>
+      <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
+        {PAY_METHODS.map((m, i) => {
+          const border = i ? { borderTop: `1px solid ${nl.rule}` } : null;
+          if (!m.handle) return <div key={m.id} style={border}><Toggle on={pay[m.id] === true} onChange={(v) => setPay((p) => ({ ...p, [m.id]: v }))} label={m.label} /></div>;
+          const raw = String(pay[m.id] || "");
+          const bad = raw.trim() && !cleanHandle(m.id, raw);
+          return (
+            <label key={m.id} style={{ display: "block", padding: "10px 4px", ...border }}>
+              <span style={{ display: "block", fontSize: 15, fontWeight: 600, marginBottom: 6 }}>{m.label}</span>
+              <input aria-label={`Your ${m.label} (leave empty if you don't take it)`} style={inputStyle} value={raw} onChange={(e) => setPay((p) => ({ ...p, [m.id]: e.target.value.slice(0, 80) }))} placeholder={`${HANDLE_HINT[m.id]} (empty = don't offer)`} autoCapitalize="none" autoCorrect="off" spellCheck={false} />
+              {bad && <span role="alert" style={{ display: "block", fontSize: 13, color: nl.alert, marginTop: 4 }}>That doesn't look like a {m.label} {m.id === "cashapp" ? "$cashtag" : "username"}.</span>}
+              {!bad && m.id !== "zelle" && cleanHandle(m.id, raw) && (
+                <Button small kind="link" onClick={(e) => { e.preventDefault(); openOutside(payLink(m.id, raw)); }}>Check my {m.label} link</Button>
+              )}
+            </label>
+          );
+        })}
+      </div>
+      <p style={{ margin: "8px 4px 0", fontSize: 13, color: nl.soft, lineHeight: 1.45 }}>Double-check each one, and use "Check my link" to make sure it opens your account. Henalytics isn't responsible for payments sent to a wrong or mistyped username, and doesn't process, hold or refund any payments.</p>
+      {any && (
+        <>
+          <label style={labelStyle} htmlFor="op-paywhen">When should they pay?</label>
+          <select id="op-paywhen" style={inputStyle} value={payWhen} onChange={(e) => setPayWhen(e.target.value)}>
+            <option value="order">Right after they order</option>
+            <option value="accepted">After I accept the order</option>
+          </select>
+          <p style={{ margin: "6px 4px 0", fontSize: 13, color: nl.soft, lineHeight: 1.45 }}>{payWhen === "accepted" ? "They get the pay button in the email when you accept it." : "They see the pay button as soon as they send the order. If you can't fill it, you'd send the money back."}</p>
+        </>
+      )}
+    </>
+  );
+}
+
 function PageSettingsSheet({ open, onClose, data, update }) {
   const op = cleanPageSettings(data.orderPage || {});
   const [intro, setIntro] = useState(op.intro);
@@ -153,11 +208,16 @@ function PageSettingsSheet({ open, onClose, data, update }) {
   const [joinList, setJoinList] = useState(op.joinList);
   const [joinGroupId, setJoinGroupId] = useState(op.joinGroupId);
   const [emailMe, setEmailMe] = useState(op.emailMe);
+  const [pay, setPay] = useState(op.pay);
+  const [payWhen, setPayWhen] = useState(op.payWhen);
+  const [pickupDays, setPickupDays] = useState(op.pickupDays);
+  const [paused, setPaused] = useState(op.paused);
+  const [pausedNote, setPausedNote] = useState(op.pausedNote);
   const [confirmNew, setConfirmNew] = useState(false);
   useEffect(() => {
     if (!open) return;
     const o = cleanPageSettings(data.orderPage || {});
-    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setConfirmNew(false);
+    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setConfirmNew(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const stand = standItems(data);
   const standToAdd = stand.filter((i) => !menu.some((m) => m.standItemId === i.id || m.name.toLowerCase() === String(i.name).toLowerCase()));
@@ -170,7 +230,8 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       d.orderPage = {
         ...prev, intro: intro.slice(0, ORDER_LIMITS.intro), pickup: pickup.slice(0, ORDER_LIMITS.pickupText),
         menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null, cost: m.cost === "" || m.cost == null || !(Number(m.cost) >= 0) ? null : Math.round(Number(m.cost) * 100) / 100 })),
-        joinList, joinGroupId, emailMe, ...extra,
+        joinList, joinGroupId, emailMe, pay: cleanPay(pay), payWhen,
+        pickupDays: cleanDays(pickupDays), paused, pausedNote: pausedNote.trim().slice(0, ORDER_LIMITS.pausedNote), ...extra,
       };
       return d;
     });
@@ -185,6 +246,18 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       <textarea id="op-intro" style={{ ...inputStyle, minHeight: 80 }} value={intro} onChange={(e) => setIntro(e.target.value)} placeholder="Farm-fresh eggs, sourdough and seasonal veggies from our family homestead." maxLength={ORDER_LIMITS.intro} />
       <label style={labelStyle} htmlFor="op-pickup">Pickup details (optional)</label>
       <input id="op-pickup" style={inputStyle} value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Saturdays 9 to noon at the stand" maxLength={ORDER_LIMITS.pickupText} />
+      <div style={labelStyle} id="op-days-label">Pickup days (optional)</div>
+      <div role="group" aria-labelledby="op-days-label" style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+        {WEEKDAYS.map((w, d) => {
+          const on = pickupDays.includes(d);
+          return <button key={w} type="button" aria-pressed={on} onClick={() => setPickupDays((x) => (on ? x.filter((y) => y !== d) : [...x, d]))} style={{ minWidth: 48, minHeight: 44, borderRadius: 22, border: `1.5px solid ${on ? nl.good : nl.field}`, background: on ? nl.goodTint : "transparent", color: on ? nl.goodInk : nl.ink, font: `600 14px ${font.body}`, cursor: "pointer" }}>{w}</button>;
+        })}
+      </div>
+      <p style={{ margin: "6px 4px 0", fontSize: 13, color: nl.soft }}>{pickupDays.length ? "Customers pick one of the next pickup days from a list." : "None picked: customers can ask for any date."}</p>
+      <div style={{ marginTop: 14, background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
+        <Toggle on={paused} onChange={setPaused} label="Pause new orders" sub={paused ? "Your page stays up, but the order form is hidden" : "Take a break without turning the page off"} />
+        {paused && <div style={{ padding: "0 4px 12px" }}><input aria-label="Message while paused" style={inputStyle} value={pausedNote} onChange={(e) => setPausedNote(e.target.value)} maxLength={ORDER_LIMITS.pausedNote} placeholder="The hens are on break. Back in spring!" /></div>}
+      </div>
 
       <div style={{ ...labelStyle, marginTop: 18 }}>What people can order</div>
       <p style={{ margin: "0 4px 8px", fontSize: 13, color: nl.soft, lineHeight: 1.45 }}>Customers see each item's name, price, unit and note. What it costs you to make stays private, just for you.</p>
@@ -216,6 +289,8 @@ function PageSettingsSheet({ open, onClose, data, update }) {
         <Button small kind="quiet" icon={<Plus size={18} />} onClick={() => setMenu((m) => [...m, { id: newId(), name: "", unit: "", price: null, cost: null, credit: "", standItemId: "", note: "", available: true }])} disabled={menu.length >= ORDER_LIMITS.menu}>Add an item</Button>
         {standToAdd.length > 0 && <Button small kind="quiet" onClick={() => setMenu((m) => [...m, ...standToAdd.slice(0, ORDER_LIMITS.menu - m.length).map((i) => ({ id: newId(), name: String(i.name).slice(0, ORDER_LIMITS.menuName), unit: String(i.unit || "").slice(0, ORDER_LIMITS.unit), price: Number(i.pricePerUnit) > 0 ? Number(i.pricePerUnit) : null, cost: Number(i.costPerUnit) > 0 ? Number(i.costPerUnit) : null, credit: "farmstand", standItemId: i.id, note: "", available: true }))])}>Add my farm stand items ({standToAdd.length})</Button>}
       </div>
+
+      <PaySettings pay={pay} setPay={setPay} payWhen={payWhen} setPayWhen={setPayWhen} />
 
       <div style={{ marginTop: 14, background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
         <Toggle on={joinList} onChange={setJoinList} label="Let people join my email list" sub="They show up here so you can add them to your customers" />
@@ -306,18 +381,38 @@ const NEXT = {
   ready: { status: "ready", title: "Mark it ready", button: "It's ready", hint: "They'll get an email saying it's ready to pick up.", placeholder: "Ready in the cooler by the stand." },
   decline: { status: "declined", title: "Can't fill this one", button: "Decline", hint: "They'll get a kind email saying you can't fill it.", placeholder: "Sorry, the hens are on a break until spring!" },
 };
-function UpdateSheet({ req, step, onClose, onDone }) {
+function UpdateSheet({ req, step, data, onClose, onDone }) {
   const s = NEXT[step];
   const [message, setMessage] = useState("");
   const [notify, setNotify] = useState(true);
+  const canText = !!(req && req.phone && req.text_ok);
+  const [text, setText] = useState(canText);
+  const [textReady, setTextReady] = useState("");
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   if (!req || !s) return null;
+  const op = cleanPageSettings((data && data.orderPage) || {});
+  const farm = String((((data && data.stockEmailSettings) || {}).fromName) || (data && data.homesteadName) || "").trim();
+  const total = orderTotal(req.items);
+  const pi = req.pay_method && !req.paid && s.status !== "declined" ? payInstructions({ method: req.pay_method, op, amount: total, farm }) : null;
+  const sms = canText ? smsHref(req.phone, orderText({ status: s.status, name: req.customer_name, farm, items: req.items, message: message.trim(), pickupText: op.pickup, payLine: pi ? `${pi.line}${pi.link ? ` ${pi.link}` : ""}` : "" })) : "";
+  if (textReady) {
+    return (
+      <Sheet open onClose={() => onDone(textReady)} label="Send the text" showClose>
+        <h2 style={{ margin: "0 4px 4px", fontFamily: font.display, fontWeight: 400, fontSize: 24 }}>Now send the text</h2>
+        <p style={{ margin: "0 4px 12px", fontSize: 14, color: nl.soft }}>{textReady} Messages opens with your text to {req.customer_name} filled in. Just hit send.</p>
+        <a href={sms} onClick={() => setTimeout(() => onDone(textReady), 400)} style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: 8, minHeight: 52, borderRadius: 14, background: nl.yolk, color: nl.onYolk, fontWeight: 700, textDecoration: "none" }}><MessageSquare size={20} aria-hidden="true" />Text {req.customer_name}</a>
+        <div style={{ marginTop: 8 }}><Button kind="quiet" onClick={() => onDone(textReady)}>Skip the text</Button></div>
+      </Sheet>
+    );
+  }
   const go = async () => {
     setBusy(true); setErr("");
     try {
       const r = await callOrders("update", { id: req.id, status: s.status, message: message.trim(), notify });
-      onDone(r && r.emailError ? `Saved, but ${r.emailError.charAt(0).toLowerCase()}${r.emailError.slice(1)}` : notify && r && r.emailed ? `Done. ${req.customer_name} got an email.` : "Done.");
+      const said = r && r.emailError ? `Saved, but ${r.emailError.charAt(0).toLowerCase()}${r.emailError.slice(1)}` : notify && r && r.emailed ? `Done. ${req.customer_name} got an email.` : "Done.";
+      if (text && canText) { setBusy(false); setTextReady(said); return; }
+      onDone(said);
     } catch (e) { setErr(e.message); setBusy(false); }
   };
   return (
@@ -326,8 +421,11 @@ function UpdateSheet({ req, step, onClose, onDone }) {
       <p style={{ margin: "0 4px 8px", fontSize: 14, color: nl.soft }}>{req.customer_name} · {(req.items || []).map(itemLine).join(", ") || req.note}</p>
       <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
         <Toggle on={notify} onChange={setNotify} label={`Email ${req.customer_name}`} sub={notify ? s.hint : "No email. Let them know yourself."} />
+        {canText
+          ? <div style={{ borderTop: `1px solid ${nl.rule}` }}><Toggle on={text} onChange={setText} label={`Text ${req.customer_name}`} sub={text ? `From your phone, to ${req.phone}` : "No text"} /></div>
+          : <div style={{ borderTop: `1px solid ${nl.rule}`, padding: "10px 4px", fontSize: 13, color: nl.soft }}>{req.phone ? "They didn't say it's OK to text, so email only." : "No phone number for texting."}</div>}
       </div>
-      {notify && (
+      {(notify || text) && (
         <>
           <label style={labelStyle} htmlFor="ou-msg">Add a message (optional)</label>
           <textarea id="ou-msg" style={{ ...inputStyle, minHeight: 80 }} value={message} onChange={(e) => setMessage(e.target.value)} placeholder={s.placeholder} maxLength={ORDER_LIMITS.message} />
@@ -335,7 +433,7 @@ function UpdateSheet({ req, step, onClose, onDone }) {
       )}
       {err && <p role="alert" style={{ color: nl.alert, fontSize: 14, margin: "10px 4px 0" }}>{err}</p>}
       <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
-        <Button onClick={go} disabled={busy}>{busy ? "Saving…" : s.button}</Button>
+        <Button onClick={go} disabled={busy}>{busy ? "Saving…" : text && canText ? `${s.button} and text` : s.button}</Button>
         <Button kind="quiet" onClick={onClose}>Cancel</Button>
       </div>
     </Sheet>
@@ -351,6 +449,10 @@ function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
   const already = orderInSales(data, req.id);
   const [lines, setLines] = useState(() => orderLines(req, (data.orderPage || {}).menu, data));
   const [toSales, setToSales] = useState(!already);
+  const [paidNow, setPaidNow] = useState(true);
+  const askPaid = !addOnly && !!req.pay_method && req.paid !== true;
+  const known = !!findCustomer(data, req.email);
+  const [saveCust, setSaveCust] = useState(!known && !addOnly);
   const [date, setDate] = useState(isoToday());
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
@@ -361,13 +463,16 @@ function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
   const go = async () => {
     setBusy(true); setErr("");
     try {
-      if (!addOnly) await callOrders("update", { id: req.id, status: "done", notify: false });
+      if (!addOnly) await callOrders("update", { id: req.id, status: "done", notify: false, ...(askPaid ? { paid: paidNow } : {}) });
     } catch (e) { setErr(e.message); setBusy(false); return; }
     let added = null;
+    const newBuyerId = !known && saveCust ? newId() : null;
+    if (newBuyerId) update((d) => { saveCustomerInto(d, req, "", newBuyerId); return d; });
     if (toSales && !orderInSales(data, req.id)) {
-      const em = String(req.email || "").toLowerCase();
-      const buyer = em && Array.isArray(data.customers) ? data.customers.find((c) => c && String(c.email || "").toLowerCase() === em) : null;
-      const sales = salesFromLines(lines, { req, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoToday(), buyerId: buyer ? buyer.id : null });
+      const found = findCustomer(data, req.email);
+      const buyer = found || (newBuyerId ? { id: newBuyerId } : null);
+      const sales = salesFromLines(lines, { req, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoToday(), buyerId: buyer ? buyer.id : null })
+        .map((x) => (req.pay_method ? { ...x, payMethod: req.pay_method, note: `${x.note} · ${payLabel(req.pay_method)}` } : x));
       added = sales.length ? sales.reduce((n, x) => n + x.totalRevenue, 0) : null;
       if (sales.length) update((d) => {
         if (!Array.isArray(d.sales)) d.sales = [];
@@ -396,6 +501,8 @@ function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
           {!addOnly && (
             <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
               <Toggle on={toSales} onChange={setToSales} label="Add it to Sales" sub={toSales ? "Check the amounts below" : "Just mark it picked up"} />
+              {!known && <div style={{ borderTop: `1px solid ${nl.rule}` }}><Toggle on={saveCust} onChange={setSaveCust} label={`Save ${req.customer_name} to your customers`} sub={req.text_ok ? "With their email, phone and OK to text" : "With their email"} /></div>}
+              {askPaid && <div style={{ borderTop: `1px solid ${nl.rule}` }}><Toggle on={paidNow} onChange={setPaidNow} label={`They paid with ${payLabel(req.pay_method)}`} sub={paidNow ? "Marks the order paid" : "Leave it as not paid yet"} /></div>}
             </div>
           )}
           {toSales && (
@@ -456,8 +563,30 @@ function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
   );
 }
 
+// ---------------------------------------------------------------- customers
+export const findCustomer = (data, email) => {
+  const em = String(email || "").trim().toLowerCase();
+  return em && Array.isArray(data && data.customers) ? data.customers.find((c) => c && String(c.email || "").toLowerCase() === em) || null : null;
+};
+// Adds (or updates) a customer from an order or sign-up, keeping what the
+// owner already has. Phone and "OK to text" only come in when the customer
+// said it's OK to text.
+export function saveCustomerInto(d, req, groupId = "", useId = "") {
+  if (!Array.isArray(d.customers)) d.customers = [];
+  const em = String(req.email || "").trim().toLowerCase();
+  let c = em ? d.customers.find((x) => x && String(x.email || "").toLowerCase() === em) : null;
+  if (!c) {
+    c = { id: useId || newId(), name: String(req.customer_name || "").slice(0, 60), email: em, groups: [], note: req.kind === "join" ? "Joined from your order page" : "From an order", emailOk: true };
+    d.customers.push(c);
+  }
+  if (groupId) { c.groups = Array.isArray(c.groups) ? c.groups : []; if (!c.groups.includes(groupId)) c.groups.push(groupId); }
+  if (req.kind === "join" && c.emailOk === false) c.emailOk = true;
+  if (req.text_ok && req.phone) { c.phone = String(req.phone).slice(0, 30); c.textOk = true; }
+  return c;
+}
+
 // ---------------------------------------------------------------- cards
-function OrderCard({ req, onStep, onPickedUp, onRemove, inSales }) {
+function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, customer, onSaveCustomer, farm }) {
   const items = Array.isArray(req.items) ? req.items : [];
   const total = orderTotal(items);
   const when = orderPrettyDate(req.pickup_date);
@@ -473,7 +602,7 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales }) {
     <div style={{ padding: "12px 14px", borderTop: `1px solid ${nl.rule}`, display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 16, fontWeight: 600, overflowWrap: "anywhere" }}>{req.customer_name}</div>
+          <div style={{ fontSize: 16, fontWeight: 600, overflowWrap: "anywhere" }}>{req.customer_name}{customer ? <span style={{ marginLeft: 8, fontSize: 12, fontWeight: 600, color: nl.goodInk, background: nl.goodTint, borderRadius: 8, padding: "2px 7px", verticalAlign: "middle" }}>Customer</span> : null}</div>
           <div style={{ fontSize: 13, color: nl.soft }}>{[ago(req.created_at), when ? `wants it ${when}` : null].filter(Boolean).join(" · ")}</div>
         </div>
         {inSales && <span title="In Sales" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: nl.soft }}><Receipt size={14} aria-hidden="true" />In Sales</span>}
@@ -486,9 +615,20 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales }) {
         </div>
       )}
       {req.note && <div style={{ fontSize: 14, background: nl.chip, borderRadius: 10, padding: "8px 10px", overflowWrap: "anywhere" }}>{req.note}</div>}
+      {req.pay_method && req.status !== "declined" && (
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 14 }}>
+          <span>Paying with {payLabel(req.pay_method)}</span>
+          {req.paid
+            ? <Badge tone="good">Paid</Badge>
+            : <span style={{ color: nl.soft }}>· not marked paid</span>}
+          <Button small kind="link" onClick={() => onPaid(req, !req.paid)}>{req.paid ? "Undo paid" : "Mark paid"}</Button>
+        </div>
+      )}
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", fontSize: 14 }}>
         <a href={`mailto:${req.email}`} style={{ color: nl.goodInk, display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32 }}><Mail size={16} aria-hidden="true" />{req.email}</a>
         {req.phone && <a href={`tel:${req.phone.replace(/[^0-9+]/g, "")}`} style={{ color: nl.goodInk, display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32 }}><Phone size={16} aria-hidden="true" />{req.phone}</a>}
+        {req.phone && req.text_ok && <a href={smsHref(req.phone, orderText({ status: "other", name: req.customer_name, farm }))} style={{ color: nl.goodInk, display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32 }}><MessageSquare size={16} aria-hidden="true" />Text</a>}
+        {!customer && <button type="button" onClick={() => onSaveCustomer(req)} style={{ border: "none", background: "none", padding: 0, color: nl.goodInk, font: "inherit", display: "inline-flex", alignItems: "center", gap: 4, minHeight: 32, cursor: "pointer" }}><UserPlus size={16} aria-hidden="true" />Save to customers</button>}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
         {actions.map((a) => <Button key={a.label} small kind={a.primary ? "primary" : "quiet"} onClick={a.run}>{a.label}</Button>)}
@@ -528,26 +668,22 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     setSettings(true);
   };
   const [pickup, setPickup] = useState(null);
+  const [texting, setTexting] = useState(false);
+  const saveOne = (req) => {
+    update((d) => { saveCustomerInto(d, req); return d; });
+    setToast(`${req.customer_name} saved to your customers.`);
+  };
+  const setPaid = async (req, paid) => {
+    setReqs((list) => (list || []).map((r) => (r.id === req.id ? { ...r, paid } : r)));
+    try { await callOrders("paid", { id: req.id, paid }); setToast(paid ? `${req.customer_name} marked paid.` : "Marked not paid."); }
+    catch (e) { setToast(e.message); load(); }
+  };
   const remove = async (req) => {
     try { await callOrders("remove", { id: req.id }); load(); } catch (e) { setToast(e.message); }
   };
   const addJoins = async (list) => {
     const op2 = cleanPageSettings(data.orderPage || {});
-    update((d) => {
-      if (!Array.isArray(d.customers)) d.customers = [];
-      list.forEach((j) => {
-        const em = String(j.email || "").toLowerCase();
-        const have = d.customers.find((c) => c && String(c.email || "").toLowerCase() === em);
-        if (have) {
-          have.groups = Array.isArray(have.groups) ? have.groups : [];
-          if (op2.joinGroupId && !have.groups.includes(op2.joinGroupId)) have.groups.push(op2.joinGroupId);
-          if (have.emailOk === false) have.emailOk = true;
-        } else {
-          d.customers.push({ id: newId(), name: String(j.customer_name || "").slice(0, 60), email: em, groups: op2.joinGroupId ? [op2.joinGroupId] : [], note: "Joined from your order page", emailOk: true });
-        }
-      });
-      return d;
-    });
+    update((d) => { list.forEach((j) => saveCustomerInto(d, j, op2.joinGroupId)); return d; });
     await Promise.all(list.map((j) => callOrders("update", { id: j.id, status: "added" }).catch(() => {})));
     setToast(list.length === 1 ? `${list[0].customer_name} is on your list.` : `${list.length} people added to your list.`);
     load();
@@ -559,7 +695,8 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     const orders = list.filter((r) => r.kind === "order");
     return {
       fresh: orders.filter((r) => r.status === "new"),
-      open: orders.filter((r) => r.status === "accepted" || r.status === "ready"),
+      today: orders.filter((r) => (r.status === "accepted" || r.status === "ready") && r.pickup_date === isoToday()),
+      open: orders.filter((r) => (r.status === "accepted" || r.status === "ready") && r.pickup_date !== isoToday()).sort((a, b) => String(a.pickup_date || "9999").localeCompare(String(b.pickup_date || "9999"))),
       past: orders.filter((r) => r.status === "done" || r.status === "declined"),
       joins: list.filter((r) => r.kind === "join" && r.status === "new"),
     };
@@ -601,10 +738,11 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {toast && <div role="status" style={{ background: nl.deep, color: nl.onDeep, borderRadius: 14, padding: "10px 14px", fontSize: 14 }}>{toast}</div>}
 
       <Card>
-        <CardHeader title="Your order page" right={<Badge tone="good">On</Badge>} />
+        <CardHeader title="Your order page" right={op.paused ? <Badge tone="ready">Paused</Badge> : <Badge tone="good">On</Badge>} />
         <Row icon={ic(Link2)} title="Share your link" sub={url.replace(/^https:\/\//, "")} onClick={async () => { const r = await shareUrl(url, `Order from ${farm}:`); if (r === "copied") setToast("Link copied."); }} chevron />
         <Row icon={ic(QrCode)} title="QR code sign for the stand" sub="Print it and tape it up" onClick={() => setQr(true)} chevron />
         <Row icon={ic(Settings2)} title="Menu and page settings" sub={op.menu.length ? `${op.menu.filter((m) => m.available).length} of ${op.menu.length} items taking orders` : "Add what people can order"} onClick={() => setSettings(true)} chevron />
+        <Row icon={ic(MessageSquare)} title="Text your customers" sub="Share what's fresh, from your own phone" onClick={() => setTexting(true)} chevron />
         <Row icon={ic(Copy)} title="Copy link" onClick={async () => { try { await navigator.clipboard.writeText(url); setToast("Link copied."); } catch (_) { setToast(url); } }} />
       </Card>
 
@@ -614,7 +752,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.fresh.length > 0 && (
         <Card>
           <CardHeader title="New requests" right={`${groups.fresh.length}`} />
-          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} />)}
+          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
         </Card>
       )}
       {groups.joins.length > 0 && (
@@ -633,13 +771,19 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
           ))}
         </Card>
       )}
+      {groups.today.length > 0 && (
+        <Card>
+          <CardHeader title="Picking up today" right={`${groups.today.length}`} />
+          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
+        </Card>
+      )}
       {groups.open.length > 0 && (
         <Card>
           <CardHeader title="To fill" right={`${groups.open.length}`} />
-          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} />)}
+          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
         </Card>
       )}
-      {reqs && !groups.fresh.length && !groups.open.length && !groups.joins.length && (
+      {reqs && !groups.fresh.length && !groups.open.length && !groups.today.length && !groups.joins.length && (
         <Card padded>
           <div style={{ fontFamily: font.display, fontSize: 20 }}>No requests right now</div>
           <div style={{ fontSize: 14, color: nl.soft, marginTop: 4, lineHeight: 1.45 }}>Share your link or put the QR sign up at the stand. New requests show up here{op.emailMe ? " and in your email" : ""}.</div>
@@ -649,14 +793,15 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card>
           <Row first title={`Past orders (${groups.past.length})`} sub="Picked up and declined, last 6 months" onClick={() => setShowPast((v) => !v)}
             trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: showPast ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
-          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} />)}
+          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
         </Card>
       )}
 
       <PageSettingsSheet open={settings} onClose={() => setSettings(false)} data={data} update={update} />
+      {texting && <TextCustomersSheet open onClose={() => setTexting(false)} data={data} />}
       <QrSheet open={qr} onClose={() => setQr(false)} url={url} farm={farm} />
       {pickup && <PickedUpSheet key={pickup.req.id} req={pickup.req} addOnly={pickup.addOnly} data={data} update={update} onClose={() => setPickup(null)} onDone={(m) => { setPickup(null); setToast(m); load(); }} />}
-      {step && <UpdateSheet req={step.req} step={step.s} onClose={() => setStep(null)} onDone={(m) => { setStep(null); setToast(m); load(); }} />}
+      {step && <UpdateSheet req={step.req} step={step.s} data={data} onClose={() => setStep(null)} onDone={(m) => { setStep(null); setToast(m); load(); }} />}
     </div>
   );
 }
