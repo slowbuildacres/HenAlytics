@@ -9,10 +9,10 @@
 // ============================================================================
 
 import React, { useEffect, useState } from "react";
-import { Gift, Sparkles, Heart, ShieldCheck, PartyPopper, Smartphone, ChevronRight, X, Sprout, CalendarDays } from "lucide-react";
+import { Gift, Sparkles, Heart, ShieldCheck, PartyPopper, Smartphone, ChevronRight, X, Sprout, CalendarDays, ShoppingBag } from "lucide-react";
 import { nl, font } from "./theme.js";
 
-const ICONS = { gift: Gift, sparkles: Sparkles, heart: Heart, shield: ShieldCheck, party: PartyPopper, phone: Smartphone, sprout: Sprout, calendar: CalendarDays };
+const ICONS = { gift: Gift, sparkles: Sparkles, heart: Heart, shield: ShieldCheck, party: PartyPopper, phone: Smartphone, sprout: Sprout, calendar: CalendarDays, bag: ShoppingBag };
 
 // notices: [{ key, icon, title, sub, action, onAction, onDismiss }]
 export default function AnnouncementCard({ notices }) {

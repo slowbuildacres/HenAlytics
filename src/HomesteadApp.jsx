@@ -189,6 +189,7 @@ import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
 import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.jsx";
 import CompostSheet from "./newlook/garden/Compost.jsx";
+import OrdersScreen, { useOrderCount, ordersMoreLine } from "./Orders.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
@@ -3561,6 +3562,9 @@ useEffect(() => {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [user, setUser] = useState(null);
+  const [ordersNoticeHidden, setOrdersNoticeHidden] = useState(false);
+  // New customer order requests (badge on More, notice on Home).
+  const orderCount = useOrderCount(data, user);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   // Bumped by the homestead switcher to force the load effect to re-run and
   // pull the newly-selected homestead's data from cloud.
@@ -4531,6 +4535,16 @@ useEffect(() => {
   // and React re-renders on every state change so all components see the new value.
   palette.yolk = timeOfDayAccent;
 
+  // ---- ?open=orders (the "Open Orders" button in new-request emails) ----
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("open") !== "orders") return;
+    setPage("orders");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("open");
+    window.history.replaceState({}, "", url.toString());
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- Detect ?invite=CODE in the URL on first load ----
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -4860,7 +4874,7 @@ const nativeBack = React.useCallback(() => {
   const nlParent = () => (page === "project" ? "projects"
     : page === "projectAet" ? "project"
     : page === "projectGuide" ? (nlProjectId ? "project" : "projects")
-    : ["supporter", "look", "projects", "import", "sales", "journal", "games", "photos"].includes(page) ? "more"
+    : ["supporter", "look", "projects", "import", "sales", "orders", "journal", "games", "photos"].includes(page) ? "more"
     : page === "year" ? "analytics"
     : page !== "dash" ? "dash" : null);
   // Forms and sheets a screen opened itself (a milk form, a canning batch, a
@@ -5467,7 +5481,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   const nlTab = page === "dash" ? "home"
     : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
-    : ["more", "sales", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet", "import"].includes(page) ? "more"
+    : ["more", "sales", "orders", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet", "import"].includes(page) ? "more"
     : "home";
   const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
   // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
@@ -5536,6 +5550,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   const nlGardenHobby = newLook && page === "dash" ? data.hobbies.find((h) => h && h.type === "garden") : null;
   const nlGardenDue = nlGardenHobby ? gardenNewSeasonDue(nlGardenHobby, data) : null;
   const nlNotices = newLook ? [
+    orderCount.total > 0 && page !== "orders" && !ordersNoticeHidden && {
+      key: "orders", icon: "bag",
+      title: orderCount.newOrders ? `${orderCount.newOrders} new order request${orderCount.newOrders === 1 ? "" : "s"}` : `${orderCount.newJoins} ${orderCount.newJoins === 1 ? "person wants" : "people want"} to join your list`,
+      sub: ordersMoreLine(orderCount),
+      action: "Open Orders", onAction: () => setPage("orders"),
+      onDismiss: () => setOrdersNoticeHidden(true),
+    },
     nlGardenDue && {
       key: "gardenSeason", icon: "sprout", title: `Start your ${nlGardenDue.year} garden`,
       sub: nlGardenDue.open
@@ -6437,6 +6458,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             ) : null}
             onAccount={() => setModal({ type: isSupabaseConfigured && !user ? "signin" : "renameHomestead" })}
             onSales={() => setPage("sales")} onYear={() => setPage("year")} onJournal={() => setPage("journal")}
+            onOrders={() => setPage("orders")} ordersLine={ordersMoreLine(orderCount)} ordersNew={orderCount.total}
             onGames={() => setPage("games")} onPhotos={() => setPage("photos")}
             onSupport={() => setPage("supporter")}
             supportLine={nlRecapFresh ? `${monthName(nlRecapKey)} recap is ready · thank you` : null}
@@ -6686,7 +6708,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         )}
         {nlPantryCfg && page === hobby.type && (
           <nlPantryCfg.Page hobby={hobby} data={data} update={update} setModal={setModal} user={user}
-            nl={{ tab: nlHobbyTab, tabs: nlPantryTabs, onOpenJournal: () => setPage("journal"), onSeeAll: () => setNlHobbyTab("animals") }} />
+            nl={{ tab: nlHobbyTab, tabs: nlPantryTabs, onOpenJournal: () => setPage("journal"), onSeeAll: () => setNlHobbyTab("animals"), onOpenOrders: () => setPage("orders") }} />
         )}
         {nlPantryCfg && page === "analytics" && (
           <PantryStatsPage hobby={hobby} data={data} setModal={setModal} statsFn={nlPantryCfg.stats} tabs={nlPantryTabs} allLabel={nlPantryCfg.all}
@@ -6994,6 +7016,9 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         )}
         {page === "journal" && (
           <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
+        )}
+        {page === "orders" && (
+          <OrdersScreen data={data} update={update} user={user} onBack={() => setPage("more")} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} />
         )}
         {page === "sales" && newLook && (
           <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />

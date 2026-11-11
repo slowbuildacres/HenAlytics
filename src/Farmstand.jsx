@@ -23,7 +23,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
-import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp, Package as NlPackage } from "lucide-react";
+import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp, Package as NlPackage, ShoppingBag as NlBag } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
@@ -1044,6 +1044,7 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
       pastTitle: "Off the stand",
       extras: [
         { key: "item", label: "Add an item", icon: NlPlus, run: () => { setEditingItem(null); setShowItemModal(true); } },
+        ...(nl.onOpenOrders ? [{ key: "orders", label: "Customer pre-orders", sub: data.orderPage && data.orderPage.on ? "See requests, share your order link" : "Let customers order ahead from a link or QR sign", icon: NlBag, run: nl.onOpenOrders }] : []),
         { key: "back", label: "Add to back stock", sub: "Made something that isn't going out yet? Curing soap, extra jam", icon: NlPackage, run: () => setPickingBack(true) },
         ...(setModal ? [{ key: "email", label: "Email your customers", sub: emailContacts ? `${emailContacts} customer${emailContacts === 1 ? "" : "s"} with an email` : "Add their emails to send what's fresh", icon: NlMail, run: () => emailCustomers() },
           { key: "how", label: "How customer emails work", icon: NlHelp, run: () => setModal({ type: "stockEmailTutorial" }) }] : []),
