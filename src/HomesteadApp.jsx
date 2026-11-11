@@ -188,6 +188,7 @@ import HorsesPage, { HorsesAnalytics, HorsesNewLook } from "./Horses.jsx";
 import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
 import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.jsx";
+import CompostSheet from "./newlook/garden/Compost.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
@@ -10574,6 +10575,7 @@ function GardenMoreModal({ hobby, setModal, onClose }) {
     !isQuickLogHidden(hobby, "issue") && { icon: "⚠️", label: "Report an issue", sub: "Pests, disease, damage", onClick: () => go({ type: "log", action: "issue" }) },
     { icon: "🌱", label: "Start seeds indoors", onClick: () => go({ type: "addSeedStart", hobbyId: hobby.id }) },
     { icon: "🌳", label: "Add a perennial or fruit tree", onClick: () => go({ type: "addPerennial", hobbyId: hobby.id }) },
+    { icon: "♻️", label: "Compost", sub: "Piles, turning, temperature, finished compost", onClick: () => go({ type: "compost", hobbyId: hobby.id }) },
     { icon: "💵", label: "Add an expense", sub: "Seeds, soil, tools — counts against what your garden grew", onClick: () => go({ type: "addExpense", hobbyId: hobby.id }) },
     { icon: "🔍", label: "Identify a plant or problem", sub: "Photo scanner", onClick: () => go({ type: "plantScanner" }) },
     ...customLogs.map((c) => ({ icon: "📝", label: c.label, sub: "Your custom log", onClick: () => go({ type: "log", action: "custom", customLogId: c.id }) })),
@@ -14115,6 +14117,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "gardenMore") {
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
     return <GardenMoreModal hobby={gh} setModal={setModal} onClose={close} />;
+  }
+  if (modal.type === "compost") {
+    const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || data.hobbies.find((h) => h.type === "garden");
+    if (!gh) return null;
+    return <CompostSheet open hobby={gh} update={update} startPileId={modal.pileId || null} onClose={close} />;
   }
   if (modal.type === "gardenValue") {
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
