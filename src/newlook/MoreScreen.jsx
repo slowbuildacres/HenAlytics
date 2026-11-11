@@ -9,7 +9,7 @@
 import React, { useEffect, useState } from "react";
 import {
   DollarSign, Sparkles, BookOpen, Trophy, Heart, Home as HomeIcon, MapPin, Settings,
-  Cloud, CloudOff, Image as ImageIcon, Palette, GraduationCap, FileUp,
+  Cloud, CloudOff, Image as ImageIcon, Palette, GraduationCap, FileUp, ShoppingBag,
 } from "lucide-react";
 import { nl, font, type } from "./theme.js";
 import { Card, Row, Badge } from "./ui.jsx";
@@ -40,7 +40,7 @@ export function syncLine({ signedIn, online, status, lastSyncAt, now = Date.now(
 
 export default function MoreScreen({
   data, user, isSupporter, syncStatus, online, lastSyncAt, homesteadSwitcher,
-  onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport, supportLine,
+  onAccount, onSales, onYear, onJournal, onGames, onPhotos, onSupport, supportLine, onOrders, ordersLine, ordersNew = 0,
   onHobbies, onBarn, onSettings, onLook, lookName, onProjects, projectsLine, onImport,
 }) {
   const [now, setNow] = useState(Date.now());
@@ -72,7 +72,9 @@ export default function MoreScreen({
       {groupLabel("Your homestead")}
       <Card>
         {!data.salesHidden && <Row first icon={ic(DollarSign)} title="Sales & costs" onClick={onSales} chevron />}
-        <Row first={!!data.salesHidden} icon={ic(Sparkles)} title="Year in review" onClick={onYear} chevron />
+        {onOrders && <Row first={!!data.salesHidden} icon={ic(ShoppingBag)} title="Orders" sub={ordersLine || (data.orderPage && data.orderPage.on ? "Pre-order requests from customers" : "Let customers send pre-orders")} onClick={onOrders}
+          trailing={ordersNew > 0 ? <span aria-label={`${ordersNew} new`} style={{ minWidth: 24, height: 24, padding: "0 7px", borderRadius: 12, background: nl.alert, color: "#fff", fontSize: 13, fontWeight: 700, display: "inline-flex", alignItems: "center", justifyContent: "center", boxSizing: "border-box" }}>{ordersNew}</span> : null} chevron />}
+        <Row first={!!data.salesHidden && !onOrders} icon={ic(Sparkles)} title="Year in review" onClick={onYear} chevron />
         <Row icon={ic(BookOpen)} title="Journal" onClick={onJournal} chevron />
         <Row icon={ic(ImageIcon)} title="Photos" onClick={onPhotos} chevron />
         {onProjects && <Row icon={ic(GraduationCap)} title="4-H & FFA" sub={projectsLine} onClick={onProjects} chevron />}

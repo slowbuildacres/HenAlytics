@@ -188,6 +188,8 @@ import HorsesPage, { HorsesAnalytics, HorsesNewLook } from "./Horses.jsx";
 import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
 import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.jsx";
+import CompostSheet from "./newlook/garden/Compost.jsx";
+import OrdersScreen, { useOrderCount, ordersMoreLine } from "./Orders.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
@@ -1862,6 +1864,9 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🛍️ Orders — let customers order ahead. Turn on your order page (More › Orders), list what people can request (eggs, bread, meat birds, anything), and share the link or print the QR sign for your stand. Requests show up in Orders, where you accept them, mark them ready and picked up, and Henalytics can email the customer at each step. People can also ask to join your \"what's fresh\" email list. No payments, just an easy way to talk.",  // ORDERS_WHATSNEW
+  "🧺 Farm stand back stock — made something that isn't going out yet, like cold-process soap that's still curing? Put it in back stock with a ready date, then move it to the stand when it's ready. Out-of-stock items can be taken off the stand too, and their sales history stays.",
+  "♻️ Compost tracking (Garden › More, or the Plan tab) — log what goes in, turning, temperature and finished compost, with a reminder when a pile is due for a turn.",
   "✨ A whole new Henalytics — every screen rebuilt to make things easier to find. Home shows what needs you today, each hobby has Today, its animals or plants, and Stats, and the yellow Log button logs anything in two taps. Saves show a few seconds of Undo instead of \"Are you sure?\" popups. Your animals, logs and numbers are exactly where you left them.",  // NEWLOOK_30_WHATSNEW
   "🌙 Dark mode for everyone (More › Look & app icon). Supporters also get Meadow and Barn colors, new app icons on iPhone, and a Wrapped of their month on the 1st of every month.",
   "🎓 4-H & FFA — start a project and the record book fills itself in from what you already log: animals, production, costs, sales, health and photos. Log project hours and shows, write goals and the project story, then download a PDF ready to sign. FFA projects get an AET summary to type from.",
@@ -3560,6 +3565,9 @@ useEffect(() => {
   const [customStart, setCustomStart] = useState("");
   const [customEnd, setCustomEnd] = useState("");
   const [user, setUser] = useState(null);
+  const [ordersNoticeHidden, setOrdersNoticeHidden] = useState(false);
+  // New customer order requests (badge on More, notice on Home).
+  const orderCount = useOrderCount(data, user);
   const [role, setRole] = useState(null); // "owner" | "member" | null
   // Bumped by the homestead switcher to force the load effect to re-run and
   // pull the newly-selected homestead's data from cloud.
@@ -4530,6 +4538,16 @@ useEffect(() => {
   // and React re-renders on every state change so all components see the new value.
   palette.yolk = timeOfDayAccent;
 
+  // ---- ?open=orders (the "Open Orders" button in new-request emails) ----
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("open") !== "orders") return;
+    setPage("orders");
+    const url = new URL(window.location.href);
+    url.searchParams.delete("open");
+    window.history.replaceState({}, "", url.toString());
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ---- Detect ?invite=CODE in the URL on first load ----
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
@@ -4859,7 +4877,7 @@ const nativeBack = React.useCallback(() => {
   const nlParent = () => (page === "project" ? "projects"
     : page === "projectAet" ? "project"
     : page === "projectGuide" ? (nlProjectId ? "project" : "projects")
-    : ["supporter", "look", "projects", "import", "sales", "journal", "games", "photos"].includes(page) ? "more"
+    : ["supporter", "look", "projects", "import", "sales", "orders", "journal", "games", "photos"].includes(page) ? "more"
     : page === "year" ? "analytics"
     : page !== "dash" ? "dash" : null);
   // Forms and sheets a screen opened itself (a milk form, a canning batch, a
@@ -5466,7 +5484,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   const nlTab = page === "dash" ? "home"
     : page === "analytics" || page === "year" ? "stats"
     : page === "calendar" ? "calendar"
-    : ["more", "sales", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet", "import"].includes(page) ? "more"
+    : ["more", "sales", "orders", "journal", "games", "photos", "supporter", "look", "projects", "project", "projectGuide", "projectAet", "import"].includes(page) ? "more"
     : "home";
   const activeEntry = newLook ? entryForHobby(data.hobbies, activeHobby) : null;
   // Open a hobby (switcher entry). On Stats, switching hobby stays on Stats.
@@ -5535,6 +5553,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   const nlGardenHobby = newLook && page === "dash" ? data.hobbies.find((h) => h && h.type === "garden") : null;
   const nlGardenDue = nlGardenHobby ? gardenNewSeasonDue(nlGardenHobby, data) : null;
   const nlNotices = newLook ? [
+    orderCount.total > 0 && page !== "orders" && !ordersNoticeHidden && {
+      key: "orders", icon: "bag",
+      title: orderCount.newOrders ? `${orderCount.newOrders} new order request${orderCount.newOrders === 1 ? "" : "s"}` : `${orderCount.newJoins} ${orderCount.newJoins === 1 ? "person wants" : "people want"} to join your list`,
+      sub: ordersMoreLine(orderCount),
+      action: "Open Orders", onAction: () => setPage("orders"),
+      onDismiss: () => setOrdersNoticeHidden(true),
+    },
     nlGardenDue && {
       key: "gardenSeason", icon: "sprout", title: `Start your ${nlGardenDue.year} garden`,
       sub: nlGardenDue.open
@@ -6436,6 +6461,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             ) : null}
             onAccount={() => setModal({ type: isSupabaseConfigured && !user ? "signin" : "renameHomestead" })}
             onSales={() => setPage("sales")} onYear={() => setPage("year")} onJournal={() => setPage("journal")}
+            onOrders={() => setPage("orders")} ordersLine={ordersMoreLine(orderCount)} ordersNew={orderCount.total}
             onGames={() => setPage("games")} onPhotos={() => setPage("photos")}
             onSupport={() => setPage("supporter")}
             supportLine={nlRecapFresh ? `${monthName(nlRecapKey)} recap is ready · thank you` : null}
@@ -6685,7 +6711,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         )}
         {nlPantryCfg && page === hobby.type && (
           <nlPantryCfg.Page hobby={hobby} data={data} update={update} setModal={setModal} user={user}
-            nl={{ tab: nlHobbyTab, tabs: nlPantryTabs, onOpenJournal: () => setPage("journal"), onSeeAll: () => setNlHobbyTab("animals") }} />
+            nl={{ tab: nlHobbyTab, tabs: nlPantryTabs, onOpenJournal: () => setPage("journal"), onSeeAll: () => setNlHobbyTab("animals"), onOpenOrders: () => setPage("orders") }} />
         )}
         {nlPantryCfg && page === "analytics" && (
           <PantryStatsPage hobby={hobby} data={data} setModal={setModal} statsFn={nlPantryCfg.stats} tabs={nlPantryTabs} allLabel={nlPantryCfg.all}
@@ -6993,6 +7019,9 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         )}
         {page === "journal" && (
           <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
+        )}
+        {page === "orders" && (
+          <OrdersScreen data={data} update={update} user={user} onBack={() => setPage("more")} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} />
         )}
         {page === "sales" && newLook && (
           <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />
@@ -8025,8 +8054,8 @@ function JournalPage({ data, update, setModal }) {
                   flexDirection: "column",
                   gap: 8,
                 }}>
-                  {g.items.map(({ entry, hobby }) => (
-                    <div key={`${hobby.id}-${entry.id}`}>
+                  {g.items.map(({ entry, hobby }, idx) => (
+                    <div key={`${hobby.id}-${entry.id}-${idx}`}>
                       {/* When filter is "all", show which hobby each entry belongs to.
                           When filtered, the hobby is already implied — skip the badge. */}
                       {hobbyFilter === "all" && (
@@ -10574,6 +10603,7 @@ function GardenMoreModal({ hobby, setModal, onClose }) {
     !isQuickLogHidden(hobby, "issue") && { icon: "⚠️", label: "Report an issue", sub: "Pests, disease, damage", onClick: () => go({ type: "log", action: "issue" }) },
     { icon: "🌱", label: "Start seeds indoors", onClick: () => go({ type: "addSeedStart", hobbyId: hobby.id }) },
     { icon: "🌳", label: "Add a perennial or fruit tree", onClick: () => go({ type: "addPerennial", hobbyId: hobby.id }) },
+    { icon: "♻️", label: "Compost", sub: "Piles, turning, temperature, finished compost", onClick: () => go({ type: "compost", hobbyId: hobby.id }) },
     { icon: "💵", label: "Add an expense", sub: "Seeds, soil, tools — counts against what your garden grew", onClick: () => go({ type: "addExpense", hobbyId: hobby.id }) },
     { icon: "🔍", label: "Identify a plant or problem", sub: "Photo scanner", onClick: () => go({ type: "plantScanner" }) },
     ...customLogs.map((c) => ({ icon: "📝", label: c.label, sub: "Your custom log", onClick: () => go({ type: "log", action: "custom", customLogId: c.id }) })),
@@ -11835,8 +11865,8 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       detail = `${amtLabel} · ${fmtMoney(entry.cost)}`;
       break;
     }
-    case "eggs": detail = `${entry.count || 0} eggs`; break;
-    case "eggs_laid": detail = `${entry.count || 0} eggs`; break;
+    case "eggs": detail = `${Number(entry.count) || 0} eggs`; break;
+    case "eggs_laid": detail = `${Number(entry.count) || 0} eggs`; break;
     case "sold_eggs": {
       // Robust derivation for all known sold_eggs entry shapes — older entries
       // and ones where the save-time derivation didn't run may not have
@@ -14115,6 +14145,11 @@ function ModalRouter({ modal, setModal, data, update, activeHobby, user, role, s
   if (modal.type === "gardenMore") {
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;
     return <GardenMoreModal hobby={gh} setModal={setModal} onClose={close} />;
+  }
+  if (modal.type === "compost") {
+    const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || data.hobbies.find((h) => h.type === "garden");
+    if (!gh) return null;
+    return <CompostSheet open hobby={gh} update={update} startPileId={modal.pileId || null} onClose={close} />;
   }
   if (modal.type === "gardenValue") {
     const gh = data.hobbies.find((h) => h.id === modal.hobbyId) || hobby;

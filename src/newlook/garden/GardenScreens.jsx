@@ -16,6 +16,7 @@ import React, { useEffect, useMemo, useState } from "react";
 import {
   Snowflake, Droplet, ShoppingBasket, Sprout, MoreHorizontal, Share2, BookOpen, Map as MapIcon,
   Package, CalendarDays, MapPin, Trophy, Leaf, ChevronDown, Plus, Archive,
+  Recycle,
 } from "lucide-react";
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Row, Badge, Button, Sheet } from "../ui.jsx";
@@ -26,6 +27,7 @@ import { fmtMoney, fmtWeightWhole } from "../../units.js";
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
 import { annualRows, perennialRows, seedStartRows, plantingWindows, seasonHarvests, harvestByCrop, gardenFunFacts } from "./gardenData.js";
 import { computeHarvestValue } from "../../gardenValue.js";
+import { compostDue, compostOf, compostSummary } from "./Compost.jsx";
 import { totalHarvestLbs } from "../../analytics.js";
 
 const money0 = (v) => fmtMoney(Math.round(v)).replace(/\.00$/, "");
@@ -162,6 +164,15 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
   const log = (action) => setModal({ type: "log", action, hobbyIdOverride: hobby.id });
   const harvests = useMemo(() => seasonHarvests(data, hobby), [data, hobby]);
   const value = useMemo(() => computeHarvestValue(harvests, hobby.harvestPrices || {}).total, [harvests, hobby.harvestPrices]);
+  const compostDueNow = useMemo(() => { try { return compostDue(hobby, today); } catch (_) { return []; } }, [hobby, today]);
+  const turnPile = (pileId) => update((d) => {
+    const h = (d.hobbies || []).find((x) => x.id === hobby.id);
+    if (!h) return d;
+    const c = compostOf(h);
+    c.logs.push({ id: Math.random().toString(36).slice(2, 10), pileId, date: today, kind: "turn" });
+    h.compost = { piles: c.piles, logs: c.logs.slice(-2000) };
+    return d;
+  });
   const quick = [
     { k: "harvest", label: "Harvest", I: ShoppingBasket, primary: true, run: () => log("harvested") },
     { k: "water", label: "Watered", I: Droplet, run: () => log("watered") },
@@ -190,6 +201,16 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
           }}><q.I size={22} strokeWidth={1.8} aria-hidden="true" />{q.label}</button>
         ))}
       </div>
+
+      {compostDueNow.length > 0 && (
+        <Card>
+          {compostDueNow.slice(0, 3).map(({ pile, st }, i) => (
+            <Row key={pile.id} first={i === 0} iconBg={nl.yolkTint} icon={<Ico I={Recycle} />}
+              title={`Time to turn ${pile.name}`} sub={st.lastTurn ? `Last turned ${st.sinceTurn} days ago` : `Started ${st.age} day${st.age === 1 ? "" : "s"} ago, not turned yet`}
+              trailing={<button type="button" aria-label={`Turned ${pile.name}`} onClick={() => turnPile(pile.id)} style={{ minHeight: 36, padding: "0 12px", borderRadius: 999, border: `1.5px solid ${nl.good}`, background: "transparent", color: nl.goodInk, font: `600 13px ${font.body}`, cursor: "pointer" }}>Turned</button>} />
+          ))}
+        </Card>
+      )}
 
       <GardenWeek data={data} update={update} setModal={setModal} onTab={onTab} />
 
@@ -275,6 +296,8 @@ export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onO
   const toBuy = seeds.filter((p) => { try { return needsBuying(p); } catch (_) { return false; } });
   const useFirst = seeds.filter((p) => { try { return seedViability(p).status === "use"; } catch (_) { return false; } });
   const windows = useMemo(() => plantingWindows(data, today, 3), [data, today]);
+  const compost = useMemo(() => { try { return compostSummary(hobby, today); } catch (_) { return { active: 0, total: 0, adds: 0, harvests: 0 }; } }, [hobby, today]);
+  const compostTurn = useMemo(() => { try { return compostDue(hobby, today); } catch (_) { return []; } }, [hobby, today]);
 
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
@@ -305,6 +328,12 @@ export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onO
         {boxOpen && <div style={{ padding: "0 12px 12px", borderTop: `1px solid ${nl.rule}` }}>{seedBox}</div>}
       </Card>
 
+      <Card>
+        <CardHeader title="Compost" right={compost.active ? `${compost.active} going` : null} />
+        <Row icon={<Ico I={Recycle} />} title={compost.total ? (compostTurn.length ? `${compostTurn.length} pile${compostTurn.length === 1 ? "" : "s"} due a turn` : `${compost.active} pile${compost.active === 1 ? "" : "s"} going`) : "Track your compost"}
+          sub={compost.total ? `${compost.adds} addition${compost.adds === 1 ? "" : "s"} this year${compost.harvests ? ` · ${compost.harvests} batch${compost.harvests === 1 ? "" : "es"} used` : ""}` : "What goes in, turning, temperature, and where it went"}
+          onClick={() => setModal({ type: "compost", hobbyId: hobby.id })} chevron />
+      </Card>
       <Card>
         <CardHeader title="What to start" right={<Button kind="link" onClick={onOpenCalendar}>Full calendar</Button>} />
         {windows ? (windows.list.length ? windows.list.map((w, i) => (
