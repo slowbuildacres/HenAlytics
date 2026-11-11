@@ -323,21 +323,45 @@ async function writeCloudHomestead(homesteadId, data) {
   return updatedAt;
 }
 
+// How many real records a list holds, counted the way the app's load-time
+// tidy-up (src/tidyData.js) leaves them: only objects, and an exact copy of
+// a record (same content twice, a sync hiccup) counts once. Without this, a
+// device that tidied duplicates away scored LOWER than the cloud copy that
+// still had them, and the clobber guard below refused every one of its saves
+// ("Another device has newer data" on every change, even after a refresh).
+function recordCount(list) {
+  if (list && typeof list === 'object' && !Array.isArray(list)) list = Object.values(list);
+  if (!Array.isArray(list)) return 0;
+  const seen = new Set();
+  let n = 0;
+  for (const rec of list) {
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+    let key;
+    try { key = JSON.stringify(rec); } catch (_) { key = null; }
+    if (key != null) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    n++;
+  }
+  return n;
+}
+
 function scoreData(data) {
   if (!data || typeof data !== 'object') return 0;
   let score = 0;
   if (typeof data.homesteadName === 'string' && data.homesteadName.trim()) score += 50;
   if (data.entries && typeof data.entries === 'object') {
     for (const arr of Object.values(data.entries)) {
-      if (Array.isArray(arr)) score += arr.length;
+      score += recordCount(arr);
     }
   }
-  if (Array.isArray(data.plantings)) score += data.plantings.length;
+  score += recordCount(data.plantings);
   if (Array.isArray(data.hobbies)) {
     for (const h of data.hobbies) {
       if (h && typeof h === 'object') {
         if (h.flockSize > 0) score += 5;
-        if (Array.isArray(h.flockHistory)) score += h.flockHistory.length;
+        score += recordCount(h.flockHistory);
         // Legacy single-batch field (pre-multi-batch support) — counts 5
         // for backward compat with old data shapes still in the wild.
         if (h.currentBatch) score += 5;
@@ -355,7 +379,7 @@ function scoreData(data) {
           for (const ab of h.archivedBatches) {
             score += 5;
             if (ab && Array.isArray(ab.finalEntries)) {
-              score += ab.finalEntries.length;
+              score += recordCount(ab.finalEntries);
             }
           }
         }
@@ -366,7 +390,7 @@ function scoreData(data) {
           for (const as of h.archivedSeasons) {
             score += 5;
             if (as && Array.isArray(as.finalEntries)) {
-              score += as.finalEntries.length;
+              score += recordCount(as.finalEntries);
             }
           }
         }
@@ -393,12 +417,12 @@ function scoreData(data) {
   // Top-level collections that previously weren't counted. Without these,
   // a user could lose every sale, customer, variety, or calendar event
   // without the safe-write check kicking in (both sides scored as 0 there).
-  if (Array.isArray(data.sales)) score += data.sales.length;
-  if (Array.isArray(data.customers)) score += data.customers.length;
-  if (Array.isArray(data.calendarEvents)) score += data.calendarEvents.length;
+  score += recordCount(data.sales);
+  score += recordCount(data.customers);
+  score += recordCount(data.calendarEvents);
   if (data.varieties && typeof data.varieties === 'object') {
     for (const arr of Object.values(data.varieties)) {
-      if (Array.isArray(arr)) score += arr.length;
+      score += recordCount(arr);
     }
   }
   // Identity signals — location/zone setup is non-trivial user effort, so
