@@ -3567,6 +3567,8 @@ useEffect(() => {
   const [user, setUser] = useState(null);
   const [ordersNoticeHidden, setOrdersNoticeHidden] = useState(false);
   const [pickupsNoticeHidden, setPickupsNoticeHidden] = useState(false);
+  const [ordersTab, setOrdersTab] = useState("orders");
+  const [ordersBack, setOrdersBack] = useState("more");
   // New customer order requests (badge on More, notice on Home).
   const orderCount = useOrderCount(data, user);
   const [role, setRole] = useState(null); // "owner" | "member" | null
@@ -4543,6 +4545,7 @@ useEffect(() => {
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get("open") !== "orders") return;
+    setOrdersTab("orders");
     setPage("orders");
     const url = new URL(window.location.href);
     url.searchParams.delete("open");
@@ -5558,14 +5561,14 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
       key: "orders", icon: "bag",
       title: orderCount.newOrders ? `${orderCount.newOrders} new order request${orderCount.newOrders === 1 ? "" : "s"}` : `${orderCount.newJoins} ${orderCount.newJoins === 1 ? "person wants" : "people want"} to join your list`,
       sub: ordersMoreLine(orderCount),
-      action: "Open Orders", onAction: () => setPage("orders"),
+      action: "Open Orders", onAction: () => { setOrdersTab("orders"); setOrdersBack("more"); setPage("orders"); },
       onDismiss: () => setOrdersNoticeHidden(true),
     },
     (orderCount.pickups || []).length > 0 && page !== "orders" && !pickupsNoticeHidden && {
       key: "pickups", icon: "calendar",
       title: `${orderCount.pickups.length} order${orderCount.pickups.length === 1 ? "" : "s"} picking up today`,
       sub: orderCount.pickups.slice(0, 4).map((p) => p.name).join(", ") + (orderCount.pickups.length > 4 ? ` and ${orderCount.pickups.length - 4} more` : ""),
-      action: "Open Orders", onAction: () => setPage("orders"),
+      action: "Open Orders", onAction: () => { setOrdersTab("orders"); setOrdersBack("more"); setPage("orders"); },
       onDismiss: () => setPickupsNoticeHidden(true),
     },
     nlGardenDue && {
@@ -6468,7 +6471,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             ) : null}
             onAccount={() => setModal({ type: isSupabaseConfigured && !user ? "signin" : "renameHomestead" })}
             onSales={() => setPage("sales")} onYear={() => setPage("year")} onJournal={() => setPage("journal")}
-            onOrders={() => setPage("orders")} ordersLine={ordersMoreLine(orderCount)} ordersNew={orderCount.total}
+            onOrders={() => { setOrdersTab("orders"); setOrdersBack("more"); setPage("orders"); }} ordersLine={ordersMoreLine(orderCount)} ordersNew={orderCount.total}
             onGames={() => setPage("games")} onPhotos={() => setPage("photos")}
             onSupport={() => setPage("supporter")}
             supportLine={nlRecapFresh ? `${monthName(nlRecapKey)} recap is ready · thank you` : null}
@@ -7028,10 +7031,10 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "orders" && (
-          <OrdersScreen data={data} update={update} user={user} onBack={() => setPage("more")} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} />
+          <OrdersScreen data={data} update={update} user={user} onBack={() => setPage(ordersBack)} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} initialTab={ordersTab} onEmailCustomers={() => setModal({ type: "stockEmails" })} />
         )}
         {page === "sales" && newLook && (
-          <SalesScreen data={data} update={update} setModal={setModal} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />
+          <SalesScreen data={data} update={update} setModal={setModal} onCustomers={() => { setOrdersTab("customers"); setOrdersBack("sales"); setPage("orders"); }} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />
         )}
         {page === "sales" && !newLook && (
           <SalesPage data={data} update={update} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} />
