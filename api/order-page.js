@@ -165,7 +165,7 @@ ${op.paused ? `<div class="card"><h2>Not taking orders right now</h2><p class="s
   <label for="o-name">Your name</label><input id="o-name" type="text" name="name" required maxlength="${ORDER_LIMITS.name}" autocomplete="name" value="${v('name')}">
   <label for="o-email">Email</label><input id="o-email" type="email" name="email" required maxlength="${ORDER_LIMITS.email}" autocomplete="email" value="${v('email')}">
   <label for="o-phone">Phone (optional)</label><input id="o-phone" type="tel" name="phone" maxlength="${ORDER_LIMITS.phone}" autocomplete="tel" value="${v('phone')}">
-  <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> It's OK to text me about my order</label>
+  <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></label>
   ${dateHtml}
   <label for="o-note">${avail.length ? 'Anything else? (optional)' : 'What would you like?'}</label><textarea id="o-note" name="note" maxlength="${ORDER_LIMITS.note}" placeholder="${avail.length ? 'A dozen extra for Saturday, please' : '2 dozen eggs and a loaf of sourdough'}">${v('note')}</textarea>
   ${payHtml}
@@ -307,8 +307,11 @@ export default async function handler(req, res) {
     const rows = [{ ...cleaned.row, homestead_id: page.id, ip_hash: hash }];
     const joined = kind === 'order' && values.alsoJoin && page.op.joinList;
     if (joined) rows.push({ kind: 'join', customer_name: cleaned.row.customer_name, email: cleaned.row.email, phone: cleaned.row.text_ok ? cleaned.row.phone : '', items: [], note: '', pickup_date: null, homestead_id: page.id, ip_hash: hash, ...(cleaned.row.text_ok ? { text_ok: true } : {}) });
+    // Every row in one insert must have the same keys (PostgREST rejects a
+    // batch where they differ), so fill in the defaults for the extras.
+    const same = (list) => list.map((r) => ({ pay_method: null, text_ok: false, ...r }));
     try {
-      await rest('order_requests', { method: 'POST', body: JSON.stringify(rows), headers: { Prefer: 'return=minimal' } });
+      await rest('order_requests', { method: 'POST', body: JSON.stringify(same(rows)), headers: { Prefer: 'return=minimal' } });
     } catch (e) {
       // Table made before the pay_method column: save the order anyway, with
       // the pay choice in the note, so orders never stop coming in.
