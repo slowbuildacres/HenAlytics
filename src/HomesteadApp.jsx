@@ -8054,8 +8054,8 @@ function JournalPage({ data, update, setModal }) {
                   flexDirection: "column",
                   gap: 8,
                 }}>
-                  {g.items.map(({ entry, hobby }) => (
-                    <div key={`${hobby.id}-${entry.id}`}>
+                  {g.items.map(({ entry, hobby }, idx) => (
+                    <div key={`${hobby.id}-${entry.id}-${idx}`}>
                       {/* When filter is "all", show which hobby each entry belongs to.
                           When filtered, the hobby is already implied — skip the badge. */}
                       {hobbyFilter === "all" && (
@@ -11865,8 +11865,8 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       detail = `${amtLabel} · ${fmtMoney(entry.cost)}`;
       break;
     }
-    case "eggs": detail = `${entry.count || 0} eggs`; break;
-    case "eggs_laid": detail = `${entry.count || 0} eggs`; break;
+    case "eggs": detail = `${Number(entry.count) || 0} eggs`; break;
+    case "eggs_laid": detail = `${Number(entry.count) || 0} eggs`; break;
     case "sold_eggs": {
       // Robust derivation for all known sold_eggs entry shapes — older entries
       // and ones where the save-time derivation didn't run may not have
