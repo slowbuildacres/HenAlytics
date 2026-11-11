@@ -82,6 +82,7 @@ import {
   listMyHomesteads, setActiveHomestead,
   getHiddenHomesteadIds, setHomesteadHidden,
 } from "./sync.js";
+import { noteDeletions } from "./mergeUnsynced.js";
 import {
   areRemindersSupported, getReminderPermission, requestReminderPermission,
   reconcileReminders, cancelAllReminders, initReminderTapHandling,
@@ -5006,6 +5007,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         setData(result.data ? migrateData(result.data) : defaultData());
       }
 
+      // A load that merged this device's unsynced changes into the cloud copy
+      // (new records, or deletions — see mergeUnsynced.js) must be pushed up,
+      // not held until the next edit; otherwise other devices keep seeing the
+      // old cloud copy. The merged data carries the fresh cloud baseline, so
+      // the save passes the stale-write guard.
+      if (result.source === "cloud-merged") skipNextSaveRef.current = false;
+
       cloudLoadedRef.current = true;
       prevUserRef.current = user;
     })();
@@ -5366,6 +5374,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
         if (prev && next) stampChangedRecords(prev, next);
       } catch (e) {
         console.warn("[stamp] updatedAt stamping skipped:", e);
+      }
+      // Note deleted customers, sales, etc. so a sync merge can't bring them
+      // back (see DELETIONS in mergeUnsynced.js). Best-effort like stamping.
+      try {
+        if (prev && next) noteDeletions(prev, next);
+      } catch (e) {
+        console.warn("[delete-note] skipped:", e);
       }
       return next;
     });
