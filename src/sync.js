@@ -1,6 +1,7 @@
 import { supabase, isSupabaseConfigured } from './supabase.js';
 import { mergeUnsyncedEntries } from './mergeUnsynced.js';
 import { apiUrl } from './apiBase.js';
+import { reportError } from './telemetry.js';
 
 const STORAGE_KEY = 'homestead_data_v1';
 const HOMESTEAD_ID_KEY = 'homestead_active_id_v1';
@@ -323,21 +324,45 @@ async function writeCloudHomestead(homesteadId, data) {
   return updatedAt;
 }
 
+// How many real records a list holds, counted the way the app's load-time
+// tidy-up (src/tidyData.js) leaves them: only objects, and an exact copy of
+// a record (same content twice, a sync hiccup) counts once. Without this, a
+// device that tidied duplicates away scored LOWER than the cloud copy that
+// still had them, and the clobber guard below refused every one of its saves
+// ("Another device has newer data" on every change, even after a refresh).
+function recordCount(list) {
+  if (list && typeof list === 'object' && !Array.isArray(list)) list = Object.values(list);
+  if (!Array.isArray(list)) return 0;
+  const seen = new Set();
+  let n = 0;
+  for (const rec of list) {
+    if (!rec || typeof rec !== 'object' || Array.isArray(rec)) continue;
+    let key;
+    try { key = JSON.stringify(rec); } catch (_) { key = null; }
+    if (key != null) {
+      if (seen.has(key)) continue;
+      seen.add(key);
+    }
+    n++;
+  }
+  return n;
+}
+
 function scoreData(data) {
   if (!data || typeof data !== 'object') return 0;
   let score = 0;
   if (typeof data.homesteadName === 'string' && data.homesteadName.trim()) score += 50;
   if (data.entries && typeof data.entries === 'object') {
     for (const arr of Object.values(data.entries)) {
-      if (Array.isArray(arr)) score += arr.length;
+      score += recordCount(arr);
     }
   }
-  if (Array.isArray(data.plantings)) score += data.plantings.length;
+  score += recordCount(data.plantings);
   if (Array.isArray(data.hobbies)) {
     for (const h of data.hobbies) {
       if (h && typeof h === 'object') {
         if (h.flockSize > 0) score += 5;
-        if (Array.isArray(h.flockHistory)) score += h.flockHistory.length;
+        score += recordCount(h.flockHistory);
         // Legacy single-batch field (pre-multi-batch support) — counts 5
         // for backward compat with old data shapes still in the wild.
         if (h.currentBatch) score += 5;
@@ -355,7 +380,7 @@ function scoreData(data) {
           for (const ab of h.archivedBatches) {
             score += 5;
             if (ab && Array.isArray(ab.finalEntries)) {
-              score += ab.finalEntries.length;
+              score += recordCount(ab.finalEntries);
             }
           }
         }
@@ -366,7 +391,7 @@ function scoreData(data) {
           for (const as of h.archivedSeasons) {
             score += 5;
             if (as && Array.isArray(as.finalEntries)) {
-              score += as.finalEntries.length;
+              score += recordCount(as.finalEntries);
             }
           }
         }
@@ -393,12 +418,12 @@ function scoreData(data) {
   // Top-level collections that previously weren't counted. Without these,
   // a user could lose every sale, customer, variety, or calendar event
   // without the safe-write check kicking in (both sides scored as 0 there).
-  if (Array.isArray(data.sales)) score += data.sales.length;
-  if (Array.isArray(data.customers)) score += data.customers.length;
-  if (Array.isArray(data.calendarEvents)) score += data.calendarEvents.length;
+  score += recordCount(data.sales);
+  score += recordCount(data.customers);
+  score += recordCount(data.calendarEvents);
   if (data.varieties && typeof data.varieties === 'object') {
     for (const arr of Object.values(data.varieties)) {
-      if (Array.isArray(arr)) score += arr.length;
+      score += recordCount(arr);
     }
   }
   // Identity signals — location/zone setup is non-trivial user effort, so
@@ -408,6 +433,44 @@ function scoreData(data) {
   if (data.userZone) score += 2;
   if (data.userZoneSystem) score += 2;
   return score;
+}
+
+// Per-list counts (names and numbers only, no content) so a refused save can
+// say WHICH lists differ between this device and the cloud.
+function scoreParts(data) {
+  const out = {};
+  if (!data || typeof data !== 'object') return out;
+  const add = (k, n) => { if (n) out[k] = (out[k] || 0) + n; };
+  if (data.entries && typeof data.entries === 'object') {
+    for (const [k, arr] of Object.entries(data.entries)) add(`entries.${k}`, recordCount(arr));
+  }
+  ['plantings', 'sales', 'customers', 'calendarEvents'].forEach((k) => add(k, recordCount(data[k])));
+  if (Array.isArray(data.hobbies)) {
+    for (const h of data.hobbies) {
+      if (!h || typeof h !== 'object') continue;
+      const t = String(h.type || h.id || 'hobby').slice(0, 30);
+      add(`${t}.flockHistory`, recordCount(h.flockHistory));
+      add(`${t}.batches`, (Array.isArray(h.currentBatches) ? h.currentBatches.length : 0) + (Array.isArray(h.archivedBatches) ? h.archivedBatches.length : 0));
+      add(`${t}.seasons`, (h.currentSeason ? 1 : 0) + (Array.isArray(h.archivedSeasons) ? h.archivedSeasons.length : 0));
+      ['animals', 'flocks', 'hives', 'brooderBatches', 'perennials'].forEach((k) => add(`${t}.${k}`, Array.isArray(h[k]) ? h[k].length : 0));
+    }
+  }
+  return out;
+}
+
+// A refused save is reported (once per session per kind) so it can be
+// diagnosed without the person's browser console.
+function reportSkip(reason, extra) {
+  try {
+    const lines = Object.entries(extra || {}).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`);
+    reportError(new Error(`sync skipped: ${reason}`), { kind: 'sync_skip', componentStack: lines.join('\n').slice(0, 3500) });
+  } catch (_) { /* never let reporting break a save */ }
+}
+function partsDiff(cloud, mine) {
+  const a = scoreParts(cloud), b = scoreParts(mine);
+  const diff = {};
+  new Set([...Object.keys(a), ...Object.keys(b)]).forEach((k) => { if ((a[k] || 0) !== (b[k] || 0)) diff[k] = `${a[k] || 0} -> ${b[k] || 0}`; });
+  return diff;
 }
 
 async function safeWriteCloudHomestead(homesteadId, newData) {
@@ -453,6 +516,7 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
         `(cloud=${cloudUpdatedAt}, baseline=${baseline}). Skipping save to ` +
         `avoid clobbering unseen changes.`
       );
+      reportSkip('stale-baseline', { cloud_updated_at: cloudUpdatedAt, device_baseline: baseline, device_clock: new Date().toISOString() });
       return { skipped: true, reason: 'stale-baseline' };
     }
   }
@@ -498,6 +562,7 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
       `cloud updated_at=${cloudUpdatedAt}). Client must re-pull to acquire a ` +
       `baseline before it can overwrite.`
     );
+    reportSkip('no-baseline', { cloud_updated_at: cloudUpdatedAt, cloud_score: currentScore, device_clock: new Date().toISOString() });
     return { skipped: true, reason: 'stale-baseline' };
   }
 
@@ -505,6 +570,7 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
     console.warn(
       `Refusing to clobber cloud data (current score=${currentScore}, new=${newScore}). Skipping save.`
     );
+    reportSkip('would-clobber', { cloud_score: currentScore, device_score: newScore, lists_that_differ: partsDiff(currentCloud, newData) });
     return { skipped: true, reason: 'would-clobber' };
   }
 
@@ -665,6 +731,7 @@ async function recoverStaleWrite(homesteadId, localData) {
   const result = await safeWriteCloudHomestead(homesteadId, merged);
   if (result.skipped) {
     console.warn(`[RECOVER] stale-baseline retry still skipped (${result.reason}).`);
+    reportSkip(`recovery-${result.reason}`, { cloud_updated_at: updatedAt });
     return { ok: false };
   }
   return { ok: true, newBaselineAt: result.newBaselineAt, mergedData: merged };
@@ -719,6 +786,7 @@ export async function saveHomestead(user, data, cloudReady = true) {
             }
           } catch (e) {
             console.warn('[SAVE] stale-baseline auto-recovery failed; leaving edit local.', e);
+            reportSkip('recovery-threw', { error: String((e && e.message) || e).slice(0, 300) });
           }
           // Recovery didn't take (e.g. another device wrote mid-recovery, or
           // the read failed) — fall through to the original banner behavior.
