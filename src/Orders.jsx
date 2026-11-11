@@ -14,7 +14,7 @@
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import QRCode from "qrcode";
-import { ChevronLeft, Link2, QrCode, Settings2, Mail, Phone, Check, X as XIcon, ShoppingBag, UserPlus, Plus, Trash2, ChevronDown, Share2, Copy } from "lucide-react";
+import { ChevronLeft, Link2, QrCode, Settings2, Mail, Phone, Check, X as XIcon, ShoppingBag, UserPlus, Plus, Trash2, ChevronDown, Share2, Copy, Lock, Receipt } from "lucide-react";
 import { nl, font, type } from "./newlook/theme.js";
 import { Card, CardHeader, Row, Button, Badge, Sheet, Chip } from "./newlook/ui.jsx";
 import { supabase, isSupabaseConfigured } from "./supabase.js";
@@ -22,6 +22,7 @@ import { getActiveHomesteadId } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { shareImageBlob, shareUrl } from "./shareCard.js";
 import { cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate } from "./orderShared.js";
+import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -101,11 +102,54 @@ function Toggle({ on, onChange, label, sub }) {
 }
 
 // ---------------------------------------------------------------- settings
+const miniLabel = { display: "block", fontSize: 12, fontWeight: 600, color: nl.soft, margin: "0 2px 4px" };
+
+// The owner-only part of a menu item: cost to make, where sales count, and
+// the farm stand item it comes from. Never sent to the public page.
+function PrivateBox({ m, setItem, credits, stand, data }) {
+  const credit = m.credit || guessCredit(m, data);
+  const choices = credits.some((c) => c.id === credit) ? credits : [...credits, { id: credit, label: credit }];
+  const price = Number(m.price) || 0;
+  const cost = m.cost === "" || m.cost == null ? null : Number(m.cost) || 0;
+  return (
+    <div style={{ background: nl.chip, borderRadius: 12, padding: 10, display: "flex", flexDirection: "column", gap: 8 }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, fontWeight: 600, color: nl.soft }}>
+        <Lock size={14} aria-hidden="true" /> Only you see this
+      </div>
+      <div style={{ display: "flex", gap: 8 }}>
+        <label style={{ flex: 1, minWidth: 0 }}>
+          <span style={miniLabel}>Cost to make one</span>
+          <input aria-label={`Cost to make one ${m.name || "item"} (private)`} type="number" inputMode="decimal" min={0} step="0.01" style={inputStyle} value={m.cost == null ? "" : m.cost} onChange={(e) => setItem(m.id, { cost: e.target.value === "" ? null : e.target.value })} placeholder="$ Optional" />
+        </label>
+        <label style={{ flex: 1, minWidth: 0 }}>
+          <span style={miniLabel}>Count sales under</span>
+          <select aria-label={`Count ${m.name || "item"} sales under`} style={inputStyle} value={credit} onChange={(e) => setItem(m.id, { credit: e.target.value })}>
+            {choices.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+        </label>
+      </div>
+      {stand.length > 0 && (
+        <label>
+          <span style={miniLabel}>Comes from this farm stand item</span>
+          <select aria-label={`Farm stand item for ${m.name || "item"}`} style={inputStyle} value={m.standItemId || ""} onChange={(e) => setItem(m.id, { standItemId: e.target.value, ...(e.target.value ? { credit: "farmstand" } : {}) })}>
+            <option value="">Not linked</option>
+            {stand.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
+          </select>
+        </label>
+      )}
+      <div style={{ fontSize: 13, color: nl.soft, lineHeight: 1.4 }}>
+        {price > 0 && cost != null ? `You make about ${moneyText(price - cost)} on each one. ` : ""}
+        {m.standItemId ? "Picked-up orders take it off your farm stand stock." : ""}
+      </div>
+    </div>
+  );
+}
+
 function PageSettingsSheet({ open, onClose, data, update }) {
   const op = cleanPageSettings(data.orderPage || {});
   const [intro, setIntro] = useState(op.intro);
   const [pickup, setPickup] = useState(op.pickup);
-  const [menu, setMenu] = useState(op.menu);
+  const [menu, setMenu] = useState(() => ownerMenu((data.orderPage || {}).menu));
   const [joinList, setJoinList] = useState(op.joinList);
   const [joinGroupId, setJoinGroupId] = useState(op.joinGroupId);
   const [emailMe, setEmailMe] = useState(op.emailMe);
@@ -113,10 +157,11 @@ function PageSettingsSheet({ open, onClose, data, update }) {
   useEffect(() => {
     if (!open) return;
     const o = cleanPageSettings(data.orderPage || {});
-    setIntro(o.intro); setPickup(o.pickup); setMenu(o.menu); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setConfirmNew(false);
+    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setConfirmNew(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
-  const stand = ((data.hobbies || []).find((h) => h && h.id === "farmstand") || {}).items || [];
-  const standToAdd = stand.filter((i) => i && !i.archived && i.name && !menu.some((m) => m.name.toLowerCase() === String(i.name).toLowerCase()));
+  const stand = standItems(data);
+  const standToAdd = stand.filter((i) => !menu.some((m) => m.standItemId === i.id || m.name.toLowerCase() === String(i.name).toLowerCase()));
+  const credits = creditChoices(data);
   const groups = Array.isArray(data.customerGroups) ? data.customerGroups.filter((g) => g && g.id && g.name) : [];
   const setItem = (id, patch) => setMenu((m) => m.map((x) => (x.id === id ? { ...x, ...patch } : x)));
   const save = (extra = {}) => {
@@ -124,7 +169,7 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       const prev = d.orderPage && typeof d.orderPage === "object" ? d.orderPage : {};
       d.orderPage = {
         ...prev, intro: intro.slice(0, ORDER_LIMITS.intro), pickup: pickup.slice(0, ORDER_LIMITS.pickupText),
-        menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null })),
+        menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null, cost: m.cost === "" || m.cost == null || !(Number(m.cost) >= 0) ? null : Math.round(Number(m.cost) * 100) / 100 })),
         joinList, joinGroupId, emailMe, ...extra,
       };
       return d;
@@ -142,6 +187,7 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       <input id="op-pickup" style={inputStyle} value={pickup} onChange={(e) => setPickup(e.target.value)} placeholder="Saturdays 9 to noon at the stand" maxLength={ORDER_LIMITS.pickupText} />
 
       <div style={{ ...labelStyle, marginTop: 18 }}>What people can order</div>
+      <p style={{ margin: "0 4px 8px", fontSize: 13, color: nl.soft, lineHeight: 1.45 }}>Customers see each item's name, price, unit and note. What it costs you to make stays private, just for you.</p>
       <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16 }}>
         {menu.length === 0 && <div style={{ padding: 14, fontSize: 14, color: nl.soft }}>Nothing yet. Add eggs, bread, meat birds, anything. Customers can also write what they want in a note.</div>}
         {menu.map((m, i) => (
@@ -151,17 +197,24 @@ function PageSettingsSheet({ open, onClose, data, update }) {
               <button type="button" aria-label={`Remove ${m.name || "item"}`} onClick={() => setMenu((x) => x.filter((y) => y.id !== m.id))} style={{ width: 48, height: 48, border: "none", background: "none", color: nl.soft, cursor: "pointer" }}><Trash2 size={18} /></button>
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <input aria-label="Price (optional)" type="number" inputMode="decimal" min={0} style={{ ...inputStyle, flex: 1 }} value={m.price == null ? "" : m.price} onChange={(e) => setItem(m.id, { price: e.target.value === "" ? null : e.target.value })} placeholder="Price" />
-              <input aria-label="Unit (optional)" style={{ ...inputStyle, flex: 1 }} value={m.unit} onChange={(e) => setItem(m.id, { unit: e.target.value.slice(0, ORDER_LIMITS.unit) })} placeholder="dozen, loaf, bird" />
+              <label style={{ flex: 1, minWidth: 0 }}>
+                <span style={miniLabel}>Price customers see</span>
+                <input aria-label="Price customers see (optional)" type="number" inputMode="decimal" min={0} step="0.01" style={inputStyle} value={m.price == null ? "" : m.price} onChange={(e) => setItem(m.id, { price: e.target.value === "" ? null : e.target.value })} placeholder="$ Price" />
+              </label>
+              <label style={{ flex: 1, minWidth: 0 }}>
+                <span style={miniLabel}>Unit</span>
+                <input aria-label="Unit (optional)" style={inputStyle} value={m.unit} onChange={(e) => setItem(m.id, { unit: e.target.value.slice(0, ORDER_LIMITS.unit) })} placeholder="dozen, loaf, bird" />
+              </label>
             </div>
             <input aria-label="Note for customers (optional)" style={inputStyle} value={m.note} onChange={(e) => setItem(m.id, { note: e.target.value.slice(0, ORDER_LIMITS.menuNote) })} placeholder="Note, like Brown and blue eggs, or Ready mid-June" />
+            <PrivateBox m={m} setItem={setItem} credits={credits} stand={stand} data={data} />
             <Toggle on={m.available} onChange={(v) => setItem(m.id, { available: v })} label="Taking orders for this" sub={m.available ? null : "Hidden from your order page for now"} />
           </div>
         ))}
       </div>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-        <Button small kind="quiet" icon={<Plus size={18} />} onClick={() => setMenu((m) => [...m, { id: newId(), name: "", unit: "", price: null, note: "", available: true }])} disabled={menu.length >= ORDER_LIMITS.menu}>Add an item</Button>
-        {standToAdd.length > 0 && <Button small kind="quiet" onClick={() => setMenu((m) => [...m, ...standToAdd.slice(0, ORDER_LIMITS.menu - m.length).map((i) => ({ id: newId(), name: String(i.name).slice(0, ORDER_LIMITS.menuName), unit: String(i.unit || "").slice(0, ORDER_LIMITS.unit), price: Number(i.pricePerUnit) > 0 ? Number(i.pricePerUnit) : null, note: "", available: true }))])}>Add my farm stand items ({standToAdd.length})</Button>}
+        <Button small kind="quiet" icon={<Plus size={18} />} onClick={() => setMenu((m) => [...m, { id: newId(), name: "", unit: "", price: null, cost: null, credit: "", standItemId: "", note: "", available: true }])} disabled={menu.length >= ORDER_LIMITS.menu}>Add an item</Button>
+        {standToAdd.length > 0 && <Button small kind="quiet" onClick={() => setMenu((m) => [...m, ...standToAdd.slice(0, ORDER_LIMITS.menu - m.length).map((i) => ({ id: newId(), name: String(i.name).slice(0, ORDER_LIMITS.menuName), unit: String(i.unit || "").slice(0, ORDER_LIMITS.unit), price: Number(i.pricePerUnit) > 0 ? Number(i.pricePerUnit) : null, cost: Number(i.costPerUnit) > 0 ? Number(i.costPerUnit) : null, credit: "farmstand", standItemId: i.id, note: "", available: true }))])}>Add my farm stand items ({standToAdd.length})</Button>}
       </div>
 
       <div style={{ marginTop: 14, background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
@@ -289,18 +342,132 @@ function UpdateSheet({ req, step, onClose, onDone }) {
   );
 }
 
+// ---------------------------------------------------------------- picked up → Sales
+// Marks the order picked up and, if the owner wants, adds each item to Sales
+// and takes linked farm stand items off stock. Amounts start from the order
+// and the menu, and every one can be changed first. addOnly is for an order
+// that was already picked up before it was added to Sales.
+function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
+  const already = orderInSales(data, req.id);
+  const [lines, setLines] = useState(() => orderLines(req, (data.orderPage || {}).menu, data));
+  const [toSales, setToSales] = useState(!already);
+  const [date, setDate] = useState(isoToday());
+  const [busy, setBusy] = useState(false);
+  const [err, setErr] = useState("");
+  const stand = standItems(data);
+  const credits = creditChoices(data);
+  const setLine = (key, patch) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
+  const t = lineTotals(lines);
+  const go = async () => {
+    setBusy(true); setErr("");
+    try {
+      if (!addOnly) await callOrders("update", { id: req.id, status: "done", notify: false });
+    } catch (e) { setErr(e.message); setBusy(false); return; }
+    let added = null;
+    if (toSales && !orderInSales(data, req.id)) {
+      const em = String(req.email || "").toLowerCase();
+      const buyer = em && Array.isArray(data.customers) ? data.customers.find((c) => c && String(c.email || "").toLowerCase() === em) : null;
+      const sales = salesFromLines(lines, { req, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoToday(), buyerId: buyer ? buyer.id : null });
+      added = sales.length ? sales.reduce((n, x) => n + x.totalRevenue, 0) : null;
+      if (sales.length) update((d) => {
+        if (!Array.isArray(d.sales)) d.sales = [];
+        if (d.sales.some((x) => x && x.fromOrder === req.id)) return d;
+        d.sales.push(...sales);
+        const h = (d.hobbies || []).find((x) => x && x.id === "farmstand");
+        lines.forEach((l) => {
+          if (!l.standItemId || l.from === "none") return;
+          const it = h && Array.isArray(h.items) ? h.items.find((x) => x && x.id === l.standItemId) : null;
+          if (it) takeStock(it, Number(l.qty) || 0, l.from);
+        });
+        return d;
+      });
+    }
+    const head = addOnly ? "Added to Sales." : "Marked picked up.";
+    onDone(added != null ? `${addOnly ? "Added" : "Picked up."} ${moneyText(added)} ${addOnly ? "to Sales." : "added to Sales."}` : head);
+  };
+  return (
+    <Sheet open onClose={onClose} label={addOnly ? "Add this order to Sales" : "Picked up"} showClose maxHeight="92vh">
+      <h2 style={{ margin: "0 4px 4px", fontFamily: font.display, fontWeight: 400, fontSize: 24 }}>{addOnly ? "Add to Sales" : "Picked up"}</h2>
+      <p style={{ margin: "0 4px 8px", fontSize: 14, color: nl.soft }}>{req.customer_name} · {(req.items || []).map(itemLine).join(", ") || req.note}</p>
+      {already ? (
+        <div style={{ background: nl.chip, borderRadius: 12, padding: "10px 12px", fontSize: 14 }}>This order is already in Sales. Change it there if anything's off.</div>
+      ) : (
+        <>
+          {!addOnly && (
+            <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
+              <Toggle on={toSales} onChange={setToSales} label="Add it to Sales" sub={toSales ? "Check the amounts below" : "Just mark it picked up"} />
+            </div>
+          )}
+          {toSales && (
+            <>
+              <label style={labelStyle} htmlFor="pu-date">Sale date</label>
+              <input id="pu-date" type="date" style={inputStyle} value={date} onChange={(e) => setDate(e.target.value)} />
+              <div style={{ display: "flex", flexDirection: "column", gap: 10, marginTop: 12 }}>
+                {lines.map((l) => {
+                  const it = stand.find((x) => x.id === l.standItemId);
+                  const choices = credits.some((c) => c.id === l.credit) ? credits : [...credits, { id: l.credit, label: l.credit }];
+                  return (
+                    <div key={l.key} style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: 12, display: "flex", flexDirection: "column", gap: 8 }}>
+                      {l.free
+                        ? <label><span style={miniLabel}>What they got</span><input aria-label="What they got" style={inputStyle} value={l.name} onChange={(e) => setLine(l.key, { name: e.target.value.slice(0, ORDER_LIMITS.menuName) })} /></label>
+                        : <div style={{ fontSize: 16, fontWeight: 600 }}>{l.name}{l.unit ? <span style={{ fontWeight: 400, color: nl.soft }}> · {l.unit}</span> : null}</div>}
+                      <div style={{ display: "flex", gap: 8 }}>
+                        <label style={{ flex: 1, minWidth: 0 }}><span style={miniLabel}>How many</span>
+                          <input aria-label={`How many ${l.name}`} type="number" inputMode="decimal" min={0} style={inputStyle} value={l.qty} onChange={(e) => setLine(l.key, { qty: e.target.value })} /></label>
+                        <label style={{ flex: 1, minWidth: 0 }}><span style={miniLabel}>Price each</span>
+                          <input aria-label={`Price each for ${l.name}`} type="number" inputMode="decimal" min={0} step="0.01" style={inputStyle} value={l.price} onChange={(e) => setLine(l.key, { price: e.target.value })} placeholder="$" /></label>
+                        <label style={{ flex: 1, minWidth: 0 }}><span style={miniLabel}>Cost each <Lock size={11} aria-hidden="true" /></span>
+                          <input aria-label={`Cost to make each ${l.name} (private)`} type="number" inputMode="decimal" min={0} step="0.01" style={inputStyle} value={l.cost} onChange={(e) => setLine(l.key, { cost: e.target.value })} placeholder="$" /></label>
+                      </div>
+                      <label><span style={miniLabel}>Count it under</span>
+                        <select aria-label={`Count ${l.name} under`} style={inputStyle} value={l.credit} onChange={(e) => setLine(l.key, { credit: e.target.value })}>
+                          {choices.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+                        </select></label>
+                      {l.credit === "eggs" && (
+                        <label><span style={miniLabel}>Eggs in each {l.unit || "one"}</span>
+                          <input aria-label={`Eggs in each ${l.unit || "one"}`} type="number" inputMode="numeric" min={1} style={inputStyle} value={l.eggsPer} onChange={(e) => setLine(l.key, { eggsPer: e.target.value })} /></label>
+                      )}
+                      {it && (
+                        <label><span style={miniLabel}>Farm stand stock for {it.name}</span>
+                          <select aria-label={`Farm stand stock for ${it.name}`} style={inputStyle} value={l.from} onChange={(e) => setLine(l.key, { from: e.target.value })}>
+                            {stockOnStand(it) != null && <option value="stand">Take {Number(l.qty) || 0} off the stand ({stockOnStand(it)} there)</option>}
+                            {stockInBack(it) > 0 && <option value="back">Take {Number(l.qty) || 0} from back stock ({stockInBack(it)} there)</option>}
+                            <option value="none">Don't change stock</option>
+                          </select></label>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ marginTop: 12, padding: "10px 12px", background: nl.chip, borderRadius: 12, fontSize: 14, lineHeight: 1.5 }}>
+                <div><strong>{moneyText(t.revenue)}</strong> goes into Sales{t.cost > 0 ? ` · costs ${moneyText(t.cost)} · about ${moneyText(t.revenue - t.cost)} profit` : ""}</div>
+                <div style={{ color: nl.soft, fontSize: 13 }}>Your costs stay private. The customer never sees them.</div>
+              </div>
+            </>
+          )}
+        </>
+      )}
+      {err && <p role="alert" style={{ color: nl.alert, fontSize: 14, margin: "10px 4px 0" }}>{err}</p>}
+      <div style={{ display: "flex", gap: 8, marginTop: 14 }}>
+        <Button onClick={go} disabled={busy || (addOnly && (already || !t.count))}>{busy ? "Saving…" : addOnly ? "Add to Sales" : "Mark picked up"}</Button>
+        <Button kind="quiet" onClick={onClose}>Cancel</Button>
+      </div>
+    </Sheet>
+  );
+}
+
 // ---------------------------------------------------------------- cards
-function OrderCard({ req, onStep, onStatus, onRemove }) {
+function OrderCard({ req, onStep, onPickedUp, onRemove, inSales }) {
   const items = Array.isArray(req.items) ? req.items : [];
   const total = orderTotal(items);
   const when = orderPrettyDate(req.pickup_date);
   const actions = req.status === "new"
     ? [{ label: "Accept", primary: true, run: () => onStep(req, "accept") }, { label: "Can't fill it", run: () => onStep(req, "decline") }]
     : req.status === "accepted"
-      ? [{ label: "It's ready", primary: true, run: () => onStep(req, "ready") }, { label: "Picked up", run: () => onStatus(req, "done") }]
+      ? [{ label: "It's ready", primary: true, run: () => onStep(req, "ready") }, { label: "Picked up", run: () => onPickedUp(req) }]
       : req.status === "ready"
-        ? [{ label: "Picked up", primary: true, run: () => onStatus(req, "done") }]
-        : [{ label: "Remove", run: () => onRemove(req) }];
+        ? [{ label: "Picked up", primary: true, run: () => onPickedUp(req) }]
+        : [...(req.status === "done" && !inSales ? [{ label: "Add to Sales", run: () => onPickedUp(req, true) }] : []), { label: "Remove", run: () => onRemove(req) }];
   const badge = { new: { tone: "ready", text: "New" }, accepted: { tone: "quiet", text: "Accepted" }, ready: { tone: "good", text: "Ready" }, done: { tone: "quiet", text: "Picked up" }, declined: { tone: "alert", text: "Declined" } }[req.status];
   return (
     <div style={{ padding: "12px 14px", borderTop: `1px solid ${nl.rule}`, display: "flex", flexDirection: "column", gap: 6 }}>
@@ -309,6 +476,7 @@ function OrderCard({ req, onStep, onStatus, onRemove }) {
           <div style={{ fontSize: 16, fontWeight: 600, overflowWrap: "anywhere" }}>{req.customer_name}</div>
           <div style={{ fontSize: 13, color: nl.soft }}>{[ago(req.created_at), when ? `wants it ${when}` : null].filter(Boolean).join(" · ")}</div>
         </div>
+        {inSales && <span title="In Sales" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: 12, color: nl.soft }}><Receipt size={14} aria-hidden="true" />In Sales</span>}
         {badge && <Badge tone={badge.tone}>{badge.text}</Badge>}
       </div>
       {items.length > 0 && (
@@ -359,10 +527,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     });
     setSettings(true);
   };
-  const setStatus = async (req, status) => {
-    try { await callOrders("update", { id: req.id, status, notify: false }); setToast(status === "done" ? "Marked picked up." : "Saved."); load(); }
-    catch (e) { setToast(e.message); }
-  };
+  const [pickup, setPickup] = useState(null);
   const remove = async (req) => {
     try { await callOrders("remove", { id: req.id }); load(); } catch (e) { setToast(e.message); }
   };
@@ -449,7 +614,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.fresh.length > 0 && (
         <Card>
           <CardHeader title="New requests" right={`${groups.fresh.length}`} />
-          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onStatus={setStatus} onRemove={remove} />)}
+          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} />)}
         </Card>
       )}
       {groups.joins.length > 0 && (
@@ -471,7 +636,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.open.length > 0 && (
         <Card>
           <CardHeader title="To fill" right={`${groups.open.length}`} />
-          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onStatus={setStatus} onRemove={remove} />)}
+          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} />)}
         </Card>
       )}
       {reqs && !groups.fresh.length && !groups.open.length && !groups.joins.length && (
@@ -484,12 +649,13 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card>
           <Row first title={`Past orders (${groups.past.length})`} sub="Picked up and declined, last 6 months" onClick={() => setShowPast((v) => !v)}
             trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: showPast ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
-          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onStatus={setStatus} onRemove={remove} />)}
+          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} />)}
         </Card>
       )}
 
       <PageSettingsSheet open={settings} onClose={() => setSettings(false)} data={data} update={update} />
       <QrSheet open={qr} onClose={() => setQr(false)} url={url} farm={farm} />
+      {pickup && <PickedUpSheet key={pickup.req.id} req={pickup.req} addOnly={pickup.addOnly} data={data} update={update} onClose={() => setPickup(null)} onDone={(m) => { setPickup(null); setToast(m); load(); }} />}
       {step && <UpdateSheet req={step.req} step={step.s} onClose={() => setStep(null)} onDone={(m) => { setStep(null); setToast(m); load(); }} />}
     </div>
   );

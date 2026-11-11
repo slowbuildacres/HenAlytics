@@ -25,6 +25,8 @@ Emails use the existing Resend setup (`RESEND_API_KEY`, `STOCK_EMAIL_FROM`).
 - **Owner:** new requests show in Orders, with a badge on More and a notice on Home.
   The owner also gets an email if "Email me new requests" is on. They can:
   - Accept, mark it ready, or mark it picked up.
+  - Marking it picked up can add each item to Sales. Amounts start from the order and the menu and can be changed first. A menu item linked to a farm stand item takes it off the stand or back stock.
+  - Each menu item has a private cost to make and a "count sales under" choice. These stay in the homestead's own data; the public page and the request rows only ever get the name, unit, price and note (`cleanMenu`).
   - Choose "Can't fill it" to decline.
   - Have the customer emailed at each step, with an optional message.
 
