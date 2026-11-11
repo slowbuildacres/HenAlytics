@@ -15,7 +15,14 @@
 //                                               // see src/orderSales.js
 //     joinList, joinGroupId,           // "Get our what's fresh emails"
 //     emailMe,                         // email the owner on each request
+//     pay: { cash, card, check,        // true/false
+//            venmo, cashapp, paypal, zelle },  // the farm's handle, or ''
+//     payWhen,                         // 'order' (right away) | 'accepted'
+//     pickupDays: [0..6],              // weekdays for pickup (Sun=0); [] = any
+//     paused, pausedNote,              // stop taking orders for a while
 //   }
+// Customers pay the farm directly (Venmo, Cash App, cash...). Henalytics
+// only shows the farm's handle and a prefilled link; it never sees money.
 // Requests customers send live in public.order_requests (see
 // supabase/migrations/20261111_order_requests.sql).
 // No money changes hands: it's a request, the owner accepts or declines.
@@ -23,8 +30,9 @@
 
 export const ORDER_LIMITS = {
   name: 60, email: 254, phone: 30, note: 600, pickup: 40, items: 25, qty: 999,
-  menu: 40, menuName: 60, menuNote: 120, unit: 20, intro: 400, pickupText: 200, message: 600,
+  menu: 40, menuName: 60, menuNote: 120, unit: 20, intro: 400, pickupText: 200, message: 600, pausedNote: 200,
 };
+export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const ORDER_TOKEN_RE = /^[a-f0-9]{40}$/;
 export const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
 export const ORDER_STATUSES = ['new', 'accepted', 'ready', 'done', 'declined'];
@@ -48,9 +56,77 @@ export function cleanMenu(menu) {
       price: Number.isFinite(Number(m.price)) && Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null,
       note: clip(m.note, L.menuNote),
       available: m.available !== false,
+      ...(Number.isFinite(m.left) ? { left: Math.max(0, Math.floor(m.left)) } : {}),
     }))
     .filter((m) => m.id && m.name && !seen.has(m.id) && seen.add(m.id))
     .slice(0, L.menu);
+}
+
+// ---------------------------------------------------------------- paying
+export const PAY_METHODS = [
+  { id: 'cash', label: 'Cash' },
+  { id: 'venmo', label: 'Venmo', handle: true },
+  { id: 'cashapp', label: 'Cash App', handle: true },
+  { id: 'paypal', label: 'PayPal', handle: true },
+  { id: 'zelle', label: 'Zelle', handle: true },
+  { id: 'card', label: 'Card at pickup' },
+  { id: 'check', label: 'Check' },
+];
+export const PAY_IDS = PAY_METHODS.map((m) => m.id);
+export const payLabel = (id) => (PAY_METHODS.find((m) => m.id === id) || { label: '' }).label;
+
+// Handles as people type them ("@Fro-Farms", "$frofarms", "paypal.me/fro")
+// → the bare handle, or '' if it can't be one.
+export function cleanHandle(id, v) {
+  const s = String(v == null ? '' : v).trim();
+  if (id === 'venmo') { const h = s.replace(/^(https?:\/\/)?(www\.)?(account\.)?venmo\.com\/(u\/)?/i, '').replace(/^@/, ''); return /^[A-Za-z0-9_-]{1,30}$/.test(h) ? h : ''; }
+  if (id === 'cashapp') { const h = s.replace(/^(https?:\/\/)?(www\.)?cash\.app\//i, '').replace(/^\$/, ''); return /^[A-Za-z0-9_]{1,20}$/.test(h) && /[A-Za-z]/.test(h) ? h : ''; }
+  if (id === 'paypal') { const h = s.replace(/^(https?:\/\/)?(www\.)?paypal\.me\//i, '').replace(/\/.*$/, ''); return /^[A-Za-z0-9]{1,20}$/.test(h) ? h : ''; }
+  if (id === 'zelle') return clip(s, 80).replace(/[<>"]/g, '');
+  return '';
+}
+export function cleanPay(p) {
+  const o = p && typeof p === 'object' ? p : {};
+  return {
+    cash: o.cash === true, card: o.card === true, check: o.check === true,
+    venmo: cleanHandle('venmo', o.venmo), cashapp: cleanHandle('cashapp', o.cashapp),
+    paypal: cleanHandle('paypal', o.paypal), zelle: cleanHandle('zelle', o.zelle),
+  };
+}
+// The ways this farm takes payment, in display order.
+export function payOptions(op) {
+  const pay = cleanPay(op && op.pay);
+  return PAY_METHODS.filter((m) => (m.handle ? !!pay[m.id] : pay[m.id] === true)).map((m) => ({ ...m, handleValue: m.handle ? pay[m.id] : '' }));
+}
+const amt = (n) => (Number(n) > 0 ? Number(n).toFixed(2) : '');
+// A link that opens the app with the farm filled in (and the amount where
+// the app allows it). Zelle lives inside each bank's app, so it has none.
+export function payLink(id, handle, amount, note) {
+  const h = cleanHandle(id, handle);
+  if (!h) return '';
+  const a = amt(amount);
+  if (id === 'venmo') return `https://venmo.com/${encodeURIComponent(h)}?txn=pay${a ? `&amount=${a}` : ''}${note ? `&note=${encodeURIComponent(String(note).slice(0, 60))}` : ''}`;
+  if (id === 'cashapp') return `https://cash.app/$${encodeURIComponent(h)}${a ? `/${a}` : ''}`;
+  if (id === 'paypal') return `https://paypal.me/${encodeURIComponent(h)}${a ? `/${a}USD` : ''}`;
+  return '';
+}
+// What to tell the customer about paying: { line, link, button }.
+export function payInstructions({ method, op, amount, farm }) {
+  const opt = payOptions(op).find((m) => m.id === method);
+  if (!opt) return null;
+  const money = Number(amount) > 0 ? moneyText(amount) : '';
+  const f = clip(farm, 60) || 'the farm';
+  const note = `${f} order`;
+  const link = payLink(opt.id, opt.handleValue, amount, note);
+  const what = money || 'your total';
+  if (opt.id === 'venmo') return { line: `Pay ${what} on Venmo to @${opt.handleValue}.`, link, button: `Pay${money ? ` ${money}` : ''} on Venmo` };
+  if (opt.id === 'cashapp') return { line: `Pay ${what} on Cash App to $${opt.handleValue}.`, link, button: `Pay${money ? ` ${money}` : ''} on Cash App` };
+  if (opt.id === 'paypal') return { line: `Pay ${what} on PayPal to paypal.me/${opt.handleValue}.`, link, button: `Pay${money ? ` ${money}` : ''} on PayPal` };
+  if (opt.id === 'zelle') return { line: `Send ${what} with Zelle to ${opt.handleValue} from your bank's app.`, link: '', button: '' };
+  if (opt.id === 'cash') return { line: `Bring ${money ? `${money} in cash` : 'cash'} when you pick up.`, link: '', button: '' };
+  if (opt.id === 'check') return { line: `Bring a check${money ? ` for ${money}` : ''} when you pick up.`, link: '', button: '' };
+  if (opt.id === 'card') return { line: `Pay by card when you pick up.`, link: '', button: '' };
+  return null;
 }
 
 export function cleanPageSettings(op = {}) {
@@ -64,12 +140,42 @@ export function cleanPageSettings(op = {}) {
     joinList: op.joinList !== false,
     joinGroupId: clip(op.joinGroupId, 40),
     emailMe: op.emailMe !== false,
+    pay: cleanPay(op.pay),
+    payWhen: op.payWhen === 'accepted' ? 'accepted' : 'order',
+    pickupDays: cleanDays(op.pickupDays),
+    paused: op.paused === true,
+    pausedNote: clip(op.pausedNote, L.pausedNote),
   };
+}
+export function cleanDays(days) {
+  return [...new Set((Array.isArray(days) ? days : []).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort();
+}
+// Weekday of a YYYY-MM-DD date (0 = Sunday), or -1.
+export function weekdayOf(s) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(s || ''))) return -1;
+  const [y, m, d] = String(s).split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d));
+  return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 ? t.getUTCDay() : -1;
+}
+// The next pickup dates on the chosen weekdays, from `from` (YYYY-MM-DD).
+export function pickupDates(days, from, count = 8) {
+  const ok = cleanDays(days);
+  if (!ok.length || weekdayOf(from) < 0) return [];
+  const [y, m, d] = from.split('-').map(Number);
+  const out = [];
+  for (let i = 0; i < 60 && out.length < count; i++) {
+    const t = new Date(Date.UTC(y, m - 1, d + i));
+    if (ok.includes(t.getUTCDay())) out.push(t.toISOString().slice(0, 10));
+  }
+  return out;
 }
 
 // A customer's request from the form → a clean row, or { error }.
-// fields: { kind, name, email, phone, note, pickupDate, qty: { [menuId]: n } }
-export function cleanRequest(fields, menu) {
+// fields: { kind, name, email, phone, textOk, note, pickupDate, payMethod, qty: { [menuId]: n } }
+// payIds: the pay methods the farm offers; when there are any, one is required.
+// rules: { pickupDays, today } — when pickup days are set, the date must be
+// one of them (and not in the past).
+export function cleanRequest(fields, menu, payIds = [], rules = {}) {
   const L = ORDER_LIMITS;
   const kind = fields.kind === 'join' ? 'join' : 'order';
   const name = clip(fields.name, L.name);
@@ -79,17 +185,33 @@ export function cleanRequest(fields, menu) {
   const pickup = /^\d{4}-\d{2}-\d{2}$/.test(String(fields.pickupDate || '')) ? String(fields.pickupDate) : '';
   if (!name) return { error: 'Please add your name.' };
   if (!EMAIL_RE.test(email)) return { error: 'Please add an email address that works, so they can reply.' };
-  if (kind === 'join') return { row: { kind, customer_name: name, email, phone: '', items: [], note: '', pickup_date: null } };
-  const byId = new Map(menu.filter((m) => m.available).map((m) => [m.id, m]));
+  const textOk = !!(fields.textOk === true || fields.textOk === '1') && phone.replace(/[^0-9]/g, '').length >= 7;
+  if ((fields.textOk === true || fields.textOk === '1') && !textOk) return { error: 'Add a phone number so they can text you.' };
+  if (kind === 'join') {
+    const row = { kind, customer_name: name, email, phone: textOk ? phone : '', items: [], note: '', pickup_date: null };
+    if (textOk) row.text_ok = true;
+    return { row };
+  }
+  const days = cleanDays(rules.pickupDays);
+  if (days.length) {
+    if (!pickup) return { error: 'Please pick a pickup day.' };
+    if (!days.includes(weekdayOf(pickup)) || (rules.today && pickup < rules.today)) return { error: 'Please pick one of the pickup days.' };
+  }
+  const byId = new Map(menu.filter((m) => m.available && !(Number.isFinite(m.left) && m.left <= 0)).map((m) => [m.id, m]));
   const items = [];
   const qty = fields.qty && typeof fields.qty === 'object' ? fields.qty : {};
   Object.keys(qty).slice(0, 100).forEach((id) => {
     const m = byId.get(id);
     const n = Math.floor(Number(qty[id]));
-    if (m && n > 0) items.push({ id: m.id, name: m.name, unit: m.unit, price: m.price, qty: Math.min(L.qty, n) });
+    if (m && n > 0) items.push({ id: m.id, name: m.name, unit: m.unit, price: m.price, qty: Math.min(L.qty, Number.isFinite(m.left) ? m.left : L.qty, n) });
   });
   if (!items.length && !note) return { error: 'Pick at least one item, or tell them what you want in the note.' };
-  return { row: { kind, customer_name: name, email, phone, items: items.slice(0, L.items), note, pickup_date: pickup || null } };
+  const pay = String(fields.payMethod || '');
+  if (payIds.length && !payIds.includes(pay)) return { error: "Please pick how you'll pay." };
+  const row = { kind, customer_name: name, email, phone, items: items.slice(0, L.items), note, pickup_date: pickup || null };
+  if (payIds.length) row.pay_method = pay;
+  if (textOk) row.text_ok = true;
+  return { row };
 }
 
 export function moneyText(n) {
@@ -128,7 +250,9 @@ const itemsText = (items) => (items || []).map((i) => `- ${itemLine(i)}`).join('
 
 // Email to the customer when the owner updates their order.
 // status: accepted | ready | declined
-export function buildCustomerEmail({ status, farmName, items, note, pickupDate, message, pickupText }) {
+// pay: { method, op, paid } adds how to pay (accepted/ready), or a refund
+// note when a digital payment may already have been sent (declined).
+export function buildCustomerEmail({ status, farmName, items, note, pickupDate, message, pickupText, pay, orderUrl }) {
   const farm = clip(farmName, 60) || 'the farm stand';
   const heads = {
     accepted: { subject: `${farm} got your order`, lead: `Good news! ${farm} has your order and will get it ready.` },
@@ -138,6 +262,10 @@ export function buildCustomerEmail({ status, farmName, items, note, pickupDate, 
   const h = heads[status] || heads.accepted;
   const msg = clip(message, ORDER_LIMITS.message);
   const when = prettyDate(pickupDate);
+  const p = pay && pay.method && !pay.paid && status !== 'declined' ? payInstructions({ method: pay.method, op: pay.op, amount: orderTotal(items), farm }) : null;
+  const refund = pay && status === 'declined' && ['venmo', 'cashapp', 'paypal', 'zelle'].includes(pay.method) && (pay.paid || (pay.op && pay.op.payWhen !== 'accepted'))
+    ? `If you already paid, ${farm} will send it back.` : '';
+  const payHtml = p ? `<div style="margin:12px 0;padding:12px 14px;border:1px solid #2C181022;border-radius:12px"><p style="font-size:15px;margin:0 0 ${p.link ? 10 : 0}px"><b>Paying:</b> ${esc(p.line)}${pay.op && pay.op.payWhen === 'order' ? ' (If you already paid, you\'re all set.)' : ''}</p>${p.link ? `<a href="${esc(p.link)}" style="display:inline-block;background:#E8B547;color:#2C1810;text-decoration:none;padding:11px 16px;border-radius:12px;font-weight:700">${esc(p.button)}</a>` : ''}<p style="font-size:12px;color:#5C4530;margin:10px 0 0">Check the name before you send. Payments go straight to ${esc(farm)}; Henalytics doesn't process, hold or refund payments.</p></div>` : '';
   const html = wrap(`
 <h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px;margin:0 0 10px">${esc(h.subject)}</h1>
 <p style="font-size:15px;line-height:1.5;margin:0 0 10px">${esc(h.lead)}</p>
@@ -146,13 +274,15 @@ ${itemsHtml(items)}
 ${note ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Your note: ${esc(note)}</p>` : ''}
 ${when && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Pickup you asked for: ${esc(when)}</p>` : ''}
 ${pickupText && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${esc(pickupText)}</p>` : ''}
-<p style="font-size:13px;color:#5C4530;margin:14px 0 0">Questions? Just reply to this email. No payment was taken; settle up with ${esc(farm)} directly.</p>`);
-  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `Pickup you asked for: ${when}` : '', pickupText && status !== 'declined' ? pickupText : '', `Questions? Just reply to this email. No payment was taken; settle up with ${farm} directly.`].filter(Boolean).join('\n\n');
+${payHtml}${refund ? `<p style="font-size:14px;margin:6px 0">${esc(refund)}</p>` : ''}
+<p style="font-size:13px;color:#5C4530;margin:14px 0 0">Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${esc(farm)} directly.`}</p>
+${orderUrl ? `<p style="font-size:13px;margin:8px 0 0"><a href="${esc(orderUrl)}" style="color:#2C1810">${status === 'declined' ? 'See what else they have' : 'Order again'} from ${esc(farm)}</a></p>` : ''}`);
+  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `Pickup you asked for: ${when}` : '', pickupText && status !== 'declined' ? pickupText : '', p ? `Paying: ${p.line}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
   return { subject: h.subject, html, text };
 }
 
 // Email to the owner when a request comes in.
-export function buildOwnerEmail({ kind, farmName, name, email, phone, items, note, pickupDate, appUrl }) {
+export function buildOwnerEmail({ kind, farmName, name, email, phone, items, note, pickupDate, appUrl, payMethod }) {
   const who = clip(name, 60) || 'Someone';
   const subject = kind === 'join' ? `${who} wants to join your email list` : `New order request from ${who}`;
   const when = prettyDate(pickupDate);
@@ -162,8 +292,39 @@ export function buildOwnerEmail({ kind, farmName, name, email, phone, items, not
 ${itemsHtml(items)}
 ${note ? `<p style="font-size:15px;line-height:1.5;margin:6px 0;padding:12px 14px;background:#EBE0CC;border-radius:10px">${esc(note).replace(/\n/g, '<br>')}</p>` : ''}
 ${when ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Would like it by ${esc(when)}</p>` : ''}
+${payLabel(payMethod) ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Paying with ${esc(payLabel(payMethod))}</p>` : ''}
 <p style="margin:16px 0 0"><a href="${esc(appUrl)}" style="display:inline-block;background:#2C1810;color:#F4EDE0;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:600">Open Orders in Henalytics</a></p>
 <p style="font-size:12px;color:#5C4530;margin:14px 0 0">You get these because "Email me new requests" is on for ${esc(clip(farmName, 60) || 'your homestead')}'s order page. Turn it off in Henalytics under Orders.</p>`);
-  const text = [subject, `${who} · ${email}${phone ? ` · ${phone}` : ''}`, itemsText(items), note, when ? `Would like it by ${when}` : '', `Open Orders in Henalytics: ${appUrl}`].filter(Boolean).join('\n\n');
+  const text = [subject, `${who} · ${email}${phone ? ` · ${phone}` : ''}`, itemsText(items), note, when ? `Would like it by ${when}` : '', payLabel(payMethod) ? `Paying with ${payLabel(payMethod)}` : '', `Open Orders in Henalytics: ${appUrl}`].filter(Boolean).join('\n\n');
   return { subject, html, text };
+}
+
+// ---------------------------------------------------------------- texting
+// Texts go out from the owner's own phone: the app opens Messages with the
+// number and words filled in. "?&body=" works on both iPhone and Android.
+export function smsHref(phone, body) {
+  const num = String(phone || '').replace(/[^0-9+]/g, '');
+  return `sms:${num}?&body=${encodeURIComponent(String(body || '').slice(0, 900))}`;
+}
+// One text to several people at once (a group text in Messages). iPhone
+// uses sms:/open?addresses=…, Android a comma list. Everyone in it can see
+// the other numbers on iPhone, so the app warns before using it.
+export function smsGroupHref(phones, body, ios) {
+  const nums = (phones || []).map((p) => String(p || '').replace(/[^0-9+]/g, '')).filter((p) => p.length >= 7);
+  const text = encodeURIComponent(String(body || '').slice(0, 900));
+  return ios ? `sms:/open?addresses=${nums.join(',')}&body=${text}` : `sms:${nums.join(',')}?body=${text}`;
+}
+export const GROUP_TEXT_MAX = 20;
+const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
+// A short text for an order update. status: accepted | ready | declined | other
+export function orderText({ status, name, farm, items, message, pickupText, payLine }) {
+  const f = clip(farm, 60) || 'the farm';
+  const what = (items || []).map(itemLine).join(', ');
+  const msg = clip(message, ORDER_LIMITS.message);
+  const parts = {
+    accepted: [`Hi ${firstName(name)}, it's ${f}. We got your order${what ? ` (${what})` : ''} and will get it ready.`, msg, payLine],
+    ready: [`Hi ${firstName(name)}, your order from ${f} is ready to pick up!`, msg, clip(pickupText, ORDER_LIMITS.pickupText), payLine],
+    declined: [`Hi ${firstName(name)}, it's ${f}. Sorry, we can't fill your order right now.`, msg],
+  }[status] || [`Hi ${firstName(name)}, it's ${f}.`, msg];
+  return parts.filter(Boolean).join(' ');
 }

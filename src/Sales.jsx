@@ -990,6 +990,10 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
 function CustomerModal({ customer, onSave, onClose }) {
   const [name, setName] = useState(customer?.name || "");
   const [note, setNote] = useState(customer?.note || "");
+  const [email, setEmail] = useState(customer?.email || "");
+  const [phone, setPhone] = useState(customer?.phone || "");
+  const [textOk, setTextOk] = useState(customer?.textOk === true);
+  const phoneOk = phone.replace(/[^0-9]/g, "").length >= 7;
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
       <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
@@ -1001,10 +1005,22 @@ function CustomerModal({ customer, onSave, onClose }) {
           <Field label="Name">
             <input style={inputStyle()} value={name} onChange={e=>setName(e.target.value)} placeholder="Jane Smith" autoFocus />
           </Field>
+          <Field label="Email (optional)">
+            <input style={inputStyle()} type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="jane@example.com" autoCapitalize="none" />
+          </Field>
+          <Field label="Phone (optional)">
+            <input style={inputStyle()} type="tel" value={phone} onChange={e=>setPhone(e.target.value.slice(0, 30))} placeholder="555-123-4567" />
+          </Field>
+          {phoneOk && (
+            <label style={{ display:"flex",alignItems:"flex-start",gap:10,fontSize:14,color:palette.ink,margin:"-4px 0 14px" }}>
+              <input type="checkbox" checked={textOk} onChange={e=>setTextOk(e.target.checked)} style={{ width:20,height:20,marginTop:1 }} />
+              <span>OK to text<br/><span style={{ fontSize:12,color:palette.inkSoft }}>Only turn on if they said you can text them.</span></span>
+            </label>
+          )}
           <Field label="Notes (optional)">
             <input style={inputStyle()} value={note} onChange={e=>setNote(e.target.value)} placeholder="Neighbor, prefers hatching eggs..." />
           </Field>
-          <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
+          <Btn onClick={() => { if (!name.trim()) return; onSave({ ...(customer || {}), id: customer?.id || newId(), name: name.trim(), note, email: email.trim().toLowerCase(), phone: phone.trim(), textOk: phoneOk && textOk }); onClose(); }} style={{ width:"100%" }}>Save</Btn>
         </div>
       </div>
     </div>
@@ -2282,6 +2298,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
                       <div style={{ flex:1,minWidth:0 }}>
                         <div style={{ fontWeight:600,fontSize:14,color:palette.ink }}>{c.name}</div>
                         {c.note && <div style={{ fontSize:11,color:palette.inkSoft }}>{c.note}</div>}
+                        {(c.phone || c.email) && <div style={{ fontSize:11,color:palette.inkSoft,overflowWrap:"anywhere" }}>{[c.phone, c.textOk ? "OK to text" : null, c.email].filter(Boolean).join(" · ")}</div>}
                         {spent > 0 && <div style={{ fontSize:11,color:palette.leaf,fontWeight:600 }}>{fmtMoney(spent)} total</div>}
                       </div>
                       <button onClick={() => setEditingCustomer(c)} style={{ background:"none",border:"none",cursor:"pointer",color:palette.inkSoft,padding:4 }}><Edit3 size={14}/></button>

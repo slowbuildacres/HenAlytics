@@ -1864,7 +1864,7 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
-  "🛍️ Orders — let customers order ahead. Turn on your order page (More › Orders), list what people can request (eggs, bread, meat birds, anything), and share the link or print the QR sign for your stand. Requests show up in Orders, where you accept them, mark them ready and picked up, and Henalytics can email the customer at each step. When an order is picked up it goes straight into Sales, and set a private cost for each item to see your profit (customers only ever see the price). People can also ask to join your \"what's fresh\" email list. No payments, just an easy way to talk.",  // ORDERS_WHATSNEW
+  "🛍️ Orders — let customers order ahead. Turn on your order page (More › Orders), list what people can request (eggs, bread, meat birds, anything), and share the link or print the QR sign for your stand. Requests show up in Orders, where you accept them, mark them ready and picked up, and Henalytics can email the customer at each step. When an order is picked up it goes straight into Sales, and set a private cost for each item to see your profit (customers only ever see the price). Customers can pick how they'll pay (Venmo, Cash App, PayPal, Zelle, cash and more) and get a pay button with the amount filled in. Text customers about their order from your own phone, set pickup days, pause orders, and see today's pickups on Home. Farm stand items show \"Sold out\" on your order page when you run out. People can also ask to join your \"what's fresh\" email list. No payments, just an easy way to talk.",  // ORDERS_WHATSNEW
   "🧺 Farm stand back stock — made something that isn't going out yet, like cold-process soap that's still curing? Put it in back stock with a ready date, then move it to the stand when it's ready. Out-of-stock items can be taken off the stand too, and their sales history stays.",
   "♻️ Compost tracking (Garden › More, or the Plan tab) — log what goes in, turning, temperature and finished compost, with a reminder when a pile is due for a turn.",
   "✨ A whole new Henalytics — every screen rebuilt to make things easier to find. Home shows what needs you today, each hobby has Today, its animals or plants, and Stats, and the yellow Log button logs anything in two taps. Saves show a few seconds of Undo instead of \"Are you sure?\" popups. Your animals, logs and numbers are exactly where you left them.",  // NEWLOOK_30_WHATSNEW
@@ -3566,6 +3566,7 @@ useEffect(() => {
   const [customEnd, setCustomEnd] = useState("");
   const [user, setUser] = useState(null);
   const [ordersNoticeHidden, setOrdersNoticeHidden] = useState(false);
+  const [pickupsNoticeHidden, setPickupsNoticeHidden] = useState(false);
   // New customer order requests (badge on More, notice on Home).
   const orderCount = useOrderCount(data, user);
   const [role, setRole] = useState(null); // "owner" | "member" | null
@@ -5559,6 +5560,13 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
       sub: ordersMoreLine(orderCount),
       action: "Open Orders", onAction: () => setPage("orders"),
       onDismiss: () => setOrdersNoticeHidden(true),
+    },
+    (orderCount.pickups || []).length > 0 && page !== "orders" && !pickupsNoticeHidden && {
+      key: "pickups", icon: "calendar",
+      title: `${orderCount.pickups.length} order${orderCount.pickups.length === 1 ? "" : "s"} picking up today`,
+      sub: orderCount.pickups.slice(0, 4).map((p) => p.name).join(", ") + (orderCount.pickups.length > 4 ? ` and ${orderCount.pickups.length - 4} more` : ""),
+      action: "Open Orders", onAction: () => setPage("orders"),
+      onDismiss: () => setPickupsNoticeHidden(true),
     },
     nlGardenDue && {
       key: "gardenSeason", icon: "sprout", title: `Start your ${nlGardenDue.year} garden`,

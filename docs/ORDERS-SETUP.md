@@ -47,3 +47,11 @@ Handled requests (picked up, declined, added, ignored) older than a year can be 
 ```sql
 select public.prune_order_requests();
 ```
+
+## Taking payment (Venmo, Cash App, cash...)
+
+- Run `supabase/migrations/20261111b_order_pay.sql` once (adds `pay_method` and `paid`). Until it's run, orders still save; the pay choice goes into the note.
+- In Orders › Menu and page settings › How customers can pay, the owner enters their Venmo @username, $cashtag, PayPal.me name or Zelle phone/email, and turns on cash, card at pickup or check.
+- Customers pick one when they order. Depending on "When should they pay?", they see the farm's username and a pay button right after ordering, or in the email when the order is accepted. Venmo, Cash App and PayPal links fill in the amount; Zelle has no link.
+- Money goes straight from the customer to the farm. Henalytics never processes, holds or refunds it, and can't tell when someone has paid. The owner marks orders paid. Both the owner settings and the customer page say so, and owners can open "Check my link" to confirm the username is theirs.
+
