@@ -64,7 +64,7 @@
 import { computeEggsOnHand } from "./eggInventory.js";
 import { hobbyAllEntries } from "./allEntries.js";
 
-export const HORIZON = 120;            // days ahead the page plans for
+export const HORIZON = 180;            // days ahead the page plans for (Easter from November)
 export const RATE_DAYS = 14;           // logs used to measure a rate
 export const SNAP_STALE_DAYS = 21;     // older snapshots aren't trusted
 export const SUPPLY_FROM = ["", "stand", "eggs", "milk", "garden", "make", "birds", "hatch", "births"];
@@ -416,8 +416,11 @@ export function buildSources(menu, ctx) {
     const m = items[0];
     const s = cleanSupply(m.supply, m.unit);
     if (key.startsWith("stand:")) {
-      const it = stand.find((i) => i && i.id === m.standItemId && !i.archived);
-      if (!it) return;
+      const found = stand.find((i) => i && i.id === m.standItemId);
+      if (!found) return;
+      // Taken off the stand: nothing at the stand to sell (what's left in
+      // back stock or at home still counts).
+      const it = found.archived ? { ...found, trackStock: true, stock: 0 } : found;
       const back = (Array.isArray(it.backStock) ? it.backStock : []).filter((b) => b && num(b.qty) > 0);
       let readyNow = back.filter((b) => !b.readyOn || b.readyOn <= today).reduce((n, b) => n + num(b.qty), 0);
       const batches = back.filter((b) => b.readyOn && b.readyOn > today).map((b) => ({ day: daysBetween(today, b.readyOn), qty: num(b.qty) })).filter((b) => b.day > 0);
@@ -642,12 +645,14 @@ export function readyForNew(plan, units, from = 0) {
 // out dates. pre: can order past what's ready. per: base units in one.
 // free: the plan's free curve (stock, base units) or slots (menu units).
 // ahead: units already ordered in this item's own unit (only if shown).
-export function publicSupply(m, plan) {
+// g: which source it shares (items with the same g draw from the same eggs,
+// so a dozen and a half dozen in one order add up).
+export function publicSupply(m, plan, g = 0) {
   if (!plan) return null;
   const per = plan.mode === "slot" ? 1 : perUnit(m);
   return {
-    mode: plan.mode, per,
-    free: plan.free.slice(0, 200),
+    mode: plan.mode, per, g: Math.max(0, Math.floor(num(g))),
+    free: plan.free.slice(0, 400),
     ...(m.showAhead !== false ? { ahead: Math.ceil(plan.ahead / per - 1e-9) } : {}),
   };
 }
@@ -655,10 +660,10 @@ export function publicSupply(m, plan) {
 export function cleanPublicSupply(p) {
   if (!p || typeof p !== "object") return null;
   const mode = p.mode === "slot" ? "slot" : "stock";
-  const free = (Array.isArray(p.free) ? p.free : []).slice(0, 200)
+  const free = (Array.isArray(p.free) ? p.free : []).slice(0, 400)
     .map((r) => (Array.isArray(r) ? r.map((x) => r3(pos(x))) : null))
     .filter((r) => r && (mode === "slot" ? r.length === 4 || r.length === 5 : r.length === 2));
-  const out = { mode, per: pos(p.per) > 0 ? r3(pos(p.per)) : 1, free };
+  const out = { mode, per: pos(p.per) > 0 ? r3(pos(p.per)) : 1, g: Math.min(9999, Math.floor(pos(p.g))), free };
   if (Number.isFinite(Number(p.ahead))) out.ahead = Math.floor(pos(p.ahead));
   return out;
 }
@@ -667,12 +672,20 @@ export function cleanPublicSupply(p) {
 // null if not within the horizon, or undefined if nothing in it is tracked.
 export function estimateRequest(menu, qty, wantDay = 0) {
   let day, any = false, never = false;
+  // Items from the same source add up before asking when it's ready.
+  const groups = new Map();
   (Array.isArray(menu) ? menu : []).forEach((m) => {
     const n = Math.floor(num(qty && qty[m.id]));
     if (!(n > 0) || !m.sup) return;
     any = true;
     const p = m.sup;
-    const d = readyForNew(p, p.mode === "slot" ? n : n * p.per, p.mode === "slot" ? wantDay : 0);
+    const k = p.mode === "slot" ? `s:${m.id}` : `g:${p.g || 0}`;
+    const g = groups.get(k) || { p, units: 0 };
+    g.units += p.mode === "slot" ? n : n * p.per;
+    groups.set(k, g);
+  });
+  groups.forEach(({ p, units }) => {
+    const d = readyForNew(p, units, p.mode === "slot" ? wantDay : 0);
     if (d == null) never = true; else day = Math.max(day || 0, d);
   });
   if (!any) return undefined;

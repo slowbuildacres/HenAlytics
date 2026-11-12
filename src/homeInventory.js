@@ -56,15 +56,18 @@ export function homeFromHobbies(data, today) {
 export function standItemFor(data, entry) {
   const h = ((data && data.hobbies) || []).find((x) => x && x.id === "farmstand");
   const items = (h && h.items) || [];
+  const name = (i) => String((i && i.name) || "").trim().toLowerCase();
   return items.find((i) => i && i.fromSource === entry.key)
-    || items.find((i) => i && !i.archived && String(i.name || "").trim().toLowerCase() === String(entry.name || "").trim().toLowerCase())
+    || items.find((i) => i && !i.archived && name(i) === String(entry.name || "").trim().toLowerCase())
+    // Eggs go to whatever the stand sells them as ("Farm fresh eggs", "Dozen eggs").
+    || (entry.kind === "eggs" ? items.find((i) => i && !i.archived && /\beggs?\b/.test(name(i)) && !/eggplant/.test(name(i))) : null)
     || null;
 }
 
 // Moves qty from home to the stand, in place on the draft. Returns the farm
 // stand item id, or "" if nothing moved.
 export function putOut(d, entry, qty, today) {
-  const n = Math.floor(num(qty));
+  const n = Math.min(Math.floor(num(qty)), Math.floor(num(entry && entry.qty)));
   if (!(n > 0)) return "";
   const h = (d.hobbies || []).find((x) => x && x.id === entry.hobbyId);
   if (!h) return "";

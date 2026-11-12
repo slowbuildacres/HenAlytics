@@ -126,7 +126,7 @@ export function payLink(id, handle, amount, note) {
   return '';
 }
 // What to tell the customer about paying: { line, link, button }.
-export function payInstructions({ method, op, amount, farm }) {
+export function payInstructions({ method, op, amount, farm, delivery }) {
   const opt = payOptions(op).find((m) => m.id === method);
   if (!opt) return null;
   const money = Number(amount) > 0 ? moneyText(amount) : '';
@@ -138,9 +138,10 @@ export function payInstructions({ method, op, amount, farm }) {
   if (opt.id === 'cashapp') return { line: `Pay ${what} on Cash App to $${opt.handleValue}.`, link, button: `Pay${money ? ` ${money}` : ''} on Cash App` };
   if (opt.id === 'paypal') return { line: `Pay ${what} on PayPal to paypal.me/${opt.handleValue}.`, link, button: `Pay${money ? ` ${money}` : ''} on PayPal` };
   if (opt.id === 'zelle') return { line: `Send ${what} with Zelle to ${opt.handleValue} from your bank's app.`, link: '', button: '' };
-  if (opt.id === 'cash') return { line: `Bring ${money ? `${money} in cash` : 'cash'} when you pick up.`, link: '', button: '' };
-  if (opt.id === 'check') return { line: `Bring a check${money ? ` for ${money}` : ''} when you pick up.`, link: '', button: '' };
-  if (opt.id === 'card') return { line: `Pay by card when you pick up.`, link: '', button: '' };
+  const when = delivery ? 'when it comes' : 'when you pick up';
+  if (opt.id === 'cash') return { line: delivery ? `Have ${money ? `${money} in cash` : 'cash'} ready ${when}.` : `Bring ${money ? `${money} in cash` : 'cash'} ${when}.`, link: '', button: '' };
+  if (opt.id === 'check') return { line: delivery ? `Have a check${money ? ` for ${money}` : ''} ready ${when}.` : `Bring a check${money ? ` for ${money}` : ''} ${when}.`, link: '', button: '' };
+  if (opt.id === 'card') return { line: `Pay by card ${when}.`, link: '', button: '' };
   return null;
 }
 
@@ -183,7 +184,7 @@ export function weekdayOf(s) {
 }
 // The next pickup dates on the chosen weekdays, from `from` (YYYY-MM-DD),
 // as far ahead as the page plans (so "5 dozen for Easter" can be asked early).
-export function pickupDates(days, from, count = 60, span = HORIZON) {
+export function pickupDates(days, from, count = 80, span = HORIZON) {
   const ok = cleanDays(days);
   if (!ok.length || weekdayOf(from) < 0) return [];
   const [y, m, d] = from.split('-').map(Number);
@@ -304,7 +305,10 @@ export function buildCustomerEmail({ status, farmName, items, note, pickupDate, 
   const msg = clip(message, ORDER_LIMITS.message);
   const when = prettyDate(pickupDate);
   const payNow = status !== 'declined' && !(status === 'received' && pay && pay.op && pay.op.payWhen === 'accepted');
-  const p = pay && pay.method && !pay.paid && payNow ? payInstructions({ method: pay.method, op: pay.op, amount: orderTotal(items), farm }) : null;
+  const p = pay && pay.method && !pay.paid && payNow ? payInstructions({ method: pay.method, op: pay.op, amount: orderTotal(items), farm, delivery: !!address }) : null;
+  // Sent right away but they'll pay once it's accepted: say so, instead of
+  // "no payment was taken".
+  const payLater = status === 'received' && pay && pay.method && pay.op && pay.op.payWhen === 'accepted' ? `You'll get how to pay once ${farm} accepts it.` : '';
   const refund = pay && status === 'declined' && ['venmo', 'cashapp', 'paypal', 'zelle'].includes(pay.method) && (pay.paid || (pay.op && pay.op.payWhen !== 'accepted'))
     ? `If you already paid, ${farm} will send it back.` : '';
   const payHtml = p ? `<div style="margin:12px 0;padding:12px 14px;border:1px solid #2C181022;border-radius:12px"><p style="font-size:15px;margin:0 0 ${p.link ? 10 : 0}px"><b>Paying:</b> ${esc(p.line)}${pay.op && pay.op.payWhen === 'order' ? ' (If you already paid, you\'re all set.)' : ''}</p>${p.link ? `<a href="${esc(p.link)}" style="display:inline-block;background:#E8B547;color:#2C1810;text-decoration:none;padding:11px 16px;border-radius:12px;font-weight:700">${esc(p.button)}</a>` : ''}<p style="font-size:12px;color:#5C4530;margin:10px 0 0">Check the name before you send. Payments go straight to ${esc(farm)}; Henalytics doesn't process, hold or refund payments.</p></div>` : '';
@@ -319,9 +323,9 @@ ${address && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;mar
 ${pickupText && status !== 'declined' && !address ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${esc(pickupText)}</p>` : ''}
 ${payHtml}
 ${statusUrl ? `<p style="font-size:14px;margin:10px 0 0"><a href="${esc(statusUrl)}" style="color:#2C1810">Check on your order</a></p>` : ''}${refund ? `<p style="font-size:14px;margin:6px 0">${esc(refund)}</p>` : ''}
-<p style="font-size:13px;color:#5C4530;margin:14px 0 0">Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${esc(farm)} directly.`}</p>
+<p style="font-size:13px;color:#5C4530;margin:14px 0 0">Questions? Just reply to this email.${payLater ? ` ${esc(payLater)}` : p || refund ? '' : ` No payment was taken; settle up with ${esc(farm)} directly.`}</p>
 ${orderUrl ? `<p style="font-size:13px;margin:8px 0 0"><a href="${esc(orderUrl)}" style="color:#2C1810">${status === 'declined' ? 'See what else they have' : 'Order again'} from ${esc(farm)}</a></p>` : ''}`);
-  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `${address ? 'Delivery' : 'Pickup'} you asked for: ${when}${repeatWeeks ? ` (${repeatLabel(repeatWeeks).toLowerCase()})` : ''}` : '', address && status !== 'declined' ? `Delivering to ${address}` : '', pickupText && status !== 'declined' && !address ? pickupText : '', statusUrl ? `Check on your order: ${statusUrl}` : '', p ? `Paying: ${p.line}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
+  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `${address ? 'Delivery' : 'Pickup'} you asked for: ${when}${repeatWeeks ? ` (${repeatLabel(repeatWeeks).toLowerCase()})` : ''}` : '', address && status !== 'declined' ? `Delivering to ${address}` : '', pickupText && status !== 'declined' && !address ? pickupText : '', statusUrl ? `Check on your order: ${statusUrl}` : '', p ? `Paying: ${p.line}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${payLater ? ` ${payLater}` : p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
   return { subject: h.subject, html, text };
 }
 

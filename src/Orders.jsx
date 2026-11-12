@@ -83,7 +83,13 @@ export function useOrderCount(data, user) {
 }
 
 // Hens, goats, garden, birds… plus what's at home for farm stand items.
-const allSnaps = (data, menu, today) => ({ ...homeSnaps(data, menu, today), ...measureSnaps(data, menu, today) });
+// Odd old data must never stop the app, so a failure just means no numbers.
+const allSnaps = (data, menu, today) => {
+  let home = {}, live = {};
+  try { home = homeSnaps(data, menu, today); } catch (e) { console.warn("[orders] home snaps", e); }
+  try { live = measureSnaps(data, menu, today); } catch (e) { console.warn("[orders] snaps", e); }
+  return { ...home, ...live };
+};
 
 // Keeps the numbers the order page uses for live producers (eggs, milk,
 // garden) up to date as logs come in: data.orderPage.snaps. Runs in the app
@@ -622,7 +628,7 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
   const op = cleanPageSettings((data && data.orderPage) || {});
   const farm = String((((data && data.stockEmailSettings) || {}).fromName) || (data && data.homesteadName) || "").trim();
   const total = orderTotal(req.items);
-  const pi = req.pay_method && !req.paid && s.status !== "declined" ? payInstructions({ method: req.pay_method, op, amount: total, farm }) : null;
+  const pi = req.pay_method && !req.paid && s.status !== "declined" ? payInstructions({ method: req.pay_method, op, amount: total, farm, delivery: req.fulfil === "delivery" }) : null;
   const sms = canText ? smsHref(req.phone, orderText({ status: s.status, name: req.customer_name, farm, items: req.items, message: message.trim(), pickupText: op.pickup, delivery: req.fulfil === "delivery", payLine: pi ? `${pi.line}${pi.link ? ` ${pi.link}` : ""}` : "" })) : "";
   if (textReady) {
     return (
