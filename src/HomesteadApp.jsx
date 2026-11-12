@@ -114,6 +114,7 @@ import { UndoHost, showUndo, undoable, UNDO_MS } from "./newlook/UndoBar.jsx";
 import { ConfirmHost, askConfirm } from "./newlook/ConfirmHost.jsx";
 import SetupFlow from "./newlook/SetupFlow.jsx";
 import { WelcomeNewLook, TipSpotlight } from "./newlook/Welcome.jsx";
+import OrdersTour from "./newlook/OrdersTour.jsx";
 import { HobbyTabs, Legacy } from "./newlook/ui.jsx";
 import EggToday from "./newlook/eggs/EggToday.jsx";
 import EggBirds from "./newlook/eggs/EggBirds.jsx";
@@ -3610,6 +3611,27 @@ useEffect(() => {
     return () => clearTimeout(timer);
   }, [data?.onboardedAt, data?.lastSeenVersion, passwordRecoveryPending]);
 
+  // ---- Orders tour (once, for people who haven't turned on an order page) ----
+  // Most people would never open Orders on their own, so after the update a
+  // short tour shows what it does. Waits for Home with nothing else open, and
+  // never for brand-new users mid-setup or farmhands.
+  const [showOrdersTour, setShowOrdersTour] = useState(false);
+  const ordersTourShownRef = React.useRef(false);
+  useEffect(() => {
+    if (ordersTourShownRef.current || !newLook || !data) return undefined;
+    if (!data.onboardedAt || !data.newLookWelcomeSeen) return undefined;
+    if (data.tours && data.tours.orders) return undefined;
+    if (data.orderPage && data.orderPage.on) return undefined;
+    if (role === "member" || passwordRecoveryPending || page !== "dash" || modal || nlNotice) return undefined;
+    const t = setTimeout(() => { ordersTourShownRef.current = true; setShowOrdersTour(true); }, 2500);
+    return () => clearTimeout(t);
+  }, [newLook, data, role, passwordRecoveryPending, page, modal, nlNotice]);
+  const finishOrdersTour = (openOrders) => {
+    setShowOrdersTour(false);
+    update((d) => { d.tours = { ...(d.tours || {}), orders: Date.now() }; return d; });
+    if (openOrders) { setOrdersTab("orders"); setOrdersBack("more"); setPage("orders"); }
+  };
+
   // ---- "We're on the App Store" launch popup (one-time, web users only) ----
   // Native users are already in the app — showing them a "download the app"
   // popup would be confusing — so this is gated to web (!isNativeApp()).
@@ -5912,6 +5934,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
       {newLook && !shouldShowWizard && !data.newLookWelcomeSeen && (data.onboardedAt || hasAnyEntries) && role !== "member" && (
         <WelcomeNewLook onDone={() => { update((d) => { d.newLookWelcomeSeen = true; return d; }); setPage("dash"); }} />
       )}
+      {newLook && showOrdersTour && <OrdersTour data={data} onSetUp={() => finishOrdersTour(true)} onDone={() => finishOrdersTour(false)} />}
       {newLook && nlTipKey && <TipSpotlight tipKey={nlTipKey} onDone={() => update((d) => { d.newLookTips = { ...(d.newLookTips || {}), [nlTipKey]: true }; return d; })} />}
       {shouldShowWizard && !newLook && (
         <OnboardingWizard
@@ -7046,7 +7069,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "orders" && (
-          <OrdersScreen data={data} update={update} user={user} onBack={() => setPage(ordersBack)} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} initialTab={ordersTab} onEmailCustomers={() => setModal({ type: "stockEmails" })} />
+          <OrdersScreen data={data} update={update} user={user} onBack={() => setPage(ordersBack)} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} initialTab={ordersTab} onEmailCustomers={() => setModal({ type: "stockEmails" })} onTour={() => setShowOrdersTour(true)} />
         )}
         {page === "sales" && newLook && (
           <SalesScreen data={data} update={update} setModal={setModal} onCustomers={() => { setOrdersTab("customers"); setOrdersBack("sales"); setPage("orders"); }} onEmailCustomers={() => setModal({ type: "stockEmails" })} onPurchaseHistory={() => setModal({ type: "purchases" })} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} onBack={() => setPage("more")} />

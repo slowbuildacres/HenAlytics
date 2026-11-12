@@ -638,7 +638,7 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, custome
 }
 
 // ---------------------------------------------------------------- screen
-export default function OrdersScreen({ data, update, user, onBack, onSignIn, onCountChange, initialTab = "orders", onEmailCustomers }) {
+export default function OrdersScreen({ data, update, user, onBack, onSignIn, onCountChange, initialTab = "orders", onEmailCustomers, onTour }) {
   const op = cleanPageSettings(data.orderPage || {});
   const farm = String(((data.stockEmailSettings || {}).fromName) || data.homesteadName || "").trim() || "Our farm stand";
   const url = op.token ? `${ORDER_SITE}${op.token}` : "";
@@ -748,9 +748,10 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
           <div style={{ fontSize: 15, color: nl.soft, marginTop: 6, lineHeight: 1.5 }}>
             Get a link and a QR sign for your stand. Customers pick what they'd like (eggs, bread, meat birds, anything you list) or ask to join your email list. You see every request here, accept or decline it, and mark it ready. No payments, just a simple way to talk.
           </div>
-          <div style={{ marginTop: 14 }}>
+          <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {signedIn ? <Button icon={<ShoppingBag size={20} />} onClick={turnOn}>Set up my order page</Button>
               : <Button onClick={onSignIn}>Sign in (free) to take orders</Button>}
+            {onTour && <Button kind="link" onClick={onTour}>See how it works</Button>}
           </div>
         </Card>
         <PageSettingsSheet open={settings} onClose={() => setSettings(false)} data={data} update={update} />
