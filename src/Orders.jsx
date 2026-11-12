@@ -292,7 +292,7 @@ function SupplyBox({ m, setItem, stand, data }) {
           </label>
           <label style={{ flex: 1, minWidth: 0 }}>
             <span style={miniLabel}>Keep for us each week</span>
-            <input aria-label={`${unit} to keep for yourself each week`} type="number" inputMode="decimal" min={0} step="any" style={inputStyle} value={s.keepPerWeek ? fmtNum(s.keepPerWeek / per) : ""} placeholder={`0 ${unit}`} onChange={(e) => set({ ...s, keepPerWeek: (Number(e.target.value) || 0) * per })} />
+            <input aria-label={`${unit} to keep for yourself each week`} type="number" inputMode="decimal" min={0} step="any" style={inputStyle} value={s.keepPerWeek ? String(Math.round((s.keepPerWeek / per) * 100) / 100) : ""} placeholder={`0 ${unit}`} onChange={(e) => set({ ...s, keepPerWeek: (Number(e.target.value) || 0) * per })} />
           </label>
         </div>
       )}
@@ -625,6 +625,7 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
   const [busy, setBusy] = useState(false);
   const [err, setErr] = useState("");
   if (!req || !s) return null;
+  const hint = s.status === "ready" && req.fulfil === "delivery" ? "They'll get an email saying it's ready for delivery." : s.hint;
   const op = cleanPageSettings((data && data.orderPage) || {});
   const farm = String((((data && data.stockEmailSettings) || {}).fromName) || (data && data.homesteadName) || "").trim();
   const total = orderTotal(req.items);
@@ -654,7 +655,7 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
       <h2 style={{ margin: "0 4px 4px", fontFamily: font.display, fontWeight: 400, fontSize: 24 }}>{s.title}</h2>
       <p style={{ margin: "0 4px 8px", fontSize: 14, color: nl.soft }}>{req.customer_name} · {(req.items || []).map(itemLine).join(", ") || req.note}</p>
       <div style={{ background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
-        <Toggle on={notify} onChange={setNotify} label={`Email ${req.customer_name}`} sub={notify ? s.hint : "No email. Let them know yourself."} />
+        <Toggle on={notify} onChange={setNotify} label={`Email ${req.customer_name}`} sub={notify ? hint : "No email. Let them know yourself."} />
         {canText
           ? <div style={{ borderTop: `1px solid ${nl.rule}` }}><Toggle on={text} onChange={setText} label={`Text ${req.customer_name}`} sub={text ? `From your phone, to ${req.phone}` : "No text"} /></div>
           : <div style={{ borderTop: `1px solid ${nl.rule}`, padding: "10px 4px", fontSize: 13, color: nl.soft }}>{req.phone ? "They didn't say it's OK to text, so email only." : "No phone number for texting."}</div>}
@@ -1132,7 +1133,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     try { const r = await callOrders("back", { itemId: g.id }); setToast(r.sent ? `Emailed ${r.sent} ${r.sent === 1 ? "person" : "people"} that ${g.name} is back.` : "No one to email."); load(); } catch (e) { setToast(e.message); }
   };
   const clearBack = async (g) => {
-    await Promise.all(g.people.map((r) => callOrders("remove", { id: r.id }).catch(() => {})));
+    try { await callOrders("clearBack", { itemId: g.id }); } catch (e) { setToast(e.message); }
     load();
   };
   const ignoreJoin = async (j) => { try { await callOrders("update", { id: j.id, status: "ignored" }); load(); } catch (e) { setToast(e.message); } };

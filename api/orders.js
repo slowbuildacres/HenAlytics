@@ -17,6 +17,7 @@
 //   action "stop"   → { id }      ends a standing order (this one stays)
 //   action "back"   → { itemId, message }  emails everyone who asked to hear
 //                     when that item is back, and marks them done
+//   action "clearBack" → { itemId }  forgets those asks without emailing
 //   (update also takes an optional paid: true|false)
 //
 // Safety:
@@ -110,7 +111,7 @@ export default async function handler(req, res) {
   body = body || {};
   const action = body.action;
   const hid = String(body.homesteadId || '');
-  if (!['count', 'list', 'update', 'remove', 'paid', 'next', 'stop', 'back'].includes(action) || !UUID_RE.test(hid)) return res.status(400).json({ error: 'Bad request' });
+  if (!['count', 'list', 'update', 'remove', 'paid', 'next', 'stop', 'back', 'clearBack'].includes(action) || !UUID_RE.test(hid)) return res.status(400).json({ error: 'Bad request' });
 
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: 'Please sign in to see orders.' });
@@ -132,9 +133,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ requests: rows });
     }
 
-    if (action === 'back') {
+    if (action === 'back' || action === 'clearBack') {
       const itemId = String(body.itemId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
       if (!itemId) return res.status(400).json({ error: 'Bad request' });
+      if (action === 'clearBack') {
+        // Forget this item's asks without emailing (other items they asked
+        // about stay).
+        const rows = (await rest(`order_requests?select=id,items&homestead_id=eq.${hid}&kind=eq.notify&status=eq.new&limit=300`) || []).filter((r) => Array.isArray(r.items) && r.items.some((i) => i && i.id === itemId));
+        for (const r of rows) {
+          const rest2 = r.items.filter((i) => i && i.id !== itemId);
+          await rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ...(rest2.length ? { items: rest2 } : { status: 'ignored' }), updated_at: new Date().toISOString() }) });
+        }
+        return res.status(200).json({ ok: true, cleared: rows.length });
+      }
       const asked = (await rest(`order_requests?select=id,email,items&homestead_id=eq.${hid}&kind=eq.notify&status=eq.new&limit=300`) || [])
         .filter((r) => Array.isArray(r.items) && r.items.some((i) => i && i.id === itemId) && EMAIL_RE.test(r.email || ''));
       // One email per address, even if they asked twice.
@@ -150,6 +161,14 @@ export default async function handler(req, res) {
       const mail = buildBackEmail({ farmName: info.farm, itemName: item, orderUrl: info.orderUrl, message: String(body.message || '').slice(0, ORDER_LIMITS.message) });
       const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
       let sent = 0;
+      const sentTo = new Set();
+      // A request can be for more than one sold-out item: it's done once
+      // they've heard about all of them, until then just this item comes off.
+      const markHeard = (r, emailed) => {
+        const rest2 = r.items.filter((i) => i && i.id !== itemId);
+        const patch = rest2.length ? { items: rest2 } : { status: 'done' };
+        return rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ ...patch, ...(emailed ? { emailed_at: new Date().toISOString() } : {}), updated_at: new Date().toISOString() }) }).catch(() => {});
+      };
       // One email each, so no one sees anyone else's address.
       for (const r of waiting.slice(0, left)) {
         const ok = await fetch('https://api.resend.com/emails', {
@@ -159,10 +178,11 @@ export default async function handler(req, res) {
         }).then((x) => x.ok).catch(() => false);
         if (!ok) continue;
         sent++;
-        await rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'done', emailed_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }).catch(() => {});
+        sentTo.add(String(r.email).toLowerCase());
+        await markHeard(r, true);
       }
-      // Their extra asks are covered by the one email.
-      for (const r of dupes) await rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'done', updated_at: new Date().toISOString() }) }).catch(() => {});
+      // Their extra asks are covered by the one email (only if it went).
+      for (const r of dupes) if (sentTo.has(String(r.email).toLowerCase())) await markHeard(r, false);
       return res.status(200).json({ ok: true, sent, more: Math.max(0, waiting.length - sent) });
     }
 
