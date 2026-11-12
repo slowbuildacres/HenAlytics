@@ -240,8 +240,9 @@ export function cleanRequest(fields, menu, payIds = [], rules = {}) {
     const n = Math.floor(Number(qty[id]));
     if (m && n > 0) items.push({ id: m.id, name: m.name, unit: m.unit, price: m.price, qty: Math.min(L.qty, Number.isFinite(m.left) ? m.left : L.qty, m.maxEach || L.qty, n) });
   });
-  // Delivery is a line on the order, so totals and Sales include the fee.
-  if (delivery && items.length && rules.delivery.fee) items.push({ id: 'delivery', name: 'Delivery', unit: '', price: rules.delivery.fee, qty: 1 });
+  // Delivery is a line on the order, so totals and Sales include the fee
+  // (kept within the item limit, so it's never the line that gets cut).
+  if (delivery && items.length && rules.delivery.fee) { items.splice(L.items - 1); items.push({ id: 'delivery', name: 'Delivery', unit: '', price: rules.delivery.fee, qty: 1 }); }
   if (!items.length && !note) return { error: 'Pick at least one item, or tell them what you want in the note.' };
   const pay = String(fields.payMethod || '');
   if (payIds.length && !payIds.includes(pay)) return { error: "Please pick how you'll pay." };

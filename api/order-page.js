@@ -350,7 +350,7 @@ function statusHtml(page, token, row, { notice } = {}) {
   const pageLink = page.op.on && page.op.token && !page.op.paused ? `/o/${page.op.token}` : '';
   const body = `<h1>Your order from ${esc(page.farm)}</h1>
 ${notice ? `<div class="est" role="status">${esc(notice)}</div>` : ''}
-<div class="card"><p><b>${esc((STATUS_TEXT[row.status] || STATUS_TEXT.new)(page.farm))}</b></p>
+<div class="card"><p><b>${esc(row.status === 'ready' && row.fulfil === 'delivery' ? `Ready! ${page.farm} will bring it by.` : row.status === 'done' && row.fulfil === 'delivery' ? 'Delivered. Thanks!' : (STATUS_TEXT[row.status] || STATUS_TEXT.new)(page.farm))}</b></p>
 ${items ? `<ul>${items}</ul>` : ''}${row.note ? `<p class="soft">Your note: ${esc(row.note)}</p>` : ''}
 ${whenLine(row) ? `<p class="soft">${esc(whenLine(row))}${row.address ? ` · ${esc(row.address)}` : ''}</p>` : ''}
 ${est ? `<p class="est">${esc(est)} <span class="soft">An estimate; they'll confirm.</span></p>` : ''}
