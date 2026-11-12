@@ -30,7 +30,8 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS } from '../src/orderShared.js';
+import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays } from '../src/orderShared.js';
+import { planAll, sourceKey, takesPreorders, publicSupply, perUnit, estimateRequest, addDays, daysBetween, HORIZON } from '../src/orderSupply.js';
 
 const SITE = 'https://henalytics.com';
 const MIN_SECONDS = 3;
@@ -60,41 +61,38 @@ function ipHash(req, homesteadId) {
 // Today in the US farm's rough time (Central), for pickup-day checks.
 const usToday = () => new Date(Date.now() - 6 * 3600000).toISOString().slice(0, 10);
 
-// How many of a farm stand item are left to order: on the stand (when
-// stock is tracked) plus ready back stock, minus what open orders already
-// asked for. null = not tracked, no limit. Only numbers leave this function.
-function standLeft(hobbies, standItemId, reserved) {
-  const stand = (Array.isArray(hobbies) ? hobbies : []).find((h) => h && h.id === 'farmstand');
-  const it = stand && Array.isArray(stand.items) ? stand.items.find((i) => i && i.id === standItemId && !i.archived) : null;
-  if (!it) return null;
+// Where each menu item comes from (src/orderSupply.js): the farm stand, the
+// hens, the goats, a garden crop, or made to order. Items that take
+// pre-orders get a small curve the page uses to work out ready dates; stand
+// items that don't keep a hard limit (`left`). Only numbers leave here,
+// never the logs, the stand or the other orders.
+async function withSupply(row) {
+  const raw = Array.isArray(row.op.menu) ? row.op.menu : [];
+  if (!raw.some((m) => m && m.id && sourceKey(m))) return row.op;
   const today = usToday();
-  const back = (Array.isArray(it.backStock) ? it.backStock : []).filter((b) => b && Number(b.qty) > 0 && (!b.readyOn || b.readyOn <= today)).reduce((n, b) => n + Number(b.qty), 0);
-  if (!it.trackStock && !back) return null;
-  const have = (it.trackStock ? Math.max(0, Number(it.stock) || 0) : 0) + back;
-  return Math.max(0, Math.floor(have - (reserved || 0)));
+  const [h] = await rest(`homesteads?select=hobbies:data->hobbies&id=eq.${row.id}&limit=1`) || [];
+  const open = await rest(`order_requests?select=id,items,pickup_date,created_at,status&homestead_id=eq.${row.id}&kind=eq.order&status=in.(new,accepted,ready)&order=created_at.asc&limit=500`) || [];
+  const { plans } = planAll(raw, open, { today, hobbies: h && h.hobbies, snaps: row.op.snaps, pickupDays: cleanDays(row.op.pickupDays) });
+  const menu = raw.map((m) => {
+    const key = m && m.id ? sourceKey(m) : '';
+    const plan = key && plans.get(key);
+    if (!plan) return m;
+    if (takesPreorders(m)) return { ...m, sup: publicSupply(m, plan) };
+    // A stand item without pre-orders: what's ready, less what's promised.
+    return { ...m, left: plan.mode === 'stock' ? Math.floor((plan.free[0] ? plan.free[0][1] : 0) / perUnit(m)) : undefined };
+  });
+  return { ...row.op, menu };
 }
 
 async function findPage(token) {
   const rows = await rest(`homesteads?select=id,farm:data->>homesteadName,op:data->orderPage,fromName:data->stockEmailSettings->>fromName&data->orderPage->>token=eq.${token}&limit=1`);
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row || !row.op) return null;
-  const raw = Array.isArray(row.op.menu) ? row.op.menu : [];
-  const linked = raw.filter((m) => m && m.id && m.standItemId);
-  if (linked.length) {
-    // Stock-aware menu: only fetched when some item is linked to the stand.
-    try {
-      const [h] = await rest(`homesteads?select=hobbies:data->hobbies&id=eq.${row.id}&limit=1`) || [];
-      const open = await rest(`order_requests?select=items&homestead_id=eq.${row.id}&kind=eq.order&status=in.(new,accepted,ready)&limit=500`) || [];
-      const reserved = {};
-      open.forEach((o) => (Array.isArray(o.items) ? o.items : []).forEach((i) => { if (i && i.id) reserved[i.id] = (reserved[i.id] || 0) + (Number(i.qty) || 0); }));
-      const left = new Map(linked.map((m) => [String(m.id), standLeft(h && h.hobbies, m.standItemId, reserved[m.id])]));
-      row.op = { ...row.op, menu: raw.map((m) => (m && left.get(String(m.id)) != null ? { ...m, left: left.get(String(m.id)) } : m)) };
-    } catch (e) { console.error('[order-page] stock', e); }
-  }
+  try { row.op = await withSupply(row); } catch (e) { console.error('[order-page] supply', e); }
   const op = cleanPageSettings(row.op);
   if (!op.on || op.token !== token) return null;
   const farm = String(row.fromName || row.farm || '').trim().slice(0, 60) || 'Our farm stand';
-  return { id: row.id, farm, op };
+  return { id: row.id, farm, op, today: usToday() };
 }
 
 // ---------------------------------------------------------------- HTML
@@ -118,6 +116,7 @@ textarea{min-height:90px}.check{display:flex;gap:10px;align-items:flex-start;fon
 select{width:100%;min-height:48px;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:16px;font-family:inherit}
 .pay{display:flex;flex-direction:column;gap:8px;margin-top:4px}.pay label{display:flex;align-items:center;gap:10px;font-weight:400;font-size:16px;margin:0;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer}.pay input{width:20px;height:20px;margin:0}.pay small{color:var(--soft);font-size:14px}
 .paybox{border:1.5px solid var(--yolk);border-radius:14px;padding:14px;margin-top:12px}.btn.link{text-decoration:none;text-align:center;line-height:52px;margin-top:10px}
+.est{background:var(--alt);border-radius:12px;padding:10px 12px;margin:10px 0 0;font-size:15px}.est .btn{margin-top:10px;min-height:44px;font-size:15px}.ahead{display:block;font-size:13px;margin-top:2px}
 .err{background:#C84B3122;border:1px solid #C84B31;border-radius:12px;padding:10px 12px;margin:10px 0}
 footer{text-align:center;font-size:13px;color:var(--soft);margin-top:24px}footer a{color:var(--soft)}
 `;
@@ -125,6 +124,41 @@ function shell(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title><meta name="robots" content="noindex"><style>${CSS}</style></head>
 <body><main>${body}<footer>Order requests by <a href="${SITE}">Henalytics</a>, the homestead app.</footer></main></body></html>`;
+}
+
+// "loaf" → "loaves", "dozen" stays "dozen", "jar" → "jars".
+function plural(unit, n) {
+  const u = String(unit || '').trim();
+  if (n === 1 || !u || /doz|dz/i.test(u) || /s$/i.test(u)) return u;
+  if (/[^aeiou]y$/i.test(u)) return `${u.slice(0, -1)}ies`;
+  if (/(af|lf)$/i.test(u)) return `${u.slice(0, -1)}ves`;
+  if (/(ch|sh|x)$/i.test(u)) return `${u}es`;
+  return `${u}s`;
+}
+
+// The page's ready-date estimate, worked out in the browser as people change
+// how many they want or the day. Same rules as readyForNew() in
+// src/orderSupply.js; the server works it out again when they send it.
+function estimateScript(sup, today, farm) {
+  const data = JSON.stringify({ sup, today, farm }).replace(/</g, '\\u003c');
+  return `(function(){var D=${data},el=document.getElementById('o-est');if(!el)return;
+function rd(p,u,from){if(p.mode==='slot'){var f=p.free,i=-1,k,cap=0;for(k=0;k<f.length;k++){if(f[k][3]>cap)cap=f[k][3];if(i<0&&f[k][1]>=from)i=k;}if(i<0)return null;if(u<=cap||cap===0){for(;i<f.length;i++)if(f[i][3]+1e-9>=u)return f[i][2];return null;}var l=u;for(;i<f.length;i++){l-=f[i][3];if(l<=1e-9)return f[i][2];}return null;}for(var j=0;j<p.free.length;j++)if(p.free[j][1]+1e-9>=u)return Math.max(p.free[j][0],0);return null;}
+var t0=D.today.split('-').map(Number);function day(iso){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iso||''))return -1;var a=iso.split('-').map(Number);return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(t0[0],t0[1]-1,t0[2]))/864e5);}
+function iso(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toISOString().slice(0,10);}
+function pretty(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});}
+var dt=document.getElementById('o-date');
+function upd(){var any=false,never=false,r=0,w=dt?day(dt.value):-1,from=Math.max(0,w);
+Object.keys(D.sup).forEach(function(id){var i=document.querySelector('input[name="qty_'+id+'"]');var n=i?Math.floor(Number(i.value)||0):0;if(n<=0)return;any=true;var p=D.sup[id];var d=rd(p,p.mode==='slot'?n:n*p.per,p.mode==='slot'?from:0);if(d===null)never=true;else if(d>r)r=d;});
+if(!any){el.hidden=true;el.innerHTML='';return;}el.hidden=false;var msg,btn='';
+if(never)msg='That\\'s more than '+D.farm+' expects to have in the next few months. You can still send it, and they\\'ll let you know when they can fill it.';
+else if(w>=0&&r<=w)msg='<b>\\u2713 Should be ready by '+pretty(w)+'.</b>';
+else{var opt=null;if(dt&&dt.tagName==='SELECT'){for(var k=0;k<dt.options.length;k++){if(dt.options[k].value&&day(dt.options[k].value)>=r){opt=dt.options[k];break;}}}
+var when=opt?'for pickup '+opt.text:'around '+pretty(r);
+if(w>=0){msg='<b>Probably not ready by '+pretty(w)+'.</b> Likely ready '+when+'.';btn=opt?'<button type="button" class="btn alt" id="o-later" data-v="'+opt.value+'">Pick '+opt.text+' instead</button>':(dt&&dt.tagName!=='SELECT'?'<button type="button" class="btn alt" id="o-later" data-v="'+iso(r)+'">Ask for '+pretty(r)+' instead</button>':'');}
+else msg=r===0?'<b>Should be ready now.</b>':'<b>Likely ready '+when+'.</b>';}
+el.innerHTML=msg+(never?'':' <span class="soft">An estimate from what '+D.farm.replace(/[<&]/g,'')+' has and makes; they\\'ll confirm.</span>')+btn;
+var b=document.getElementById('o-later');if(b)b.addEventListener('click',function(){dt.value=b.getAttribute('data-v');upd();});}
+document.addEventListener('input',upd);document.addEventListener('change',upd);upd();})();`;
 }
 
 function orderPageHtml(page, token, { error, values = {} } = {}) {
@@ -140,17 +174,34 @@ function orderPageHtml(page, token, { error, values = {} } = {}) {
   const menuHtml = avail.map((m) => {
     const out = Number.isFinite(m.left) && m.left <= 0;
     const max = Number.isFinite(m.left) ? Math.min(ORDER_LIMITS.qty, m.left) : ORDER_LIMITS.qty;
-    const leftText = out ? '<span class="tag">Sold out for now</span>' : Number.isFinite(m.left) && m.left <= 10 ? `<span class="tag">${m.left} left</span>` : '';
+    const tags = [];
+    if (out) tags.push('Sold out for now');
+    else if (Number.isFinite(m.left) && m.left <= 10) tags.push(`${m.left} left`);
+    let ahead = '';
+    if (m.sup) {
+      if (m.sup.mode === 'slot') tags.push('Made to order');
+      else {
+        const now = m.sup.free.length && m.sup.free[0][0] === 0 ? Math.floor(m.sup.free[0][1] / m.sup.per) : 0;
+        tags.push(now > 0 ? (now <= 24 ? `${now} ready now` : 'Ready now') : 'Pre-order');
+      }
+      if (m.sup.mode === 'stock' && m.sup.ahead > 0) ahead = `<span class="soft ahead">${m.sup.ahead} ${esc(plural(m.unit || 'more', m.sup.ahead))} already ordered ahead of you</span>`;
+    }
     return `
-    <div class="item${out ? ' out' : ''}"><div class="n"><b>${esc(m.name)}</b><span class="soft">${[m.price ? `${moneyText(m.price)}${m.unit ? ` a ${esc(m.unit)}` : ''}` : (m.unit ? esc(m.unit) : ''), esc(m.note)].filter(Boolean).join(' · ')}</span>${leftText}</div>
+    <div class="item${out ? ' out' : ''}"><div class="n"><b>${esc(m.name)}</b><span class="soft">${[m.price ? `${moneyText(m.price)}${m.unit ? ` a ${esc(m.unit)}` : ''}` : (m.unit ? esc(m.unit) : ''), esc(m.note)].filter(Boolean).join(' · ')}</span>${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}${ahead}</div>
       ${out ? '' : `<div class="qty" data-max="${max}"><button type="button" aria-label="Fewer ${esc(m.name)}" data-d="-1">−</button><input type="number" inputmode="numeric" min="0" max="${max}" name="qty_${esc(m.id)}" value="${esc(values[`qty_${m.id}`] || '0')}" aria-label="How many ${esc(m.name)}"><button type="button" aria-label="More ${esc(m.name)}" data-d="1">+</button></div>`}</div>`;
   }).join('');
   const days = op.pickupDays;
-  const dates = pickupDates(days, usToday());
+  const dates = pickupDates(days, page.today || usToday());
   const dateHtml = days.length
     ? `<label for="o-date">Pickup day</label><select id="o-date" name="pickupDate" required data-days="${days.join(',')}"><option value="">Pick a day</option>${dates.map((d) => `<option value="${d}"${values.pickupDate === d ? ' selected' : ''}>${esc(orderPrettyDate(d))}</option>`).join('')}</select>
   <p class="soft" style="margin:6px 2px 0">Pickups on ${days.map((d) => WEEKDAYS[d]).join(', ')}.</p>`
-    : `<label for="o-date">When would you like it? (optional)</label><input id="o-date" type="date" name="pickupDate" value="${v('pickupDate')}">`;
+    : `<label for="o-date">When would you like it? (optional)</label><input id="o-date" type="date" name="pickupDate" min="${esc(page.today || usToday())}" value="${v('pickupDate')}">`;
+  // Pre-orders: the numbers the page needs to say when an order is likely
+  // ready (see src/orderSupply.js). Only items that take pre-orders.
+  const sup = {};
+  avail.forEach((m) => { if (m.sup) sup[m.id] = m.sup; });
+  const hasSup = Object.keys(sup).length > 0;
+  const estHtml = hasSup ? '<p id="o-est" class="est" aria-live="polite" hidden></p>' : '';
   const hidden = `<input type="hidden" name="ts" value="${ts}"><input type="hidden" name="sig" value="${sig}"><div class="hp" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>`;
   const body = `
 <h1>${esc(farm)}</h1>
@@ -167,6 +218,7 @@ ${op.paused ? `<div class="card"><h2>Not taking orders right now</h2><p class="s
   <label for="o-phone">Phone (optional)</label><input id="o-phone" type="tel" name="phone" maxlength="${ORDER_LIMITS.phone}" autocomplete="tel" value="${v('phone')}">
   <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></label>
   ${dateHtml}
+  ${estHtml}
   <label for="o-note">${avail.length ? 'Anything else? (optional)' : 'What would you like?'}</label><textarea id="o-note" name="note" maxlength="${ORDER_LIMITS.note}" placeholder="${avail.length ? 'A dozen extra for Saturday, please' : '2 dozen eggs and a loaf of sourdough'}">${v('note')}</textarea>
   ${payHtml}
   ${op.joinList ? `<label class="check"><input type="checkbox" name="alsoJoin" value="1"${values.alsoJoin ? ' checked' : ''}> Also email me when there's something fresh</label>` : ''}
@@ -182,18 +234,44 @@ ${op.joinList ? `<form class="card" method="post" action="/o/${token}">
   <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"> Text me too when there's something fresh</label>
   <button class="btn alt" type="submit">Add me to the list</button>
 </form>` : ''}
-<script>document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;});});});
-(function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<60&&out.length<8;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
-var p=function(n){return(n<10?'0':'')+n};s.innerHTML='<option value="">Pick a day</option>'+out.map(function(t){var v=t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());return '<option value="'+v+'"'+(v===keep?' selected':'')+'>'+t.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</option>'}).join('');})();</script>`;
+<script>document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;i.dispatchEvent(new Event('input',{bubbles:true}));});});});
+(function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<=${HORIZON}&&out.length<60;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
+var p=function(n){return(n<10?'0':'')+n};s.innerHTML='<option value="">Pick a day</option>'+out.map(function(t){var v=t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());return '<option value="'+v+'"'+(v===keep?' selected':'')+'>'+t.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</option>'}).join('');})();
+${hasSup ? estimateScript(sup, page.today || usToday(), farm) : ''}</script>`;
   return shell(`${farm} · Order`, body);
 }
 
+function op_nextPickup(days, fromIso) {
+  return (days && days.length ? pickupDates(days, fromIso, 1, 14)[0] : '') || '';
+}
+
+// The ready estimate for a request that just came in: { forCustomer, forOwner }.
+function requestEstimate(page, row) {
+  if (!row || row.kind !== 'order' || !row.items || !row.items.length) return null;
+  const today = page.today || usToday();
+  const want = row.pickup_date ? Math.max(0, daysBetween(today, row.pickup_date)) : -1;
+  const qty = {};
+  row.items.forEach((i) => { qty[i.id] = (qty[i.id] || 0) + Number(i.qty || 0); });
+  const d = estimateRequest(page.op.menu, qty, Math.max(0, want));
+  if (d === undefined) return null;
+  if (d === null) return { forCustomer: `That's more than ${page.farm} expects to have in the next few months, so they'll let you know when they can fill it.`, forOwner: "Henalytics estimate: more than you're likely to have in the next 4 months." };
+  // With pickup days, say the first pickup day it'll be ready for.
+  const readyIso = addDays(today, d);
+  const pick = op_nextPickup(page.op.pickupDays, readyIso);
+  const when = orderPrettyDate(pick || readyIso);
+  if (want >= 0 && d > want) return { forCustomer: `It's probably not ready by ${orderPrettyDate(row.pickup_date)}. ${page.farm} expects it around ${when} and will let you know.`, forOwner: `Henalytics estimate: likely ready around ${when}, after the day they asked for.` };
+  if (d === 0) return { forCustomer: `${page.farm} should have it ready${want > 0 ? ` by ${orderPrettyDate(row.pickup_date)}` : ''}.`, forOwner: 'Henalytics estimate: you have enough ready now.' };
+  return { forCustomer: want >= 0 ? `${page.farm} expects to have it ready by ${orderPrettyDate(row.pickup_date)}.` : `${page.farm} expects to have it ready around ${when}.`, forOwner: `Henalytics estimate: likely ready around ${when}.` };
+}
+
 function thanksHtml(page, token, row, joined) {
+  const est = requestEstimate(page, row);
   const items = (row.items || []).map((i) => `<li>${esc(itemLine(i))}</li>`).join('');
   const body = row.kind === 'join'
     ? `<h1>You're on the list</h1><div class="card"><p>Thanks, ${esc(row.customer_name)}! ${esc(page.farm)} will email ${esc(row.email)} when there's something fresh.</p></div>`
     : `<h1>Request sent</h1><div class="card"><p>Thanks, ${esc(row.customer_name)}! ${esc(page.farm)} got your request and will email ${esc(row.email)} when they've looked at it.</p>
 ${items ? `<ul>${items}</ul>` : ''}${row.note ? `<p class="soft">Your note: ${esc(row.note)}</p>` : ''}
+${est ? `<p class="est">${esc(est.forCustomer)} <span class="soft">It's an estimate; they'll confirm.</span></p>` : ''}
 ${joined ? `<p class="soft">You'll also get their "what's fresh" emails.</p>` : ''}
 ${row.text_ok ? `<p class="soft">They may text you at ${esc(row.phone)} about this order.</p>` : ''}
 ${payBlock(page, row)}</div>`;
@@ -242,7 +320,7 @@ async function notifyOwner(page, row) {
   if (!to.length) return;
   const { subject, html, text } = buildOwnerEmail({
     kind: row.kind, farmName: page.farm, name: row.customer_name, email: row.email, phone: row.phone,
-    items: row.items, note: row.note, pickupDate: row.pickup_date, payMethod: row.pay_method, appUrl: `${process.env.APP_BASE_URL || SITE}/?open=orders`,
+    items: row.items, note: row.note, pickupDate: row.pickup_date, payMethod: row.pay_method, estimate: (requestEstimate(page, row) || {}).forOwner || '', appUrl: `${process.env.APP_BASE_URL || SITE}/?open=orders`,
   });
   const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
   await fetch('https://api.resend.com/emails', {

@@ -17,6 +17,7 @@
 // ============================================================================
 
 import { cleanMenu, ORDER_LIMITS } from "./orderShared.js";
+import { cleanSupply } from "./orderSupply.js";
 
 export const CREDIT_TYPES = [
   { id: "farmstand", label: "Farm stand", hobby: "farmstand" },
@@ -81,6 +82,11 @@ export function ownerMenu(menu) {
       cost: Number.isFinite(cost) && cost >= 0 && o.cost !== "" && o.cost != null ? round2(cost) : null,
       credit: CREDIT_IDS.has(o.credit) ? o.credit : "",
       standItemId: String(o.standItemId || "").slice(0, 24),
+      // Pre-orders (src/orderSupply.js): where it comes from, and whether
+      // people can order past what's ready.
+      supply: cleanSupply(o.supply, m.unit),
+      preorder: o.preorder === true,
+      showAhead: o.showAhead !== false,
     };
   });
 }

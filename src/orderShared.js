@@ -11,8 +11,9 @@
 //     on, token,                       // token = 40 hex chars, the link
 //     intro, pickup,                   // short text shown on the page
 //     menu: [{ id, name, unit, price, note, available,
-//              cost, credit, standItemId }],   // last three: owner only,
-//                                               // see src/orderSales.js
+//              cost, credit, standItemId,       // owner only, src/orderSales.js
+//              supply, preorder, showAhead }],  // owner only, src/orderSupply.js
+//     snaps: { [source]: { onHand, perDay, asOf } },  // measured by the app
 //     joinList, joinGroupId,           // "Get our what's fresh emails"
 //     emailMe,                         // email the owner on each request
 //     pay: { cash, card, check,        // true/false
@@ -27,6 +28,8 @@
 // supabase/migrations/20261111_order_requests.sql).
 // No money changes hands: it's a request, the owner accepts or declines.
 // ============================================================================
+
+import { cleanPublicSupply, HORIZON } from './orderSupply.js';
 
 export const ORDER_LIMITS = {
   name: 60, email: 254, phone: 30, note: 600, pickup: 40, items: 25, qty: 999,
@@ -57,6 +60,9 @@ export function cleanMenu(menu) {
       note: clip(m.note, L.menuNote),
       available: m.available !== false,
       ...(Number.isFinite(m.left) ? { left: Math.max(0, Math.floor(m.left)) } : {}),
+      // Pre-orders: what the page needs to work out dates (api/order-page.js
+      // adds it; it's never saved).
+      ...(m.sup && typeof m.sup === 'object' ? { sup: cleanPublicSupply(m.sup) } : {}),
     }))
     .filter((m) => m.id && m.name && !seen.has(m.id) && seen.add(m.id))
     .slice(0, L.menu);
@@ -157,18 +163,21 @@ export function weekdayOf(s) {
   const t = new Date(Date.UTC(y, m - 1, d));
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 ? t.getUTCDay() : -1;
 }
-// The next pickup dates on the chosen weekdays, from `from` (YYYY-MM-DD).
-export function pickupDates(days, from, count = 8) {
+// The next pickup dates on the chosen weekdays, from `from` (YYYY-MM-DD),
+// as far ahead as the page plans (so "5 dozen for Easter" can be asked early).
+export function pickupDates(days, from, count = 60, span = HORIZON) {
   const ok = cleanDays(days);
   if (!ok.length || weekdayOf(from) < 0) return [];
   const [y, m, d] = from.split('-').map(Number);
   const out = [];
-  for (let i = 0; i < 60 && out.length < count; i++) {
+  for (let i = 0; i <= span && out.length < count; i++) {
     const t = new Date(Date.UTC(y, m - 1, d + i));
     if (ok.includes(t.getUTCDay())) out.push(t.toISOString().slice(0, 10));
   }
   return out;
 }
+
+const yearAfter = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y + 1, m - 1, d)).toISOString().slice(0, 10); };
 
 // A customer's request from the form → a clean row, or { error }.
 // fields: { kind, name, email, phone, textOk, note, pickupDate, payMethod, qty: { [menuId]: n } }
@@ -198,6 +207,7 @@ export function cleanRequest(fields, menu, payIds = [], rules = {}) {
     if (!pickup) return { error: 'Please pick a pickup day.' };
     if (!days.includes(weekdayOf(pickup)) || (rules.today && pickup < rules.today)) return { error: 'Please pick one of the pickup days.' };
   }
+  if (pickup && rules.today && pickup > yearAfter(rules.today)) return { error: 'Please pick a day within the next year.' };
   const byId = new Map(menu.filter((m) => m.available && !(Number.isFinite(m.left) && m.left <= 0)).map((m) => [m.id, m]));
   const items = [];
   const qty = fields.qty && typeof fields.qty === 'object' ? fields.qty : {};
@@ -283,7 +293,8 @@ ${orderUrl ? `<p style="font-size:13px;margin:8px 0 0"><a href="${esc(orderUrl)}
 }
 
 // Email to the owner when a request comes in.
-export function buildOwnerEmail({ kind, farmName, name, email, phone, items, note, pickupDate, appUrl, payMethod }) {
+// estimate: a short line like "Likely ready around Sat, Dec 6" (pre-orders).
+export function buildOwnerEmail({ kind, farmName, name, email, phone, items, note, pickupDate, appUrl, payMethod, estimate }) {
   const who = clip(name, 60) || 'Someone';
   const subject = kind === 'join' ? `${who} wants to join your email list` : `New order request from ${who}`;
   const when = prettyDate(pickupDate);
@@ -293,10 +304,11 @@ export function buildOwnerEmail({ kind, farmName, name, email, phone, items, not
 ${itemsHtml(items)}
 ${note ? `<p style="font-size:15px;line-height:1.5;margin:6px 0;padding:12px 14px;background:#EBE0CC;border-radius:10px">${esc(note).replace(/\n/g, '<br>')}</p>` : ''}
 ${when ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Would like it by ${esc(when)}</p>` : ''}
+${estimate ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${esc(estimate)}</p>` : ''}
 ${payLabel(payMethod) ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Paying with ${esc(payLabel(payMethod))}</p>` : ''}
 <p style="margin:16px 0 0"><a href="${esc(appUrl)}" style="display:inline-block;background:#2C1810;color:#F4EDE0;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:600">Open Orders in Henalytics</a></p>
 <p style="font-size:12px;color:#5C4530;margin:14px 0 0">You get these because "Email me new requests" is on for ${esc(clip(farmName, 60) || 'your homestead')}'s order page. Turn it off in Henalytics under Orders.</p>`);
-  const text = [subject, `${who} · ${email}${phone ? ` · ${phone}` : ''}`, itemsText(items), note, when ? `Would like it by ${when}` : '', payLabel(payMethod) ? `Paying with ${payLabel(payMethod)}` : '', `Open Orders in Henalytics: ${appUrl}`].filter(Boolean).join('\n\n');
+  const text = [subject, `${who} · ${email}${phone ? ` · ${phone}` : ''}`, itemsText(items), note, when ? `Would like it by ${when}` : '', estimate || '', payLabel(payMethod) ? `Paying with ${payLabel(payMethod)}` : '', `Open Orders in Henalytics: ${appUrl}`].filter(Boolean).join('\n\n');
   return { subject, html, text };
 }
 

@@ -24,6 +24,8 @@ import { shareImageBlob, shareUrl } from "./shareCard.js";
 import { cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate, PAY_METHODS, cleanHandle, cleanPay, payLabel, payLink, payInstructions, WEEKDAYS, cleanDays, smsHref, orderText } from "./orderShared.js";
 import CustomersPanel from "./Customers.jsx";
 import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
+import { cleanSupply, sourceKey, guessPer, baseLabel, harvestUnitOf, measureSource, measureSnaps, sameSnaps, planAll, addDays } from "./orderSupply.js";
+import { hobbyAllEntries } from "./allEntries.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -79,6 +81,24 @@ export function useOrderCount(data, user) {
   return { ...count, total: count.newOrders + count.newJoins, refresh };
 }
 
+// Keeps the numbers the order page uses for live producers (eggs, milk,
+// garden) up to date as logs come in: data.orderPage.snaps. Runs in the app
+// because the logs live here; the server only reads the small snapshot.
+export function useOrderSupplySnaps(data, update) {
+  const op = data && data.orderPage;
+  const on = !!(op && op.on);
+  useEffect(() => {
+    if (!on) return undefined;
+    const t = setTimeout(() => {
+      const menu = ownerMenu(op.menu);
+      const next = measureSnaps(data, menu, isoToday());
+      if (sameSnaps(next, op.snaps || {})) return;
+      update((d) => { if (d.orderPage && typeof d.orderPage === "object") d.orderPage.snaps = measureSnaps(d, ownerMenu(d.orderPage.menu), isoToday()); return d; });
+    }, 1500);
+    return () => clearTimeout(t);
+  }, [on, data && data.entries, data && data.sales, data && data.hobbies, op && op.menu]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
 const inputStyle = {
   width: "100%", minHeight: 48, padding: "10px 12px", borderRadius: 12, border: `1.5px solid ${nl.line}`,
   background: nl.card, color: nl.ink, font: `400 16px ${font.body}`, boxSizing: "border-box",
@@ -129,20 +149,161 @@ function PrivateBox({ m, setItem, credits, stand, data }) {
           </select>
         </label>
       </div>
-      {stand.length > 0 && (
-        <label>
-          <span style={miniLabel}>Comes from this farm stand item</span>
-          <select aria-label={`Farm stand item for ${m.name || "item"}`} style={inputStyle} value={m.standItemId || ""} onChange={(e) => setItem(m.id, { standItemId: e.target.value, ...(e.target.value ? { credit: "farmstand" } : {}) })}>
-            <option value="">Not linked</option>
-            {stand.map((i) => <option key={i.id} value={i.id}>{i.name}</option>)}
-          </select>
-        </label>
-      )}
+      <SupplyBox m={m} setItem={setItem} stand={stand} data={data} />
       <div style={{ fontSize: 13, color: nl.soft, lineHeight: 1.4 }}>
         {price > 0 && cost != null ? `You make about ${moneyText(price - cost)} on each one. ` : ""}
         {m.standItemId ? "Picked-up orders take it off your farm stand stock." : ""}
       </div>
     </div>
+  );
+}
+
+// ---------------------------------------------------------------- where it comes from
+// Pre-orders (src/orderSupply.js): where an item comes from decides how much
+// customers can order and when it's likely ready.
+const LIVE_TYPES = { egg_layers: "eggs", goats: "milk", cows: "milk", sheep: "milk", garden: "garden" };
+function supplyChoices(data, stand) {
+  const out = [{ value: "", label: "Not tracked (no limit)" }];
+  stand.forEach((i) => out.push({ value: `stand:${i.id}`, label: `Farm stand: ${i.name}` }));
+  ((data && data.hobbies) || []).filter((h) => h && h.id && !h.hidden && LIVE_TYPES[h.type]).forEach((h) => {
+    const from = LIVE_TYPES[h.type];
+    const name = String(h.name || h.type).replace(/\s*\p{Extended_Pictographic}/gu, "").trim();
+    out.push({ value: `${from}:${h.id}`, label: from === "eggs" ? `Eggs from ${name}` : from === "milk" ? `Milk from ${name}` : `${name}: a crop` });
+  });
+  out.push({ value: "make", label: "Made to order (set a limit)" });
+  return out;
+}
+function supplyValue(m) {
+  const s = m.supply || {};
+  if (s.from === "stand" || (!s.from && m.standItemId)) return m.standItemId ? `stand:${m.standItemId}` : "";
+  if (s.from === "eggs" || s.from === "milk" || s.from === "garden") return `${s.from}:${s.hobbyId || ""}`;
+  if (s.from === "make") return "make";
+  return "";
+}
+// Crops this garden has harvested (most recent first).
+function gardenCrops(data, hobbyId) {
+  const seen = new Map();
+  hobbyAllEntries(data, hobbyId).forEach((e) => {
+    if (!e || e.action !== "harvested" || !String(e.plant || "").trim()) return;
+    const k = String(e.plant).trim();
+    const prev = seen.get(k.toLowerCase());
+    if (!prev || String(e.date || "") > prev.date) seen.set(k.toLowerCase(), { name: k, date: String(e.date || "") });
+  });
+  return [...seen.values()].sort((a, b) => b.date.localeCompare(a.date)).map((x) => x.name).slice(0, 60);
+}
+const numIn = (v) => (v === "" || v == null ? "" : v);
+const fmtNum = (n) => (Math.round(n * 10) / 10).toLocaleString();
+function SupplyBox({ m, setItem, stand, data }) {
+  const value = supplyValue(m);
+  const s = cleanSupply(m.supply, m.unit);
+  const choices = supplyChoices(data, stand);
+  if (value && !choices.some((c) => c.value === value)) choices.push({ value, label: "Something no longer here" });
+  const set = (supply, extra = {}) => setItem(m.id, { supply, ...extra });
+  const pick = (v) => {
+    if (!v) return setItem(m.id, { supply: { from: "" }, standItemId: "" });
+    if (v.startsWith("stand:")) return setItem(m.id, { supply: { from: "stand" }, standItemId: v.slice(6), credit: "farmstand" });
+    if (v === "make") return setItem(m.id, { supply: { from: "make", cap: s.cap || 12, capPer: s.capPer || "pickup" }, standItemId: "" });
+    const [from, hobbyId] = v.split(":");
+    const h = (data.hobbies || []).find((x) => x && x.id === hobbyId);
+    const crop = from === "garden" ? (gardenCrops(data, hobbyId).find((c) => `${m.name}`.toLowerCase().includes(c.toLowerCase())) || gardenCrops(data, hobbyId)[0] || "") : "";
+    const hu = from === "garden" ? harvestUnitOf(hobbyAllEntries(data, hobbyId), crop) : "";
+    const credit = from === "eggs" ? "eggs" : from === "garden" ? "garden" : m.credit;
+    return setItem(m.id, { supply: { from, hobbyId, flocks: [], animals: [], plant: crop, per: guessPer(from, m.unit, hu), keepPerWeek: 0 }, standItemId: "", credit: h ? credit : m.credit });
+  };
+  const today = isoToday();
+  const live = s.from === "eggs" || s.from === "milk" || s.from === "garden";
+  const h = live ? (data.hobbies || []).find((x) => x && x.id === s.hobbyId) : null;
+  const measured = live && h ? measureSource(data, s, today) : null;
+  const per = live ? s.per || 1 : 1;
+  const unit = m.unit || "one";
+  const hu = s.from === "garden" ? harvestUnitOf(hobbyAllEntries(data, s.hobbyId), s.plant) : "";
+  const base = baseLabel(s.from, hu);
+  const toggleId = (field, id) => {
+    const cur = new Set(s[field] || []);
+    if (cur.has(id)) cur.delete(id); else cur.add(id);
+    set({ ...s, [field]: [...cur] });
+  };
+  let status = "";
+  if (live && measured) {
+    const keep = (s.keepPerWeek || 0) / 7;
+    const rate = measured.perDay == null ? null : Math.max(0, measured.perDay - keep);
+    status = rate == null
+      ? "Not enough logs yet to know how much you get. Log a few days and estimates start."
+ : `Lately about ${fmtNum(rate / per)} ${unitFor(unit, 2)} a day${keep ? " after what you keep" : ""}${s.from === "eggs" ? (measured.counted ? `, with ${Math.floor(measured.onHand / per).toLocaleString()} ${unitFor(unit, Math.floor(measured.onHand / per))} on hand now.` : ". Turn on Eggs on hand (the Use Eggs tile) to count what's in the fridge too.") : "."}`;
+  }
+  return (
+    <>
+      <label>
+        <span style={miniLabel}>Where it comes from</span>
+        <select aria-label={`Where ${m.name || "this item"} comes from`} style={inputStyle} value={value} onChange={(e) => pick(e.target.value)}>
+          {choices.map((c) => <option key={c.value} value={c.value}>{c.label}</option>)}
+        </select>
+      </label>
+      {s.from === "eggs" && h && (h.flocks || []).filter((f) => f && !f.archived).length > 1 && (
+        <div>
+          <span style={miniLabel}>Which flocks? (none picked = all)</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {(h.flocks || []).filter((f) => f && !f.archived).map((f) => <Chip key={f.id} selected={s.flocks.includes(f.id)} onClick={() => toggleId("flocks", f.id)}>{f.name || f.birdType || "Flock"}</Chip>)}
+          </div>
+        </div>
+      )}
+      {s.from === "milk" && h && (h.animals || []).filter((a) => a && !a.archived).length > 1 && (
+        <div>
+          <span style={miniLabel}>Which animals? (none picked = all)</span>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+            {(h.animals || []).filter((a) => a && !a.archived).slice(0, 30).map((a) => <Chip key={a.id} selected={s.animals.includes(a.id)} onClick={() => toggleId("animals", a.id)}>{a.name || "Unnamed"}</Chip>)}
+          </div>
+        </div>
+      )}
+      {s.from === "garden" && (
+        <label>
+          <span style={miniLabel}>Which crop</span>
+          <select aria-label="Which crop" style={inputStyle} value={s.plant} onChange={(e) => { const c = e.target.value; set({ ...s, plant: c, per: guessPer("garden", m.unit, harvestUnitOf(hobbyAllEntries(data, s.hobbyId), c)) }); }}>
+            {!s.plant && <option value="">Pick a crop you've harvested</option>}
+            {[...new Set([s.plant, ...gardenCrops(data, s.hobbyId)].filter(Boolean))].map((c) => <option key={c} value={c}>{c}</option>)}
+          </select>
+        </label>
+      )}
+      {live && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <label style={{ flex: 1, minWidth: 0 }}>
+            <span style={miniLabel}>{base.charAt(0).toUpperCase() + base.slice(1)} in each {unit}</span>
+            <input aria-label={`${base} in each ${unit}`} type="number" inputMode="decimal" min={0} step="any" style={inputStyle} value={numIn(m.supply && m.supply.per != null ? m.supply.per : s.per)} onChange={(e) => set({ ...s, per: e.target.value })} />
+          </label>
+          <label style={{ flex: 1, minWidth: 0 }}>
+            <span style={miniLabel}>Keep for us each week</span>
+            <input aria-label={`${unit} to keep for yourself each week`} type="number" inputMode="decimal" min={0} step="any" style={inputStyle} value={s.keepPerWeek ? fmtNum(s.keepPerWeek / per) : ""} placeholder={`0 ${unit}`} onChange={(e) => set({ ...s, keepPerWeek: (Number(e.target.value) || 0) * per })} />
+          </label>
+        </div>
+      )}
+      {s.from === "make" && (
+        <div style={{ display: "flex", gap: 8 }}>
+          <label style={{ flex: 1, minWidth: 0 }}>
+            <span style={miniLabel}>I can make up to</span>
+            <input aria-label={`How many ${unit} you can make`} type="number" inputMode="numeric" min={1} style={inputStyle} value={numIn(m.supply && m.supply.cap != null ? m.supply.cap : s.cap)} onChange={(e) => set({ ...s, cap: e.target.value })} />
+          </label>
+          <label style={{ flex: 1, minWidth: 0 }}>
+            <span style={miniLabel}>Each</span>
+            <select aria-label="Per pickup day or per week" style={inputStyle} value={s.capPer} onChange={(e) => set({ ...s, capPer: e.target.value })}>
+              <option value="pickup">Pickup day</option>
+              <option value="week">Week</option>
+            </select>
+          </label>
+        </div>
+      )}
+      {value.startsWith("stand:") && (
+        <Toggle on={m.preorder === true} onChange={(v) => setItem(m.id, { preorder: v })} label="Take pre-orders when it runs out" sub={m.preorder ? "People can order more than what's ready. Back stock with a ready date counts toward when." : "People can only order what's ready"} />
+      )}
+      {sourceKey({ ...m, supply: s }) && (value.startsWith("stand:") ? m.preorder === true : true) && (
+        <Toggle on={m.showAhead !== false} onChange={(v) => setItem(m.id, { showAhead: v })} label="Show how much is ordered ahead" sub={m.showAhead !== false ? "Like \"10 dozen already ordered ahead of you\"" : "Customers only see when it's likely ready"} />
+      )}
+      {(status || s.from === "make") && (
+        <div style={{ fontSize: 13, color: nl.soft, lineHeight: 1.4 }}>
+          {status}{s.from === "make" ? `Orders fill each ${s.capPer === "week" ? "week" : "pickup day"} up to ${s.cap || 0}, then move to the next one.` : ""}
+          {live || s.from === "make" ? " Customers see when their order is likely ready, and can still order more than you have." : ""}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -229,10 +390,12 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       const prev = d.orderPage && typeof d.orderPage === "object" ? d.orderPage : {};
       d.orderPage = {
         ...prev, intro: intro.slice(0, ORDER_LIMITS.intro), pickup: pickup.slice(0, ORDER_LIMITS.pickupText),
-        menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null, cost: m.cost === "" || m.cost == null || !(Number(m.cost) >= 0) ? null : Math.round(Number(m.cost) * 100) / 100 })),
+        menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null, cost: m.cost === "" || m.cost == null || !(Number(m.cost) >= 0) ? null : Math.round(Number(m.cost) * 100) / 100, supply: cleanSupply(m.supply, m.unit), preorder: m.preorder === true, showAhead: m.showAhead !== false })),
         joinList, joinGroupId, emailMe, pay: cleanPay(pay), payWhen,
         pickupDays: cleanDays(pickupDays), paused, pausedNote: pausedNote.trim().slice(0, ORDER_LIMITS.pausedNote), ...extra,
       };
+      // Measure the hens, goats or garden now, so the page has numbers right away.
+      d.orderPage.snaps = measureSnaps(d, d.orderPage.menu, isoToday());
       return d;
     });
     onClose();
@@ -585,11 +748,74 @@ export function saveCustomerInto(d, req, groupId = "", useId = "") {
   return c;
 }
 
+// ---------------------------------------------------------------- pre-order plan
+// When each open order is likely ready, from the same rules the order page
+// uses (src/orderSupply.js), with the app's own fresh numbers.
+function readyLine(req, plan) {
+  if (!plan || !(req.status === "new" || req.status === "accepted") || !plan.orderReady.has(req.id)) return null;
+  const d = plan.orderReady.get(req.id);
+  if (d == null) return { short: true, text: "More than you'll likely have in the next 4 months." };
+  const iso = addDays(plan.today, d);
+  const late = req.pickup_date && iso > req.pickup_date;
+  if (late) return { short: true, text: `Short: likely ready ${orderPrettyDate(iso)}, after the day they want it.` };
+  return { short: false, text: d === 0 ? "You have enough for this now." : `Likely ready ${orderPrettyDate(iso)}.` };
+}
+function SupplySummary({ plan, menu }) {
+  if (!plan) return null;
+  const rows = [];
+  plan.sources.forEach((src, key) => {
+    const items = menu.filter((m) => sourceKey(m) === key);
+    if (!items.length) return;
+    const p = plan.plans.get(key);
+    const m = items[0];
+    const per = src.mode === "slot" ? 1 : perUnitOf(m);
+    const unit = m.unit || "";
+    const ids = [...p.ready.keys()];
+    const days = ids.map((id) => p.ready.get(id));
+    const short = (plan.shortIds || new Set());
+    const nShort = ids.filter((id) => short.has(id)).length;
+    const last = days.some((d) => d == null) ? null : days.reduce((a, d) => Math.max(a, d), 0);
+    const parts = [];
+    if (src.mode === "stock") {
+      const now = Math.floor(src.now / per);
+      parts.push(`${now.toLocaleString()} ${unitFor(unit, now)} ready now`);
+      if (src.perDay > 0) parts.push(`about ${fmtNum((src.perDay * 7) / per)} ${unitFor(unit, 2)} a week`);
+    } else parts.push(`up to ${src.slots[0] ? src.slots[0].cap : 0} each ${m.supply && m.supply.capPer === "week" ? "week" : "pickup day"}`);
+    if (p.ahead > 0) parts.push(`${fmtNum(p.ahead / per)} ${unitFor(unit, p.ahead / per)} ordered`);
+    const tail = !ids.length ? "Nothing ordered yet." : last == null ? "More is ordered than you'll likely have in the next 4 months." : last === 0 ? "You have enough for every open order." : `Caught up around ${orderPrettyDate(addDays(plan.today, last))}.`;
+    rows.push(
+      <div key={key} style={{ padding: "10px 14px", borderTop: `1px solid ${nl.rule}` }}>
+        <div style={{ fontSize: 15, fontWeight: 600 }}>{items.map((x) => x.name).join(", ")}</div>
+        <div style={{ fontSize: 13, color: nl.soft, lineHeight: 1.45 }}>{parts.join(" · ")}</div>
+        <div style={{ fontSize: 13, color: nShort || last == null ? nl.alertInk : nl.soft, lineHeight: 1.45 }}>{tail}{nShort ? ` ${nShort} order${nShort === 1 ? "" : "s"} may come up short.` : ""}</div>
+      </div>,
+    );
+  });
+  if (!rows.length) return null;
+  return (
+    <Card>
+      <CardHeader title="What you can promise" />
+      {rows}
+    </Card>
+  );
+}
+// "bird" → "birds" for counts other than one; "dozen" and "lbs" stay.
+const unitFor = (unit, n) => {
+  const u = String(unit || "").trim();
+  if (!u || Math.abs(n - 1) < 1e-9 || /doz|dz/i.test(u) || /s$/i.test(u)) return u;
+  if (/[^aeiou]y$/i.test(u)) return `${u.slice(0, -1)}ies`;
+  if (/(af|lf)$/i.test(u)) return `${u.slice(0, -1)}ves`;
+  if (/(ch|sh|x)$/i.test(u)) return `${u}es`;
+  return `${u}s`;
+};
+const perUnitOf = (m) => { const s = cleanSupply(m.supply, m.unit); return s.per || 1; };
+
 // ---------------------------------------------------------------- cards
-function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, customer, onSaveCustomer, farm }) {
+function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, customer, onSaveCustomer, farm, plan }) {
   const items = Array.isArray(req.items) ? req.items : [];
   const total = orderTotal(items);
   const when = orderPrettyDate(req.pickup_date);
+  const est = readyLine(req, plan);
   const actions = req.status === "new"
     ? [{ label: "Accept", primary: true, run: () => onStep(req, "accept") }, { label: "Can't fill it", run: () => onStep(req, "decline") }]
     : req.status === "accepted"
@@ -615,6 +841,7 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, custome
         </div>
       )}
       {req.note && <div style={{ fontSize: 14, background: nl.chip, borderRadius: 10, padding: "8px 10px", overflowWrap: "anywhere" }}>{req.note}</div>}
+      {est && <div style={{ fontSize: 14, fontWeight: est.short ? 600 : 400, color: est.short ? nl.alertInk : nl.soft, background: est.short ? nl.alertTint : "transparent", borderRadius: 10, padding: est.short ? "8px 10px" : 0 }}>{est.text}</div>}
       {req.pay_method && req.status !== "declined" && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 14 }}>
           <span>Paying with {payLabel(req.pay_method)}</span>
@@ -691,6 +918,17 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
   };
   const ignoreJoin = async (j) => { try { await callOrders("update", { id: j.id, status: "ignored" }); load(); } catch (e) { setToast(e.message); } };
 
+  const ownMenu = useMemo(() => ownerMenu((data.orderPage || {}).menu), [data.orderPage]);
+  const plan = useMemo(() => {
+    if (!Array.isArray(reqs)) return null;
+    const today = isoToday();
+    const orders = reqs.filter((r) => r.kind === "order");
+    const snaps = measureSnaps(data, ownMenu, today);
+    const out = planAll(ownMenu, orders, { today, hobbies: data.hobbies, snaps, pickupDays: op.pickupDays });
+    if (!out.sources.size) return null;
+    const shortIds = new Set(orders.filter((r) => { const l = readyLine(r, { ...out, today }); return l && l.short; }).map((r) => r.id));
+    return { ...out, today, shortIds };
+  }, [reqs, data, ownMenu, op.pickupDays]); // eslint-disable-line react-hooks/exhaustive-deps
   const groups = useMemo(() => {
     const list = Array.isArray(reqs) ? reqs : [];
     const orders = list.filter((r) => r.kind === "order");
@@ -779,7 +1017,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.fresh.length > 0 && (
         <Card>
           <CardHeader title="New requests" right={`${groups.fresh.length}`} />
-          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
+          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
         </Card>
       )}
       {groups.joins.length > 0 && (
@@ -798,16 +1036,17 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
           ))}
         </Card>
       )}
+      {(groups.fresh.length > 0 || groups.open.length > 0 || groups.today.length > 0) && <SupplySummary plan={plan} menu={ownMenu} />}
       {groups.today.length > 0 && (
         <Card>
           <CardHeader title="Picking up today" right={`${groups.today.length}`} />
-          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
+          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
         </Card>
       )}
       {groups.open.length > 0 && (
         <Card>
           <CardHeader title="To fill" right={`${groups.open.length}`} />
-          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
+          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
         </Card>
       )}
       {reqs && !groups.fresh.length && !groups.open.length && !groups.today.length && !groups.joins.length && (
@@ -820,7 +1059,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card>
           <Row first title={`Past orders (${groups.past.length})`} sub="Picked up and declined, last 6 months" onClick={() => setShowPast((v) => !v)}
             trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: showPast ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
-          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} />)}
+          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
         </Card>
       )}
 
