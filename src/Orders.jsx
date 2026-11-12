@@ -26,6 +26,7 @@ import CustomersPanel from "./Customers.jsx";
 import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
 import { cleanSupply, sourceKey, guessPer, baseLabel, harvestUnitOf, measureSource, measureSnaps, sameSnaps, planAll, addDays, LIVE_FROM, BIRTH_DEFAULTS, repeatDates } from "./orderSupply.js";
 import { hobbyAllEntries } from "./allEntries.js";
+import { homeSnaps } from "./homeInventory.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -81,6 +82,9 @@ export function useOrderCount(data, user) {
   return { ...count, total: count.newOrders + count.newJoins, refresh };
 }
 
+// Hens, goats, garden, birds… plus what's at home for farm stand items.
+const allSnaps = (data, menu, today) => ({ ...homeSnaps(data, menu, today), ...measureSnaps(data, menu, today) });
+
 // Keeps the numbers the order page uses for live producers (eggs, milk,
 // garden) up to date as logs come in: data.orderPage.snaps. Runs in the app
 // because the logs live here; the server only reads the small snapshot.
@@ -91,9 +95,9 @@ export function useOrderSupplySnaps(data, update) {
     if (!on) return undefined;
     const t = setTimeout(() => {
       const menu = ownerMenu(op.menu);
-      const next = measureSnaps(data, menu, isoToday());
+      const next = allSnaps(data, menu, isoToday());
       if (sameSnaps(next, op.snaps || {})) return;
-      update((d) => { if (d.orderPage && typeof d.orderPage === "object") d.orderPage.snaps = measureSnaps(d, ownerMenu(d.orderPage.menu), isoToday()); return d; });
+      update((d) => { if (d.orderPage && typeof d.orderPage === "object") d.orderPage.snaps = allSnaps(d, ownerMenu(d.orderPage.menu), isoToday()); return d; });
     }, 1500);
     return () => clearTimeout(t);
   }, [on, data && data.entries, data && data.sales, data && data.hobbies, op && op.menu]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -327,7 +331,7 @@ function SupplyBox({ m, setItem, stand, data }) {
         <Toggle on={m.preorder === true} onChange={(v) => setItem(m.id, { preorder: v })} label="Take pre-orders when it runs out" sub={m.preorder ? "People can order more than what's ready. Back stock with a ready date counts toward when." : "People can only order what's ready"} />
       )}
       {sourceKey({ ...m, supply: s }) && (value.startsWith("stand:") ? m.preorder === true : true) && (
-        <Toggle on={m.showAhead !== false} onChange={(v) => setItem(m.id, { showAhead: v })} label="Show how much is ordered ahead" sub={m.showAhead !== false ? "Like \"10 dozen already ordered ahead of you\"" : "Customers only see when it's likely ready"} />
+        <Toggle on={m.showAhead !== false} onChange={(v) => setItem(m.id, { showAhead: v })} label="Show how much is ordered ahead" sub={m.showAhead !== false ? "Like \"10 dozen already ordered for the next 2 weeks\"" : "Customers only see when it's likely ready"} />
       )}
       {(status || s.from === "make") && (
         <div style={{ fontSize: 13, color: nl.soft, lineHeight: 1.4 }}>
@@ -432,7 +436,7 @@ function PageSettingsSheet({ open, onClose, data, update }) {
         pickupDays: cleanDays(pickupDays), paused, pausedNote: pausedNote.trim().slice(0, ORDER_LIMITS.pausedNote), ...extra,
       };
       // Measure the hens, goats or garden now, so the page has numbers right away.
-      d.orderPage.snaps = measureSnaps(d, d.orderPage.menu, isoToday());
+      d.orderPage.snaps = allSnaps(d, ownerMenu(d.orderPage.menu), isoToday());
       return d;
     });
     onClose();
@@ -832,6 +836,7 @@ function readyLine(req, plan) {
   const iso = addDays(plan.today, d);
   const late = req.pickup_date && iso > req.pickup_date;
   if (late) return { short: true, text: `Short: likely ready ${orderPrettyDate(iso)}, after the day they want it.` };
+  if (req.pickup_date) return { short: false, text: d === 0 ? "You have enough for this now." : `On track for ${orderPrettyDate(req.pickup_date)}.` };
   return { short: false, text: d === 0 ? "You have enough for this now." : `Likely ready ${orderPrettyDate(iso)}.` };
 }
 function SupplySummary({ plan, menu }) {
@@ -1112,7 +1117,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     if (!Array.isArray(reqs)) return null;
     const today = isoToday();
     const orders = reqs.filter((r) => r.kind === "order");
-    const snaps = measureSnaps(data, ownMenu, today);
+    const snaps = allSnaps(data, ownMenu, today);
     const out = planAll(ownMenu, orders, { today, hobbies: data.hobbies, snaps, pickupDays: op.pickupDays });
     if (!out.sources.size) return null;
     const shortIds = new Set(orders.filter((r) => { const l = readyLine(r, { ...out, today }); return l && l.short; }).map((r) => r.id));

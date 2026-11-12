@@ -296,12 +296,15 @@ export function buildCustomerEmail({ status, farmName, items, note, pickupDate, 
     accepted: { subject: `${farm} got your order`, lead: `Good news! ${farm} has your order and will get it ready.` },
     ready: { subject: `Your order from ${farm} is ready`, lead: `Your order from ${farm} is ready to pick up.` },
     declined: { subject: `About your order from ${farm}`, lead: `${farm} can't fill this order right now.` },
+    // Right after they send it (the order page), before the farm has looked.
+    received: { subject: `${farm} got your request`, lead: `Thanks! ${farm} has your request and will let you know when they've looked at it.` },
   };
   if (address) heads.ready = { subject: `Your order from ${farm} is ready`, lead: `Your order from ${farm} is ready for delivery.` };
   const h = heads[status] || heads.accepted;
   const msg = clip(message, ORDER_LIMITS.message);
   const when = prettyDate(pickupDate);
-  const p = pay && pay.method && !pay.paid && status !== 'declined' ? payInstructions({ method: pay.method, op: pay.op, amount: orderTotal(items), farm }) : null;
+  const payNow = status !== 'declined' && !(status === 'received' && pay && pay.op && pay.op.payWhen === 'accepted');
+  const p = pay && pay.method && !pay.paid && payNow ? payInstructions({ method: pay.method, op: pay.op, amount: orderTotal(items), farm }) : null;
   const refund = pay && status === 'declined' && ['venmo', 'cashapp', 'paypal', 'zelle'].includes(pay.method) && (pay.paid || (pay.op && pay.op.payWhen !== 'accepted'))
     ? `If you already paid, ${farm} will send it back.` : '';
   const payHtml = p ? `<div style="margin:12px 0;padding:12px 14px;border:1px solid #2C181022;border-radius:12px"><p style="font-size:15px;margin:0 0 ${p.link ? 10 : 0}px"><b>Paying:</b> ${esc(p.line)}${pay.op && pay.op.payWhen === 'order' ? ' (If you already paid, you\'re all set.)' : ''}</p>${p.link ? `<a href="${esc(p.link)}" style="display:inline-block;background:#E8B547;color:#2C1810;text-decoration:none;padding:11px 16px;border-radius:12px;font-weight:700">${esc(p.button)}</a>` : ''}<p style="font-size:12px;color:#5C4530;margin:10px 0 0">Check the name before you send. Payments go straight to ${esc(farm)}; Henalytics doesn't process, hold or refund payments.</p></div>` : '';

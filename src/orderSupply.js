@@ -53,11 +53,12 @@
 //     Monday can fill Saturday's order.
 //   slot sources ('make'): a fixed number per pickup day or per week. Unused
 //     room doesn't carry over.
-// Open orders (new, accepted, ready) are lined up by the day they want it
-// (no day = as soon as possible), then by when they came in. An order is
-// ready on the first day the curve covers it and everything lined up before
-// it. A new order can have whatever isn't promised to anyone yet, so taking
-// it never makes an earlier order late.
+// Open orders (new, accepted, ready) line up in the order they came in. Each
+// is ready on the first day the curve covers it without taking from anyone
+// ahead of it, and is promised for the day it wants (or the day it can be
+// ready, if that's later). A new order can have whatever isn't promised to
+// anyone yet, so taking it never makes an earlier order late, and the date a
+// customer was told stays put as later orders come in.
 // ============================================================================
 
 import { computeEggsOnHand } from "./eggInventory.js";
@@ -418,8 +419,19 @@ export function buildSources(menu, ctx) {
       const it = stand.find((i) => i && i.id === m.standItemId && !i.archived);
       if (!it) return;
       const back = (Array.isArray(it.backStock) ? it.backStock : []).filter((b) => b && num(b.qty) > 0);
-      const readyNow = back.filter((b) => !b.readyOn || b.readyOn <= today).reduce((n, b) => n + num(b.qty), 0);
+      let readyNow = back.filter((b) => !b.readyOn || b.readyOn <= today).reduce((n, b) => n + num(b.qty), 0);
       const batches = back.filter((b) => b.readyOn && b.readyOn > today).map((b) => ({ day: daysBetween(today, b.readyOn), qty: num(b.qty) })).filter((b) => b.day > 0);
+      // What the app saw waiting at home for this item in other hobbies
+      // (curing soap, jars on the shelf, eggs on hand; src/homeInventory.js).
+      const home = ctx.snaps && ctx.snaps[key];
+      if (home && ISO.test(String(home.asOf)) && daysBetween(home.asOf, today) <= SNAP_STALE_DAYS) {
+        readyNow += pos(home.onHand);
+        (Array.isArray(home.batches) ? home.batches : []).forEach((b) => {
+          if (!b || !ISO.test(String(b.on)) || !(pos(b.qty) > 0)) return;
+          const day = daysBetween(today, b.on);
+          if (day <= 0) readyNow += pos(b.qty); else batches.push({ day, qty: pos(b.qty) });
+        });
+      }
       if (!it.trackStock && !readyNow && !batches.length) return; // not counted: no limit
       out.set(key, { key, mode: "stock", now: (it.trackStock ? Math.max(0, num(it.stock)) : 0) + readyNow, perDay: 0, batches });
       return;
@@ -492,7 +504,9 @@ export function demandBySource(menu, orders, today) {
       dues.forEach((d, k) => out.get(key).push({ id: k ? `${o.id}#${k}` : o.id, due: d, at: String(o.created_at || ""), seq, units }));
     });
   });
-  out.forEach((list) => list.sort((a, b) => a.due - b.due || a.at.localeCompare(b.at) || a.seq - b.seq));
+  // First come, first served: in the order they came in (a standing order's
+  // weeks in date order).
+  out.forEach((list) => list.sort((a, b) => a.at.localeCompare(b.at) || a.seq - b.seq || a.due - b.due));
   return out;
 }
 
@@ -511,49 +525,63 @@ function firstDay(src, need) {
 //   free:  [[day, units]]  what a new order could have by each day (stock),
 //          rising steps; or [[start, end, show, room]] per slot (slots)
 //   ahead: units already ordered
+export const AHEAD_DAYS = 14;
 export function planSource(src, demand) {
   const list = demand || [];
   const ready = new Map();
-  // Already in line: each order once (a standing order's later weeks aren't
-  // "ahead" of anyone yet).
-  const ahead = list.filter((x) => !String(x.id).includes("#")).reduce((n, x) => n + x.units, 0);
+  // Already in line for the next two weeks: each order once (a standing
+  // order's later weeks, or an order for Easter, aren't "ahead" of someone
+  // who wants eggs this week).
+  const ahead = list.filter((x) => !String(x.id).includes("#") && x.due <= AHEAD_DAYS).reduce((n, x) => n + x.units, 0);
+  const setReady = (id, at) => { const prev = ready.has(id) ? ready.get(id) : 0; ready.set(id, at == null || prev == null ? null : Math.max(prev, at)); };
   if (src.mode === "slot") {
     const room = src.slots.map((s) => s.cap);
     list.forEach((x) => {
       let i = src.slots.findIndex((s) => s.end >= x.due);
-      if (i < 0) { ready.set(x.id, null); return; }
-      let left = x.units, at = null;
-      // Fits in one slot: the first with room for all of it. Bigger than a
-      // slot: spread it over the slots from here.
-      if (left <= src.slots[i].cap) {
-        while (i < room.length && room[i] + 1e-9 < left) i++;
-        if (i < room.length) { room[i] -= left; at = src.slots[i].show; }
-      } else {
-        for (; i < room.length && left > 1e-9; i++) { const t = Math.min(room[i], left); room[i] -= t; left -= t; at = src.slots[i].show; }
-        if (left > 1e-9) at = null;
+      if (i < 0) { setReady(x.id, null); return; }
+      // An order picks up all at once: the first slot with room for all of
+      // it. Only an order bigger than a whole slot is spread over the slots
+      // from here (same as readyForNew below).
+      let at = null;
+      const one = x.units <= src.slots[i].cap + 1e-9 ? room.findIndex((r, k) => k >= i && r + 1e-9 >= x.units) : -1;
+      if (one >= 0) { room[one] -= x.units; at = src.slots[one].show; }
+      else if (x.units <= src.slots[i].cap + 1e-9) at = null;
+      else {
+        let left = x.units;
+        const take = [];
+        for (let k = i; k < room.length && left > 1e-9; k++) { const t = Math.min(room[k], left); if (t > 0) take.push([k, t]); left -= t; at = src.slots[k].show; }
+        if (left > 1e-9) at = null; else take.forEach(([k, t]) => { room[k] -= t; });
       }
-      const prev = ready.has(x.id) ? ready.get(x.id) : 0;
-      ready.set(x.id, at == null || prev == null ? null : Math.max(prev, at));
+      setReady(x.id, at);
     });
-    return { mode: "slot", ready, ahead, free: src.slots.map((s, k) => [s.start, s.end, s.show, Math.max(0, r3(room[k]))]) };
+    return { mode: "slot", ready, ahead, free: src.slots.map((s, k) => [s.start, s.end, s.show, Math.max(0, r3(room[k])), s.cap]) };
   }
-  // Stock: line up by due day, each ready once the curve covers it and all
-  // before it.
-  let need = 0;
-  list.forEach((x) => {
-    need += x.units;
-    const d = firstDay(src, need);
-    const prev = ready.has(x.id) ? ready.get(x.id) : 0;
-    ready.set(x.id, d == null || prev == null ? null : Math.max(prev, d));
-  });
-  // What isn't promised yet: free(d) = min over t ≥ d of S(t) − D(t), where
-  // D(t) is everything due by t (orders due after the horizon count at it).
+  // Stock. Each order, in the order they came in, gets the first day the
+  // eggs (or birds, or jars) not promised to anyone before it cover it, and
+  // is then promised on its own day (or that day, if it can't be on time).
+  // That's exactly what the page told each customer when they ordered, so a
+  // later order never moves an earlier one back.
+  const S = new Array(HORIZON + 1);
+  for (let t = 0; t <= HORIZON; t++) S[t] = supplyAt(src, t);
   const dueBy = new Array(HORIZON + 1).fill(0);
-  list.forEach((x) => { dueBy[Math.min(HORIZON, x.due)] += x.units; });
-  const slack = new Array(HORIZON + 1);
-  let cum = 0;
-  for (let t = 0; t <= HORIZON; t++) { cum += dueBy[t]; slack[t] = supplyAt(src, t) - cum; }
-  for (let t = HORIZON - 1; t >= 0; t--) slack[t] = Math.min(slack[t], slack[t + 1]);
+  const slackNow = () => {
+    const sl = new Array(HORIZON + 1);
+    let cum = 0;
+    for (let t = 0; t <= HORIZON; t++) { cum += dueBy[t]; sl[t] = S[t] - cum; }
+    for (let t = HORIZON - 1; t >= 0; t--) sl[t] = Math.min(sl[t], sl[t + 1]);
+    return sl;
+  };
+  list.forEach((x) => {
+    const sl = slackNow();
+    let d = null;
+    for (let t = 0; t <= HORIZON; t++) if (sl[t] + 1e-9 >= x.units) { d = t; break; }
+    setReady(x.id, d);
+    // Can't be filled within the horizon: it waits for the farm, and doesn't
+    // block everyone behind it.
+    if (d != null) dueBy[Math.min(HORIZON, Math.max(x.due, d))] += x.units;
+  });
+  // What isn't promised yet, for a new order.
+  const slack = slackNow();
   const free = [];
   let last = -1;
   for (let t = 0; t <= HORIZON; t++) {
@@ -592,15 +620,17 @@ export function readyForNew(plan, units, from = 0) {
   if (!plan) return 0;
   if (plan.mode === "slot") {
     const slots = plan.free;
-    let i = slots.findIndex((s) => s[1] >= from);
+    const i = slots.findIndex((s) => s[1] >= from);
     if (i < 0) return null;
-    const cap = Math.max(...slots.map((s) => s[3]), 0);
-    if (units <= cap || cap === 0) {
-      for (; i < slots.length; i++) if (slots[i][3] + 1e-9 >= units) return slots[i][2];
+    // The first slot with room for all of it; only an order bigger than a
+    // whole slot is spread over the slots.
+    const cap = slots[i][4] != null ? slots[i][4] : Math.max(...slots.map((x) => x[3]), 0);
+    if (units <= cap + 1e-9) {
+      for (let k = i; k < slots.length; k++) if (slots[k][3] + 1e-9 >= units) return slots[k][2];
       return null;
     }
     let left = units;
-    for (; i < slots.length; i++) { left -= slots[i][3]; if (left <= 1e-9) return slots[i][2]; }
+    for (let k = i; k < slots.length; k++) { left -= slots[k][3]; if (left <= 1e-9) return slots[k][2]; }
     return null;
   }
   for (const [d, v] of plan.free) if (v + 1e-9 >= units) return Math.max(d, 0);
@@ -627,7 +657,7 @@ export function cleanPublicSupply(p) {
   const mode = p.mode === "slot" ? "slot" : "stock";
   const free = (Array.isArray(p.free) ? p.free : []).slice(0, 200)
     .map((r) => (Array.isArray(r) ? r.map((x) => r3(pos(x))) : null))
-    .filter((r) => r && r.length === (mode === "slot" ? 4 : 2));
+    .filter((r) => r && (mode === "slot" ? r.length === 4 || r.length === 5 : r.length === 2));
   const out = { mode, per: pos(p.per) > 0 ? r3(pos(p.per)) : 1, free };
   if (Number.isFinite(Number(p.ahead))) out.ahead = Math.floor(pos(p.ahead));
   return out;

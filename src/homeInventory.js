@@ -97,3 +97,26 @@ export function putOut(d, entry, qty, today) {
   it.stock = Math.round((num(it.stock) + n) * 100) / 100;
   return it.id;
 }
+
+// For pre-orders: what's at home for each farm stand item on the order menu,
+// so a stand item can be pre-ordered from soap that's still curing or jars
+// on the shelf. { "stand:<itemId>": { onHand, perDay: 0, asOf, batches } }
+// (onHand ready now, batches [{ on, qty }] ready later), in the stand
+// item's own unit (eggs in dozens).
+export function homeSnaps(data, menu, today) {
+  const out = {};
+  const entries = homeFromHobbies(data, today);
+  (Array.isArray(menu) ? menu : []).forEach((m) => {
+    const from = m && m.supply && m.supply.from;
+    if (!m || !m.standItemId || (from && from !== "stand")) return;
+    const key = `stand:${String(m.standItemId).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`;
+    if (out[key]) return;
+    const mine = entries.filter((e) => { const it = standItemFor(data, e); return it && it.id === m.standItemId; });
+    if (!mine.length) return;
+    const onHand = mine.filter((e) => !e.readyOn || e.readyOn <= today).reduce((n, e) => n + e.qty, 0);
+    const batches = mine.filter((e) => e.readyOn && e.readyOn > today).map((e) => ({ on: e.readyOn, qty: e.qty }));
+    out[key] = { onHand, perDay: 0, asOf: today, ...(batches.length ? { batches } : {}) };
+  });
+  return out;
+}
+
