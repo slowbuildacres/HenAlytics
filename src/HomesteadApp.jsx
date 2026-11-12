@@ -1866,6 +1866,8 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🧺 Farm stand: At the stand and At home — the stand only shows what's out, with Take off the stand any time. At home lists everything made and waiting in one place: back stock, curing soap, jars on the shelf and eggs on hand. Tap Put out at the stand to move some over.",
+  "🛍️ Orders, round two — a packing list for each pickup day (tick orders as you bag them, text everyone at once), standing orders (a dozen every Saturday), delivery with an optional fee, a most-per-order limit, accept-on-its-own when there's enough, and \"Email me when it's back\" on sold-out items. Customers get a link to check on their order, cancel it, or stop a standing order. Pre-orders can now come from meat bird batches, hatches, kiddings and litters, and garden crops before they're ready.",
   "📅 Pre-orders that know what you have — on your order page, tell each item where it comes from: your hens (pick which flocks), your goats or cows, a garden crop, a farm stand item, or made to order with a limit per pickup day or week. Customers can order more than you have ready, pick a day further out, and see when it's likely ready, based on what you have and what you've been getting lately. Orders shows when each one should be ready and flags any that may come up short. Set it up in Orders › Menu and page settings › Where it comes from.",
   "🗺️ Garden map — beds you draw as a grid now show up in View past years, planted the way they were, and the Plan tab counts them as your map.",
   "🛍️ Orders — let customers order ahead. Turn on your order page (More › Orders & customers), list what people can request (eggs, bread, meat birds, anything), and share the link or print the QR sign for your stand. Requests show up in Orders, where you accept them, mark them ready and picked up, and Henalytics can email the customer at each step. When an order is picked up it goes straight into Sales, and set a private cost for each item to see your profit (customers only ever see the price). Customers can pick how they'll pay (Venmo, Cash App, PayPal, Zelle, cash and more) and get a pay button with the amount filled in. Text customers about their order from your own phone, set pickup days, pause orders, and see today's pickups on Home. Farm stand items show \"Sold out\" on your order page when you run out. Your customers live in Orders too: emails, phone numbers, lists and each person's order history, and you can email or text a whole list. People can also ask to join your \"what's fresh\" email list. Henalytics never touches the money.",  // ORDERS_WHATSNEW
@@ -11335,6 +11337,7 @@ const USED_EGGS_TYPES = [
   { value: "donated", label: "Donated / gave away", statLabel: "Donated" },
   { value: "tossed",  label: "Threw them out",    statLabel: "Tossed" },
   { value: "hatched", label: "Set to hatch",      statLabel: "Set to hatch" },
+  { value: "stand",   label: "Put out at the farm stand", statLabel: "To the farm stand" },
   { value: "other",   label: "Other",             statLabel: "Other" },
 ];
 const usedEggsTypeLabel = (v) => {

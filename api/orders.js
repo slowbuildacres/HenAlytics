@@ -12,6 +12,11 @@
 //                     and the status is accepted, ready or declined
 //   action "remove" → { id }                              deletes it
 //   action "paid"   → { id, paid }                        marks it paid or not
+//   action "next"   → { id }      a standing order was picked up: move it to
+//                     its next day (accepted, not paid yet)
+//   action "stop"   → { id }      ends a standing order (this one stays)
+//   action "back"   → { itemId, message }  emails everyone who asked to hear
+//                     when that item is back, and marks them done
 //   (update also takes an optional paid: true|false)
 //
 // Safety:
@@ -29,7 +34,7 @@
 // ============================================================================
 
 import { getCorsOrigin } from './_cors.js';
-import { ORDER_STATUSES, JOIN_STATUSES, ORDER_LIMITS, EMAIL_RE, buildCustomerEmail, cleanPageSettings } from '../src/orderShared.js';
+import { ORDER_STATUSES, JOIN_STATUSES, ORDER_LIMITS, EMAIL_RE, buildCustomerEmail, buildBackEmail, cleanPageSettings } from '../src/orderShared.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAILY_EMAILS = 200;
@@ -57,14 +62,35 @@ async function getUser(req) {
 }
 
 const BASE_FIELDS = 'id,kind,status,customer_name,email,phone,items,note,pickup_date,owner_message,created_at,updated_at';
-const FIELDS = `${BASE_FIELDS},pay_method,paid,text_ok`;
-// Reads that still work if the pay columns haven't been added yet.
+const PAY_FIELDS = `${BASE_FIELDS},pay_method,paid,text_ok`;
+const FIELDS = `${PAY_FIELDS},status_token,repeat_weeks,fulfil,address`;
+// Reads that still work if newer columns haven't been added yet.
 const missingPayCols = (e) => /pay_method|text_ok|column .*paid|paid.*column|'paid'/.test(String(e && e.message));
+const missingExtraCols = (e) => /status_token|repeat_weeks|fulfil|address/.test(String(e && e.message));
 async function readRows(query) {
   try { return await rest(query.replace('{F}', FIELDS)); } catch (e) {
-    if (!missingPayCols(e)) throw e;
-    return rest(query.replace('{F}', BASE_FIELDS));
+    if (!missingExtraCols(e) && !missingPayCols(e)) throw e;
+    try { return await rest(query.replace('{F}', PAY_FIELDS)); } catch (e2) {
+      if (!missingPayCols(e2)) throw e2;
+      return rest(query.replace('{F}', BASE_FIELDS));
+    }
   }
+}
+const SITE = 'https://henalytics.com';
+const addDaysIso = (iso, n) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10); };
+async function farmInfo(hid, user) {
+  const hs = await rest(`homesteads?select=farm:data->>homesteadName,settings:data->stockEmailSettings,op:data->orderPage&id=eq.${hid}&limit=1`) || [];
+  const h = hs[0] || {};
+  const settings = h.settings && typeof h.settings === 'object' ? h.settings : {};
+  const farm = String(settings.fromName || h.farm || '').replace(/[<>"\r\n]/g, '').trim().slice(0, 60) || 'Our farm stand';
+  const replyTo = EMAIL_RE.test(String(settings.replyTo || '')) ? String(settings.replyTo) : user.email;
+  const op = cleanPageSettings(h.op || {});
+  const base = process.env.APP_BASE_URL || SITE;
+  return { farm, replyTo, op, orderUrl: op.on && op.token && !op.paused ? `${base}/o/${op.token}` : '', statusUrl: (st) => (op.on && op.token && st ? `${base}/o/${op.token}?s=${st}` : '') };
+}
+async function sentToday(hid) {
+  const rows = await rest(`order_requests?select=id&homestead_id=eq.${hid}&emailed_at=gte.${encodeURIComponent(new Date(Date.now() - 86400000).toISOString())}&limit=${DAILY_EMAILS + 1}`) || [];
+  return rows.length;
 }
 
 export default async function handler(req, res) {
@@ -84,7 +110,7 @@ export default async function handler(req, res) {
   body = body || {};
   const action = body.action;
   const hid = String(body.homesteadId || '');
-  if (!['count', 'list', 'update', 'remove', 'paid'].includes(action) || !UUID_RE.test(hid)) return res.status(400).json({ error: 'Bad request' });
+  if (!['count', 'list', 'update', 'remove', 'paid', 'next', 'stop', 'back'].includes(action) || !UUID_RE.test(hid)) return res.status(400).json({ error: 'Bad request' });
 
   const user = await getUser(req);
   if (!user) return res.status(401).json({ error: 'Please sign in to see orders.' });
@@ -104,6 +130,34 @@ export default async function handler(req, res) {
       const since = new Date(Date.now() - 180 * 86400000).toISOString();
       const rows = await readRows(`order_requests?select={F}&homestead_id=eq.${hid}&or=(status.in.(new,accepted,ready),created_at.gte.${encodeURIComponent(since)})&order=created_at.desc&limit=300`) || [];
       return res.status(200).json({ requests: rows });
+    }
+
+    if (action === 'back') {
+      const itemId = String(body.itemId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
+      if (!itemId) return res.status(400).json({ error: 'Bad request' });
+      const waiting = (await rest(`order_requests?select=id,email,items&homestead_id=eq.${hid}&kind=eq.notify&status=eq.new&limit=300`) || [])
+        .filter((r) => Array.isArray(r.items) && r.items.some((i) => i && i.id === itemId) && EMAIL_RE.test(r.email || ''));
+      if (!waiting.length) return res.status(200).json({ ok: true, sent: 0 });
+      if (!process.env.RESEND_API_KEY) return res.status(500).json({ error: 'Email is not set up.' });
+      const left = DAILY_EMAILS - await sentToday(hid);
+      if (left <= 0) return res.status(429).json({ error: 'Daily email limit reached. Try again tomorrow.' });
+      const info = await farmInfo(hid, user);
+      const item = (waiting[0].items.find((i) => i && i.id === itemId) || {}).name || 'It';
+      const mail = buildBackEmail({ farmName: info.farm, itemName: item, orderUrl: info.orderUrl, message: String(body.message || '').slice(0, ORDER_LIMITS.message) });
+      const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
+      let sent = 0;
+      // One email each, so no one sees anyone else's address.
+      for (const r of waiting.slice(0, left)) {
+        const ok = await fetch('https://api.resend.com/emails', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({ from: `${info.farm} <${from}>`, to: [r.email], reply_to: info.replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
+        }).then((x) => x.ok).catch(() => false);
+        if (!ok) continue;
+        sent++;
+        await rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'done', emailed_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }).catch(() => {});
+      }
+      return res.status(200).json({ ok: true, sent, more: Math.max(0, waiting.length - sent) });
     }
 
     const id = String(body.id || '');
@@ -128,6 +182,19 @@ export default async function handler(req, res) {
       return res.status(200).json({ ok: true });
     }
 
+    if (action === 'next' || action === 'stop') {
+      if (row.kind !== 'order' || !row.repeat_weeks) return res.status(400).json({ error: "That isn't a standing order." });
+      if (action === 'stop') {
+        await rest(`order_requests?id=eq.${id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ repeat_weeks: null, updated_at: new Date().toISOString() }) });
+        return res.status(200).json({ ok: true });
+      }
+      const today = /^\d{4}-\d{2}-\d{2}$/.test(String(body.today || '')) ? String(body.today) : new Date().toISOString().slice(0, 10);
+      let next = /^\d{4}-\d{2}-\d{2}$/.test(String(row.pickup_date || '')) ? row.pickup_date : today;
+      do { next = addDaysIso(next, row.repeat_weeks * 7); } while (next <= today);
+      await rest(`order_requests?id=eq.${id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'accepted', paid: false, pickup_date: next, updated_at: new Date().toISOString() }) });
+      return res.status(200).json({ ok: true, next });
+    }
+
     // update
     const status = String(body.status || '');
     const allowed = row.kind === 'join' ? JOIN_STATUSES : ORDER_STATUSES;
@@ -143,16 +210,10 @@ export default async function handler(req, res) {
     if (row.kind === 'order' && body.notify === true && ['accepted', 'ready', 'declined'].includes(status) && EMAIL_RE.test(row.email || '')) {
       if (!process.env.RESEND_API_KEY) emailError = 'Email is not set up.';
       else {
-        const sentToday = await rest(`order_requests?select=id&homestead_id=eq.${hid}&emailed_at=gte.${encodeURIComponent(new Date(Date.now() - 86400000).toISOString())}&limit=${DAILY_EMAILS + 1}`) || [];
-        if (sentToday.length >= DAILY_EMAILS) emailError = 'Daily email limit reached. Try again tomorrow.';
+        if (await sentToday(hid) >= DAILY_EMAILS) emailError = 'Daily email limit reached. Try again tomorrow.';
         else {
-          const hs = await rest(`homesteads?select=farm:data->>homesteadName,settings:data->stockEmailSettings,op:data->orderPage&id=eq.${hid}&limit=1`) || [];
-          const h = hs[0] || {};
-          const settings = h.settings && typeof h.settings === 'object' ? h.settings : {};
-          const farm = String(settings.fromName || h.farm || '').replace(/[<>"\r\n]/g, '').trim().slice(0, 60) || 'Our farm stand';
-          const replyTo = EMAIL_RE.test(String(settings.replyTo || '')) ? String(settings.replyTo) : user.email;
-          const op = cleanPageSettings(h.op || {});
-          const mail = buildCustomerEmail({ status, farmName: farm, items: row.items, note: row.note, pickupDate: row.pickup_date, message, pickupText: op.pickup, pay: row.pay_method ? { method: row.pay_method, op, paid: row.paid === true } : null, orderUrl: op.on && op.token && !op.paused ? `${process.env.APP_BASE_URL || 'https://henalytics.com'}/o/${op.token}` : '' });
+          const { farm, replyTo, op, orderUrl, statusUrl } = await farmInfo(hid, user);
+          const mail = buildCustomerEmail({ status, farmName: farm, items: row.items, note: row.note, pickupDate: row.pickup_date, message, pickupText: op.pickup, pay: row.pay_method ? { method: row.pay_method, op, paid: row.paid === true } : null, orderUrl, statusUrl: status === 'declined' ? '' : statusUrl(row.status_token), repeatWeeks: row.repeat_weeks || 0, address: row.fulfil === 'delivery' ? row.address : '' });
           const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
           const r = await fetch('https://api.resend.com/emails', {
             method: 'POST',

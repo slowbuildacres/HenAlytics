@@ -21,10 +21,10 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { getActiveHomesteadId } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { shareImageBlob, shareUrl } from "./shareCard.js";
-import { cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate, PAY_METHODS, cleanHandle, cleanPay, payLabel, payLink, payInstructions, WEEKDAYS, cleanDays, smsHref, orderText } from "./orderShared.js";
+import { cleanDelivery, repeatLabel, smsGroupHref, GROUP_TEXT_MAX, cleanPageSettings, ORDER_LIMITS, itemLine, moneyText, orderTotal, orderPrettyDate, PAY_METHODS, cleanHandle, cleanPay, payLabel, payLink, payInstructions, WEEKDAYS, cleanDays, smsHref, orderText } from "./orderShared.js";
 import CustomersPanel from "./Customers.jsx";
 import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
-import { cleanSupply, sourceKey, guessPer, baseLabel, harvestUnitOf, measureSource, measureSnaps, sameSnaps, planAll, addDays } from "./orderSupply.js";
+import { cleanSupply, sourceKey, guessPer, baseLabel, harvestUnitOf, measureSource, measureSnaps, sameSnaps, planAll, addDays, LIVE_FROM, BIRTH_DEFAULTS, repeatDates } from "./orderSupply.js";
 import { hobbyAllEntries } from "./allEntries.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
@@ -161,14 +161,15 @@ function PrivateBox({ m, setItem, credits, stand, data }) {
 // ---------------------------------------------------------------- where it comes from
 // Pre-orders (src/orderSupply.js): where an item comes from decides how much
 // customers can order and when it's likely ready.
-const LIVE_TYPES = { egg_layers: "eggs", goats: "milk", cows: "milk", sheep: "milk", garden: "garden" };
+// Which hobbies can supply an item, and how.
+const LIVE_TYPES = { egg_layers: ["eggs"], goats: ["milk", "births"], cows: ["milk", "births"], sheep: ["milk", "births"], pigs: ["births"], rabbits: ["births"], garden: ["garden"], meat_chickens: ["birds"], incubator: ["hatch"] };
+const LIVE_LABEL = { eggs: (n) => `Eggs from ${n}`, milk: (n) => `Milk from ${n}`, garden: (n) => `${n}: a crop`, birds: (n) => `${n}: birds as they're ready`, hatch: (n) => `${n}: chicks as they hatch`, births: (n) => `${n}: young as they're born` };
 function supplyChoices(data, stand) {
   const out = [{ value: "", label: "Not tracked (no limit)" }];
   stand.forEach((i) => out.push({ value: `stand:${i.id}`, label: `Farm stand: ${i.name}` }));
   ((data && data.hobbies) || []).filter((h) => h && h.id && !h.hidden && LIVE_TYPES[h.type]).forEach((h) => {
-    const from = LIVE_TYPES[h.type];
     const name = String(h.name || h.type).replace(/\s*\p{Extended_Pictographic}/gu, "").trim();
-    out.push({ value: `${from}:${h.id}`, label: from === "eggs" ? `Eggs from ${name}` : from === "milk" ? `Milk from ${name}` : `${name}: a crop` });
+    LIVE_TYPES[h.type].forEach((from) => out.push({ value: `${from}:${h.id}`, label: LIVE_LABEL[from](name) }));
   });
   out.push({ value: "make", label: "Made to order (set a limit)" });
   return out;
@@ -176,7 +177,7 @@ function supplyChoices(data, stand) {
 function supplyValue(m) {
   const s = m.supply || {};
   if (s.from === "stand" || (!s.from && m.standItemId)) return m.standItemId ? `stand:${m.standItemId}` : "";
-  if (s.from === "eggs" || s.from === "milk" || s.from === "garden") return `${s.from}:${s.hobbyId || ""}`;
+  if (LIVE_FROM.includes(s.from)) return `${s.from}:${s.hobbyId || ""}`;
   if (s.from === "make") return "make";
   return "";
 }
@@ -207,13 +208,14 @@ function SupplyBox({ m, setItem, stand, data }) {
     const h = (data.hobbies || []).find((x) => x && x.id === hobbyId);
     const crop = from === "garden" ? (gardenCrops(data, hobbyId).find((c) => `${m.name}`.toLowerCase().includes(c.toLowerCase())) || gardenCrops(data, hobbyId)[0] || "") : "";
     const hu = from === "garden" ? harvestUnitOf(hobbyAllEntries(data, hobbyId), crop) : "";
-    const credit = from === "eggs" ? "eggs" : from === "garden" ? "garden" : m.credit;
+    const credit = from === "eggs" ? "eggs" : from === "garden" ? "garden" : from === "birds" ? "meat_chickens" : m.credit;
     return setItem(m.id, { supply: { from, hobbyId, flocks: [], animals: [], plant: crop, per: guessPer(from, m.unit, hu), keepPerWeek: 0 }, standItemId: "", credit: h ? credit : m.credit });
   };
   const today = isoToday();
   const live = s.from === "eggs" || s.from === "milk" || s.from === "garden";
-  const h = live ? (data.hobbies || []).find((x) => x && x.id === s.hobbyId) : null;
-  const measured = live && h ? measureSource(data, s, today) : null;
+  const young = s.from === "birds" || s.from === "hatch" || s.from === "births";
+  const h = live || young ? (data.hobbies || []).find((x) => x && x.id === s.hobbyId) : null;
+  const measured = (live || young) && h ? measureSource(data, s, today) : null;
   const per = live ? s.per || 1 : 1;
   const unit = m.unit || "one";
   const hu = s.from === "garden" ? harvestUnitOf(hobbyAllEntries(data, s.hobbyId), s.plant) : "";
@@ -224,11 +226,19 @@ function SupplyBox({ m, setItem, stand, data }) {
     set({ ...s, [field]: [...cur] });
   };
   let status = "";
+  if (young && measured) {
+    const next = (measured.batches || []).slice().sort((a, b) => a.on.localeCompare(b.on))[0];
+    const what = s.from === "birds" ? "birds" : s.from === "hatch" ? "chicks" : "young";
+    status = `${measured.onHand ? `${measured.onHand} ${what} ready now` : `None ready now`}${next ? `, about ${fmtNum(next.qty)} more ${orderPrettyDate(next.on)}` : ""}${(measured.batches || []).length > 1 ? ` and ${measured.batches.length - 1} more batch${measured.batches.length > 2 ? "es" : ""} after` : ""}.`
+      + (s.from === "birds" ? " Counts live batches and birds in the freezer." : s.from === "hatch" ? ` Expects about ${Math.round((measured.rate || 0.7) * 100)}% of eggs to hatch.` : "");
+  }
   if (live && measured) {
     const keep = (s.keepPerWeek || 0) / 7;
     const rate = measured.perDay == null ? null : Math.max(0, measured.perDay - keep);
-    status = rate == null
-      ? "Not enough logs yet to know how much you get. Log a few days and estimates start."
+    status = measured.planned
+      ? `Not harvesting yet. From ${orderPrettyDate(measured.from)} (your calendar plan) we expect last year's pace, about ${fmtNum(rate / per)} ${unitFor(unit, 2)} a day.`
+      : rate == null
+      ? (s.from === "garden" ? "No recent harvests. Log some, or plan this crop on the Calendar so estimates can start from its harvest date." : "Not enough logs yet to know how much you get. Log a few days and estimates start.")
  : `Lately about ${fmtNum(rate / per)} ${unitFor(unit, 2)} a day${keep ? " after what you keep" : ""}${s.from === "eggs" ? (measured.counted ? `, with ${Math.floor(measured.onHand / per).toLocaleString()} ${unitFor(unit, Math.floor(measured.onHand / per))} on hand now.` : ". Turn on Eggs on hand (the Use Eggs tile) to count what's in the fridge too.") : "."}`;
   }
   return (
@@ -276,6 +286,28 @@ function SupplyBox({ m, setItem, stand, data }) {
           </label>
         </div>
       )}
+      {young && h && (
+        <div style={{ display: "flex", gap: 8 }}>
+          {s.from !== "hatch" && (
+            <label style={{ flex: 1, minWidth: 0 }}>
+              <span style={miniLabel}>{s.from === "birds" ? "Ready at (weeks old)" : "Go home at (weeks old)"}</span>
+              <input aria-label={s.from === "birds" ? "Weeks old when ready" : "Weeks old when they can go home"} type="number" inputMode="decimal" min={1} style={inputStyle} value={numIn(m.supply && m.supply.readyWeeks)} placeholder={String(s.from === "birds" ? 8 : (BIRTH_DEFAULTS[h.type] || { readyWeeks: 8 }).readyWeeks)} onChange={(e) => set({ ...s, readyWeeks: e.target.value })} />
+            </label>
+          )}
+          {s.from === "births" && (
+            <label style={{ flex: 1, minWidth: 0 }}>
+              <span style={miniLabel}>Young from each birth</span>
+              <input aria-label="Young expected from each birth" type="number" inputMode="decimal" min={0} step="any" style={inputStyle} value={numIn(m.supply && m.supply.perBirth)} placeholder={String((BIRTH_DEFAULTS[h.type] || { perBirth: 1 }).perBirth)} onChange={(e) => set({ ...s, perBirth: e.target.value })} />
+            </label>
+          )}
+          {s.from === "hatch" && (
+            <label style={{ flex: 1, minWidth: 0 }}>
+              <span style={miniLabel}>Hatch rate (%)</span>
+              <input aria-label="Share of eggs that hatch, in percent" type="number" inputMode="numeric" min={1} max={100} style={inputStyle} value={m.supply && m.supply.rate ? Math.round(Number(m.supply.rate) * 100) : ""} placeholder={String(Math.round(((measured && measured.rate) || 0.7) * 100))} onChange={(e) => set({ ...s, rate: e.target.value === "" ? 0 : Number(e.target.value) / 100 })} />
+            </label>
+          )}
+        </div>
+      )}
       {s.from === "make" && (
         <div style={{ display: "flex", gap: 8 }}>
           <label style={{ flex: 1, minWidth: 0 }}>
@@ -300,7 +332,7 @@ function SupplyBox({ m, setItem, stand, data }) {
       {(status || s.from === "make") && (
         <div style={{ fontSize: 13, color: nl.soft, lineHeight: 1.4 }}>
           {status}{s.from === "make" ? `Orders fill each ${s.capPer === "week" ? "week" : "pickup day"} up to ${s.cap || 0}, then move to the next one.` : ""}
-          {live || s.from === "make" ? " Customers see when their order is likely ready, and can still order more than you have." : ""}
+          {live || young || s.from === "make" ? " Customers see when their order is likely ready, and can still order more than you have." : ""}
         </div>
       )}
     </>
@@ -374,11 +406,15 @@ function PageSettingsSheet({ open, onClose, data, update }) {
   const [pickupDays, setPickupDays] = useState(op.pickupDays);
   const [paused, setPaused] = useState(op.paused);
   const [pausedNote, setPausedNote] = useState(op.pausedNote);
+  const [delivery, setDelivery] = useState(op.delivery);
+  const [standing, setStanding] = useState(op.standing);
+  const [autoAccept, setAutoAccept] = useState(op.autoAccept);
+  const [notifyBack, setNotifyBack] = useState(op.notifyBack);
   const [confirmNew, setConfirmNew] = useState(false);
   useEffect(() => {
     if (!open) return;
     const o = cleanPageSettings(data.orderPage || {});
-    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setConfirmNew(false);
+    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setDelivery(o.delivery); setStanding(o.standing); setAutoAccept(o.autoAccept); setNotifyBack(o.notifyBack); setConfirmNew(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const stand = standItems(data);
   const standToAdd = stand.filter((i) => !menu.some((m) => m.standItemId === i.id || m.name.toLowerCase() === String(i.name).toLowerCase()));
@@ -390,8 +426,9 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       const prev = d.orderPage && typeof d.orderPage === "object" ? d.orderPage : {};
       d.orderPage = {
         ...prev, intro: intro.slice(0, ORDER_LIMITS.intro), pickup: pickup.slice(0, ORDER_LIMITS.pickupText),
-        menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null, cost: m.cost === "" || m.cost == null || !(Number(m.cost) >= 0) ? null : Math.round(Number(m.cost) * 100) / 100, supply: cleanSupply(m.supply, m.unit), preorder: m.preorder === true, showAhead: m.showAhead !== false })),
+        menu: menu.filter((m) => m.name.trim()).slice(0, ORDER_LIMITS.menu).map((m) => ({ ...m, name: m.name.trim().slice(0, ORDER_LIMITS.menuName), price: Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null, cost: m.cost === "" || m.cost == null || !(Number(m.cost) >= 0) ? null : Math.round(Number(m.cost) * 100) / 100, maxEach: Number(m.maxEach) >= 1 ? Math.floor(Number(m.maxEach)) : null, supply: cleanSupply(m.supply, m.unit), preorder: m.preorder === true, showAhead: m.showAhead !== false })),
         joinList, joinGroupId, emailMe, pay: cleanPay(pay), payWhen,
+        delivery: cleanDelivery(delivery), standing, autoAccept, notifyBack,
         pickupDays: cleanDays(pickupDays), paused, pausedNote: pausedNote.trim().slice(0, ORDER_LIMITS.pausedNote), ...extra,
       };
       // Measure the hens, goats or garden now, so the page has numbers right away.
@@ -420,6 +457,26 @@ function PageSettingsSheet({ open, onClose, data, update }) {
       <div style={{ marginTop: 14, background: nl.card, border: `1px solid ${nl.line}`, borderRadius: 16, padding: "2px 10px" }}>
         <Toggle on={paused} onChange={setPaused} label="Pause new orders" sub={paused ? "Your page stays up, but the order form is hidden" : "Take a break without turning the page off"} />
         {paused && <div style={{ padding: "0 4px 12px" }}><input aria-label="Message while paused" style={inputStyle} value={pausedNote} onChange={(e) => setPausedNote(e.target.value)} maxLength={ORDER_LIMITS.pausedNote} placeholder="The hens are on break. Back in spring!" /></div>}
+        <div style={{ borderTop: `1px solid ${nl.rule}` }}>
+          <Toggle on={delivery.on} onChange={(v) => setDelivery((d) => ({ ...d, on: v }))} label="Offer delivery" sub={delivery.on ? "Customers pick pickup or delivery and add their address" : "Porch drop-offs, a town run, anything"} />
+          {delivery.on && (
+            <div style={{ display: "flex", gap: 8, padding: "0 4px 12px" }}>
+              <label style={{ flex: 1, minWidth: 0 }}><span style={miniLabel}>Delivery fee</span>
+                <input aria-label="Delivery fee (optional)" type="number" inputMode="decimal" min={0} step="0.01" style={inputStyle} value={delivery.fee == null ? "" : delivery.fee} onChange={(e) => setDelivery((d) => ({ ...d, fee: e.target.value === "" ? null : e.target.value }))} placeholder="$ Free" /></label>
+              <label style={{ flex: 2, minWidth: 0 }}><span style={miniLabel}>Where you deliver</span>
+                <input aria-label="Where you deliver (optional)" style={inputStyle} value={delivery.note} onChange={(e) => setDelivery((d) => ({ ...d, note: e.target.value.slice(0, ORDER_LIMITS.deliveryNote) }))} placeholder="Within 5 miles, Thursdays" /></label>
+            </div>
+          )}
+        </div>
+        <div style={{ borderTop: `1px solid ${nl.rule}` }}>
+          <Toggle on={standing} onChange={setStanding} label="Standing orders" sub={!pickupDays.length ? "Pick pickup days above to use this" : standing ? "Customers can ask for the same order every 1 to 4 weeks" : "Like a dozen eggs every Saturday"} />
+        </div>
+        <div style={{ borderTop: `1px solid ${nl.rule}` }}>
+          <Toggle on={autoAccept} onChange={setAutoAccept} label="Accept on their own when there's enough" sub={autoAccept ? "Orders you can clearly fill are accepted right away. You handle the rest." : "You accept every order yourself"} />
+        </div>
+        <div style={{ borderTop: `1px solid ${nl.rule}` }}>
+          <Toggle on={notifyBack} onChange={setNotifyBack} label={'"Email me when it\'s back"'} sub="On sold-out items. You send the note when it's back." />
+        </div>
       </div>
 
       <div style={{ ...labelStyle, marginTop: 18 }}>What people can order</div>
@@ -443,6 +500,10 @@ function PageSettingsSheet({ open, onClose, data, update }) {
               </label>
             </div>
             <input aria-label="Note for customers (optional)" style={inputStyle} value={m.note} onChange={(e) => setItem(m.id, { note: e.target.value.slice(0, ORDER_LIMITS.menuNote) })} placeholder="Note, like Brown and blue eggs, or Ready mid-June" />
+            <label>
+              <span style={miniLabel}>Most one order can get (optional)</span>
+              <input aria-label={`Most ${m.unit || "of these"} one order can get (optional)`} type="number" inputMode="numeric" min={1} style={inputStyle} value={m.maxEach == null ? "" : m.maxEach} onChange={(e) => setItem(m.id, { maxEach: e.target.value === "" ? null : e.target.value })} placeholder="No limit" />
+            </label>
             <PrivateBox m={m} setItem={setItem} credits={credits} stand={stand} data={data} />
             <Toggle on={m.available} onChange={(v) => setItem(m.id, { available: v })} label="Taking orders for this" sub={m.available ? null : "Hidden from your order page for now"} />
           </div>
@@ -608,7 +669,8 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
 // and takes linked farm stand items off stock. Amounts start from the order
 // and the menu, and every one can be changed first. addOnly is for an order
 // that was already picked up before it was added to Sales.
-function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
+function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
+  let req = req0;
   const already = orderInSales(data, req.id);
   const [lines, setLines] = useState(() => orderLines(req, (data.orderPage || {}).menu, data));
   const [toSales, setToSales] = useState(!already);
@@ -626,7 +688,11 @@ function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
   const go = async () => {
     setBusy(true); setErr("");
     try {
-      if (!addOnly) await callOrders("update", { id: req.id, status: "done", notify: false, ...(askPaid ? { paid: paidNow } : {}) });
+      if (!addOnly && req.repeat_weeks) {
+        // A standing order: this week's is picked up, the order moves to its next day.
+        const r = await callOrders("next", { id: req.id, today: isoToday() });
+        req = { ...req, nextDate: r.next };
+      } else if (!addOnly) await callOrders("update", { id: req.id, status: "done", notify: false, ...(askPaid ? { paid: paidNow } : {}) });
     } catch (e) { setErr(e.message); setBusy(false); return; }
     let added = null;
     const newBuyerId = !known && saveCust ? newId() : null;
@@ -650,7 +716,7 @@ function PickedUpSheet({ req, data, update, addOnly, onClose, onDone }) {
         return d;
       });
     }
-    const head = addOnly ? "Added to Sales." : "Marked picked up.";
+    const head = addOnly ? "Added to Sales." : req.nextDate ? `Picked up. Next one ${orderPrettyDate(req.nextDate)}.` : "Marked picked up.";
     onDone(added != null ? `${addOnly ? "Added" : "Picked up."} ${moneyText(added)} ${addOnly ? "to Sales." : "added to Sales."}` : head);
   };
   return (
@@ -754,7 +820,7 @@ export function saveCustomerInto(d, req, groupId = "", useId = "") {
 function readyLine(req, plan) {
   if (!plan || !(req.status === "new" || req.status === "accepted") || !plan.orderReady.has(req.id)) return null;
   const d = plan.orderReady.get(req.id);
-  if (d == null) return { short: true, text: "More than you'll likely have in the next 4 months." };
+  if (d == null) return { short: true, text: "Not covered yet: more than you have or have coming." };
   const iso = addDays(plan.today, d);
   const late = req.pickup_date && iso > req.pickup_date;
   if (late) return { short: true, text: `Short: likely ready ${orderPrettyDate(iso)}, after the day they want it.` };
@@ -782,7 +848,7 @@ function SupplySummary({ plan, menu }) {
       if (src.perDay > 0) parts.push(`about ${fmtNum((src.perDay * 7) / per)} ${unitFor(unit, 2)} a week`);
     } else parts.push(`up to ${src.slots[0] ? src.slots[0].cap : 0} each ${m.supply && m.supply.capPer === "week" ? "week" : "pickup day"}`);
     if (p.ahead > 0) parts.push(`${fmtNum(p.ahead / per)} ${unitFor(unit, p.ahead / per)} ordered`);
-    const tail = !ids.length ? "Nothing ordered yet." : last == null ? "More is ordered than you'll likely have in the next 4 months." : last === 0 ? "You have enough for every open order." : `Caught up around ${orderPrettyDate(addDays(plan.today, last))}.`;
+    const tail = !ids.length ? "Nothing ordered yet." : last == null ? "More is ordered than you have or have coming." : last === 0 ? "You have enough for every open order." : `Caught up around ${orderPrettyDate(addDays(plan.today, last))}.`;
     rows.push(
       <div key={key} style={{ padding: "10px 14px", borderTop: `1px solid ${nl.rule}` }}>
         <div style={{ fontSize: 15, fontWeight: 600 }}>{items.map((x) => x.name).join(", ")}</div>
@@ -810,8 +876,90 @@ const unitFor = (unit, n) => {
 };
 const perUnitOf = (m) => { const s = cleanSupply(m.supply, m.unit); return s.per || 1; };
 
+// ---------------------------------------------------------------- pickup day
+// Everything for one pickup day: totals to pack, a checklist (ticking one
+// marks it ready), and one tap to text or email everyone.
+function PackingList({ orders, farm, onReady, onEmailAll }) {
+  const today = isoToday();
+  const dated = orders.filter((r) => (r.status === "accepted" || r.status === "ready") && r.pickup_date && r.pickup_date >= today);
+  const dates = [...new Set(dated.map((r) => r.pickup_date))].sort().slice(0, 6);
+  const [day, setDay] = useState(dates[0] || "");
+  const [open, setOpen] = useState(false);
+  useEffect(() => { if (!dates.includes(day)) setDay(dates[0] || ""); }, [dates.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  if (!dates.length) return null;
+  const list = dated.filter((r) => r.pickup_date === day);
+  const waiting = orders.filter((r) => r.status === "new" && r.pickup_date === day).length;
+  const totals = new Map();
+  let deliveries = 0;
+  list.forEach((r) => (r.items || []).forEach((i) => {
+    if (!i) return;
+    if (i.id === "delivery") { deliveries++; return; }
+    const k = `${i.name}|${i.unit || ""}`;
+    totals.set(k, { name: i.name, unit: i.unit || "", qty: (totals.get(k) ? totals.get(k).qty : 0) + (Number(i.qty) || 0) });
+  }));
+  const texters = list.filter((r) => r.text_ok && r.phone).slice(0, GROUP_TEXT_MAX);
+  const ios = typeof navigator !== "undefined" && /iPhone|iPad|iPod/.test(navigator.userAgent || "");
+  const notReady = list.filter((r) => r.status !== "ready");
+  return (
+    <Card>
+      <CardHeader title="Packing list" right={`${list.length} order${list.length === 1 ? "" : "s"}`} />
+      {dates.length > 1 && (
+        <div style={{ display: "flex", gap: 6, overflowX: "auto", padding: "0 14px 10px" }}>
+          {dates.map((d) => <Chip key={d} selected={d === day} onClick={() => setDay(d)}>{d === today ? "Today" : orderPrettyDate(d)}</Chip>)}
+        </div>
+      )}
+      <div style={{ padding: "0 14px 10px", fontSize: 15, lineHeight: 1.6 }}>
+        {[...totals.values()].map((t) => <div key={`${t.name}|${t.unit}`}><strong>{t.qty}</strong> {t.unit ? `${t.unit} ` : ""}{t.name}</div>)}
+        <div style={{ fontSize: 13, color: nl.soft }}>{[deliveries ? `${deliveries} to deliver` : null, waiting ? `${waiting} more not accepted yet` : null].filter(Boolean).join(" · ")}</div>
+      </div>
+      <Row title={open ? "Hide the checklist" : "Checklist"} sub={`${list.length - notReady.length} of ${list.length} packed`} onClick={() => setOpen((v) => !v)} trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: open ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
+      {open && list.map((r) => (
+        <button key={r.id} type="button" role="checkbox" aria-checked={r.status === "ready"} onClick={() => onReady(r, r.status !== "ready")} style={{ display: "flex", gap: 10, alignItems: "flex-start", width: "100%", padding: "10px 14px", border: "none", borderTop: `1px solid ${nl.rule}`, background: "none", color: nl.ink, font: "inherit", textAlign: "left", cursor: "pointer" }}>
+          <span aria-hidden="true" style={{ width: 24, height: 24, borderRadius: 7, flexShrink: 0, marginTop: 1, border: `2px solid ${r.status === "ready" ? nl.good : nl.field}`, background: r.status === "ready" ? nl.good : "transparent", color: "#fff", display: "flex", alignItems: "center", justifyContent: "center" }}>{r.status === "ready" ? <Check size={16} strokeWidth={3} /> : null}</span>
+          <span style={{ flex: 1, minWidth: 0 }}>
+            <span style={{ display: "block", fontWeight: 600 }}>{r.customer_name}{r.repeat_weeks ? <span style={{ fontWeight: 400, color: nl.soft }}> · {repeatLabel(r.repeat_weeks).toLowerCase()}</span> : null}</span>
+            <span style={{ display: "block", fontSize: 14, color: nl.soft }}>{(r.items || []).filter((i) => i && i.id !== "delivery").map(itemLine).join(", ") || r.note}</span>
+            {r.fulfil === "delivery" && <span style={{ display: "block", fontSize: 13, color: nl.goodInk }}>Deliver to {r.address}</span>}
+          </span>
+        </button>
+      ))}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "10px 14px 14px", borderTop: `1px solid ${nl.rule}` }}>
+        {texters.length > 0 && <Button small kind="quiet" icon={<MessageSquare size={16} />} onClick={() => { window.location.href = smsGroupHref(texters.map((r) => r.phone), `Hi, it's ${farm}! Your order is ready for ${day === today ? "today" : orderPrettyDate(day)}.`, ios); }}>Text {texters.length === 1 ? texters[0].customer_name : `all ${texters.length}`}</Button>}
+        {notReady.length > 0 && <Button small kind="quiet" icon={<Mail size={16} />} onClick={() => onEmailAll(notReady)}>Mark all ready and email them</Button>}
+      </div>
+      {texters.length > 1 && ios && <p style={{ margin: "-6px 14px 12px", fontSize: 12, color: nl.soft }}>On iPhone a group text shows everyone's number to each other.</p>}
+    </Card>
+  );
+}
+
+// "Email me when it's back", grouped by item, with one tap to tell them.
+function BackRequests({ rows, onSend, onDismiss }) {
+  const byItem = new Map();
+  rows.forEach((r) => (r.items || []).forEach((i) => {
+    if (!i || !i.id) return;
+    if (!byItem.has(i.id)) byItem.set(i.id, { id: i.id, name: i.name, people: [] });
+    byItem.get(i.id).people.push(r);
+  }));
+  if (!byItem.size) return null;
+  return (
+    <Card>
+      <CardHeader title="Want to know when it's back" />
+      {[...byItem.values()].map((g) => (
+        <div key={g.id} style={{ padding: "10px 14px", borderTop: `1px solid ${nl.rule}`, display: "flex", flexDirection: "column", gap: 6 }}>
+          <div style={{ fontSize: 15, fontWeight: 600 }}>{g.name} <span style={{ fontWeight: 400, color: nl.soft }}>· {g.people.length} {g.people.length === 1 ? "person" : "people"}</span></div>
+          <div style={{ fontSize: 13, color: nl.soft, overflowWrap: "anywhere" }}>{g.people.map((r) => r.customer_name).join(", ")}</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button small icon={<Mail size={16} />} onClick={() => onSend(g)}>Email them it's back</Button>
+            <Button small kind="quiet" onClick={() => onDismiss(g)}>Clear</Button>
+          </div>
+        </div>
+      ))}
+    </Card>
+  );
+}
+
 // ---------------------------------------------------------------- cards
-function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, customer, onSaveCustomer, farm, plan }) {
+function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, customer, onSaveCustomer, farm, plan, onStop }) {
   const items = Array.isArray(req.items) ? req.items : [];
   const total = orderTotal(items);
   const when = orderPrettyDate(req.pickup_date);
@@ -823,7 +971,8 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, custome
       : req.status === "ready"
         ? [{ label: "Picked up", primary: true, run: () => onPickedUp(req) }]
         : [...(req.status === "done" && !inSales ? [{ label: "Add to Sales", run: () => onPickedUp(req, true) }] : []), { label: "Remove", run: () => onRemove(req) }];
-  const badge = { new: { tone: "ready", text: "New" }, accepted: { tone: "quiet", text: "Accepted" }, ready: { tone: "good", text: "Ready" }, done: { tone: "quiet", text: "Picked up" }, declined: { tone: "alert", text: "Declined" } }[req.status];
+  const badge = { new: { tone: "ready", text: "New" }, accepted: { tone: "quiet", text: "Accepted" }, ready: { tone: "good", text: "Ready" }, done: { tone: "quiet", text: "Picked up" }, declined: { tone: "alert", text: "Declined" }, cancelled: { tone: "alert", text: "They cancelled" } }[req.status];
+  const open = ["new", "accepted", "ready"].includes(req.status);
   return (
     <div style={{ padding: "12px 14px", borderTop: `1px solid ${nl.rule}`, display: "flex", flexDirection: "column", gap: 6 }}>
       <div style={{ display: "flex", alignItems: "flex-start", gap: 8 }}>
@@ -841,6 +990,13 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, custome
         </div>
       )}
       {req.note && <div style={{ fontSize: 14, background: nl.chip, borderRadius: 10, padding: "8px 10px", overflowWrap: "anywhere" }}>{req.note}</div>}
+      {(req.fulfil === "delivery" || req.repeat_weeks) && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 14 }}>
+          {req.repeat_weeks ? <Badge tone="good">{repeatLabel(req.repeat_weeks)}</Badge> : null}
+          {req.fulfil === "delivery" ? <><Badge tone="ready">Delivery</Badge><a href={`https://maps.google.com/?q=${encodeURIComponent(req.address || "")}`} target="_blank" rel="noopener noreferrer" style={{ color: nl.goodInk, overflowWrap: "anywhere" }}>{req.address}</a></> : null}
+          {req.repeat_weeks && open && onStop ? <Button small kind="link" onClick={() => onStop(req)}>Stop repeating</Button> : null}
+        </div>
+      )}
       {est && <div style={{ fontSize: 14, fontWeight: est.short ? 600 : 400, color: est.short ? nl.alertInk : nl.soft, background: est.short ? nl.alertTint : "transparent", borderRadius: 10, padding: est.short ? "8px 10px" : 0 }}>{est.text}</div>}
       {req.pay_method && req.status !== "declined" && (
         <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap", fontSize: 14 }}>
@@ -916,6 +1072,26 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     setToast(list.length === 1 ? `${list[0].customer_name} is on your list.` : `${list.length} people added to your list.`);
     load();
   };
+  const stopRepeat = async (req) => {
+    try { await callOrders("stop", { id: req.id }); setToast(`${req.customer_name}'s order won't repeat after this one.`); load(); } catch (e) { setToast(e.message); }
+  };
+  const markReady = async (req, ready) => {
+    setReqs((list) => (list || []).map((r) => (r.id === req.id ? { ...r, status: ready ? "ready" : "accepted" } : r)));
+    try { await callOrders("update", { id: req.id, status: ready ? "ready" : "accepted", notify: false }); } catch (e) { setToast(e.message); load(); }
+  };
+  const emailAllReady = async (list) => {
+    let n = 0;
+    for (const r of list) { try { const x = await callOrders("update", { id: r.id, status: "ready", notify: true }); if (x.emailed) n++; } catch (_) { /* keep going */ } }
+    setToast(`Marked ${list.length} ready${n ? `, emailed ${n}` : ""}.`);
+    load();
+  };
+  const sendBack = async (g) => {
+    try { const r = await callOrders("back", { itemId: g.id }); setToast(r.sent ? `Emailed ${r.sent} ${r.sent === 1 ? "person" : "people"} that ${g.name} is back.` : "No one to email."); load(); } catch (e) { setToast(e.message); }
+  };
+  const clearBack = async (g) => {
+    await Promise.all(g.people.map((r) => callOrders("remove", { id: r.id }).catch(() => {})));
+    load();
+  };
   const ignoreJoin = async (j) => { try { await callOrders("update", { id: j.id, status: "ignored" }); load(); } catch (e) { setToast(e.message); } };
 
   const ownMenu = useMemo(() => ownerMenu((data.orderPage || {}).menu), [data.orderPage]);
@@ -936,7 +1112,8 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       fresh: orders.filter((r) => r.status === "new"),
       today: orders.filter((r) => (r.status === "accepted" || r.status === "ready") && r.pickup_date === isoToday()),
       open: orders.filter((r) => (r.status === "accepted" || r.status === "ready") && r.pickup_date !== isoToday()).sort((a, b) => String(a.pickup_date || "9999").localeCompare(String(b.pickup_date || "9999"))),
-      past: orders.filter((r) => r.status === "done" || r.status === "declined"),
+      past: orders.filter((r) => r.status === "done" || r.status === "declined" || r.status === "cancelled"),
+      backs: list.filter((r) => r.kind === "notify" && r.status === "new"),
       joins: list.filter((r) => r.kind === "join" && r.status === "new"),
     };
   }, [reqs]);
@@ -1017,7 +1194,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.fresh.length > 0 && (
         <Card>
           <CardHeader title="New requests" right={`${groups.fresh.length}`} />
-          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
+          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {groups.joins.length > 0 && (
@@ -1036,17 +1213,19 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
           ))}
         </Card>
       )}
+      {groups.backs.length > 0 && <BackRequests rows={groups.backs} onSend={sendBack} onDismiss={clearBack} />}
+      <PackingList orders={(reqs || []).filter((r) => r.kind === "order")} farm={farm} onReady={markReady} onEmailAll={emailAllReady} />
       {(groups.fresh.length > 0 || groups.open.length > 0 || groups.today.length > 0) && <SupplySummary plan={plan} menu={ownMenu} />}
       {groups.today.length > 0 && (
         <Card>
           <CardHeader title="Picking up today" right={`${groups.today.length}`} />
-          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
+          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {groups.open.length > 0 && (
         <Card>
           <CardHeader title="To fill" right={`${groups.open.length}`} />
-          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
+          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {reqs && !groups.fresh.length && !groups.open.length && !groups.today.length && !groups.joins.length && (
@@ -1059,7 +1238,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card>
           <Row first title={`Past orders (${groups.past.length})`} sub="Picked up and declined, last 6 months" onClick={() => setShowPast((v) => !v)}
             trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: showPast ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
-          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} />)}
+          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
 

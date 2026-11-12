@@ -16,7 +16,18 @@
 //            'milk'    goats, cows or sheep: what they give
 //            'garden'  one garden crop: what it's been producing
 //            'make'    made to order, with a limit per pickup day or week
+//            'birds'   meat birds: live batches ready at N weeks, plus the
+//                      freezer (butchered this year, less what's sold)
+//            'hatch'   incubator: chicks from runs due to hatch, and recent
+//                      hatches
+//            'births'  goats, sheep, cows, pigs, rabbits: young from bred
+//                      animals, ready N weeks after the due date
 //     hobbyId, flocks: [flockId], animals: [animalId], plant,
+//     readyWeeks    'birds': weeks from start to ready; 'births': weeks from
+//                   birth until they can go home
+//     perBirth      'births': young expected from each birth
+//     rate          'hatch': share of eggs that hatch (0..1)
+//     birdType      'hatch': only runs of this bird
 //     per,          base units in one menu unit (12 eggs in a dozen, 128 oz
 //                   in a gallon, 1 lb in a lb), guessed from the unit
 //     keepPerWeek,  base units kept back for the family each week
@@ -28,8 +39,13 @@
 //
 // Live producers (eggs, milk, garden) are measured in the app, which has the
 // logs, and saved as small snapshots the server can read without the logs:
-//   data.orderPage.snaps = { [sourceKey]: { onHand, perDay, asOf } }
-// onHand and perDay are in base units (eggs, fl oz, the harvest unit).
+//   data.orderPage.snaps = { [sourceKey]: { onHand, perDay, asOf, from, batches } }
+// onHand and perDay are in base units (eggs, fl oz, the harvest unit, birds).
+// from: the day perDay starts (a crop not harvesting yet, from its planned
+// harvest date). batches: [{ on, qty }] coming in on a day (a batch of birds
+// ready, a hatch, a kidding).
+//
+// Standing orders (repeat_weeks on an order) count again every N weeks.
 //
 // How the dates work. Every source has a supply curve in base units:
 //   stock sources (stand, eggs, milk, garden): S(day) = what's ready now +
@@ -45,11 +61,18 @@
 // ============================================================================
 
 import { computeEggsOnHand } from "./eggInventory.js";
+import { hobbyAllEntries } from "./allEntries.js";
 
 export const HORIZON = 120;            // days ahead the page plans for
 export const RATE_DAYS = 14;           // logs used to measure a rate
 export const SNAP_STALE_DAYS = 21;     // older snapshots aren't trusted
-export const SUPPLY_FROM = ["", "stand", "eggs", "milk", "garden", "make"];
+export const SUPPLY_FROM = ["", "stand", "eggs", "milk", "garden", "make", "birds", "hatch", "births"];
+export const LIVE_FROM = ["eggs", "milk", "garden", "birds", "hatch", "births"];
+const LIVE_KEY = /^(eggs|milk|garden|birds|hatch|births):/;
+// Weeks from chick to ready, by bird; weeks from birth to going home, and
+// young per birth, by animal. Owners can change them per item.
+export const BIRD_WEEKS = { Chicken: 8, Duck: 9, Turkey: 18, Goose: 16, Quail: 7, Guinea: 16 };
+export const BIRTH_DEFAULTS = { goats: { perBirth: 2, readyWeeks: 8 }, sheep: { perBirth: 1.5, readyWeeks: 8 }, cows: { perBirth: 1, readyWeeks: 26 }, pigs: { perBirth: 8, readyWeeks: 8 }, rabbits: { perBirth: 6, readyWeeks: 8 } };
 const OPEN = new Set(["new", "accepted", "ready"]);
 const ISO = /^\d{4}-\d{2}-\d{2}$/;
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -130,6 +153,16 @@ export function cleanSupply(s, unit) {
     out.cap = Math.min(9999, Math.floor(pos(o.cap)));
     out.capPer = o.capPer === "week" ? "week" : "pickup";
   }
+  if (from === "birds" || from === "hatch" || from === "births") {
+    out.hobbyId = clipId(o.hobbyId);
+    out.per = 1;
+    if (from !== "hatch") out.readyWeeks = pos(o.readyWeeks) > 0 ? Math.min(104, r3(pos(o.readyWeeks))) : 0;
+    if (from === "births") out.perBirth = pos(o.perBirth) > 0 ? Math.min(30, r3(pos(o.perBirth))) : 0;
+    if (from === "hatch") {
+      out.rate = pos(o.rate) > 0 ? Math.min(1, r3(pos(o.rate))) : 0;
+      out.birdType = String(o.birdType || "").replace(/[^A-Za-z ]/g, "").slice(0, 20);
+    }
+  }
   return out;
 }
 
@@ -142,12 +175,23 @@ export function sourceKey(m) {
   if (s.from === "milk") return `milk:${s.hobbyId}:${s.animals.join(",") || "all"}`;
   if (s.from === "garden") return `garden:${s.hobbyId}:${s.plant.toLowerCase()}`;
   if (s.from === "make") return `make:${clipId(m.id)}`;
+  if (s.from === "birds" || s.from === "births") return `${s.from}:${s.hobbyId}:${s.readyWeeks || "d"}${s.from === "births" ? `:${s.perBirth || "d"}` : ""}`;
+  if (s.from === "hatch") return `hatch:${s.hobbyId}:${s.birdType.toLowerCase() || "all"}:${s.rate || "d"}`;
   return "";
 }
 // Base units in one of this item's units.
 export function perUnit(m) {
   const s = cleanSupply(m && m.supply, m && m.unit);
   return s.from === "eggs" || s.from === "milk" || s.from === "garden" ? s.per : 1;
+}
+// Upcoming dates of a standing order (its first day, then every N weeks).
+export function repeatDates(firstIso, weeks, today, count = 4) {
+  const out = [];
+  if (!ISO.test(String(firstIso)) || !(weeks > 0)) return out;
+  let d = firstIso;
+  while (d < today) d = addDays(d, weeks * 7);
+  for (let k = 0; k < count; k++) { out.push(d); d = addDays(d, weeks * 7); }
+  return out;
 }
 // Can customers order past what's ready? Stand items only when the owner
 // says so; live producers and made-to-order always; untracked has no limit.
@@ -205,12 +249,120 @@ export function measureSource(data, supply, today) {
   }
   if (s.from === "garden") {
     const name = s.plant.toLowerCase();
-    const unit = harvestUnitOf(entries, s.plant);
-    const crop = entries.filter((e) => e.action === "harvested" && String(e.plant || "").trim().toLowerCase() === name);
+    const all = hobbyAllEntries(data, h.id);
+    const unit = harvestUnitOf(all, s.plant);
+    const isCrop = (e) => e && e.action === "harvested" && String(e.plant || "").trim().toLowerCase() === name;
     const amt = (e) => (String(e.unit || "lbs").toLowerCase() === unit.toLowerCase() ? num(e.quantity) : num(e.quantity) * harvestIn(e.unit || "lbs", unit));
-    return { onHand: 0, perDay: rateFrom(crop, today, amt), counted: false, unit };
+    const perDay = rateFrom(entries.filter(isCrop), today, amt);
+    if (perDay) return { onHand: 0, perDay, counted: false, unit };
+    // Not harvesting yet: if it's planned on the calendar, expect last
+    // year's pace from the planned harvest day.
+    const planned = plannedHarvest(data, s.plant, today);
+    const last = lastSeasonRate(all.filter(isCrop), amt, today);
+    if (planned && last) return { onHand: 0, perDay: last, from: planned, counted: false, unit, planned: true };
+    return { onHand: 0, perDay, counted: false, unit };
   }
+  if (s.from === "birds") return measureBirds(data, h, s, today);
+  if (s.from === "hatch") return measureHatch(h, s, today);
+  if (s.from === "births") return measureBirths(data, h, s, today);
   return null;
+}
+
+// The first planned harvest for a crop on the calendar (Plan a crop), on or
+// after a week ago.
+function plannedHarvest(data, plant, today) {
+  const want = String(plant || "").trim().toLowerCase().replace(/(es|s)$/, "");
+  if (!want) return "";
+  const soon = addDays(today, -7);
+  const hit = ((data && data.calendarEvents) || [])
+    .filter((e) => e && e.kind === "harvest" && ISO.test(String(e.date)) && e.date >= soon)
+    .filter((e) => `${e.cropId || ""} ${e.title || ""} ${e.varietyName || ""}`.toLowerCase().replace(/-/g, " ").includes(want))
+    .map((e) => e.date).sort()[0];
+  return hit ? (hit < today ? today : hit) : "";
+}
+// A crop's pace in its last season: what it gave over the days it gave it.
+function lastSeasonRate(harvests, amt, today) {
+  const past = harvests.filter((e) => ISO.test(String(e.date)) && e.date < addDays(today, -RATE_DAYS));
+  if (!past.length) return null;
+  const year = past.map((e) => e.date.slice(0, 4)).sort().pop();
+  const that = past.filter((e) => e.date.startsWith(year));
+  const dates = that.map((e) => e.date).sort();
+  const days = Math.max(RATE_DAYS, daysBetween(dates[0], dates[dates.length - 1]) + 1);
+  const total = that.reduce((n, e) => n + amt(e), 0);
+  return total > 0 ? r3(total / days) : null;
+}
+
+// Meat birds: each live batch is ready readyWeeks after it started; birds
+// already past that count as ready now, plus what's in the freezer (birds
+// butchered in the last year, less meat bird sales in the last year).
+function measureBirds(data, h, s, today) {
+  const entries = liveEntries(data, h.id);
+  const batches = [];
+  let onHand = 0;
+  (h.currentBatches || []).filter((b) => b && b.id && ISO.test(String(b.startDate))).forEach((b) => {
+    const deaths = entries.filter((e) => e && e.action === "death" && e.batchId === b.id).reduce((n, e) => n + (num(e.count) || 1), 0);
+    const culled = entries.filter((e) => e && e.action === "note" && e.batchId === b.id && num(e.cullCount) > 0).reduce((n, e) => n + num(e.cullCount), 0);
+    const butchered = (b.butchered || []).reduce((n, x) => n + num(x && x.count), 0);
+    const live = Math.max(0, num(b.startCount) - deaths - culled - butchered + num(b.countAdjustment));
+    if (!live) return;
+    const weeks = s.readyWeeks || BIRD_WEEKS[b.birdType] || 10;
+    const on = addDays(b.startDate, Math.round(weeks * 7));
+    if (on <= today) onHand += live; else batches.push({ on, qty: live });
+  });
+  const yearAgo = addDays(today, -365);
+  const inFreezer = [...(h.currentBatches || []), ...(h.archivedBatches || [])]
+    .reduce((n, b) => n + ((b && b.butchered) || []).filter((x) => x && (!x.date || x.date >= yearAgo)).reduce((k, x) => k + num(x.count), 0), 0);
+  const sold = ((data && data.sales) || []).filter((x) => x && x.hobbyType === "meat_chickens" && String(x.date || "") >= yearAgo).reduce((n, x) => n + pos(x.qty), 0);
+  onHand += Math.max(0, inFreezer - sold);
+  return { onHand: Math.floor(onHand), perDay: 0, counted: true, batches };
+}
+
+// Incubator: runs still incubating hatch on their hatch day (eggs set ×
+// hatch rate); runs that hatched in the last 3 weeks count as chicks now.
+function measureHatch(h, s, today) {
+  const runs = (h.runs || []).filter((r) => r && (!s.birdType || String(r.birdType || "").toLowerCase() === s.birdType.toLowerCase()));
+  const done = runs.filter((r) => r.status === "hatched" && num(r.eggsSet) > 0 && r.eggsHatched != null);
+  const past = done.length ? done.reduce((n, r) => n + num(r.eggsHatched), 0) / done.reduce((n, r) => n + num(r.eggsSet), 0) : 0;
+  const rate = s.rate || (past > 0 ? Math.min(1, past) : 0.7);
+  const recent = addDays(today, -21);
+  let onHand = 0;
+  const batches = [];
+  runs.forEach((r) => {
+    if (r.status === "hatched" && ISO.test(String(r.hatchedDate || r.hatchDate)) && String(r.hatchedDate || r.hatchDate) >= recent) onHand += num(r.eggsHatched);
+    else if ((r.status === "incubating" || r.status === "lockdown") && ISO.test(String(r.hatchDate)) && num(r.eggsSet) > 0) {
+      const qty = Math.floor(num(r.eggsSet) * rate);
+      if (r.hatchDate <= today) onHand += qty; else batches.push({ on: r.hatchDate, qty });
+    }
+  });
+  return { onHand: Math.floor(onHand), perDay: 0, counted: true, batches, rate: r3(rate) };
+}
+
+// Births: animals bred with a due date coming up; the young can go home
+// readyWeeks after they're born.
+function measureBirths(data, h, s, today) {
+  const d = BIRTH_DEFAULTS[h.type] || { perBirth: 1, readyWeeks: 8 };
+  const per = s.perBirth || d.perBirth;
+  const weeks = s.readyWeeks || d.readyWeeks;
+  const dues = [];
+  (h.breedings || []).forEach((b) => {
+    if (!b || b.birthedDate) return;
+    const due = b.expectedBirthDate || b.expectedLambDate || "";
+    if (ISO.test(String(due))) dues.push(due);
+  });
+  // Pigs and rabbits keep it on the breeding log.
+  liveEntries(data, h.id).forEach((e) => {
+    if (!e || e.action !== "bred") return;
+    const due = e.farrowDate || e.kindleDate || "";
+    if (ISO.test(String(due)) && !e.birthedDate) dues.push(due);
+  });
+  const batches = [];
+  let onHand = 0;
+  dues.filter((due) => due >= addDays(today, -Math.round(weeks * 7) - 14)).forEach((due) => {
+    const on = addDays(due, Math.round(weeks * 7));
+    const qty = per;
+    if (on <= today) onHand += qty; else batches.push({ on, qty });
+  });
+  return { onHand: Math.floor(onHand), perDay: 0, counted: true, batches: batches.map((b) => ({ ...b, qty: r3(b.qty) })) };
 }
 // The unit a crop's harvests are mostly logged in.
 export function harvestUnitOf(entries, plant) {
@@ -225,9 +377,13 @@ export function measureSnaps(data, menu, today) {
   const out = {};
   (Array.isArray(menu) ? menu : []).forEach((m) => {
     const key = sourceKey(m);
-    if (!key || out[key] || !/^(eggs|milk|garden):/.test(key)) return;
+    if (!key || out[key] || !LIVE_KEY.test(key)) return;
     const got = measureSource(data, m.supply, today);
-    if (got) out[key] = { onHand: got.onHand, perDay: got.perDay == null ? null : got.perDay, asOf: today };
+    if (!got) return;
+    const snap = { onHand: got.onHand, perDay: got.perDay == null ? null : got.perDay, asOf: today };
+    if (got.from && got.from > today) snap.from = got.from;
+    if (got.batches && got.batches.length) snap.batches = got.batches.slice(0, 40);
+    out[key] = snap;
   });
   return out;
 }
@@ -235,7 +391,8 @@ export function measureSnaps(data, menu, today) {
 export function sameSnaps(a, b) {
   const ka = Object.keys(a || {}).sort(), kb = Object.keys(b || {}).sort();
   if (ka.join("|") !== kb.join("|")) return false;
-  return ka.every((k) => a[k].onHand === b[k].onHand && a[k].perDay === b[k].perDay && a[k].asOf === b[k].asOf);
+  return ka.every((k) => a[k].onHand === b[k].onHand && a[k].perDay === b[k].perDay && a[k].asOf === b[k].asOf
+    && (a[k].from || "") === (b[k].from || "") && JSON.stringify(a[k].batches || []) === JSON.stringify(b[k].batches || []));
 }
 
 // ---------------------------------------------------------------- sources
@@ -278,7 +435,13 @@ export function buildSources(menu, ctx) {
     if (!(age >= 0) || age > SNAP_STALE_DAYS) return;
     const keep = Math.max(...items.map((x) => cleanSupply(x.supply, x.unit).keepPerWeek || 0)) / 7;
     const perDay = snap.perDay == null ? 0 : Math.max(0, num(snap.perDay) - keep);
-    out.set(key, { key, mode: "stock", now: Math.max(0, num(snap.onHand)) + perDay * age, perDay, batches: [] });
+    // A rate that starts later (a crop not harvesting yet) starts from that day.
+    const start = ISO.test(String(snap.from || "")) ? daysBetween(today, snap.from) : -age;
+    const grown = perDay * Math.max(0, Math.min(age, -start));
+    const batches = (Array.isArray(snap.batches) ? snap.batches : []).filter((b) => b && ISO.test(String(b.on)) && pos(b.qty) > 0)
+      .map((b) => ({ day: daysBetween(today, b.on), qty: pos(b.qty) }));
+    const due = batches.filter((b) => b.day <= 0).reduce((n, b) => n + b.qty, 0);
+    out.set(key, { key, mode: "stock", now: Math.max(0, num(snap.onHand)) + grown + due, perDay, start: Math.max(0, start), batches: batches.filter((b) => b.day > 0) });
   });
   return out;
 }
@@ -313,6 +476,10 @@ export function demandBySource(menu, orders, today) {
   (Array.isArray(orders) ? orders : []).forEach((o, seq) => {
     if (!o || (o.status && !OPEN.has(o.status)) || (o.kind && o.kind !== "order")) return;
     const due = ISO.test(String(o.pickup_date || "")) ? Math.max(0, daysBetween(today, o.pickup_date)) : 0;
+    // A standing order counts again every N weeks, as far as we plan.
+    const every = Math.floor(num(o.repeat_weeks)) * 7;
+    const dues = [due];
+    if (every > 0) for (let d = due + every; d <= HORIZON; d += every) dues.push(d);
     (Array.isArray(o.items) ? o.items : []).forEach((i) => {
       const m = i && byId.get(String(i.id));
       const key = m && sourceKey(m);
@@ -320,7 +487,7 @@ export function demandBySource(menu, orders, today) {
       const units = key.startsWith("make:") ? pos(i.qty) : pos(i.qty) * perUnit(m);
       if (!(units > 0)) return;
       if (!out.has(key)) out.set(key, []);
-      out.get(key).push({ id: o.id, due, at: String(o.created_at || ""), seq, units });
+      dues.forEach((d, k) => out.get(key).push({ id: k ? `${o.id}#${k}` : o.id, due: d, at: String(o.created_at || ""), seq, units }));
     });
   });
   out.forEach((list) => list.sort((a, b) => a.due - b.due || a.at.localeCompare(b.at) || a.seq - b.seq));
@@ -328,7 +495,7 @@ export function demandBySource(menu, orders, today) {
 }
 
 // ---------------------------------------------------------------- planning
-const supplyAt = (src, d) => src.now + src.perDay * d + src.batches.reduce((n, b) => n + (b.day <= d ? b.qty : 0), 0);
+const supplyAt = (src, d) => src.now + src.perDay * Math.max(0, d - (src.start || 0)) + src.batches.reduce((n, b) => n + (b.day <= d ? b.qty : 0), 0);
 // First day (0..HORIZON) the curve reaches `need`, or null.
 function firstDay(src, need) {
   if (need <= src.now + 1e-9) return 0;
@@ -345,7 +512,9 @@ function firstDay(src, need) {
 export function planSource(src, demand) {
   const list = demand || [];
   const ready = new Map();
-  const ahead = list.reduce((n, x) => n + x.units, 0);
+  // Already in line: each order once (a standing order's later weeks aren't
+  // "ahead" of anyone yet).
+  const ahead = list.filter((x) => !String(x.id).includes("#")).reduce((n, x) => n + x.units, 0);
   if (src.mode === "slot") {
     const room = src.slots.map((s) => s.cap);
     list.forEach((x) => {
