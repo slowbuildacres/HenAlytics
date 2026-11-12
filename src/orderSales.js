@@ -115,7 +115,8 @@ export function orderLines(req, menu, data) {
   return items.map((i, k) => {
     const m = byId.get(i.id) || {};
     const standItemId = m.standItemId && stand.some((s) => s.id === m.standItemId) ? m.standItemId : "";
-    const credit = m.credit || guessCredit({ ...m, name: i.name, unit: i.unit, standItemId }, data);
+    // The delivery fee is its own line; it isn't a product.
+    const credit = i.id === "delivery" ? "other" : m.credit || guessCredit({ ...m, name: i.name, unit: i.unit, standItemId }, data);
     const price = num(i.price) || num(m.price);
     const line = {
       key: `${i.id || "item"}-${k}`, itemId: i.id || "", name: i.name || m.name || "Item", unit: i.unit || m.unit || "",

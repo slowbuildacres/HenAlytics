@@ -431,8 +431,10 @@ export function buildSources(menu, ctx) {
     }
     const snap = ctx.snaps && ctx.snaps[key];
     if (!snap || !ISO.test(String(snap.asOf))) return;
-    const age = daysBetween(snap.asOf, today);
-    if (!(age >= 0) || age > SNAP_STALE_DAYS) return;
+    // The app dates it in the owner's time zone, the server in Central, so
+    // a snapshot can look a day "ahead"; treat that as today.
+    const age = Math.max(0, daysBetween(snap.asOf, today));
+    if (!(daysBetween(snap.asOf, today) >= -2) || age > SNAP_STALE_DAYS) return;
     const keep = Math.max(...items.map((x) => cleanSupply(x.supply, x.unit).keepPerWeek || 0)) / 7;
     const perDay = snap.perDay == null ? 0 : Math.max(0, num(snap.perDay) - keep);
     // A rate that starts later (a crop not harvesting yet) starts from that day.

@@ -1088,7 +1088,7 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
       { key: "stand", label: `At the stand (${standItems.length})`, selected: view === "stand", onPick: () => setView("stand") },
       { key: "home", label: `At home (${homeRows.length})`, selected: view === "home", onPick: () => setView("home") },
     ];
-    const readyCount = backItems.filter((it) => backBatches(it).some((x) => isReady(x, today))).length + fromHobbies.filter((e) => !e.readyOn).length;
+    const readyCount = backItems.filter((it) => backBatches(it).some((x) => isReady(x, today))).length + fromHobbies.filter((e) => !e.readyOn && e.kind !== "eggs").length;
     const ctx = {
       key: "farmstand",
       summary: { big: fmtMoney(monthRevenue).replace(/\.00$/, ""), small: "sold this month", line: [`${fmtMoney(yearRevenue).replace(/\.00$/, "")} this year`, stockWarnings.length ? `${stockWarnings.length} item${stockWarnings.length === 1 ? "" : "s"} running low` : null, readyCount ? `${readyCount} ready to put out` : null].filter(Boolean).join(" · ") },

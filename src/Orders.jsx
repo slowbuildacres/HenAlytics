@@ -201,14 +201,14 @@ function SupplyBox({ m, setItem, stand, data }) {
   if (value && !choices.some((c) => c.value === value)) choices.push({ value, label: "Something no longer here" });
   const set = (supply, extra = {}) => setItem(m.id, { supply, ...extra });
   const pick = (v) => {
-    if (!v) return setItem(m.id, { supply: { from: "" }, standItemId: "" });
+    if (!v) return setItem(m.id, { supply: { from: "" }, standItemId: "", credit: m.standItemId ? guessCredit({ name: m.name, unit: m.unit }, data) : m.credit });
     if (v.startsWith("stand:")) return setItem(m.id, { supply: { from: "stand" }, standItemId: v.slice(6), credit: "farmstand" });
-    if (v === "make") return setItem(m.id, { supply: { from: "make", cap: s.cap || 12, capPer: s.capPer || "pickup" }, standItemId: "" });
+    if (v === "make") return setItem(m.id, { supply: { from: "make", cap: s.cap || 12, capPer: s.capPer || "pickup" }, standItemId: "", credit: m.standItemId ? guessCredit({ name: m.name, unit: m.unit }, data) : m.credit });
     const [from, hobbyId] = v.split(":");
     const h = (data.hobbies || []).find((x) => x && x.id === hobbyId);
     const crop = from === "garden" ? (gardenCrops(data, hobbyId).find((c) => `${m.name}`.toLowerCase().includes(c.toLowerCase())) || gardenCrops(data, hobbyId)[0] || "") : "";
     const hu = from === "garden" ? harvestUnitOf(hobbyAllEntries(data, hobbyId), crop) : "";
-    const credit = from === "eggs" ? "eggs" : from === "garden" ? "garden" : from === "birds" ? "meat_chickens" : m.credit;
+    const credit = from === "eggs" ? "eggs" : from === "garden" ? "garden" : from === "birds" ? "meat_chickens" : guessCredit({ name: m.name, unit: m.unit }, data);
     return setItem(m.id, { supply: { from, hobbyId, flocks: [], animals: [], plant: crop, per: guessPer(from, m.unit, hu), keepPerWeek: 0 }, standItemId: "", credit: h ? credit : m.credit });
   };
   const today = isoToday();
@@ -619,7 +619,7 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
   const farm = String((((data && data.stockEmailSettings) || {}).fromName) || (data && data.homesteadName) || "").trim();
   const total = orderTotal(req.items);
   const pi = req.pay_method && !req.paid && s.status !== "declined" ? payInstructions({ method: req.pay_method, op, amount: total, farm }) : null;
-  const sms = canText ? smsHref(req.phone, orderText({ status: s.status, name: req.customer_name, farm, items: req.items, message: message.trim(), pickupText: op.pickup, payLine: pi ? `${pi.line}${pi.link ? ` ${pi.link}` : ""}` : "" })) : "";
+  const sms = canText ? smsHref(req.phone, orderText({ status: s.status, name: req.customer_name, farm, items: req.items, message: message.trim(), pickupText: op.pickup, delivery: req.fulfil === "delivery", payLine: pi ? `${pi.line}${pi.link ? ` ${pi.link}` : ""}` : "" })) : "";
   if (textReady) {
     return (
       <Sheet open onClose={() => onDone(textReady)} label="Send the text" showClose>
@@ -664,6 +664,9 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
   );
 }
 
+// The Sales link for an order: a standing order's pickups are each their own.
+export const saleKey = (r) => (r && r.repeat_weeks && r.pickup_date ? `${r.id}@${r.pickup_date}` : r && r.id);
+
 // ---------------------------------------------------------------- picked up → Sales
 // Marks the order picked up and, if the owner wants, adds each item to Sales
 // and takes linked farm stand items off stock. Amounts start from the order
@@ -671,11 +674,15 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
 // that was already picked up before it was added to Sales.
 function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
   let req = req0;
-  const already = orderInSales(data, req.id);
+  // A standing order goes into Sales once per pickup, keyed by its day.
+  const key = saleKey(req);
+  const already = orderInSales(data, key);
   const [lines, setLines] = useState(() => orderLines(req, (data.orderPage || {}).menu, data));
   const [toSales, setToSales] = useState(!already);
   const [paidNow, setPaidNow] = useState(true);
-  const askPaid = !addOnly && !!req.pay_method && req.paid !== true;
+  // A standing order's paid mark resets each week, so it isn't asked here;
+  // the sale still records how they paid.
+  const askPaid = !addOnly && !!req.pay_method && req.paid !== true && !req.repeat_weeks;
   const known = !!findCustomer(data, req.email);
   const [saveCust, setSaveCust] = useState(!known && !addOnly);
   const [date, setDate] = useState(isoToday());
@@ -697,15 +704,15 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
     let added = null;
     const newBuyerId = !known && saveCust ? newId() : null;
     if (newBuyerId) update((d) => { saveCustomerInto(d, req, "", newBuyerId); return d; });
-    if (toSales && !orderInSales(data, req.id)) {
+    if (toSales && !orderInSales(data, key)) {
       const found = findCustomer(data, req.email);
       const buyer = found || (newBuyerId ? { id: newBuyerId } : null);
-      const sales = salesFromLines(lines, { req, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoToday(), buyerId: buyer ? buyer.id : null })
+      const sales = salesFromLines(lines, { req: { ...req, id: key }, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoToday(), buyerId: buyer ? buyer.id : null })
         .map((x) => (req.pay_method ? { ...x, payMethod: req.pay_method, note: `${x.note} · ${payLabel(req.pay_method)}` } : x));
       added = sales.length ? sales.reduce((n, x) => n + x.totalRevenue, 0) : null;
       if (sales.length) update((d) => {
         if (!Array.isArray(d.sales)) d.sales = [];
-        if (d.sales.some((x) => x && x.fromOrder === req.id)) return d;
+        if (d.sales.some((x) => x && x.fromOrder === key)) return d;
         d.sales.push(...sales);
         const h = (d.hobbies || []).find((x) => x && x.id === "farmstand");
         lines.forEach((l) => {
@@ -717,7 +724,8 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
       });
     }
     const head = addOnly ? "Added to Sales." : req.nextDate ? `Picked up. Next one ${orderPrettyDate(req.nextDate)}.` : "Marked picked up.";
-    onDone(added != null ? `${addOnly ? "Added" : "Picked up."} ${moneyText(added)} ${addOnly ? "to Sales." : "added to Sales."}` : head);
+    const nextTxt = req.nextDate ? ` Next one ${orderPrettyDate(req.nextDate)}.` : "";
+    onDone(added != null ? `${addOnly ? "Added" : "Picked up."} ${moneyText(added)} ${addOnly ? "to Sales." : "added to Sales."}${nextTxt}` : head);
   };
   return (
     <Sheet open onClose={onClose} label={addOnly ? "Add this order to Sales" : "Picked up"} showClose maxHeight="92vh">
@@ -924,7 +932,12 @@ function PackingList({ orders, farm, onReady, onEmailAll }) {
         </button>
       ))}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", padding: "10px 14px 14px", borderTop: `1px solid ${nl.rule}` }}>
-        {texters.length > 0 && <Button small kind="quiet" icon={<MessageSquare size={16} />} onClick={() => { window.location.href = smsGroupHref(texters.map((r) => r.phone), `Hi, it's ${farm}! Your order is ready for ${day === today ? "today" : orderPrettyDate(day)}.`, ios); }}>Text {texters.length === 1 ? texters[0].customer_name : `all ${texters.length}`}</Button>}
+        {texters.length > 0 && (
+          // A link, like Text customers uses: Messages opens with everyone in it.
+          <a href={smsGroupHref(texters.map((r) => r.phone), `Hi, it's ${farm}! Your order is ready for ${day === today ? "today" : orderPrettyDate(day)}.`, ios)} style={{ display: "inline-flex", alignItems: "center", gap: 6, minHeight: 40, padding: "0 14px", borderRadius: 20, border: `1.5px solid ${nl.field}`, color: nl.ink, textDecoration: "none", font: `600 14px ${font.body}` }}>
+            <MessageSquare size={16} aria-hidden="true" />Text {texters.length === 1 ? texters[0].customer_name : `all ${texters.length}`}
+          </a>
+        )}
         {notReady.length > 0 && <Button small kind="quiet" icon={<Mail size={16} />} onClick={() => onEmailAll(notReady)}>Mark all ready and email them</Button>}
       </div>
       {texters.length > 1 && ios && <p style={{ margin: "-6px 14px 12px", fontSize: 12, color: nl.soft }}>On iPhone a group text shows everyone's number to each other.</p>}
@@ -1194,7 +1207,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.fresh.length > 0 && (
         <Card>
           <CardHeader title="New requests" right={`${groups.fresh.length}`} />
-          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {groups.joins.length > 0 && (
@@ -1219,13 +1232,13 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.today.length > 0 && (
         <Card>
           <CardHeader title="Picking up today" right={`${groups.today.length}`} />
-          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {groups.open.length > 0 && (
         <Card>
           <CardHeader title="To fill" right={`${groups.open.length}`} />
-          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {reqs && !groups.fresh.length && !groups.open.length && !groups.today.length && !groups.joins.length && (
@@ -1238,7 +1251,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card>
           <Row first title={`Past orders (${groups.past.length})`} sub="Picked up and declined, last 6 months" onClick={() => setShowPast((v) => !v)}
             trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: showPast ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
-          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, r.id)} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
 

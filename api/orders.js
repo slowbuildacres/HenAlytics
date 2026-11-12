@@ -135,8 +135,12 @@ export default async function handler(req, res) {
     if (action === 'back') {
       const itemId = String(body.itemId || '').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 24);
       if (!itemId) return res.status(400).json({ error: 'Bad request' });
-      const waiting = (await rest(`order_requests?select=id,email,items&homestead_id=eq.${hid}&kind=eq.notify&status=eq.new&limit=300`) || [])
+      const asked = (await rest(`order_requests?select=id,email,items&homestead_id=eq.${hid}&kind=eq.notify&status=eq.new&limit=300`) || [])
         .filter((r) => Array.isArray(r.items) && r.items.some((i) => i && i.id === itemId) && EMAIL_RE.test(r.email || ''));
+      // One email per address, even if they asked twice.
+      const seen = new Set();
+      const waiting = asked.filter((r) => { const e = String(r.email).toLowerCase(); if (seen.has(e)) return false; seen.add(e); return true; });
+      const dupes = asked.filter((r) => !waiting.includes(r));
       if (!waiting.length) return res.status(200).json({ ok: true, sent: 0 });
       if (!process.env.RESEND_API_KEY) return res.status(500).json({ error: 'Email is not set up.' });
       const left = DAILY_EMAILS - await sentToday(hid);
@@ -157,6 +161,8 @@ export default async function handler(req, res) {
         sent++;
         await rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'done', emailed_at: new Date().toISOString(), updated_at: new Date().toISOString() }) }).catch(() => {});
       }
+      // Their extra asks are covered by the one email.
+      for (const r of dupes) await rest(`order_requests?id=eq.${r.id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'done', updated_at: new Date().toISOString() }) }).catch(() => {});
       return res.status(200).json({ ok: true, sent, more: Math.max(0, waiting.length - sent) });
     }
 

@@ -155,20 +155,20 @@ function estimateScript(sup, today, farm) {
   const data = JSON.stringify({ sup, today, farm }).replace(/</g, '\\u003c');
   return `(function(){var D=${data},el=document.getElementById('o-est');if(!el)return;
 function rd(p,u,from){if(p.mode==='slot'){var f=p.free,i=-1,k,cap=0;for(k=0;k<f.length;k++){if(f[k][3]>cap)cap=f[k][3];if(i<0&&f[k][1]>=from)i=k;}if(i<0)return null;if(u<=cap||cap===0){for(;i<f.length;i++)if(f[i][3]+1e-9>=u)return f[i][2];return null;}var l=u;for(;i<f.length;i++){l-=f[i][3];if(l<=1e-9)return f[i][2];}return null;}for(var j=0;j<p.free.length;j++)if(p.free[j][1]+1e-9>=u)return Math.max(p.free[j][0],0);return null;}
-var t0=D.today.split('-').map(Number);function day(iso){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iso||''))return -1;var a=iso.split('-').map(Number);return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(t0[0],t0[1]-1,t0[2]))/864e5);}
+var t0=D.today.split('-').map(Number),F=String(D.farm).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});function day(iso){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iso||''))return -1;var a=iso.split('-').map(Number);return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(t0[0],t0[1]-1,t0[2]))/864e5);}
 function iso(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toISOString().slice(0,10);}
 function pretty(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});}
 var dt=document.getElementById('o-date');
 function upd(){var any=false,never=false,r=0,w=dt?day(dt.value):-1,from=Math.max(0,w);
 Object.keys(D.sup).forEach(function(id){var i=document.querySelector('input[name="qty_'+id+'"]');var n=i?Math.floor(Number(i.value)||0):0;if(n<=0)return;any=true;var p=D.sup[id];var d=rd(p,p.mode==='slot'?n:n*p.per,p.mode==='slot'?from:0);if(d===null)never=true;else if(d>r)r=d;});
 if(!any){el.hidden=true;el.innerHTML='';return;}el.hidden=false;var msg,btn='';
-if(never)msg='That\\'s more than '+D.farm+' expects to have in the next few months. You can still send it, and they\\'ll let you know when they can fill it.';
+if(never)msg='That\\'s more than '+F+' expects to have in the next few months. You can still send it, and they\\'ll let you know when they can fill it.';
 else if(w>=0&&r<=w)msg='<b>\\u2713 Should be ready by '+pretty(w)+'.</b>';
 else{var opt=null;if(dt&&dt.tagName==='SELECT'){for(var k=0;k<dt.options.length;k++){if(dt.options[k].value&&day(dt.options[k].value)>=r){opt=dt.options[k];break;}}}
-var when=opt?'for pickup '+opt.text:'around '+pretty(r);
+var when=opt?'for '+opt.text:'around '+pretty(r);
 if(w>=0){msg='<b>Probably not ready by '+pretty(w)+'.</b> Likely ready '+when+'.';btn=opt?'<button type="button" class="btn alt" id="o-later" data-v="'+opt.value+'">Pick '+opt.text+' instead</button>':(dt&&dt.tagName!=='SELECT'?'<button type="button" class="btn alt" id="o-later" data-v="'+iso(r)+'">Ask for '+pretty(r)+' instead</button>':'');}
 else msg=r===0?'<b>Should be ready now.</b>':'<b>Likely ready '+when+'.</b>';}
-el.innerHTML=msg+(never?'':' <span class="soft">An estimate from what '+D.farm.replace(/[<&]/g,'')+' has and makes; they\\'ll confirm.</span>')+btn;
+el.innerHTML=msg+(never?'':' <span class="soft">An estimate from what '+F+' has and makes; they\\'ll confirm.</span>')+btn;
 var b=document.getElementById('o-later');if(b)b.addEventListener('click',function(){dt.value=b.getAttribute('data-v');upd();});}
 document.addEventListener('input',upd);document.addEventListener('change',upd);upd();})();`;
 }
@@ -418,32 +418,36 @@ function parseBody(req) {
 // saved without them (standing and delivery go in the note) so orders never
 // stop coming in.
 const EXTRA_COLS = /status_token|repeat_weeks|fulfil|address|kind_check|order_requests_kind/;
+// Saves each row on its own: a batch insert needs every row to have the same
+// keys, and an order, a "tell me when it's back" and a list sign-up don't.
+// Returns the rows as saved (an old table keeps standing/delivery in the note
+// and has no status link, and can't take "tell me when it's back" yet).
 async function saveRows(rows) {
-  const same = (list) => list.map((r) => ({ pay_method: null, text_ok: false, ...r }));
-  try {
-    await rest('order_requests', { method: 'POST', body: JSON.stringify(same(rows)), headers: { Prefer: 'return=minimal' } });
-    return rows;
-  } catch (e) {
+  const out = [];
+  for (const r of rows) {
+    const saved = await saveRow(r);
+    if (saved) out.push(saved);
+  }
+  return out;
+}
+async function saveRow(row) {
+  const post = (r) => rest('order_requests', { method: 'POST', body: JSON.stringify(r), headers: { Prefer: 'return=minimal' } });
+  try { await post(row); return row; } catch (e) {
     const msg = String(e && e.message);
     if (!EXTRA_COLS.test(msg) && !/pay_method|text_ok/.test(msg)) throw e;
-    // Older table: no notify rows, no extras; keep what we can in the note.
-    const legacy = rows.filter((r) => r.kind !== 'notify').map((r) => {
-      const { status_token: _s, repeat_weeks: rw, fulfil, address, ...rest2 } = r;
-      const extra = [rw ? repeatLabel(rw) : '', fulfil === 'delivery' ? `Deliver to ${address}` : ''].filter(Boolean).join('. ');
-      return { ...rest2, note: [r.note, extra].filter(Boolean).join('\n').slice(0, ORDER_LIMITS.note) };
-    });
-    if (!legacy.length) return [];
-    try {
-      await rest('order_requests', { method: 'POST', body: JSON.stringify(same(legacy)), headers: { Prefer: 'return=minimal' } });
-    } catch (e2) {
-      if (!/pay_method|text_ok/.test(String(e2 && e2.message))) throw e2;
-      const label = payLabel(legacy[0].pay_method);
-      const bare = legacy.map(({ pay_method: _p, text_ok: _t, ...r }) => r);
-      if (label) bare[0].note = `${bare[0].note ? `${bare[0].note}\n` : ''}Paying with ${label}`.slice(0, ORDER_LIMITS.note);
-      await rest('order_requests', { method: 'POST', body: JSON.stringify(bare), headers: { Prefer: 'return=minimal' } });
-    }
-    return legacy.map((r) => ({ ...r, status_token: undefined }));
   }
+  if (row.kind === 'notify') return null;
+  const { status_token: _s, repeat_weeks: rw, fulfil, address, ...rest2 } = row;
+  const extra = [rw ? repeatLabel(rw) : '', fulfil === 'delivery' ? `Deliver to ${address}` : ''].filter(Boolean).join('. ');
+  const legacy = { ...rest2, note: [row.note, extra].filter(Boolean).join('\n').slice(0, ORDER_LIMITS.note) };
+  try { await post(legacy); return legacy; } catch (e2) {
+    if (!/pay_method|text_ok/.test(String(e2 && e2.message))) throw e2;
+  }
+  const { pay_method: pm, text_ok: _t, ...bare } = legacy;
+  const label = payLabel(pm);
+  if (label) bare.note = `${bare.note ? `${bare.note}\n` : ''}Paying with ${label}`.slice(0, ORDER_LIMITS.note);
+  await post(bare);
+  return bare;
 }
 
 // Would this order be ready in time with what's there? (auto-accept)

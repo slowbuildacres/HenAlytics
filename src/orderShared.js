@@ -163,7 +163,7 @@ export function cleanPageSettings(op = {}) {
     delivery: cleanDelivery(op.delivery),
     standing: op.standing === true,
     autoAccept: op.autoAccept === true,
-    notifyBack: op.notifyBack !== false,
+    notifyBack: op.notifyBack === true,  // opt-in: you send the note from Orders
   };
 }
 export function cleanDelivery(d) {
@@ -297,6 +297,7 @@ export function buildCustomerEmail({ status, farmName, items, note, pickupDate, 
     ready: { subject: `Your order from ${farm} is ready`, lead: `Your order from ${farm} is ready to pick up.` },
     declined: { subject: `About your order from ${farm}`, lead: `${farm} can't fill this order right now.` },
   };
+  if (address) heads.ready = { subject: `Your order from ${farm} is ready`, lead: `Your order from ${farm} is ready for delivery.` };
   const h = heads[status] || heads.accepted;
   const msg = clip(message, ORDER_LIMITS.message);
   const when = prettyDate(pickupDate);
@@ -376,13 +377,13 @@ export function smsGroupHref(phones, body, ios) {
 export const GROUP_TEXT_MAX = 20;
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
 // A short text for an order update. status: accepted | ready | declined | other
-export function orderText({ status, name, farm, items, message, pickupText, payLine }) {
+export function orderText({ status, name, farm, items, message, pickupText, payLine, delivery }) {
   const f = clip(farm, 60) || 'the farm';
   const what = (items || []).map(itemLine).join(', ');
   const msg = clip(message, ORDER_LIMITS.message);
   const parts = {
     accepted: [`Hi ${firstName(name)}, it's ${f}. We got your order${what ? ` (${what})` : ''} and will get it ready.`, msg, payLine],
-    ready: [`Hi ${firstName(name)}, your order from ${f} is ready to pick up!`, msg, clip(pickupText, ORDER_LIMITS.pickupText), payLine],
+    ready: [`Hi ${firstName(name)}, your order from ${f} is ready${delivery ? " and we'll bring it by" : ' to pick up'}!`, msg, delivery ? '' : clip(pickupText, ORDER_LIMITS.pickupText), payLine],
     declined: [`Hi ${firstName(name)}, it's ${f}. Sorry, we can't fill your order right now.`, msg],
   }[status] || [`Hi ${firstName(name)}, it's ${f}.`, msg];
   return parts.filter(Boolean).join(' ');

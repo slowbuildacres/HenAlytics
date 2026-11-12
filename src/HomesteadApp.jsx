@@ -13063,6 +13063,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
               {donatedTotal > 0 && <StatCard label="Donated / given away" value={donatedTotal} sub={soldFreeCount > 0 ? "incl. $0 sales" : undefined} accent={palette.feather} />}
               {(byType.tossed || 0) > 0 && <StatCard label="Tossed" value={byType.tossed} accent={palette.ink} />}
               {(byType.hatched || 0) > 0 && <StatCard label="Set to hatch" value={byType.hatched} accent={palette.yolk} />}
+              {(byType.stand || 0) > 0 && <StatCard label="To the farm stand" value={byType.stand} accent={palette.yolk} />}
               {(byType.other || 0) > 0 && <StatCard label="Other" value={byType.other} accent={palette.inkSoft} />}
             </div>
           </>
