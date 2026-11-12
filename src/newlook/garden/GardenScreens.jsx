@@ -290,7 +290,8 @@ export function GardenPlan({ hobby, data, setModal, seedBox, onOpenCalendar, onO
   const [boxOpen, setBoxOpen] = useState(false);
   const season = hobby.currentSeason;
   const areas = season && season.gardenMap && Array.isArray(season.gardenMap.areas) ? season.gardenMap.areas : null;
-  const hasMap = areas ? areas.some((a) => a.photoPath || (a.grid && a.grid.beds && a.grid.beds.length)) : !!(season && season.gardenMap && season.gardenMap.photoPath);
+  // A grid bed (mode "grid") has no photo; it counts as a map as soon as it exists.
+  const hasMap = areas ? areas.some((a) => a && (a.photoPath || a.mode === "grid" || (a.grid && a.grid.beds && a.grid.beds.length))) : !!(season && season.gardenMap && season.gardenMap.photoPath);
   const pins = areas ? areas.reduce((n, a) => n + (Array.isArray(a.pins) ? a.pins.length : 0), 0) : 0;
   const seeds = (hobby.seeds || []).filter(Boolean);
   const toBuy = seeds.filter((p) => { try { return needsBuying(p); } catch (_) { return false; } });
