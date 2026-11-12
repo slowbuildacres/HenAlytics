@@ -30,7 +30,7 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel } from '../src/orderShared.js';
+import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, buildCustomerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel } from '../src/orderShared.js';
 import { planAll, sourceKey, takesPreorders, publicSupply, perUnit, estimateRequest, addDays, daysBetween, HORIZON } from '../src/orderSupply.js';
 
 const SITE = 'https://henalytics.com';
@@ -74,11 +74,13 @@ async function withSupply(row) {
   const open = await openOrders(row.id);
   const { plans, orderReady } = planAll(raw, open, { today, hobbies: h && h.hobbies, snaps: row.op.snaps, pickupDays: cleanDays(row.op.pickupDays) });
   row.orderReady = orderReady;
+  const groupOf = new Map();
   const menu = raw.map((m) => {
     const key = m && m.id ? sourceKey(m) : '';
     const plan = key && plans.get(key);
     if (!plan) return m;
-    if (takesPreorders(m)) return { ...m, sup: publicSupply(m, plan) };
+    if (!groupOf.has(key)) groupOf.set(key, groupOf.size + 1);
+    if (takesPreorders(m)) return { ...m, sup: publicSupply(m, plan, groupOf.get(key)) };
     // A stand item without pre-orders: what's ready, less what's promised.
     return { ...m, left: plan.mode === 'stock' ? Math.floor((plan.free[0] ? plan.free[0][1] : 0) / perUnit(m)) : undefined };
   });
@@ -95,15 +97,20 @@ async function openOrders(homesteadId) {
   }
 }
 
-async function findPage(token) {
-  const rows = await rest(`homesteads?select=id,farm:data->>homesteadName,op:data->orderPage,fromName:data->stockEmailSettings->>fromName&data->orderPage->>token=eq.${token}&limit=1`);
+// byId: a customer's status link still works after the farm makes a new
+// page link (it finds the farm from the order instead).
+// statusOnly: a customer checking on an order sees it even if the farm has
+// turned the page off since.
+async function findPage(token, byId, statusOnly) {
+  const sel = 'id,farm:data->>homesteadName,op:data->orderPage,fromName:data->stockEmailSettings->>fromName,replyTo:data->stockEmailSettings->>replyTo';
+  const rows = await rest(byId ? `homesteads?select=${sel}&id=eq.${byId}&limit=1` : `homesteads?select=${sel}&data->orderPage->>token=eq.${token}&limit=1`);
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row || !row.op) return null;
   try { row.op = await withSupply(row); } catch (e) { console.error('[order-page] supply', e); }
   const op = cleanPageSettings(row.op);
-  if (!op.on || op.token !== token) return null;
+  if ((!op.on && !statusOnly) || (!byId && op.token !== token)) return null;
   const farm = String(row.fromName || row.farm || '').trim().slice(0, 60) || 'Our farm stand';
-  return { id: row.id, farm, op, today: usToday(), orderReady: row.orderReady || new Map() };
+  return { id: row.id, farm, op, today: usToday(), orderReady: row.orderReady || new Map(), replyTo: /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/.test(String(row.replyTo || '')) ? String(row.replyTo) : '' };
 }
 
 // ---------------------------------------------------------------- HTML
@@ -154,13 +161,14 @@ function plural(unit, n) {
 function estimateScript(sup, today, farm) {
   const data = JSON.stringify({ sup, today, farm }).replace(/</g, '\\u003c');
   return `(function(){var D=${data},el=document.getElementById('o-est');if(!el)return;
-function rd(p,u,from){if(p.mode==='slot'){var f=p.free,i=-1,k,cap=0;for(k=0;k<f.length;k++){if(f[k][3]>cap)cap=f[k][3];if(i<0&&f[k][1]>=from)i=k;}if(i<0)return null;if(u<=cap||cap===0){for(;i<f.length;i++)if(f[i][3]+1e-9>=u)return f[i][2];return null;}var l=u;for(;i<f.length;i++){l-=f[i][3];if(l<=1e-9)return f[i][2];}return null;}for(var j=0;j<p.free.length;j++)if(p.free[j][1]+1e-9>=u)return Math.max(p.free[j][0],0);return null;}
+function rd(p,u,from){if(p.mode==='slot'){var f=p.free,i=-1,k,cap=0;for(k=0;k<f.length;k++){if(f[k][3]>cap)cap=f[k][3];if(i<0&&f[k][1]>=from)i=k;}if(i<0)return null;if(f[i][4]!=null)cap=f[i][4];if(u<=cap+1e-9){for(;i<f.length;i++)if(f[i][3]+1e-9>=u)return f[i][2];return null;}var l=u;for(;i<f.length;i++){l-=f[i][3];if(l<=1e-9)return f[i][2];}return null;}for(var j=0;j<p.free.length;j++)if(p.free[j][1]+1e-9>=u)return Math.max(p.free[j][0],0);return null;}
 var t0=D.today.split('-').map(Number),F=String(D.farm).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});function day(iso){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iso||''))return -1;var a=iso.split('-').map(Number);return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(t0[0],t0[1]-1,t0[2]))/864e5);}
 function iso(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toISOString().slice(0,10);}
 function pretty(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});}
 var dt=document.getElementById('o-date');
 function upd(){var any=false,never=false,r=0,w=dt?day(dt.value):-1,from=Math.max(0,w);
-Object.keys(D.sup).forEach(function(id){var i=document.querySelector('input[name="qty_'+id+'"]');var n=i?Math.floor(Number(i.value)||0):0;if(n<=0)return;any=true;var p=D.sup[id];var d=rd(p,p.mode==='slot'?n:n*p.per,p.mode==='slot'?from:0);if(d===null)never=true;else if(d>r)r=d;});
+var G={};Object.keys(D.sup).forEach(function(id){var i=document.querySelector('input[name="qty_'+id+'"]');var n=i?Math.floor(Number(i.value)||0):0;if(n<=0)return;any=true;var p=D.sup[id];var k=p.mode==='slot'?'s'+id:'g'+(p.g||0);if(!G[k])G[k]={p:p,u:0};G[k].u+=p.mode==='slot'?n:n*p.per;});
+Object.keys(G).forEach(function(k){var p=G[k].p;var d=rd(p,G[k].u,p.mode==='slot'?from:0);if(d===null)never=true;else if(d>r)r=d;});
 if(!any){el.hidden=true;el.innerHTML='';return;}el.hidden=false;var msg,btn='';
 if(never)msg='That\\'s more than '+F+' expects to have in the next few months. You can still send it, and they\\'ll let you know when they can fill it.';
 else if(w>=0&&r<=w)msg='<b>\\u2713 Should be ready by '+pretty(w)+'.</b>';
@@ -197,7 +205,7 @@ function orderPageHtml(page, token, { error, values = {} } = {}) {
         const now = m.sup.free.length && m.sup.free[0][0] === 0 ? Math.floor(m.sup.free[0][1] / m.sup.per) : 0;
         tags.push(now > 0 ? (now <= 24 ? `${now} ready now` : 'Ready now') : 'Pre-order');
       }
-      if (m.sup.mode === 'stock' && m.sup.ahead > 0) ahead = `<span class="soft ahead">${m.sup.ahead} ${esc(plural(m.unit || 'more', m.sup.ahead))} already ordered ahead of you</span>`;
+      if (m.sup.mode === 'stock' && m.sup.ahead > 0) ahead = `<span class="soft ahead">${m.sup.ahead} ${esc(plural(m.unit || 'more', m.sup.ahead))} already ordered for the next 2 weeks</span>`;
     }
     return `
     <div class="item${out ? ' out' : ''}"><div class="n"><b>${esc(m.name)}</b><span class="soft">${[m.price ? `${moneyText(m.price)}${m.unit ? ` a ${esc(m.unit)}` : ''}` : (m.unit ? esc(m.unit) : ''), esc(m.note)].filter(Boolean).join(' · ')}</span>${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}${ahead}</div>
@@ -257,7 +265,7 @@ ${op.joinList ? `<form class="card" method="post" action="/o/${token}">
   <button class="btn alt" type="submit">Add me to the list</button>
 </form>` : ''}
 <script>document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;i.dispatchEvent(new Event('input',{bubbles:true}));});});});
-(function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<=${HORIZON}&&out.length<60;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
+(function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<=${HORIZON}&&out.length<80;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
 var p=function(n){return(n<10?'0':'')+n};s.innerHTML='<option value="">Pick a day</option>'+out.map(function(t){var v=t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());return '<option value="'+v+'"'+(v===keep?' selected':'')+'>'+t.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</option>'}).join('');})();
 ${hasSup ? estimateScript(sup, page.today || usToday(), farm) : ''}
 (function(){var w=document.getElementById('o-addr-wrap');if(!w)return;function f(){var d=document.querySelector('input[name="fulfil"][value="delivery"]');var on=d&&d.checked;w.hidden=!on;var a=document.getElementById('o-addr');if(a)a.required=!!on;var l=document.querySelector('label[for="o-date"]');if(l&&!l.getAttribute('data-p'))l.setAttribute('data-p',l.textContent);if(l)l.textContent=on?l.getAttribute('data-p').replace('Pickup day','Delivery day'):l.getAttribute('data-p');}document.querySelectorAll('input[name="fulfil"]').forEach(function(r){r.addEventListener('change',f);});f();})();</script>`;
@@ -277,7 +285,7 @@ function requestEstimate(page, row) {
   row.items.forEach((i) => { qty[i.id] = (qty[i.id] || 0) + Number(i.qty || 0); });
   const d = estimateRequest(page.op.menu, qty, Math.max(0, want));
   if (d === undefined) return null;
-  if (d === null) return { forCustomer: `That's more than ${page.farm} expects to have in the next few months, so they'll let you know when they can fill it.`, forOwner: "Henalytics estimate: more than you're likely to have in the next 4 months." };
+  if (d === null) return { forCustomer: `That's more than ${page.farm} expects to have in the next few months, so they'll let you know when they can fill it.`, forOwner: "Henalytics estimate: more than you have or have coming in the next 6 months." };
   // With pickup days, say the first pickup day it'll be ready for.
   const readyIso = addDays(today, d);
   const pick = op_nextPickup(page.op.pickupDays, readyIso);
@@ -331,13 +339,18 @@ function statusHtml(page, token, row, { notice } = {}) {
   const open = ['new', 'accepted', 'ready'].includes(row.status);
   const d = page.orderReady && page.orderReady.get(row.id);
   const today = page.today || usToday();
-  const est = open && row.status !== 'ready' && d !== undefined
-    ? (d === null ? `${page.farm} will let you know when they can fill it.` : d === 0 ? 'They should have enough for it now.' : `Likely ready around ${orderPrettyDate(addDays(today, d))}.`)
-    : '';
+  const want = row.pickup_date ? daysBetween(today, row.pickup_date) : -1;
+  const readyIso = d != null ? addDays(today, d) : '';
+  const est = !open || row.status === 'ready' || d === undefined ? ''
+    : d === null ? `${page.farm} will let you know when they can fill it.`
+    : want >= 0 && d <= want ? `Should be ready by ${orderPrettyDate(row.pickup_date)}.`
+    : want >= 0 ? `Likely ready around ${orderPrettyDate(op_nextPickup(page.op.pickupDays, readyIso) || readyIso)}, a bit after the day you asked for. ${page.farm} will be in touch.`
+    : d === 0 ? 'They should have enough for it now.' : `Likely ready around ${orderPrettyDate(readyIso)}.`;
   const form = (action, label, alt) => `<form method="post" action="/o/${token}?s=${esc(row.status_token)}" style="margin:0"><input type="hidden" name="ts" value="${ts}"><input type="hidden" name="sig" value="${sig}"><input type="hidden" name="act" value="${action}"><button class="btn${alt ? ' alt' : ''}" type="submit">${esc(label)}</button></form>`;
+  const pageLink = page.op.on && page.op.token && !page.op.paused ? `/o/${page.op.token}` : '';
   const body = `<h1>Your order from ${esc(page.farm)}</h1>
 ${notice ? `<div class="est" role="status">${esc(notice)}</div>` : ''}
-<div class="card"><p><b>${esc((STATUS_TEXT[row.status] || STATUS_TEXT.new)(page.farm))}</b></p>
+<div class="card"><p><b>${esc(row.status === 'ready' && row.fulfil === 'delivery' ? `Ready! ${page.farm} will bring it by.` : row.status === 'done' && row.fulfil === 'delivery' ? 'Delivered. Thanks!' : (STATUS_TEXT[row.status] || STATUS_TEXT.new)(page.farm))}</b></p>
 ${items ? `<ul>${items}</ul>` : ''}${row.note ? `<p class="soft">Your note: ${esc(row.note)}</p>` : ''}
 ${whenLine(row) ? `<p class="soft">${esc(whenLine(row))}${row.address ? ` · ${esc(row.address)}` : ''}</p>` : ''}
 ${est ? `<p class="est">${esc(est)} <span class="soft">An estimate; they'll confirm.</span></p>` : ''}
@@ -345,13 +358,13 @@ ${open && row.owner_message ? `<p class="soft">From ${esc(page.farm)}: ${esc(row
 ${open ? payBlock(page, row) : ''}
 ${open && row.repeat_weeks ? form('stop', 'Stop my standing order after this one', true) : ''}
 ${open && row.status !== 'ready' ? form('cancel', 'Cancel this order', true) : ''}</div>
-<p style="text-align:center"><a href="/o/${token}" style="color:inherit">${open ? 'Order something else' : 'Order again'} from ${esc(page.farm)}</a></p>`;
+${pageLink ? `<p style="text-align:center"><a href="${pageLink}" style="color:inherit">${open ? 'Order something else' : 'Order again'} from ${esc(page.farm)}</a></p>` : ''}`;
   return shell(`${page.farm} · Your order`, body);
 }
 
 // How to pay, right after ordering (or a note that it comes later).
 function payBlock(page, row) {
-  const none = '<p class="soft">No payment was taken. Settle up with them when you pick up.</p>';
+  const none = `<p class="soft">No payment was taken. Settle up with them when you ${row.fulfil === 'delivery' ? 'get your order' : 'pick up'}.</p>`;
   if (!row.pay_method) return none;
   if (row.paid) return `<p class="soft">Marked paid with ${esc(payLabel(row.pay_method))}. Thanks!</p>`;
   const total = orderTotal(row.items);
@@ -363,7 +376,7 @@ function payBlock(page, row) {
   if (total == null) {
     return `<p class="soft">You picked ${esc(payLabel(row.pay_method))}. ${esc(page.farm)} will confirm the total and send you how to pay when they accept your order.</p>`;
   }
-  const p = payInstructions({ method: row.pay_method, op: page.op, amount: total, farm: page.farm });
+  const p = payInstructions({ method: row.pay_method, op: page.op, amount: total, farm: page.farm, delivery: row.fulfil === 'delivery' });
   if (!p) return none;
   return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}</p>
 ${p.link ? `<a class="btn link" href="${esc(p.link)}" rel="noopener">${esc(p.button)}</a><p class="soft" style="margin:8px 0 0">Opens the app on your phone. If it doesn't, send it to the name above.</p>` : ''}
@@ -386,6 +399,29 @@ async function ownerEmails(homesteadId) {
   }
   return out;
 }
+// "We got your request" (or "accepted", when it was accepted on its own) to
+// the customer, with their status link: the thank-you page is easy to lose.
+async function confirmCustomer(page, token, row) {
+  if (!process.env.RESEND_API_KEY || !row || row.kind !== 'order' || !row.status_token) return;
+  try {
+    const sent = await rest(`order_requests?select=id&homestead_id=eq.${page.id}&emailed_at=gte.${encodeURIComponent(new Date(Date.now() - 86400000).toISOString())}&limit=201`) || [];
+    if (sent.length >= 200) return;
+    const replyTo = page.replyTo || (await ownerEmails(page.id))[0] || '';
+    const mail = buildCustomerEmail({
+      status: row.status === 'accepted' ? 'accepted' : 'received', farmName: page.farm, items: row.items, note: row.note, pickupDate: row.pickup_date,
+      pickupText: page.op.pickup, pay: row.pay_method ? { method: row.pay_method, op: page.op, paid: false } : null,
+      statusUrl: statusUrl(token, row.status_token), repeatWeeks: row.repeat_weeks || 0, address: row.fulfil === 'delivery' ? row.address : '',
+    });
+    const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
+    const r = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ from: `${page.farm.replace(/[<>"\r\n]/g, '')} <${from}>`, to: [row.email], ...(replyTo ? { reply_to: replyTo } : {}), subject: mail.subject, html: mail.html, text: `${mail.text}\n\nDidn't ask for this? You can ignore this email.` }),
+    });
+    if (r.ok) await rest(`order_requests?status_token=eq.${row.status_token}&homestead_id=eq.${page.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ emailed_at: new Date().toISOString() }) }).catch(() => {});
+  } catch (e) { console.error('[order-page] confirm email', e); }
+}
+
 // subject: for a customer's change from their status link (cancel, stop).
 async function notifyOwner(page, row, subjectOverride) {
   if (!page.op.emailMe || !process.env.RESEND_API_KEY) return;
@@ -393,7 +429,7 @@ async function notifyOwner(page, row, subjectOverride) {
   if (!to.length) return;
   const built = buildOwnerEmail({
     kind: row.kind, farmName: page.farm, name: row.customer_name, email: row.email, phone: row.phone,
-    items: row.items, note: row.note, pickupDate: row.pickup_date, payMethod: row.pay_method, estimate: row.kind === 'order' && !subjectOverride ? (requestEstimate(page, row) || {}).forOwner || '' : '', repeatWeeks: row.repeat_weeks, address: row.address, appUrl: `${process.env.APP_BASE_URL || SITE}/?open=orders`,
+    items: row.items, note: row.note, pickupDate: row.pickup_date, payMethod: row.pay_method, estimate: row.kind === 'order' && !row.noEstimate && ['new', 'accepted'].includes(row.status || 'new') ? (requestEstimate(page, row) || {}).forOwner || '' : '', repeatWeeks: row.repeat_weeks, address: row.address, appUrl: `${process.env.APP_BASE_URL || SITE}/?open=orders`,
   });
   const { html, text } = built;
   const subject = subjectOverride || built.subject;
@@ -452,7 +488,8 @@ async function saveRow(row) {
 
 // Would this order be ready in time with what's there? (auto-accept)
 function coveredNow(page, row) {
-  if (!row.items.length) return false;
+  // A standing order is a promise for every week to come: the owner decides.
+  if (!row.items.length || row.repeat_weeks) return false;
   const tracked = new Set(page.op.menu.filter((m) => m.sup || Number.isFinite(m.left)).map((m) => m.id));
   if (!row.items.every((i) => i.id === 'delivery' || tracked.has(i.id))) return false;
   const today = page.today || usToday();
@@ -478,7 +515,13 @@ export default async function handler(req, res) {
   if (!url || !key) return send(500, shell('Not available', '<h1>Ordering is down for a moment</h1><div class="card"><p>Please try again soon.</p></div>'));
 
   let page;
-  try { page = await findPage(token); } catch (e) { console.error('[order-page] lookup', e); return send(502, shell('Not available', '<h1>Ordering is down for a moment</h1><div class="card"><p>Please try again soon.</p></div>')); }
+  try {
+    page = await findPage(token, null, !!stToken);
+    if (!page && stToken) {
+      const o = await rest(`order_requests?select=homestead_id&status_token=eq.${stToken}&limit=1`).catch(() => null);
+      if (Array.isArray(o) && o[0] && /^[0-9a-f-]{36}$/i.test(String(o[0].homestead_id))) page = await findPage(token, o[0].homestead_id, true);
+    }
+  } catch (e) { console.error('[order-page] lookup', e); return send(502, shell('Not available', '<h1>Ordering is down for a moment</h1><div class="card"><p>Please try again soon.</p></div>')); }
   if (!page) return send(404, notFound());
   const b = req.method === 'POST' ? parseBody(req) : {};
   const signed = () => {
@@ -508,7 +551,7 @@ export default async function handler(req, res) {
       await rest(`order_requests?id=eq.${row.id}&homestead_id=eq.${page.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ repeat_weeks: null, updated_at: new Date().toISOString() }) });
       row.repeat_weeks = null;
       notice = `Done. This is your last one; ${page.farm} won't repeat it.`;
-      await notifyOwner(page, { ...row, kind: 'order', note: 'Stopped their standing order after this one.', email: '' }, `${row.customer_name} stopped their standing order`).catch(() => {});
+      await notifyOwner(page, { ...row, kind: 'order', note: 'Stopped their standing order after this one.', email: '', noEstimate: true }, `${row.customer_name} stopped their standing order`).catch(() => {});
     }
     return send(200, statusHtml(page, token, row, { notice }));
   }
@@ -536,6 +579,9 @@ export default async function handler(req, res) {
   const backItems = kind === 'order' && page.op.notifyBack ? page.op.menu.filter((m) => backIds.includes(m.id) && m.available && Number.isFinite(m.left) && m.left <= 0).map((m) => ({ id: m.id, name: m.name })) : [];
   const anyQty = Object.values(qty).some((n) => Number(n) > 0);
   const backOnly = backItems.length && !anyQty && !String(values.note || '').trim();
+  // Something sold out between opening the page and sending it.
+  const goneNow = kind === 'order' ? page.op.menu.filter((m) => Number(qty[m.id]) > 0 && Number.isFinite(m.left) && m.left <= 0).map((m) => m.name) : [];
+  if (goneNow.length && !backOnly) return again(`Sorry, ${goneNow.join(' and ')} just sold out. ${page.op.notifyBack ? "Tick \"Email me when it's back\" to hear when there's more, or pick something else." : 'Pick something else, or check back soon.'}`);
   const cleaned = cleanRequest({ ...values, kind, qty, ...(backOnly ? { note: 'back' } : {}) }, page.op.menu, backOnly ? [] : payOptions(page.op).map((m) => m.id), { pickupDays: backOnly ? [] : page.op.pickupDays, today: new Date(Date.now() - 36 * 3600000).toISOString().slice(0, 10), delivery: page.op.delivery, standing: page.op.standing });
   if (cleaned.error) return again(cleaned.error);
 
@@ -562,7 +608,10 @@ export default async function handler(req, res) {
     const saved = await saveRows(rows);
     const savedMain = main ? saved.find((r) => r.kind === main.kind) || main : null;
     const savedBack = saved.some((r) => r.kind === 'notify') ? backItems : [];
-    if (main) await notifyOwner(page, savedMain);
+    if (main) {
+      await notifyOwner(page, savedMain, savedMain.status === 'accepted' ? `New order from ${savedMain.customer_name} (accepted, you have enough)` : undefined);
+      await confirmCustomer(page, token, savedMain);
+    }
     else if (savedBack.length) await notifyOwner(page, { ...who, kind: 'notify', items: savedBack, note: '' });
     if (!main) return send(200, thanksHtml(page, token, { ...who, kind: 'notify' }, { backItems: savedBack }));
     return send(200, thanksHtml(page, token, savedMain, { joined, backItems: savedBack, accepted: savedMain.status === 'accepted' }));

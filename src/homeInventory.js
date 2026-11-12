@@ -56,15 +56,18 @@ export function homeFromHobbies(data, today) {
 export function standItemFor(data, entry) {
   const h = ((data && data.hobbies) || []).find((x) => x && x.id === "farmstand");
   const items = (h && h.items) || [];
+  const name = (i) => String((i && i.name) || "").trim().toLowerCase();
   return items.find((i) => i && i.fromSource === entry.key)
-    || items.find((i) => i && !i.archived && String(i.name || "").trim().toLowerCase() === String(entry.name || "").trim().toLowerCase())
+    || items.find((i) => i && !i.archived && name(i) === String(entry.name || "").trim().toLowerCase())
+    // Eggs go to whatever the stand sells them as ("Farm fresh eggs", "Dozen eggs").
+    || (entry.kind === "eggs" ? items.find((i) => i && !i.archived && /\beggs?\b/.test(name(i)) && !/eggplant/.test(name(i))) : null)
     || null;
 }
 
 // Moves qty from home to the stand, in place on the draft. Returns the farm
 // stand item id, or "" if nothing moved.
 export function putOut(d, entry, qty, today) {
-  const n = Math.floor(num(qty));
+  const n = Math.min(Math.floor(num(qty)), Math.floor(num(entry && entry.qty)));
   if (!(n > 0)) return "";
   const h = (d.hobbies || []).find((x) => x && x.id === entry.hobbyId);
   if (!h) return "";
@@ -97,3 +100,26 @@ export function putOut(d, entry, qty, today) {
   it.stock = Math.round((num(it.stock) + n) * 100) / 100;
   return it.id;
 }
+
+// For pre-orders: what's at home for each farm stand item on the order menu,
+// so a stand item can be pre-ordered from soap that's still curing or jars
+// on the shelf. { "stand:<itemId>": { onHand, perDay: 0, asOf, batches } }
+// (onHand ready now, batches [{ on, qty }] ready later), in the stand
+// item's own unit (eggs in dozens).
+export function homeSnaps(data, menu, today) {
+  const out = {};
+  const entries = homeFromHobbies(data, today);
+  (Array.isArray(menu) ? menu : []).forEach((m) => {
+    const from = m && m.supply && m.supply.from;
+    if (!m || !m.standItemId || (from && from !== "stand")) return;
+    const key = `stand:${String(m.standItemId).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`;
+    if (out[key]) return;
+    const mine = entries.filter((e) => { const it = standItemFor(data, e); return it && it.id === m.standItemId; });
+    if (!mine.length) return;
+    const onHand = mine.filter((e) => !e.readyOn || e.readyOn <= today).reduce((n, e) => n + e.qty, 0);
+    const batches = mine.filter((e) => e.readyOn && e.readyOn > today).map((e) => ({ on: e.readyOn, qty: e.qty }));
+    out[key] = { onHand, perDay: 0, asOf: today, ...(batches.length ? { batches } : {}) };
+  });
+  return out;
+}
+
