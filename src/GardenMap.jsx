@@ -1737,17 +1737,69 @@ function ArchiveViewer({ archivedSeasons, onClose }) {
         </div>
       )}
 
-      {/* Read-only photo */}
+      {/* Read-only photo, or the grid for a drawn bed */}
       {area && area.photoPath && (
         <ReadOnlyAreaView area={area} />
       )}
+      {area && !area.photoPath && area.mode === "grid" && (
+        <ReadOnlyGridView area={area} />
+      )}
 
-      {(!area || !area.photoPath) && (
+      {(!area || (!area.photoPath && area.mode !== "grid")) && (
         <div style={{
           padding: 20, background: palette.bgAlt, borderRadius: 8, textAlign: "center",
           fontSize: 13, color: palette.inkSoft, fontStyle: "italic",
         }}>
           No map saved for this {map.areas.length === 0 ? "season" : "area"}.
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ============================================================================
+// READ-ONLY GRID VIEW — a past season's drawn bed, as it was planted
+// ============================================================================
+function ReadOnlyGridView({ area }) {
+  const rows = Math.max(1, Number(area.rows) || 1);
+  const cols = Math.max(1, Number(area.cols) || 1);
+  const pins = Array.isArray(area.pins) ? area.pins : [];
+  const pinAt = {};
+  pins.forEach((p) => { if (typeof p.row === "number" && typeof p.col === "number") pinAt[p.row + "," + p.col] = p; });
+  const cellSize = Math.max(28, Math.min(64, Math.floor(520 / cols)));
+  // What grew here, with how many cells each took.
+  const counts = new Map();
+  pins.forEach((p) => { const d = pinDisplay(p); const k = d.emoji + " " + d.name; counts.set(k, (counts.get(k) || 0) + 1); });
+  return (
+    <div>
+      <div style={{ overflowX: "auto", paddingBottom: 4 }}>
+        <div style={{ display: "flex", flexDirection: "column", gap: 3, width: "max-content" }}>
+          {Array.from({ length: rows }).map((_, r) => (
+            <div key={r} style={{ display: "flex", gap: 3 }}>
+              {Array.from({ length: cols }).map((_, c) => {
+                const pin = pinAt[r + "," + c];
+                const disp = pin ? pinDisplay(pin) : null;
+                return (
+                  <div key={c} role="img" aria-label={pin ? disp.name : "Empty"} title={pin ? disp.name : ""} style={{
+                    width: cellSize, height: cellSize, flexShrink: 0, boxSizing: "border-box",
+                    border: `1.5px solid ${palette.line}`, borderRadius: 6,
+                    background: pin ? colorForCrop(pin.cropId) : palette.card,
+                    display: "flex", alignItems: "center", justifyContent: "center",
+                    fontSize: Math.max(12, Math.floor(cellSize * 0.42)),
+                  }}>{pin ? disp.emoji : ""}</div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
+      </div>
+      {counts.size > 0 && (
+        <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 10 }}>
+          {[...counts.entries()].map(([k, n]) => (
+            <span key={k} style={{ padding: "4px 10px", borderRadius: 999, background: palette.bgAlt, color: palette.ink, fontSize: 12, fontFamily: FONT_BODY, fontWeight: 600 }}>
+              {k}{n > 1 ? ` ×${n}` : ""}
+            </span>
+          ))}
         </div>
       )}
     </div>
