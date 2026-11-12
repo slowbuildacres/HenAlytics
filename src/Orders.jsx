@@ -26,7 +26,7 @@ import CustomersPanel from "./Customers.jsx";
 import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTotals, salesFromLines, takeStock, stockOnStand, stockInBack, orderInSales, isoToday } from "./orderSales.js";
 import { cleanSupply, sourceKey, guessPer, baseLabel, harvestUnitOf, measureSource, measureSnaps, sameSnaps, planAll, addDays, LIVE_FROM, BIRTH_DEFAULTS, repeatDates } from "./orderSupply.js";
 import { hobbyAllEntries } from "./allEntries.js";
-import { homeSnaps } from "./homeInventory.js";
+import { homeSnaps, homeFromHobbies, standItemFor, putOut } from "./homeInventory.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -687,7 +687,17 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
   // A standing order goes into Sales once per pickup, keyed by its day.
   const key = saleKey(req);
   const already = orderInSales(data, key);
-  const [lines, setLines] = useState(() => orderLines(req, (data.orderPage || {}).menu, data));
+  // Soap, jars or eggs another hobby keeps for a stand item (At home).
+  const homeFor = (standItemId) => (standItemId ? homeFromHobbies(data, isoToday()).filter((e) => { const it = standItemFor(data, e); return it && it.id === standItemId; }) : []);
+  const [lines, setLines] = useState(() => orderLines(req, (data.orderPage || {}).menu, data).map((l) => {
+    // Not enough on the stand or in back stock, but there's some at home in
+    // another hobby: take it from there (so it comes off that count too).
+    const it = l.standItemId ? standItems(data).find((x) => x.id === l.standItemId) : null;
+    const q = Number(l.qty) || 0;
+    const home = homeFor(l.standItemId).find((e) => !e.readyOn && e.qty >= q);
+    if (it && home && (stockOnStand(it) == null || stockOnStand(it) < q) && stockInBack(it) < q) return { ...l, from: `home:${home.key}` };
+    return l;
+  }));
   const [toSales, setToSales] = useState(!already);
   const [paidNow, setPaidNow] = useState(true);
   // A standing order's paid mark resets each week, so it isn't asked here;
@@ -728,7 +738,13 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
         lines.forEach((l) => {
           if (!l.standItemId || l.from === "none") return;
           const it = h && Array.isArray(h.items) ? h.items.find((x) => x && x.id === l.standItemId) : null;
-          if (it) takeStock(it, Number(l.qty) || 0, l.from);
+          if (!it) return;
+          if (String(l.from).startsWith("home:")) {
+            // Move it out from the hobby to the stand, then sell it from there.
+            const e = homeFromHobbies(d, isoToday()).find((x) => x.key === l.from.slice(5));
+            if (e) putOut(d, e, Number(l.qty) || 0, isoToday());
+            takeStock(it, Number(l.qty) || 0, "stand");
+          } else takeStock(it, Number(l.qty) || 0, l.from);
         });
         return d;
       });
@@ -786,6 +802,7 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
                           <select aria-label={`Farm stand stock for ${it.name}`} style={inputStyle} value={l.from} onChange={(e) => setLine(l.key, { from: e.target.value })}>
                             {stockOnStand(it) != null && <option value="stand">Take {Number(l.qty) || 0} off the stand ({stockOnStand(it)} there)</option>}
                             {stockInBack(it) > 0 && <option value="back">Take {Number(l.qty) || 0} from back stock ({stockInBack(it)} there)</option>}
+                            {homeFor(it.id).map((e) => <option key={e.key} value={`home:${e.key}`}>Take {Number(l.qty) || 0} from {e.note} ({e.qty} {e.unit} there)</option>)}
                             <option value="none">Don't change stock</option>
                           </select></label>
                       )}
@@ -840,7 +857,9 @@ function readyLine(req, plan) {
   const d = plan.orderReady.get(req.id);
   if (d == null) return { short: true, text: "Not covered yet: more than you have or have coming." };
   const iso = addDays(plan.today, d);
-  const late = req.pickup_date && iso > req.pickup_date;
+  // A day that's already gone (not picked up yet) counts as today.
+  const want = req.pickup_date && req.pickup_date < plan.today ? plan.today : req.pickup_date;
+  const late = want && iso > want;
   if (late) return { short: true, text: `Short: likely ready ${orderPrettyDate(iso)}, after the day they want it.` };
   if (req.pickup_date) return { short: false, text: d === 0 ? "You have enough for this now." : `On track for ${orderPrettyDate(req.pickup_date)}.` };
   return { short: false, text: d === 0 ? "You have enough for this now." : `Likely ready ${orderPrettyDate(iso)}.` };
@@ -1185,7 +1204,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card padded>
           <div style={{ fontFamily: font.display, fontSize: 22 }}>Take pre-orders from customers</div>
           <div style={{ fontSize: 15, color: nl.soft, marginTop: 6, lineHeight: 1.5 }}>
-            Get a link and a QR sign for your stand. Customers pick what they'd like (eggs, bread, meat birds, anything you list) or ask to join your email list. You see every request here, accept or decline it, and mark it ready. No payments, just a simple way to talk.
+            Get a link and a QR sign for your stand. Customers pick what they'd like (eggs, bread, meat birds, anything you list) or ask to join your email list. You see every request here, accept or decline it, and mark it ready. Customers pay you directly; Henalytics never touches the money.
           </div>
           <div style={{ marginTop: 14, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             {signedIn ? <Button icon={<ShoppingBag size={20} />} onClick={turnOn}>Set up my order page</Button>

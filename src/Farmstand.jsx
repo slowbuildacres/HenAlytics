@@ -1040,16 +1040,22 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
     const itemRow = (it) => {
       const st = computeStockState(it);
       const stock = Number(it.stock) || 0;
-      const waiting = backTotal(it);
+      // At home for this item: its own back stock, plus soap, jars or eggs
+      // another hobby keeps for it. Putting those out takes them off that
+      // hobby's count ("Add more" wouldn't, and they'd count twice).
+      const linkedHome = fromHobbies.filter((e) => { const li = standItemFor(data, e); return li && li.id === it.id; })
+        .sort((a, b) => (a.readyOn ? 1 : 0) - (b.readyOn ? 1 : 0));
+      const waiting = backTotal(it) + linkedHome.reduce((n, e) => n + e.qty, 0);
+      const putOutFromHome = () => (backTotal(it) > 0 ? setMovingItem(it) : setPuttingOut(linkedHome[0]));
       return {
         id: it.id, title: it.name, left: st !== "untracked" ? stock : null, unit: it.unit || "",
         onOpen: () => { setEditingItem(it); setShowItemModal(true); },
         sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null, waiting > 0 ? `${groupDigits(roundQty(waiting))} more at home` : null].filter(Boolean).join(" · "),
         badge: st === "out" ? { tone: "alert", text: "Out of stock" } : st === "low" ? { tone: "ready", text: `Low · ${stock} left` } : null,
         actions: st === "out"
-          ? [waiting > 0 ? { label: "Put out from home", primary: true, run: () => setMovingItem(it) } : { label: "Add more", primary: true, run: () => setRestockingItem({ ...it, _place: "stand" }) },
+          ? [waiting > 0 ? { label: "Put out from home", primary: true, run: putOutFromHome } : { label: "Add more", primary: true, run: () => setRestockingItem({ ...it, _place: "stand" }) },
              { label: "Take off the stand", run: () => takeOffStand(it) }]
-          : [{ label: "Sell", primary: true, run: () => setSellingItem(it) }, { label: waiting > 0 ? "Put out from home" : "Add more", run: () => (waiting > 0 ? setMovingItem(it) : setRestockingItem({ ...it, _place: "stand" })) }, { label: "Take off the stand", run: () => takeOffStand(it) }],
+          : [{ label: "Sell", primary: true, run: () => setSellingItem(it) }, { label: waiting > 0 ? "Put out from home" : "Add more", run: () => (waiting > 0 ? putOutFromHome() : setRestockingItem({ ...it, _place: "stand" })) }, { label: "Take off the stand", run: () => takeOffStand(it) }],
       };
     };
     const backRow = (it) => {
