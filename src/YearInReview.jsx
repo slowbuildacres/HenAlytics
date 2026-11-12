@@ -714,6 +714,7 @@ function EggsCard({ stats }) {
           { emoji: "🎁", label: "Donated / given away", n: eggUse.donated, color: palette.feather },
           { emoji: "🗑️", label: "Tossed", n: eggUse.tossed, color: palette.inkSoft },
           { emoji: "🐣", label: "Set to hatch", n: eggUse.hatched, color: palette.accent },
+          { emoji: "🧺", label: "To the farm stand", n: eggUse.stand || 0, color: palette.yolk },
           { emoji: "❓", label: "Other", n: eggUse.other, color: palette.line },
         ].filter((r) => r.n > 0);
         const maxN = Math.max(...rows.map((r) => r.n), 1);
@@ -2508,13 +2509,13 @@ export function computeStats(data, year) {
 
   // Egg use dispositions (Use Eggs logs) — where the eggs actually went.
   // $0 "sales" fold into the donated bucket alongside explicit donations.
-  const eggUse = { ate: 0, donated: 0, tossed: 0, hatched: 0, other: 0 };
+  const eggUse = { ate: 0, donated: 0, tossed: 0, hatched: 0, stand: 0, other: 0 };
   allEntries.filter((e) => e.action === "used_eggs").forEach((e) => {
     const t = Object.prototype.hasOwnProperty.call(eggUse, e.useType) ? e.useType : "other";
     eggUse[t] += Number(e.count) || 0;
   });
   eggUse.donated += eggsGivenFree;
-  const eggUseTotal = eggUse.ate + eggUse.donated + eggUse.tossed + eggUse.hatched + eggUse.other + eggsSold;
+  const eggUseTotal = eggUse.ate + eggUse.donated + eggUse.tossed + eggUse.hatched + eggUse.stand + eggUse.other + eggsSold;
   const eggLayerFeedCost = allEntries.filter((e) => e.action === "fed" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   const eggLayerInfraCost = allEntries.filter((e) => e.action === "infrastructure" && e.hobbyType === "egg_layers").reduce((s, e) => s + (Number(e.cost) || 0), 0);
   let eggLayerBirdCost = 0;

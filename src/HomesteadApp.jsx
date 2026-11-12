@@ -191,7 +191,7 @@ import { HorseStats } from "./newlook/horses/HorseScreens.jsx";
 import SourdoughPage, { SourdoughAnalytics, sourdoughStats } from "./Sourdough.jsx";
 import FarmstandPage, { FarmstandAnalytics, farmstandStats } from "./Farmstand.jsx";
 import CompostSheet from "./newlook/garden/Compost.jsx";
-import OrdersScreen, { useOrderCount, ordersMoreLine } from "./Orders.jsx";
+import OrdersScreen, { useOrderCount, ordersMoreLine, useOrderSupplySnaps } from "./Orders.jsx";
 import StockEmailsModal, { StockEmailTutorial } from "./StockEmails.jsx";
 import WrappedViewer, { WrappedBanner, activeWrappedYear, wrappedPreviewRequested } from "./Wrapped.jsx";
 import { BrooderHistoryModal, PurchaseHistoryModal } from "./FlockModals.jsx";
@@ -1749,7 +1749,7 @@ const newId = () => {
 // screenshots, and my time = $200 goal. UPDATE THE RAISED AMOUNT BELOW MANUALLY
 // as tips come in via Stripe. (Auto-pulling from Stripe is a future enhancement.)
 
-const CURRENT_VERSION = 57;
+const CURRENT_VERSION = 58;
 
 // ============================================================================
 // GIVEAWAY_FEATURE — weekly community giveaway popup (Option A, no purchase necessary)
@@ -1866,6 +1866,9 @@ function ReviewPromptModal({ onSure, onLater, onNoThanks }) {
 }
 
 const WHATS_NEW = [
+  "🧺 Farm stand: At the stand and At home — the stand only shows what's out, with Take off the stand any time. At home lists everything made and waiting in one place: back stock, curing soap, jars on the shelf and eggs on hand. Tap Put out at the stand to move some over.",
+  "🛍️ Orders, round two — a packing list for each pickup day (tick orders as you bag them, text everyone at once), standing orders (a dozen every Saturday), delivery with an optional fee, a most-per-order limit, accept-on-its-own when there's enough, and \"Email me when it's back\" on sold-out items. Customers get a link to check on their order, cancel it, or stop a standing order. Pre-orders can now come from meat bird batches, hatches, kiddings and litters, and garden crops before they're ready.",
+  "📅 Pre-orders that know what you have — on your order page, tell each item where it comes from: your hens (pick which flocks), your goats or cows, a garden crop, a farm stand item, or made to order with a limit per pickup day or week. Customers can order more than you have ready, pick a day further out, and see when it's likely ready, based on what you have and what you've been getting lately. Orders shows when each one should be ready and flags any that may come up short. Set it up in Orders › Menu and page settings › Where it comes from.",
   "🗺️ Garden map — beds you draw as a grid now show up in View past years, planted the way they were, and the Plan tab counts them as your map.",
   "🛍️ Orders — let customers order ahead. Turn on your order page (More › Orders & customers), list what people can request (eggs, bread, meat birds, anything), and share the link or print the QR sign for your stand. Requests show up in Orders, where you accept them, mark them ready and picked up, and Henalytics can email the customer at each step. When an order is picked up it goes straight into Sales, and set a private cost for each item to see your profit (customers only ever see the price). Customers can pick how they'll pay (Venmo, Cash App, PayPal, Zelle, cash and more) and get a pay button with the amount filled in. Text customers about their order from your own phone, set pickup days, pause orders, and see today's pickups on Home. Farm stand items show \"Sold out\" on your order page when you run out. Your customers live in Orders too: emails, phone numbers, lists and each person's order history, and you can email or text a whole list. People can also ask to join your \"what's fresh\" email list. Henalytics never touches the money.",  // ORDERS_WHATSNEW
   "🧺 Farm stand back stock — made something that isn't going out yet, like cold-process soap that's still curing? Put it in back stock with a ready date, then move it to the stand when it's ready. Out-of-stock items can be taken off the stand too, and their sales history stays.",
@@ -5408,6 +5411,8 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
       return next;
     });
   };
+  // Pre-orders: keep the order page's egg, milk and garden numbers current.
+  useOrderSupplySnaps(data, update);
 
   // ---- Switch the active homestead ----
   // Called by the header HomesteadSwitcher. setActiveHomestead() updates the
@@ -11332,6 +11337,7 @@ const USED_EGGS_TYPES = [
   { value: "donated", label: "Donated / gave away", statLabel: "Donated" },
   { value: "tossed",  label: "Threw them out",    statLabel: "Tossed" },
   { value: "hatched", label: "Set to hatch",      statLabel: "Set to hatch" },
+  { value: "stand",   label: "Put out at the farm stand", statLabel: "To the farm stand" },
   { value: "other",   label: "Other",             statLabel: "Other" },
 ];
 const usedEggsTypeLabel = (v) => {
@@ -13057,6 +13063,7 @@ function EggLayersAnalyticsBody({ hobby, entries, spouseMode, /* ADV_ANALYTICS *
               {donatedTotal > 0 && <StatCard label="Donated / given away" value={donatedTotal} sub={soldFreeCount > 0 ? "incl. $0 sales" : undefined} accent={palette.feather} />}
               {(byType.tossed || 0) > 0 && <StatCard label="Tossed" value={byType.tossed} accent={palette.ink} />}
               {(byType.hatched || 0) > 0 && <StatCard label="Set to hatch" value={byType.hatched} accent={palette.yolk} />}
+              {(byType.stand || 0) > 0 && <StatCard label="To the farm stand" value={byType.stand} accent={palette.yolk} />}
               {(byType.other || 0) > 0 && <StatCard label="Other" value={byType.other} accent={palette.inkSoft} />}
             </div>
           </>

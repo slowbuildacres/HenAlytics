@@ -10,7 +10,7 @@
 // Data shape on the hobby:
 //   hobby.batches[] = [{ id, name, method, madeDate, cureWeeks, expectedCureDate,
 //                        bars, ingredients: [{ id, name, amount, unit, cost }],
-//                        uses: [{ id, date, qty, kind: "used"|"gifted", note }],
+//                        uses: [{ id, date, qty, kind: "used"|"gifted"|"stand", note }],   // stand: put out at the farm stand
 //                        notes, archived, created }]
 // Sold bars are derived from data.sales where batchId === batch.id.
 // ============================================================================
@@ -62,16 +62,19 @@ export function soapBatchStats(batch, sales = []) {
   const soldSales = (sales || []).filter(s => s && s.hobbyType === "soap" && s.batchId === batch.id);
   const sold = soldSales.reduce((s, x) => s + (Number(x.qty) || 0), 0);
   const revenue = soldSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
-  const used = (batch.uses || []).filter(u => u.kind !== "gifted").reduce((s, u) => s + (Number(u.qty) || 0), 0);
+  const used = (batch.uses || []).filter(u => u.kind !== "gifted" && u.kind !== "stand").reduce((s, u) => s + (Number(u.qty) || 0), 0);
   const gifted = (batch.uses || []).filter(u => u.kind === "gifted").reduce((s, u) => s + (Number(u.qty) || 0), 0);
+  // Bars put out at the farm stand (src/homeInventory.js): still yours, just
+  // not at home anymore; the stand counts and sells them from there.
+  const atStand = (batch.uses || []).filter(u => u.kind === "stand").reduce((s, u) => s + (Number(u.qty) || 0), 0);
   const bars = Number(batch.bars) || 0;
   const cost = (batch.ingredients || []).reduce((s, i) => s + (Number(i.cost) || 0), 0);
   const today = todayStr();
   const cured = !batch.expectedCureDate || batch.expectedCureDate <= today;
   const daysLeft = cured ? 0 : Math.ceil((parseLocalDate(batch.expectedCureDate) - parseLocalDate(today)) / 86400000);
   return {
-    bars, sold, used, gifted, revenue, cost,
-    remaining: Math.max(0, bars - sold - used - gifted),
+    bars, sold, used, gifted, revenue, cost, atStand,
+    remaining: Math.max(0, bars - sold - used - gifted - atStand),
     costPerBar: bars > 0 ? cost / bars : 0,
     cured, daysLeft,
   };
@@ -534,7 +537,7 @@ export function SoapMakingAnalytics({ hobby, sales = [], dateRange = null }) {
   const revenue = soapSales.reduce((s, x) => s + (Number(x.totalRevenue) || 0), 0);
   const costOfSold = soapSales.reduce((s, x) => s + (Number(x.totalCost) || 0), 0);
   const allUses = (hobby.batches || []).flatMap(b => b.uses || []).filter(u => inRange(u.date));
-  const barsUsed = allUses.filter(u => u.kind !== "gifted").reduce((s, u) => s + (Number(u.qty) || 0), 0);
+  const barsUsed = allUses.filter(u => u.kind !== "gifted" && u.kind !== "stand").reduce((s, u) => s + (Number(u.qty) || 0), 0);
   const barsGifted = allUses.filter(u => u.kind === "gifted").reduce((s, u) => s + (Number(u.qty) || 0), 0);
 
   const byRecipe = {};

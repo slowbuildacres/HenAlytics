@@ -11,8 +11,9 @@
 //     on, token,                       // token = 40 hex chars, the link
 //     intro, pickup,                   // short text shown on the page
 //     menu: [{ id, name, unit, price, note, available,
-//              cost, credit, standItemId }],   // last three: owner only,
-//                                               // see src/orderSales.js
+//              cost, credit, standItemId,       // owner only, src/orderSales.js
+//              supply, preorder, showAhead }],  // owner only, src/orderSupply.js
+//     snaps: { [source]: { onHand, perDay, asOf } },  // measured by the app
 //     joinList, joinGroupId,           // "Get our what's fresh emails"
 //     emailMe,                         // email the owner on each request
 //     pay: { cash, card, check,        // true/false
@@ -20,7 +21,12 @@
 //     payWhen,                         // 'order' (right away) | 'accepted'
 //     pickupDays: [0..6],              // weekdays for pickup (Sun=0); [] = any
 //     paused, pausedNote,              // stop taking orders for a while
+//     delivery: { on, fee, note },     // offer delivery (porch drop-off...)
+//     standing,                        // customers can ask for every 1-4 weeks
+//     autoAccept,                      // accept on its own when there's enough
+//     notifyBack,                      // "Email me when it's back" on sold out
 //   }
+// Menu items can also have maxEach: the most one order can ask for.
 // Customers pay the farm directly (Venmo, Cash App, cash...). Henalytics
 // only shows the farm's handle and a prefilled link; it never sees money.
 // Requests customers send live in public.order_requests (see
@@ -28,10 +34,15 @@
 // No money changes hands: it's a request, the owner accepts or declines.
 // ============================================================================
 
+import { cleanPublicSupply, HORIZON } from './orderSupply.js';
+
 export const ORDER_LIMITS = {
   name: 60, email: 254, phone: 30, note: 600, pickup: 40, items: 25, qty: 999,
   menu: 40, menuName: 60, menuNote: 120, unit: 20, intro: 400, pickupText: 200, message: 600, pausedNote: 200,
+  address: 200, deliveryNote: 200,
 };
+export const REPEAT_WEEKS = [1, 2, 3, 4];
+export const repeatLabel = (w) => (w === 1 ? 'Every week' : w ? `Every ${w} weeks` : '');
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 export const ORDER_TOKEN_RE = /^[a-f0-9]{40}$/;
 export const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -56,7 +67,11 @@ export function cleanMenu(menu) {
       price: Number.isFinite(Number(m.price)) && Number(m.price) > 0 ? Math.round(Number(m.price) * 100) / 100 : null,
       note: clip(m.note, L.menuNote),
       available: m.available !== false,
+      ...(Number(m.maxEach) >= 1 ? { maxEach: Math.min(L.qty, Math.floor(Number(m.maxEach))) } : {}),
       ...(Number.isFinite(m.left) ? { left: Math.max(0, Math.floor(m.left)) } : {}),
+      // Pre-orders: what the page needs to work out dates (api/order-page.js
+      // adds it; it's never saved).
+      ...(m.sup && typeof m.sup === 'object' ? { sup: cleanPublicSupply(m.sup) } : {}),
     }))
     .filter((m) => m.id && m.name && !seen.has(m.id) && seen.add(m.id))
     .slice(0, L.menu);
@@ -145,7 +160,16 @@ export function cleanPageSettings(op = {}) {
     pickupDays: cleanDays(op.pickupDays),
     paused: op.paused === true,
     pausedNote: clip(op.pausedNote, L.pausedNote),
+    delivery: cleanDelivery(op.delivery),
+    standing: op.standing === true,
+    autoAccept: op.autoAccept === true,
+    notifyBack: op.notifyBack === true,  // opt-in: you send the note from Orders
   };
+}
+export function cleanDelivery(d) {
+  const o = d && typeof d === 'object' ? d : {};
+  const fee = Number(o.fee);
+  return { on: o.on === true, fee: Number.isFinite(fee) && fee > 0 ? Math.min(999, Math.round(fee * 100) / 100) : null, note: clip(o.note, ORDER_LIMITS.deliveryNote) };
 }
 export function cleanDays(days) {
   return [...new Set((Array.isArray(days) ? days : []).map(Number).filter((d) => Number.isInteger(d) && d >= 0 && d <= 6))].sort();
@@ -157,18 +181,21 @@ export function weekdayOf(s) {
   const t = new Date(Date.UTC(y, m - 1, d));
   return t.getUTCFullYear() === y && t.getUTCMonth() === m - 1 ? t.getUTCDay() : -1;
 }
-// The next pickup dates on the chosen weekdays, from `from` (YYYY-MM-DD).
-export function pickupDates(days, from, count = 8) {
+// The next pickup dates on the chosen weekdays, from `from` (YYYY-MM-DD),
+// as far ahead as the page plans (so "5 dozen for Easter" can be asked early).
+export function pickupDates(days, from, count = 60, span = HORIZON) {
   const ok = cleanDays(days);
   if (!ok.length || weekdayOf(from) < 0) return [];
   const [y, m, d] = from.split('-').map(Number);
   const out = [];
-  for (let i = 0; i < 60 && out.length < count; i++) {
+  for (let i = 0; i <= span && out.length < count; i++) {
     const t = new Date(Date.UTC(y, m - 1, d + i));
     if (ok.includes(t.getUTCDay())) out.push(t.toISOString().slice(0, 10));
   }
   return out;
 }
+
+const yearAfter = (iso) => { const [y, m, d] = iso.split('-').map(Number); return new Date(Date.UTC(y + 1, m - 1, d)).toISOString().slice(0, 10); };
 
 // A customer's request from the form → a clean row, or { error }.
 // fields: { kind, name, email, phone, textOk, note, pickupDate, payMethod, qty: { [menuId]: n } }
@@ -198,20 +225,30 @@ export function cleanRequest(fields, menu, payIds = [], rules = {}) {
     if (!pickup) return { error: 'Please pick a pickup day.' };
     if (!days.includes(weekdayOf(pickup)) || (rules.today && pickup < rules.today)) return { error: 'Please pick one of the pickup days.' };
   }
+  if (pickup && rules.today && pickup > yearAfter(rules.today)) return { error: 'Please pick a day within the next year.' };
+  const delivery = rules.delivery && rules.delivery.on && fields.fulfil === 'delivery';
+  const address = delivery ? clip(fields.address, L.address) : '';
+  if (delivery && address.length < 5) return { error: 'Please add the address to deliver to.' };
+  const repeat = rules.standing && REPEAT_WEEKS.includes(Number(fields.repeat)) ? Number(fields.repeat) : 0;
+  if (repeat && !pickup) return { error: 'Please pick the first day for your standing order.' };
   const byId = new Map(menu.filter((m) => m.available && !(Number.isFinite(m.left) && m.left <= 0)).map((m) => [m.id, m]));
   const items = [];
   const qty = fields.qty && typeof fields.qty === 'object' ? fields.qty : {};
   Object.keys(qty).slice(0, 100).forEach((id) => {
     const m = byId.get(id);
     const n = Math.floor(Number(qty[id]));
-    if (m && n > 0) items.push({ id: m.id, name: m.name, unit: m.unit, price: m.price, qty: Math.min(L.qty, Number.isFinite(m.left) ? m.left : L.qty, n) });
+    if (m && n > 0) items.push({ id: m.id, name: m.name, unit: m.unit, price: m.price, qty: Math.min(L.qty, Number.isFinite(m.left) ? m.left : L.qty, m.maxEach || L.qty, n) });
   });
+  // Delivery is a line on the order, so totals and Sales include the fee.
+  if (delivery && items.length && rules.delivery.fee) items.push({ id: 'delivery', name: 'Delivery', unit: '', price: rules.delivery.fee, qty: 1 });
   if (!items.length && !note) return { error: 'Pick at least one item, or tell them what you want in the note.' };
   const pay = String(fields.payMethod || '');
   if (payIds.length && !payIds.includes(pay)) return { error: "Please pick how you'll pay." };
   const row = { kind, customer_name: name, email, phone, items: items.slice(0, L.items), note, pickup_date: pickup || null };
   if (payIds.length) row.pay_method = pay;
   if (textOk) row.text_ok = true;
+  if (delivery) { row.fulfil = 'delivery'; row.address = address; }
+  if (repeat) row.repeat_weeks = repeat;
   return { row };
 }
 
@@ -253,13 +290,14 @@ const itemsText = (items) => (items || []).map((i) => `- ${itemLine(i)}`).join('
 // status: accepted | ready | declined
 // pay: { method, op, paid } adds how to pay (accepted/ready), or a refund
 // note when a digital payment may already have been sent (declined).
-export function buildCustomerEmail({ status, farmName, items, note, pickupDate, message, pickupText, pay, orderUrl }) {
+export function buildCustomerEmail({ status, farmName, items, note, pickupDate, message, pickupText, pay, orderUrl, statusUrl, repeatWeeks, address }) {
   const farm = clip(farmName, 60) || 'the farm stand';
   const heads = {
     accepted: { subject: `${farm} got your order`, lead: `Good news! ${farm} has your order and will get it ready.` },
     ready: { subject: `Your order from ${farm} is ready`, lead: `Your order from ${farm} is ready to pick up.` },
     declined: { subject: `About your order from ${farm}`, lead: `${farm} can't fill this order right now.` },
   };
+  if (address) heads.ready = { subject: `Your order from ${farm} is ready`, lead: `Your order from ${farm} is ready for delivery.` };
   const h = heads[status] || heads.accepted;
   const msg = clip(message, ORDER_LIMITS.message);
   const when = prettyDate(pickupDate);
@@ -273,30 +311,51 @@ export function buildCustomerEmail({ status, farmName, items, note, pickupDate, 
 ${msg ? `<p style="font-size:15px;line-height:1.5;margin:0 0 10px;padding:12px 14px;background:#EBE0CC;border-radius:10px">${esc(msg).replace(/\n/g, '<br>')}</p>` : ''}
 ${itemsHtml(items)}
 ${note ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Your note: ${esc(note)}</p>` : ''}
-${when && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Pickup you asked for: ${esc(when)}</p>` : ''}
-${pickupText && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${esc(pickupText)}</p>` : ''}
-${payHtml}${refund ? `<p style="font-size:14px;margin:6px 0">${esc(refund)}</p>` : ''}
+${when && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${address ? 'Delivery' : 'Pickup'} you asked for: ${esc(when)}${repeatWeeks ? ` (${esc(repeatLabel(repeatWeeks).toLowerCase())})` : ''}</p>` : ''}
+${address && status !== 'declined' ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Delivering to ${esc(address)}</p>` : ''}
+${pickupText && status !== 'declined' && !address ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${esc(pickupText)}</p>` : ''}
+${payHtml}
+${statusUrl ? `<p style="font-size:14px;margin:10px 0 0"><a href="${esc(statusUrl)}" style="color:#2C1810">Check on your order</a></p>` : ''}${refund ? `<p style="font-size:14px;margin:6px 0">${esc(refund)}</p>` : ''}
 <p style="font-size:13px;color:#5C4530;margin:14px 0 0">Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${esc(farm)} directly.`}</p>
 ${orderUrl ? `<p style="font-size:13px;margin:8px 0 0"><a href="${esc(orderUrl)}" style="color:#2C1810">${status === 'declined' ? 'See what else they have' : 'Order again'} from ${esc(farm)}</a></p>` : ''}`);
-  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `Pickup you asked for: ${when}` : '', pickupText && status !== 'declined' ? pickupText : '', p ? `Paying: ${p.line}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
+  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `${address ? 'Delivery' : 'Pickup'} you asked for: ${when}${repeatWeeks ? ` (${repeatLabel(repeatWeeks).toLowerCase()})` : ''}` : '', address && status !== 'declined' ? `Delivering to ${address}` : '', pickupText && status !== 'declined' && !address ? pickupText : '', statusUrl ? `Check on your order: ${statusUrl}` : '', p ? `Paying: ${p.line}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
   return { subject: h.subject, html, text };
 }
 
 // Email to the owner when a request comes in.
-export function buildOwnerEmail({ kind, farmName, name, email, phone, items, note, pickupDate, appUrl, payMethod }) {
+// estimate: a short line like "Likely ready around Sat, Dec 6" (pre-orders).
+export function buildOwnerEmail({ kind, farmName, name, email, phone, items, note, pickupDate, appUrl, payMethod, estimate, repeatWeeks, address }) {
   const who = clip(name, 60) || 'Someone';
-  const subject = kind === 'join' ? `${who} wants to join your email list` : `New order request from ${who}`;
+  const subject = kind === 'join' ? `${who} wants to join your email list` : kind === 'notify' ? `${who} wants to know when ${(items && items[0] && items[0].name) || 'it'}'s back` : `New ${repeatWeeks ? 'standing order' : 'order request'} from ${who}`;
   const when = prettyDate(pickupDate);
   const html = wrap(`
 <h1 style="font-family:Georgia,serif;font-weight:400;font-size:22px;margin:0 0 10px">${esc(subject)}</h1>
-<p style="font-size:15px;line-height:1.5;margin:0 0 6px">${esc(who)} · <a href="mailto:${esc(email)}" style="color:#2C1810">${esc(email)}</a>${phone ? ` · ${esc(phone)}` : ''}</p>
+<p style="font-size:15px;line-height:1.5;margin:0 0 6px">${esc(who)}${email ? ` · <a href="mailto:${esc(email)}" style="color:#2C1810">${esc(email)}</a>` : ''}${phone ? ` · ${esc(phone)}` : ''}</p>
 ${itemsHtml(items)}
 ${note ? `<p style="font-size:15px;line-height:1.5;margin:6px 0;padding:12px 14px;background:#EBE0CC;border-radius:10px">${esc(note).replace(/\n/g, '<br>')}</p>` : ''}
-${when ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Would like it by ${esc(when)}</p>` : ''}
+${when ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Would like it by ${esc(when)}${repeatWeeks ? `, then ${esc(repeatLabel(repeatWeeks).toLowerCase())}` : ''}</p>` : ''}
+${address ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Deliver to ${esc(address)}</p>` : ''}
+${estimate ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">${esc(estimate)}</p>` : ''}
 ${payLabel(payMethod) ? `<p style="font-size:14px;color:#5C4530;margin:6px 0">Paying with ${esc(payLabel(payMethod))}</p>` : ''}
 <p style="margin:16px 0 0"><a href="${esc(appUrl)}" style="display:inline-block;background:#2C1810;color:#F4EDE0;text-decoration:none;padding:12px 18px;border-radius:12px;font-weight:600">Open Orders in Henalytics</a></p>
 <p style="font-size:12px;color:#5C4530;margin:14px 0 0">You get these because "Email me new requests" is on for ${esc(clip(farmName, 60) || 'your homestead')}'s order page. Turn it off in Henalytics under Orders.</p>`);
-  const text = [subject, `${who} · ${email}${phone ? ` · ${phone}` : ''}`, itemsText(items), note, when ? `Would like it by ${when}` : '', payLabel(payMethod) ? `Paying with ${payLabel(payMethod)}` : '', `Open Orders in Henalytics: ${appUrl}`].filter(Boolean).join('\n\n');
+  const text = [subject, [who, email, phone].filter(Boolean).join(' · '), itemsText(items), note, when ? `Would like it by ${when}${repeatWeeks ? `, then ${repeatLabel(repeatWeeks).toLowerCase()}` : ''}` : '', address ? `Deliver to ${address}` : '', estimate || '', payLabel(payMethod) ? `Paying with ${payLabel(payMethod)}` : '', `Open Orders in Henalytics: ${appUrl}`].filter(Boolean).join('\n\n');
+  return { subject, html, text };
+}
+
+// "It's back" note to people who asked on the order page.
+export function buildBackEmail({ farmName, itemName, orderUrl, message }) {
+  const farm = clip(farmName, 60) || 'the farm stand';
+  const item = clip(itemName, 60) || 'it';
+  const subject = `${item} is back at ${farm}`;
+  const msg = clip(message, ORDER_LIMITS.message);
+  const html = wrap(`
+<h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px;margin:0 0 10px">${esc(subject)}</h1>
+<p style="font-size:15px;line-height:1.5;margin:0 0 10px">You asked ${esc(farm)} to let you know when ${esc(item)} was back. It is!</p>
+${msg ? `<p style="font-size:15px;line-height:1.5;margin:0 0 10px;padding:12px 14px;background:#EBE0CC;border-radius:10px">${esc(msg).replace(/\n/g, '<br>')}</p>` : ''}
+${orderUrl ? `<p style="margin:14px 0 0"><a href="${esc(orderUrl)}" style="display:inline-block;background:#E8B547;color:#2C1810;text-decoration:none;padding:11px 16px;border-radius:12px;font-weight:700">Order from ${esc(farm)}</a></p>` : ''}
+<p style="font-size:13px;color:#5C4530;margin:14px 0 0">You get this one email because you asked. Questions? Just reply.</p>`);
+  const text = [`You asked ${farm} to let you know when ${item} was back. It is!`, msg, orderUrl ? `Order: ${orderUrl}` : '', 'You get this one email because you asked. Questions? Just reply.'].filter(Boolean).join('\n\n');
   return { subject, html, text };
 }
 
@@ -318,13 +377,13 @@ export function smsGroupHref(phones, body, ios) {
 export const GROUP_TEXT_MAX = 20;
 const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
 // A short text for an order update. status: accepted | ready | declined | other
-export function orderText({ status, name, farm, items, message, pickupText, payLine }) {
+export function orderText({ status, name, farm, items, message, pickupText, payLine, delivery }) {
   const f = clip(farm, 60) || 'the farm';
   const what = (items || []).map(itemLine).join(', ');
   const msg = clip(message, ORDER_LIMITS.message);
   const parts = {
     accepted: [`Hi ${firstName(name)}, it's ${f}. We got your order${what ? ` (${what})` : ''} and will get it ready.`, msg, payLine],
-    ready: [`Hi ${firstName(name)}, your order from ${f} is ready to pick up!`, msg, clip(pickupText, ORDER_LIMITS.pickupText), payLine],
+    ready: [`Hi ${firstName(name)}, your order from ${f} is ready${delivery ? " and we'll bring it by" : ' to pick up'}!`, msg, delivery ? '' : clip(pickupText, ORDER_LIMITS.pickupText), payLine],
     declined: [`Hi ${firstName(name)}, it's ${f}. Sorry, we can't fill your order right now.`, msg],
   }[status] || [`Hi ${firstName(name)}, it's ${f}.`, msg];
   return parts.filter(Boolean).join(' ');

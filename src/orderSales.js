@@ -17,6 +17,7 @@
 // ============================================================================
 
 import { cleanMenu, ORDER_LIMITS } from "./orderShared.js";
+import { cleanSupply } from "./orderSupply.js";
 
 export const CREDIT_TYPES = [
   { id: "farmstand", label: "Farm stand", hobby: "farmstand" },
@@ -81,6 +82,11 @@ export function ownerMenu(menu) {
       cost: Number.isFinite(cost) && cost >= 0 && o.cost !== "" && o.cost != null ? round2(cost) : null,
       credit: CREDIT_IDS.has(o.credit) ? o.credit : "",
       standItemId: String(o.standItemId || "").slice(0, 24),
+      // Pre-orders (src/orderSupply.js): where it comes from, and whether
+      // people can order past what's ready.
+      supply: cleanSupply(o.supply, m.unit),
+      preorder: o.preorder === true,
+      showAhead: o.showAhead !== false,
     };
   });
 }
@@ -109,7 +115,8 @@ export function orderLines(req, menu, data) {
   return items.map((i, k) => {
     const m = byId.get(i.id) || {};
     const standItemId = m.standItemId && stand.some((s) => s.id === m.standItemId) ? m.standItemId : "";
-    const credit = m.credit || guessCredit({ ...m, name: i.name, unit: i.unit, standItemId }, data);
+    // The delivery fee is its own line; it isn't a product.
+    const credit = i.id === "delivery" ? "other" : m.credit || guessCredit({ ...m, name: i.name, unit: i.unit, standItemId }, data);
     const price = num(i.price) || num(m.price);
     const line = {
       key: `${i.id || "item"}-${k}`, itemId: i.id || "", name: i.name || m.name || "Item", unit: i.unit || m.unit || "",

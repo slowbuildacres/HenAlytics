@@ -30,7 +30,8 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS } from '../src/orderShared.js';
+import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel } from '../src/orderShared.js';
+import { planAll, sourceKey, takesPreorders, publicSupply, perUnit, estimateRequest, addDays, daysBetween, HORIZON } from '../src/orderSupply.js';
 
 const SITE = 'https://henalytics.com';
 const MIN_SECONDS = 3;
@@ -60,41 +61,49 @@ function ipHash(req, homesteadId) {
 // Today in the US farm's rough time (Central), for pickup-day checks.
 const usToday = () => new Date(Date.now() - 6 * 3600000).toISOString().slice(0, 10);
 
-// How many of a farm stand item are left to order: on the stand (when
-// stock is tracked) plus ready back stock, minus what open orders already
-// asked for. null = not tracked, no limit. Only numbers leave this function.
-function standLeft(hobbies, standItemId, reserved) {
-  const stand = (Array.isArray(hobbies) ? hobbies : []).find((h) => h && h.id === 'farmstand');
-  const it = stand && Array.isArray(stand.items) ? stand.items.find((i) => i && i.id === standItemId && !i.archived) : null;
-  if (!it) return null;
+// Where each menu item comes from (src/orderSupply.js): the farm stand, the
+// hens, the goats, a garden crop, or made to order. Items that take
+// pre-orders get a small curve the page uses to work out ready dates; stand
+// items that don't keep a hard limit (`left`). Only numbers leave here,
+// never the logs, the stand or the other orders.
+async function withSupply(row) {
+  const raw = Array.isArray(row.op.menu) ? row.op.menu : [];
+  if (!raw.some((m) => m && m.id && sourceKey(m))) return row.op;
   const today = usToday();
-  const back = (Array.isArray(it.backStock) ? it.backStock : []).filter((b) => b && Number(b.qty) > 0 && (!b.readyOn || b.readyOn <= today)).reduce((n, b) => n + Number(b.qty), 0);
-  if (!it.trackStock && !back) return null;
-  const have = (it.trackStock ? Math.max(0, Number(it.stock) || 0) : 0) + back;
-  return Math.max(0, Math.floor(have - (reserved || 0)));
+  const [h] = await rest(`homesteads?select=hobbies:data->hobbies&id=eq.${row.id}&limit=1`) || [];
+  const open = await openOrders(row.id);
+  const { plans, orderReady } = planAll(raw, open, { today, hobbies: h && h.hobbies, snaps: row.op.snaps, pickupDays: cleanDays(row.op.pickupDays) });
+  row.orderReady = orderReady;
+  const menu = raw.map((m) => {
+    const key = m && m.id ? sourceKey(m) : '';
+    const plan = key && plans.get(key);
+    if (!plan) return m;
+    if (takesPreorders(m)) return { ...m, sup: publicSupply(m, plan) };
+    // A stand item without pre-orders: what's ready, less what's promised.
+    return { ...m, left: plan.mode === 'stock' ? Math.floor((plan.free[0] ? plan.free[0][1] : 0) / perUnit(m)) : undefined };
+  });
+  return { ...row.op, menu };
+}
+
+// Open orders for planning (standing orders count every N weeks). Works
+// before the repeat_weeks column exists.
+async function openOrders(homesteadId) {
+  const q = (cols) => rest(`order_requests?select=${cols}&homestead_id=eq.${homesteadId}&kind=eq.order&status=in.(new,accepted,ready)&order=created_at.asc&limit=500`);
+  try { return await q('id,items,pickup_date,created_at,status,repeat_weeks') || []; } catch (e) {
+    if (!/repeat_weeks/.test(String(e && e.message))) throw e;
+    return await q('id,items,pickup_date,created_at,status') || [];
+  }
 }
 
 async function findPage(token) {
   const rows = await rest(`homesteads?select=id,farm:data->>homesteadName,op:data->orderPage,fromName:data->stockEmailSettings->>fromName&data->orderPage->>token=eq.${token}&limit=1`);
   const row = Array.isArray(rows) ? rows[0] : null;
   if (!row || !row.op) return null;
-  const raw = Array.isArray(row.op.menu) ? row.op.menu : [];
-  const linked = raw.filter((m) => m && m.id && m.standItemId);
-  if (linked.length) {
-    // Stock-aware menu: only fetched when some item is linked to the stand.
-    try {
-      const [h] = await rest(`homesteads?select=hobbies:data->hobbies&id=eq.${row.id}&limit=1`) || [];
-      const open = await rest(`order_requests?select=items&homestead_id=eq.${row.id}&kind=eq.order&status=in.(new,accepted,ready)&limit=500`) || [];
-      const reserved = {};
-      open.forEach((o) => (Array.isArray(o.items) ? o.items : []).forEach((i) => { if (i && i.id) reserved[i.id] = (reserved[i.id] || 0) + (Number(i.qty) || 0); }));
-      const left = new Map(linked.map((m) => [String(m.id), standLeft(h && h.hobbies, m.standItemId, reserved[m.id])]));
-      row.op = { ...row.op, menu: raw.map((m) => (m && left.get(String(m.id)) != null ? { ...m, left: left.get(String(m.id)) } : m)) };
-    } catch (e) { console.error('[order-page] stock', e); }
-  }
+  try { row.op = await withSupply(row); } catch (e) { console.error('[order-page] supply', e); }
   const op = cleanPageSettings(row.op);
   if (!op.on || op.token !== token) return null;
   const farm = String(row.fromName || row.farm || '').trim().slice(0, 60) || 'Our farm stand';
-  return { id: row.id, farm, op };
+  return { id: row.id, farm, op, today: usToday(), orderReady: row.orderReady || new Map() };
 }
 
 // ---------------------------------------------------------------- HTML
@@ -118,6 +127,8 @@ textarea{min-height:90px}.check{display:flex;gap:10px;align-items:flex-start;fon
 select{width:100%;min-height:48px;padding:10px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--bg);color:var(--ink);font-size:16px;font-family:inherit}
 .pay{display:flex;flex-direction:column;gap:8px;margin-top:4px}.pay label{display:flex;align-items:center;gap:10px;font-weight:400;font-size:16px;margin:0;padding:10px 12px;border:1.5px solid var(--line);border-radius:12px;background:var(--bg);cursor:pointer}.pay input{width:20px;height:20px;margin:0}.pay small{color:var(--soft);font-size:14px}
 .paybox{border:1.5px solid var(--yolk);border-radius:14px;padding:14px;margin-top:12px}.btn.link{text-decoration:none;text-align:center;line-height:52px;margin-top:10px}
+.back{display:flex;gap:8px;align-items:center;font-weight:400;font-size:14px;margin:0;max-width:150px}.back input{width:20px;height:20px;flex-shrink:0}
+.est{background:var(--alt);border-radius:12px;padding:10px 12px;margin:10px 0 0;font-size:15px}.est .btn{margin-top:10px;min-height:44px;font-size:15px}.ahead{display:block;font-size:13px;margin-top:2px}
 .err{background:#C84B3122;border:1px solid #C84B31;border-radius:12px;padding:10px 12px;margin:10px 0}
 footer{text-align:center;font-size:13px;color:var(--soft);margin-top:24px}footer a{color:var(--soft)}
 `;
@@ -125,6 +136,41 @@ function shell(title, body) {
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${esc(title)}</title><meta name="robots" content="noindex"><style>${CSS}</style></head>
 <body><main>${body}<footer>Order requests by <a href="${SITE}">Henalytics</a>, the homestead app.</footer></main></body></html>`;
+}
+
+// "loaf" → "loaves", "dozen" stays "dozen", "jar" → "jars".
+function plural(unit, n) {
+  const u = String(unit || '').trim();
+  if (n === 1 || !u || /doz|dz/i.test(u) || /s$/i.test(u)) return u;
+  if (/[^aeiou]y$/i.test(u)) return `${u.slice(0, -1)}ies`;
+  if (/(af|lf)$/i.test(u)) return `${u.slice(0, -1)}ves`;
+  if (/(ch|sh|x)$/i.test(u)) return `${u}es`;
+  return `${u}s`;
+}
+
+// The page's ready-date estimate, worked out in the browser as people change
+// how many they want or the day. Same rules as readyForNew() in
+// src/orderSupply.js; the server works it out again when they send it.
+function estimateScript(sup, today, farm) {
+  const data = JSON.stringify({ sup, today, farm }).replace(/</g, '\\u003c');
+  return `(function(){var D=${data},el=document.getElementById('o-est');if(!el)return;
+function rd(p,u,from){if(p.mode==='slot'){var f=p.free,i=-1,k,cap=0;for(k=0;k<f.length;k++){if(f[k][3]>cap)cap=f[k][3];if(i<0&&f[k][1]>=from)i=k;}if(i<0)return null;if(u<=cap||cap===0){for(;i<f.length;i++)if(f[i][3]+1e-9>=u)return f[i][2];return null;}var l=u;for(;i<f.length;i++){l-=f[i][3];if(l<=1e-9)return f[i][2];}return null;}for(var j=0;j<p.free.length;j++)if(p.free[j][1]+1e-9>=u)return Math.max(p.free[j][0],0);return null;}
+var t0=D.today.split('-').map(Number),F=String(D.farm).replace(/[&<>"]/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c];});function day(iso){if(!/^\\d{4}-\\d{2}-\\d{2}$/.test(iso||''))return -1;var a=iso.split('-').map(Number);return Math.round((Date.UTC(a[0],a[1]-1,a[2])-Date.UTC(t0[0],t0[1]-1,t0[2]))/864e5);}
+function iso(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toISOString().slice(0,10);}
+function pretty(d){return new Date(Date.UTC(t0[0],t0[1]-1,t0[2]+d)).toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric',timeZone:'UTC'});}
+var dt=document.getElementById('o-date');
+function upd(){var any=false,never=false,r=0,w=dt?day(dt.value):-1,from=Math.max(0,w);
+Object.keys(D.sup).forEach(function(id){var i=document.querySelector('input[name="qty_'+id+'"]');var n=i?Math.floor(Number(i.value)||0):0;if(n<=0)return;any=true;var p=D.sup[id];var d=rd(p,p.mode==='slot'?n:n*p.per,p.mode==='slot'?from:0);if(d===null)never=true;else if(d>r)r=d;});
+if(!any){el.hidden=true;el.innerHTML='';return;}el.hidden=false;var msg,btn='';
+if(never)msg='That\\'s more than '+F+' expects to have in the next few months. You can still send it, and they\\'ll let you know when they can fill it.';
+else if(w>=0&&r<=w)msg='<b>\\u2713 Should be ready by '+pretty(w)+'.</b>';
+else{var opt=null;if(dt&&dt.tagName==='SELECT'){for(var k=0;k<dt.options.length;k++){if(dt.options[k].value&&day(dt.options[k].value)>=r){opt=dt.options[k];break;}}}
+var when=opt?'for '+opt.text:'around '+pretty(r);
+if(w>=0){msg='<b>Probably not ready by '+pretty(w)+'.</b> Likely ready '+when+'.';btn=opt?'<button type="button" class="btn alt" id="o-later" data-v="'+opt.value+'">Pick '+opt.text+' instead</button>':(dt&&dt.tagName!=='SELECT'?'<button type="button" class="btn alt" id="o-later" data-v="'+iso(r)+'">Ask for '+pretty(r)+' instead</button>':'');}
+else msg=r===0?'<b>Should be ready now.</b>':'<b>Likely ready '+when+'.</b>';}
+el.innerHTML=msg+(never?'':' <span class="soft">An estimate from what '+F+' has and makes; they\\'ll confirm.</span>')+btn;
+var b=document.getElementById('o-later');if(b)b.addEventListener('click',function(){dt.value=b.getAttribute('data-v');upd();});}
+document.addEventListener('input',upd);document.addEventListener('change',upd);upd();})();`;
 }
 
 function orderPageHtml(page, token, { error, values = {} } = {}) {
@@ -139,18 +185,43 @@ function orderPageHtml(page, token, { error, values = {} } = {}) {
   <p class="soft" style="margin:8px 2px 0">${op.payWhen === 'accepted' ? `You'll pay ${esc(farm)} directly once they accept your order.` : `After you send this, you'll see how to pay ${esc(farm)} directly.`} Payments go straight to ${esc(farm)}, not through Henalytics.</p></fieldset>` : '';
   const menuHtml = avail.map((m) => {
     const out = Number.isFinite(m.left) && m.left <= 0;
-    const max = Number.isFinite(m.left) ? Math.min(ORDER_LIMITS.qty, m.left) : ORDER_LIMITS.qty;
-    const leftText = out ? '<span class="tag">Sold out for now</span>' : Number.isFinite(m.left) && m.left <= 10 ? `<span class="tag">${m.left} left</span>` : '';
+    const max = Math.min(ORDER_LIMITS.qty, Number.isFinite(m.left) ? m.left : ORDER_LIMITS.qty, m.maxEach || ORDER_LIMITS.qty);
+    const tags = [];
+    if (m.maxEach && !out) tags.push(`Up to ${m.maxEach} an order`);
+    if (out) tags.push('Sold out for now');
+    else if (Number.isFinite(m.left) && m.left <= 10) tags.push(`${m.left} left`);
+    let ahead = '';
+    if (m.sup) {
+      if (m.sup.mode === 'slot') tags.push('Made to order');
+      else {
+        const now = m.sup.free.length && m.sup.free[0][0] === 0 ? Math.floor(m.sup.free[0][1] / m.sup.per) : 0;
+        tags.push(now > 0 ? (now <= 24 ? `${now} ready now` : 'Ready now') : 'Pre-order');
+      }
+      if (m.sup.mode === 'stock' && m.sup.ahead > 0) ahead = `<span class="soft ahead">${m.sup.ahead} ${esc(plural(m.unit || 'more', m.sup.ahead))} already ordered ahead of you</span>`;
+    }
     return `
-    <div class="item${out ? ' out' : ''}"><div class="n"><b>${esc(m.name)}</b><span class="soft">${[m.price ? `${moneyText(m.price)}${m.unit ? ` a ${esc(m.unit)}` : ''}` : (m.unit ? esc(m.unit) : ''), esc(m.note)].filter(Boolean).join(' · ')}</span>${leftText}</div>
-      ${out ? '' : `<div class="qty" data-max="${max}"><button type="button" aria-label="Fewer ${esc(m.name)}" data-d="-1">−</button><input type="number" inputmode="numeric" min="0" max="${max}" name="qty_${esc(m.id)}" value="${esc(values[`qty_${m.id}`] || '0')}" aria-label="How many ${esc(m.name)}"><button type="button" aria-label="More ${esc(m.name)}" data-d="1">+</button></div>`}</div>`;
+    <div class="item${out ? ' out' : ''}"><div class="n"><b>${esc(m.name)}</b><span class="soft">${[m.price ? `${moneyText(m.price)}${m.unit ? ` a ${esc(m.unit)}` : ''}` : (m.unit ? esc(m.unit) : ''), esc(m.note)].filter(Boolean).join(' · ')}</span>${tags.map((t) => `<span class="tag">${esc(t)}</span>`).join('')}${ahead}</div>
+      ${out ? (op.notifyBack ? `<label class="back"><input type="checkbox" name="back_${esc(m.id)}" value="1"${values[`back_${m.id}`] ? ' checked' : ''}> Email me when it's back</label>` : '') : `<div class="qty" data-max="${max}"><button type="button" aria-label="Fewer ${esc(m.name)}" data-d="-1">−</button><input type="number" inputmode="numeric" min="0" max="${max}" name="qty_${esc(m.id)}" value="${esc(values[`qty_${m.id}`] || '0')}" aria-label="How many ${esc(m.name)}"><button type="button" aria-label="More ${esc(m.name)}" data-d="1">+</button></div>`}</div>`;
   }).join('');
   const days = op.pickupDays;
-  const dates = pickupDates(days, usToday());
+  const dates = pickupDates(days, page.today || usToday());
   const dateHtml = days.length
     ? `<label for="o-date">Pickup day</label><select id="o-date" name="pickupDate" required data-days="${days.join(',')}"><option value="">Pick a day</option>${dates.map((d) => `<option value="${d}"${values.pickupDate === d ? ' selected' : ''}>${esc(orderPrettyDate(d))}</option>`).join('')}</select>
   <p class="soft" style="margin:6px 2px 0">Pickups on ${days.map((d) => WEEKDAYS[d]).join(', ')}.</p>`
-    : `<label for="o-date">When would you like it? (optional)</label><input id="o-date" type="date" name="pickupDate" value="${v('pickupDate')}">`;
+    : `<label for="o-date">When would you like it? (optional)</label><input id="o-date" type="date" name="pickupDate" min="${esc(page.today || usToday())}" value="${v('pickupDate')}">`;
+  // Pre-orders: the numbers the page needs to say when an order is likely
+  // ready (see src/orderSupply.js). Only items that take pre-orders.
+  const sup = {};
+  avail.forEach((m) => { if (m.sup) sup[m.id] = m.sup; });
+  const hasSup = Object.keys(sup).length > 0;
+  const estHtml = hasSup ? '<p id="o-est" class="est" aria-live="polite" hidden></p>' : '';
+  const dl = op.delivery;
+  const fulfilHtml = dl.on ? `<fieldset style="border:none;padding:0;margin:0"><legend style="font-weight:600;font-size:14px;margin:12px 2px 6px">Pickup or delivery?</legend>
+  <div class="pay"><label><input type="radio" name="fulfil" value="pickup"${values.fulfil !== 'delivery' ? ' checked' : ''}> Pickup${op.pickup ? ` <small>${esc(op.pickup)}</small>` : ''}</label>
+  <label><input type="radio" name="fulfil" value="delivery"${values.fulfil === 'delivery' ? ' checked' : ''}> Delivery${dl.fee ? ` <small>+${esc(moneyText(dl.fee))}</small>` : ''}${dl.note ? ` <small>${esc(dl.note)}</small>` : ''}</label></div>
+  <div id="o-addr-wrap"${values.fulfil === 'delivery' ? '' : ' hidden'}><label for="o-addr">Address to deliver to</label><input id="o-addr" type="text" name="address" maxlength="${ORDER_LIMITS.address}" autocomplete="street-address" value="${v('address')}"></div></fieldset>` : '';
+  const standingHtml = op.standing && days.length ? `<label for="o-repeat">How often?</label><select id="o-repeat" name="repeat"><option value="">Just this once</option>${REPEAT_WEEKS.map((w) => `<option value="${w}"${String(values.repeat) === String(w) ? ' selected' : ''}>${esc(repeatLabel(w))}</option>`).join('')}</select>
+  <p class="soft" style="margin:6px 2px 0">A standing order repeats from the day you pick until you stop it from your order link.</p>` : '';
   const hidden = `<input type="hidden" name="ts" value="${ts}"><input type="hidden" name="sig" value="${sig}"><div class="hp" aria-hidden="true"><label>Leave this empty<input type="text" name="website" tabindex="-1" autocomplete="off"></label></div>`;
   const body = `
 <h1>${esc(farm)}</h1>
@@ -166,7 +237,10 @@ ${op.paused ? `<div class="card"><h2>Not taking orders right now</h2><p class="s
   <label for="o-email">Email</label><input id="o-email" type="email" name="email" required maxlength="${ORDER_LIMITS.email}" autocomplete="email" value="${v('email')}">
   <label for="o-phone">Phone (optional)</label><input id="o-phone" type="tel" name="phone" maxlength="${ORDER_LIMITS.phone}" autocomplete="tel" value="${v('phone')}">
   <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></label>
+  ${fulfilHtml}
   ${dateHtml}
+  ${standingHtml}
+  ${estHtml}
   <label for="o-note">${avail.length ? 'Anything else? (optional)' : 'What would you like?'}</label><textarea id="o-note" name="note" maxlength="${ORDER_LIMITS.note}" placeholder="${avail.length ? 'A dozen extra for Saturday, please' : '2 dozen eggs and a loaf of sourdough'}">${v('note')}</textarea>
   ${payHtml}
   ${op.joinList ? `<label class="check"><input type="checkbox" name="alsoJoin" value="1"${values.alsoJoin ? ' checked' : ''}> Also email me when there's something fresh</label>` : ''}
@@ -182,30 +256,106 @@ ${op.joinList ? `<form class="card" method="post" action="/o/${token}">
   <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"> Text me too when there's something fresh</label>
   <button class="btn alt" type="submit">Add me to the list</button>
 </form>` : ''}
-<script>document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;});});});
-(function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<60&&out.length<8;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
-var p=function(n){return(n<10?'0':'')+n};s.innerHTML='<option value="">Pick a day</option>'+out.map(function(t){var v=t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());return '<option value="'+v+'"'+(v===keep?' selected':'')+'>'+t.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</option>'}).join('');})();</script>`;
+<script>document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;i.dispatchEvent(new Event('input',{bubbles:true}));});});});
+(function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<=${HORIZON}&&out.length<60;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
+var p=function(n){return(n<10?'0':'')+n};s.innerHTML='<option value="">Pick a day</option>'+out.map(function(t){var v=t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());return '<option value="'+v+'"'+(v===keep?' selected':'')+'>'+t.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</option>'}).join('');})();
+${hasSup ? estimateScript(sup, page.today || usToday(), farm) : ''}
+(function(){var w=document.getElementById('o-addr-wrap');if(!w)return;function f(){var d=document.querySelector('input[name="fulfil"][value="delivery"]');var on=d&&d.checked;w.hidden=!on;var a=document.getElementById('o-addr');if(a)a.required=!!on;var l=document.querySelector('label[for="o-date"]');if(l&&!l.getAttribute('data-p'))l.setAttribute('data-p',l.textContent);if(l)l.textContent=on?l.getAttribute('data-p').replace('Pickup day','Delivery day'):l.getAttribute('data-p');}document.querySelectorAll('input[name="fulfil"]').forEach(function(r){r.addEventListener('change',f);});f();})();</script>`;
   return shell(`${farm} · Order`, body);
 }
 
-function thanksHtml(page, token, row, joined) {
+function op_nextPickup(days, fromIso) {
+  return (days && days.length ? pickupDates(days, fromIso, 1, 14)[0] : '') || '';
+}
+
+// The ready estimate for a request that just came in: { forCustomer, forOwner }.
+function requestEstimate(page, row) {
+  if (!row || row.kind !== 'order' || !row.items || !row.items.length) return null;
+  const today = page.today || usToday();
+  const want = row.pickup_date ? Math.max(0, daysBetween(today, row.pickup_date)) : -1;
+  const qty = {};
+  row.items.forEach((i) => { qty[i.id] = (qty[i.id] || 0) + Number(i.qty || 0); });
+  const d = estimateRequest(page.op.menu, qty, Math.max(0, want));
+  if (d === undefined) return null;
+  if (d === null) return { forCustomer: `That's more than ${page.farm} expects to have in the next few months, so they'll let you know when they can fill it.`, forOwner: "Henalytics estimate: more than you're likely to have in the next 4 months." };
+  // With pickup days, say the first pickup day it'll be ready for.
+  const readyIso = addDays(today, d);
+  const pick = op_nextPickup(page.op.pickupDays, readyIso);
+  const when = orderPrettyDate(pick || readyIso);
+  if (want >= 0 && d > want) return { forCustomer: `It's probably not ready by ${orderPrettyDate(row.pickup_date)}. ${page.farm} expects it around ${when} and will let you know.`, forOwner: `Henalytics estimate: likely ready around ${when}, after the day they asked for.` };
+  if (d === 0) return { forCustomer: `${page.farm} should have it ready${want > 0 ? ` by ${orderPrettyDate(row.pickup_date)}` : ''}.`, forOwner: 'Henalytics estimate: you have enough ready now.' };
+  return { forCustomer: want >= 0 ? `${page.farm} expects to have it ready by ${orderPrettyDate(row.pickup_date)}.` : `${page.farm} expects to have it ready around ${when}.`, forOwner: `Henalytics estimate: likely ready around ${when}.` };
+}
+
+const statusUrl = (token, st) => (st ? `${SITE}/o/${token}?s=${st}` : '');
+const whenLine = (row) => {
+  const when = orderPrettyDate(row.pickup_date);
+  const how = row.fulfil === 'delivery' ? 'Delivery' : 'Pickup';
+  return when ? `${how}: ${when}${row.repeat_weeks ? `, then ${repeatLabel(row.repeat_weeks).toLowerCase()}` : ''}` : '';
+};
+
+function thanksHtml(page, token, row, { joined, backItems = [], accepted } = {}) {
+  if (row.kind === 'join') return shell(`${page.farm} · Thank you`, `<h1>You're on the list</h1><div class="card"><p>Thanks, ${esc(row.customer_name)}! ${esc(page.farm)} will email ${esc(row.email)} when there's something fresh.</p></div>`);
+  const back = backItems.length ? `<p>${esc(page.farm)} will email ${esc(row.email)} when ${esc(backItems.map((i) => i.name).join(' or '))} ${backItems.length === 1 ? "is" : "are"} back.</p>` : '';
+  if (row.kind === 'notify') {
+    return shell(`${page.farm} · Thank you`, `<h1>We'll let you know</h1><div class="card">${back}</div><p style="text-align:center"><a href="/o/${token}" style="color:inherit">Back to ${esc(page.farm)}</a></p>`);
+  }
+  const est = requestEstimate(page, row);
   const items = (row.items || []).map((i) => `<li>${esc(itemLine(i))}</li>`).join('');
-  const body = row.kind === 'join'
-    ? `<h1>You're on the list</h1><div class="card"><p>Thanks, ${esc(row.customer_name)}! ${esc(page.farm)} will email ${esc(row.email)} when there's something fresh.</p></div>`
-    : `<h1>Request sent</h1><div class="card"><p>Thanks, ${esc(row.customer_name)}! ${esc(page.farm)} got your request and will email ${esc(row.email)} when they've looked at it.</p>
+  const link = statusUrl(token, row.status_token);
+  const body = `<h1>${accepted ? 'Order accepted' : 'Request sent'}</h1><div class="card"><p>Thanks, ${esc(row.customer_name)}! ${accepted ? `${esc(page.farm)} has enough for this, so it's accepted. They'll email ${esc(row.email)} when it's ready.` : `${esc(page.farm)} got your request and will email ${esc(row.email)} when they've looked at it.`}</p>
 ${items ? `<ul>${items}</ul>` : ''}${row.note ? `<p class="soft">Your note: ${esc(row.note)}</p>` : ''}
+${whenLine(row) ? `<p class="soft">${esc(whenLine(row))}${row.address ? ` · ${esc(row.address)}` : ''}</p>` : ''}
+${est ? `<p class="est">${esc(est.forCustomer)} <span class="soft">It's an estimate; they'll confirm.</span></p>` : ''}
+${back}
 ${joined ? `<p class="soft">You'll also get their "what's fresh" emails.</p>` : ''}
 ${row.text_ok ? `<p class="soft">They may text you at ${esc(row.phone)} about this order.</p>` : ''}
+${link ? `<p><a class="btn alt link" href="${esc(link)}">Check on your order anytime</a></p><p class="soft" style="margin-top:6px">Save this link. ${row.repeat_weeks ? 'You can stop your standing order there too.' : 'You can cancel there if plans change.'}</p>` : ''}
 ${payBlock(page, row)}</div>`;
   return shell(`${page.farm} · Thank you`, `${body}<p style="text-align:center"><a href="/o/${token}" style="color:inherit">Back to ${esc(page.farm)}</a></p>`);
+}
+
+// A customer's own order, from the link in their emails (?s=<status_token>).
+const STATUS_TEXT = {
+  new: (f) => `Waiting for ${f} to look at it.`,
+  accepted: (f) => `${f} has your order and is getting it ready.`,
+  ready: () => 'Ready for you!',
+  done: () => 'Picked up. Thanks!',
+  declined: (f) => `${f} couldn't fill this one.`,
+  cancelled: () => 'You cancelled this order.',
+};
+function statusHtml(page, token, row, { notice } = {}) {
+  const ts = String(Date.now());
+  const sig = formSig(token, ts);
+  const items = (row.items || []).map((i) => `<li>${esc(itemLine(i))}</li>`).join('');
+  const open = ['new', 'accepted', 'ready'].includes(row.status);
+  const d = page.orderReady && page.orderReady.get(row.id);
+  const today = page.today || usToday();
+  const est = open && row.status !== 'ready' && d !== undefined
+    ? (d === null ? `${page.farm} will let you know when they can fill it.` : d === 0 ? 'They should have enough for it now.' : `Likely ready around ${orderPrettyDate(addDays(today, d))}.`)
+    : '';
+  const form = (action, label, alt) => `<form method="post" action="/o/${token}?s=${esc(row.status_token)}" style="margin:0"><input type="hidden" name="ts" value="${ts}"><input type="hidden" name="sig" value="${sig}"><input type="hidden" name="act" value="${action}"><button class="btn${alt ? ' alt' : ''}" type="submit">${esc(label)}</button></form>`;
+  const body = `<h1>Your order from ${esc(page.farm)}</h1>
+${notice ? `<div class="est" role="status">${esc(notice)}</div>` : ''}
+<div class="card"><p><b>${esc((STATUS_TEXT[row.status] || STATUS_TEXT.new)(page.farm))}</b></p>
+${items ? `<ul>${items}</ul>` : ''}${row.note ? `<p class="soft">Your note: ${esc(row.note)}</p>` : ''}
+${whenLine(row) ? `<p class="soft">${esc(whenLine(row))}${row.address ? ` · ${esc(row.address)}` : ''}</p>` : ''}
+${est ? `<p class="est">${esc(est)} <span class="soft">An estimate; they'll confirm.</span></p>` : ''}
+${open && row.owner_message ? `<p class="soft">From ${esc(page.farm)}: ${esc(row.owner_message)}</p>` : ''}
+${open ? payBlock(page, row) : ''}
+${open && row.repeat_weeks ? form('stop', 'Stop my standing order after this one', true) : ''}
+${open && row.status !== 'ready' ? form('cancel', 'Cancel this order', true) : ''}</div>
+<p style="text-align:center"><a href="/o/${token}" style="color:inherit">${open ? 'Order something else' : 'Order again'} from ${esc(page.farm)}</a></p>`;
+  return shell(`${page.farm} · Your order`, body);
 }
 
 // How to pay, right after ordering (or a note that it comes later).
 function payBlock(page, row) {
   const none = '<p class="soft">No payment was taken. Settle up with them when you pick up.</p>';
   if (!row.pay_method) return none;
+  if (row.paid) return `<p class="soft">Marked paid with ${esc(payLabel(row.pay_method))}. Thanks!</p>`;
   const total = orderTotal(row.items);
-  if (page.op.payWhen === 'accepted') {
+  if (page.op.payWhen === 'accepted' && !['accepted', 'ready'].includes(row.status)) {
     return `<p class="soft">You picked ${esc(payLabel(row.pay_method))}. Once ${esc(page.farm)} accepts your order, they'll email you how to pay${total != null ? ` (about ${esc(moneyText(total))})` : ''}.</p>`;
   }
   // No total yet (they wrote what they want in the note): don't ask them to
@@ -236,19 +386,22 @@ async function ownerEmails(homesteadId) {
   }
   return out;
 }
-async function notifyOwner(page, row) {
+// subject: for a customer's change from their status link (cancel, stop).
+async function notifyOwner(page, row, subjectOverride) {
   if (!page.op.emailMe || !process.env.RESEND_API_KEY) return;
   const to = await ownerEmails(page.id);
   if (!to.length) return;
-  const { subject, html, text } = buildOwnerEmail({
+  const built = buildOwnerEmail({
     kind: row.kind, farmName: page.farm, name: row.customer_name, email: row.email, phone: row.phone,
-    items: row.items, note: row.note, pickupDate: row.pickup_date, payMethod: row.pay_method, appUrl: `${process.env.APP_BASE_URL || SITE}/?open=orders`,
+    items: row.items, note: row.note, pickupDate: row.pickup_date, payMethod: row.pay_method, estimate: row.kind === 'order' && !subjectOverride ? (requestEstimate(page, row) || {}).forOwner || '' : '', repeatWeeks: row.repeat_weeks, address: row.address, appUrl: `${process.env.APP_BASE_URL || SITE}/?open=orders`,
   });
+  const { html, text } = built;
+  const subject = subjectOverride || built.subject;
   const from = process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com';
   await fetch('https://api.resend.com/emails', {
     method: 'POST',
     headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-    body: JSON.stringify({ from: `Henalytics <${from}>`, to, reply_to: row.email, subject, html, text }),
+    body: JSON.stringify({ from: `Henalytics <${from}>`, to, ...(row.email ? { reply_to: row.email } : {}), subject, html, text }),
   }).catch((e) => console.error('[order-page] owner email failed', e));
 }
 
@@ -261,11 +414,63 @@ function parseBody(req) {
   return b && typeof b === 'object' ? b : {};
 }
 
+// Columns added by 20261112_order_extras.sql. Until it runs, requests are
+// saved without them (standing and delivery go in the note) so orders never
+// stop coming in.
+const EXTRA_COLS = /status_token|repeat_weeks|fulfil|address|kind_check|order_requests_kind/;
+// Saves each row on its own: a batch insert needs every row to have the same
+// keys, and an order, a "tell me when it's back" and a list sign-up don't.
+// Returns the rows as saved (an old table keeps standing/delivery in the note
+// and has no status link, and can't take "tell me when it's back" yet).
+async function saveRows(rows) {
+  const out = [];
+  for (const r of rows) {
+    const saved = await saveRow(r);
+    if (saved) out.push(saved);
+  }
+  return out;
+}
+async function saveRow(row) {
+  const post = (r) => rest('order_requests', { method: 'POST', body: JSON.stringify(r), headers: { Prefer: 'return=minimal' } });
+  try { await post(row); return row; } catch (e) {
+    const msg = String(e && e.message);
+    if (!EXTRA_COLS.test(msg) && !/pay_method|text_ok/.test(msg)) throw e;
+  }
+  if (row.kind === 'notify') return null;
+  const { status_token: _s, repeat_weeks: rw, fulfil, address, ...rest2 } = row;
+  const extra = [rw ? repeatLabel(rw) : '', fulfil === 'delivery' ? `Deliver to ${address}` : ''].filter(Boolean).join('. ');
+  const legacy = { ...rest2, note: [row.note, extra].filter(Boolean).join('\n').slice(0, ORDER_LIMITS.note) };
+  try { await post(legacy); return legacy; } catch (e2) {
+    if (!/pay_method|text_ok/.test(String(e2 && e2.message))) throw e2;
+  }
+  const { pay_method: pm, text_ok: _t, ...bare } = legacy;
+  const label = payLabel(pm);
+  if (label) bare.note = `${bare.note ? `${bare.note}\n` : ''}Paying with ${label}`.slice(0, ORDER_LIMITS.note);
+  await post(bare);
+  return bare;
+}
+
+// Would this order be ready in time with what's there? (auto-accept)
+function coveredNow(page, row) {
+  if (!row.items.length) return false;
+  const tracked = new Set(page.op.menu.filter((m) => m.sup || Number.isFinite(m.left)).map((m) => m.id));
+  if (!row.items.every((i) => i.id === 'delivery' || tracked.has(i.id))) return false;
+  const today = page.today || usToday();
+  const want = row.pickup_date ? Math.max(0, daysBetween(today, row.pickup_date)) : -1;
+  const qty = {};
+  row.items.forEach((i) => { qty[i.id] = (qty[i.id] || 0) + Number(i.qty || 0); });
+  const d = estimateRequest(page.op.menu, qty, Math.max(0, want));
+  if (d === undefined) return row.items.every((i) => i.id === 'delivery' || page.op.menu.some((m) => m.id === i.id && Number.isFinite(m.left)));
+  return d !== null && (want < 0 ? d === 0 : d <= want);
+}
+
 export default async function handler(req, res) {
   res.setHeader('X-Robots-Tag', 'noindex');
   res.setHeader('Referrer-Policy', 'no-referrer');
   const raw = req.query && (req.query.t || req.query.token);
   const token = typeof raw === 'string' ? raw.trim().toLowerCase() : '';
+  const sRaw = req.query && req.query.s;
+  const stToken = typeof sRaw === 'string' && /^[a-f0-9]{32}$/.test(sRaw.trim().toLowerCase()) ? sRaw.trim().toLowerCase() : '';
   const send = (status, html) => { res.setHeader('Content-Type', 'text/html; charset=utf-8'); res.setHeader('Cache-Control', 'no-store'); return res.status(status).send(html); };
   if (!['GET', 'HEAD', 'POST'].includes(req.method)) { res.setHeader('Allow', 'GET, HEAD, POST'); return res.status(405).send('Method not allowed'); }
   if (!ORDER_TOKEN_RE.test(token)) return send(404, notFound());
@@ -275,29 +480,63 @@ export default async function handler(req, res) {
   let page;
   try { page = await findPage(token); } catch (e) { console.error('[order-page] lookup', e); return send(502, shell('Not available', '<h1>Ordering is down for a moment</h1><div class="card"><p>Please try again soon.</p></div>')); }
   if (!page) return send(404, notFound());
+  const b = req.method === 'POST' ? parseBody(req) : {};
+  const signed = () => {
+    const ts = Number(b.ts);
+    const age = (Date.now() - ts) / 1000;
+    return !b.website && Number.isFinite(ts) && typeof b.sig === 'string' && b.sig === formSig(token, String(b.ts)) && age <= 86400;
+  };
+
+  // A customer's own order: look, cancel, or stop a standing order.
+  if (stToken) {
+    let row = null;
+    try {
+      const found = await rest(`order_requests?select=id,kind,status,customer_name,items,note,pickup_date,owner_message,pay_method,paid,repeat_weeks,fulfil,address,status_token&homestead_id=eq.${page.id}&status_token=eq.${stToken}&kind=eq.order&limit=1`);
+      row = Array.isArray(found) ? found[0] : null;
+    } catch (e) { console.error('[order-page] status', e); }
+    if (!row) return send(404, shell('Order not found', `<h1>We couldn't find that order</h1><div class="card"><p>The link may be old. Ask ${esc(page.farm)}, or <a href="/o/${token}">send a new request</a>.</p></div>`));
+    if (req.method !== 'POST') return send(200, statusHtml(page, token, row));
+    if (!signed()) return send(400, statusHtml(page, token, row, { notice: 'Something went wrong. Please try again.' }));
+    const open = ['new', 'accepted', 'ready'].includes(row.status);
+    let notice = '';
+    if (b.act === 'cancel' && open && row.status !== 'ready') {
+      await rest(`order_requests?id=eq.${row.id}&homestead_id=eq.${page.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ status: 'cancelled', updated_at: new Date().toISOString() }) });
+      row.status = 'cancelled';
+      notice = `Cancelled. ${page.farm} can see that in their orders.`;
+      await notifyOwner(page, { ...row, kind: 'order', note: 'Cancelled this order.', email: '', customer_name: row.customer_name }, `${row.customer_name} cancelled their order`).catch(() => {});
+    } else if (b.act === 'stop' && open && row.repeat_weeks) {
+      await rest(`order_requests?id=eq.${row.id}&homestead_id=eq.${page.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ repeat_weeks: null, updated_at: new Date().toISOString() }) });
+      row.repeat_weeks = null;
+      notice = `Done. This is your last one; ${page.farm} won't repeat it.`;
+      await notifyOwner(page, { ...row, kind: 'order', note: 'Stopped their standing order after this one.', email: '' }, `${row.customer_name} stopped their standing order`).catch(() => {});
+    }
+    return send(200, statusHtml(page, token, row, { notice }));
+  }
+
   if (req.method !== 'POST') return send(200, orderPageHtml(page, token));
 
-  const b = parseBody(req);
   const values = {};
-  ['name', 'email', 'phone', 'note', 'pickupDate', 'payMethod'].forEach((k) => { values[k] = typeof b[k] === 'string' ? b[k].slice(0, 700) : ''; });
+  ['name', 'email', 'phone', 'note', 'pickupDate', 'payMethod', 'fulfil', 'address', 'repeat'].forEach((k) => { values[k] = typeof b[k] === 'string' ? b[k].slice(0, 700) : ''; });
   values.alsoJoin = b.alsoJoin === '1' || b.alsoJoin === true;
   values.textOk = b.textOk === '1' || b.textOk === true;
   const qty = {};
   Object.keys(b).filter((k) => k.startsWith('qty_')).slice(0, 100).forEach((k) => { qty[k.slice(4)] = b[k]; values[k] = String(b[k]).slice(0, 4); });
+  const backIds = Object.keys(b).filter((k) => k.startsWith('back_') && (b[k] === '1' || b[k] === true)).slice(0, 40).map((k) => k.slice(5));
+  backIds.forEach((id) => { values[`back_${id}`] = true; });
   const again = (msg, status = 400) => send(status, orderPageHtml(page, token, { error: msg, values }));
 
   // Bot checks: honeypot, signed form time.
-  const ts = Number(b.ts);
-  const age = (Date.now() - ts) / 1000;
-  if (b.website || !Number.isFinite(ts) || typeof b.sig !== 'string' || b.sig !== formSig(token, String(b.ts)) || age > 86400) {
-    return again('Something went wrong with the form. Please try again.');
-  }
-  if (age < MIN_SECONDS) return again('That was quick! Please check your request and send it again.');
+  if (!signed()) return again('Something went wrong with the form. Please try again.');
+  if ((Date.now() - Number(b.ts)) / 1000 < MIN_SECONDS) return again('That was quick! Please check your request and send it again.');
 
   const kind = b.kind === 'join' ? 'join' : 'order';
   if (kind === 'join' && !page.op.joinList) return again("This farm isn't taking email list sign-ups here.");
   if (kind === 'order' && page.op.paused) return again(page.op.pausedNote || "They're not taking orders right now. Check back soon!");
-  const cleaned = cleanRequest({ ...values, kind, qty }, page.op.menu, payOptions(page.op).map((m) => m.id), { pickupDays: page.op.pickupDays, today: new Date(Date.now() - 36 * 3600000).toISOString().slice(0, 10) });
+  // "Email me when it's back" only, with nothing to order: just the note.
+  const backItems = kind === 'order' && page.op.notifyBack ? page.op.menu.filter((m) => backIds.includes(m.id) && m.available && Number.isFinite(m.left) && m.left <= 0).map((m) => ({ id: m.id, name: m.name })) : [];
+  const anyQty = Object.values(qty).some((n) => Number(n) > 0);
+  const backOnly = backItems.length && !anyQty && !String(values.note || '').trim();
+  const cleaned = cleanRequest({ ...values, kind, qty, ...(backOnly ? { note: 'back' } : {}) }, page.op.menu, backOnly ? [] : payOptions(page.op).map((m) => m.id), { pickupDays: backOnly ? [] : page.op.pickupDays, today: new Date(Date.now() - 36 * 3600000).toISOString().slice(0, 10), delivery: page.op.delivery, standing: page.op.standing });
   if (cleaned.error) return again(cleaned.error);
 
   const hash = ipHash(req, page.id);
@@ -309,25 +548,24 @@ export default async function handler(req, res) {
     const all = await rest(`order_requests?select=id&homestead_id=eq.${page.id}&created_at=gte.${encodeURIComponent(dayAgo)}&limit=${PER_HOMESTEAD_DAY + 1}`) || [];
     if (all.length >= PER_HOMESTEAD_DAY) return again('This farm has a lot of requests today. Please try again tomorrow, or reach out to them directly.', 429);
 
-    const rows = [{ ...cleaned.row, homestead_id: page.id, ip_hash: hash }];
-    const joined = kind === 'order' && values.alsoJoin && page.op.joinList;
-    if (joined) rows.push({ kind: 'join', customer_name: cleaned.row.customer_name, email: cleaned.row.email, phone: cleaned.row.text_ok ? cleaned.row.phone : '', items: [], note: '', pickup_date: null, homestead_id: page.id, ip_hash: hash, ...(cleaned.row.text_ok ? { text_ok: true } : {}) });
-    // Every row in one insert must have the same keys (PostgREST rejects a
-    // batch where they differ), so fill in the defaults for the extras.
-    const same = (list) => list.map((r) => ({ pay_method: null, text_ok: false, ...r }));
-    try {
-      await rest('order_requests', { method: 'POST', body: JSON.stringify(same(rows)), headers: { Prefer: 'return=minimal' } });
-    } catch (e) {
-      // Table made before the pay_method column: save the order anyway, with
-      // the pay choice in the note, so orders never stop coming in.
-      if (!/pay_method|text_ok/.test(String(e && e.message))) throw e;
-      const label = payLabel(rows[0].pay_method);
-      const legacy = rows.map(({ pay_method: _p, text_ok: _t, ...r }) => r);
-      if (label) legacy[0].note = `${legacy[0].note ? `${legacy[0].note}\n` : ''}Paying with ${label}`.slice(0, ORDER_LIMITS.note);
-      await rest('order_requests', { method: 'POST', body: JSON.stringify(legacy), headers: { Prefer: 'return=minimal' } });
+    const who = { customer_name: cleaned.row.customer_name, email: cleaned.row.email, phone: cleaned.row.text_ok ? cleaned.row.phone : '', homestead_id: page.id, ip_hash: hash, ...(cleaned.row.text_ok ? { text_ok: true } : {}) };
+    const rows = [];
+    let main = null;
+    if (!backOnly) {
+      const accepted = kind === 'order' && page.op.autoAccept && coveredNow(page, cleaned.row);
+      main = { ...cleaned.row, homestead_id: page.id, ip_hash: hash, ...(kind === 'order' ? { status_token: crypto.randomBytes(16).toString('hex') } : {}), ...(accepted ? { status: 'accepted' } : {}) };
+      rows.push(main);
     }
-    await notifyOwner(page, cleaned.row);
-    return send(200, thanksHtml(page, token, cleaned.row, joined));
+    if (backItems.length) rows.push({ ...who, kind: 'notify', items: backItems, note: '', pickup_date: null });
+    const joined = kind === 'order' && values.alsoJoin && page.op.joinList;
+    if (joined) rows.push({ ...who, kind: 'join', items: [], note: '', pickup_date: null });
+    const saved = await saveRows(rows);
+    const savedMain = main ? saved.find((r) => r.kind === main.kind) || main : null;
+    const savedBack = saved.some((r) => r.kind === 'notify') ? backItems : [];
+    if (main) await notifyOwner(page, savedMain);
+    else if (savedBack.length) await notifyOwner(page, { ...who, kind: 'notify', items: savedBack, note: '' });
+    if (!main) return send(200, thanksHtml(page, token, { ...who, kind: 'notify' }, { backItems: savedBack }));
+    return send(200, thanksHtml(page, token, savedMain, { joined, backItems: savedBack, accepted: savedMain.status === 'accepted' }));
   } catch (e) {
     console.error('[order-page] save', e);
     return again("Your request didn't go through. Please try again in a minute.", 502);

@@ -25,6 +25,7 @@ import React, { useState, useMemo, useEffect } from "react";
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp, Package as NlPackage, ShoppingBag as NlBag } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
+import { homeFromHobbies, putOut, standItemFor } from "./homeInventory.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
@@ -633,6 +634,34 @@ function MoveToStandModal({ item, onMove, onClose }) {
   );
 }
 
+// Put some of a hobby's batch (soap, jars, eggs) out at the stand.
+function PutOutModal({ entry, onPut, onClose }) {
+  const [qty, setQty] = useState(String(entry.qty));
+  const q = Math.min(entry.qty, Math.max(0, Math.floor(parseFloat(qty) || 0)));
+  return (
+    <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
+      <div role="dialog" aria-modal="true" aria-label={`Put ${entry.name} out at the stand`} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+        <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
+          <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Put out at the stand</div>
+          <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
+        </div>
+        <div style={{ padding:20 }}>
+          <div style={{ fontSize:15,fontWeight:600,color:palette.ink,marginBottom:4 }}>{entry.name}</div>
+          <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:14 }}>{groupDigits(entry.qty)} {entry.unit} at home · from {entry.note}{entry.readyOn ? ` · ready ${fmtDate(entry.readyOn)}` : ""}</div>
+          <Field label={`How many to put out (${entry.unit})`}>
+            <input type="number" step="1" min={0} max={entry.qty} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
+          </Field>
+          <div style={{ fontSize:13,color:palette.inkSoft,marginBottom:12,lineHeight:1.5 }}>They come off your {entry.note.toLowerCase().includes("egg") ? "eggs on hand" : `${entry.note.toLowerCase()} count`} and go on the stand, ready to sell.</div>
+          <div style={{ display:"flex",gap:10,justifyContent:"flex-end" }}>
+            <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
+            <Btn variant="leaf" onClick={() => { if (q > 0) { onPut(q); onClose(); } }} disabled={q<=0}>Put {groupDigits(q)} out</Btn>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ============ ITEM CARD ============
 function ItemCard({ item, onSell, onEdit, onRestock }) {
   const profit = (item.pricePerUnit || 0) - (item.costPerUnit || 0);
@@ -772,6 +801,8 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
   const [restockingItem, setRestockingItem] = useState(null);
   const [infraModal, setInfraModal] = useState({ open: false, entry: null });
   const [justRestocked, setJustRestocked] = useState(null); // { item, stock } → "tell your customers?"
+  const [view, setView] = useState("stand");                 // "stand" | "home" (new look)
+  const [puttingOut, setPuttingOut] = useState(null);        // a homeFromHobbies() entry
 
   // Customer emails tutorial: pops up once the first time someone opens the
   // Farm Stand, then lives behind "How customer emails work".
@@ -972,6 +1003,20 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
   };
 
   // Off the stand, history kept. Restored from Archived items.
+  // Off the stand but not gone: what's left goes back home, and the item
+  // waits under "Off the stand" until it's put back.
+  const takeOffStand = (it) => {
+    update(d => {
+      const h = d.hobbies.find(x => x.id === hobby.id);
+      const t = h?.items?.find(x => x.id === it.id);
+      if (!t) return d;
+      const left = Number(t.stock) || 0;
+      if (left > 0) { if (!Array.isArray(t.backStock)) t.backStock = []; t.backStock.push({ id: newId(), qty: left, madeOn: todayStr(), readyOn: "", note: "Taken off the stand" }); t.stock = 0; }
+      t.onStand = false;
+      if (left <= 0) t.archived = true;
+      return d;
+    });
+  };
   const archiveItem = (itemId) => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
@@ -999,12 +1044,12 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
       return {
         id: it.id, title: it.name, left: st !== "untracked" ? stock : null, unit: it.unit || "",
         onOpen: () => { setEditingItem(it); setShowItemModal(true); },
-        sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null, waiting > 0 ? `${groupDigits(roundQty(waiting))} more in back stock` : null].filter(Boolean).join(" · "),
+        sub: [Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? ` a ${it.unit}` : ""}` : null, Number(it.costPerUnit) > 0 ? `${fmtMoney((Number(it.pricePerUnit) || 0) - Number(it.costPerUnit))} profit each` : null, waiting > 0 ? `${groupDigits(roundQty(waiting))} more at home` : null].filter(Boolean).join(" · "),
         badge: st === "out" ? { tone: "alert", text: "Out of stock" } : st === "low" ? { tone: "ready", text: `Low · ${stock} left` } : null,
         actions: st === "out"
-          ? [waiting > 0 ? { label: "Move from back stock", primary: true, run: () => setMovingItem(it) } : { label: "Made more", primary: true, run: () => setRestockingItem({ ...it, _place: "stand" }) },
-             { label: "Take off the stand", run: () => archiveItem(it.id) }]
-          : [{ label: "Sell", primary: true, run: () => setSellingItem(it) }, { label: "Made more", run: () => setRestockingItem({ ...it, _place: "stand" }) }],
+          ? [waiting > 0 ? { label: "Put out from home", primary: true, run: () => setMovingItem(it) } : { label: "Add more", primary: true, run: () => setRestockingItem({ ...it, _place: "stand" }) },
+             { label: "Take off the stand", run: () => takeOffStand(it) }]
+          : [{ label: "Sell", primary: true, run: () => setSellingItem(it) }, { label: waiting > 0 ? "Put out from home" : "Add more", run: () => (waiting > 0 ? setMovingItem(it) : setRestockingItem({ ...it, _place: "stand" })) }, { label: "Take off the stand", run: () => takeOffStand(it) }],
       };
     };
     const backRow = (it) => {
@@ -1021,12 +1066,29 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
           : [ready > 0 ? `${groupDigits(ready)} ready now` : null, nextReady ? `${groupDigits(roundQty(total - ready))} ready ${fmtDate(nextReady).replace(/, \d{4}$/, "")}` : null].filter(Boolean).join(" · "),
         badge: total <= 0 ? null : ready > 0 ? { tone: "good", text: "Ready" } : { tone: "ready", text: `Curing · ${days} day${days === 1 ? "" : "s"}` },
         actions: [
-          ...(total > 0 ? [{ label: "Move to the stand", primary: ready > 0, run: () => setMovingItem(it) }] : []),
+          ...(total > 0 ? [{ label: "Put out at the stand", primary: ready > 0, run: () => setMovingItem(it) }] : []),
           { label: "Add a batch", primary: total <= 0, run: () => setRestockingItem({ ...it, _place: "home" }) },
         ],
       };
     };
-    const readyCount = backItems.filter((it) => backBatches(it).some((x) => isReady(x, today))).length;
+    // Batches the other hobbies keep (soap, jars, eggs), listed once here.
+    const hobbyRow = (e) => {
+      const days = e.readyOn ? Math.max(1, Math.round((parseLocalDate(e.readyOn) - parseLocalDate(today)) / 86400000)) : 0;
+      const linked = standItemFor(data, e);
+      return {
+        id: `home-${e.key}`, title: e.name, left: e.qty, unit: e.unit,
+        sub: [`From ${e.note}`, e.readyOn ? `ready ${fmtDate(e.readyOn).replace(/, \d{4}$/, "")}` : null, linked && isOnStand(linked) ? `${groupDigits(Number(linked.stock) || 0)} at the stand` : null].filter(Boolean).join(" · "),
+        badge: e.readyOn ? { tone: "ready", text: `Curing · ${days} day${days === 1 ? "" : "s"}` } : { tone: "good", text: "Ready" },
+        actions: [{ label: "Put out at the stand", primary: !e.readyOn, run: () => setPuttingOut(e) }],
+      };
+    };
+    const fromHobbies = homeFromHobbies(data, today);
+    const homeRows = [...backItems.filter((it) => backTotal(it) > 0 || it.onStand === false).map(backRow), ...fromHobbies.map(hobbyRow)];
+    const tabs = [
+      { key: "stand", label: `At the stand (${standItems.length})`, selected: view === "stand", onPick: () => setView("stand") },
+      { key: "home", label: `At home (${homeRows.length})`, selected: view === "home", onPick: () => setView("home") },
+    ];
+    const readyCount = backItems.filter((it) => backBatches(it).some((x) => isReady(x, today))).length + fromHobbies.filter((e) => !e.readyOn && e.kind !== "eggs").length;
     const ctx = {
       key: "farmstand",
       summary: { big: fmtMoney(monthRevenue).replace(/\.00$/, ""), small: "sold this month", line: [`${fmtMoney(yearRevenue).replace(/\.00$/, "")} this year`, stockWarnings.length ? `${stockWarnings.length} item${stockWarnings.length === 1 ? "" : "s"} running low` : null, readyCount ? `${readyCount} ready to put out` : null].filter(Boolean).join(" · ") },
@@ -1036,16 +1098,17 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
         onAction: () => { const it = justRestocked.item; const price = Number(it.pricePerUnit) > 0 ? `${fmtMoney(Number(it.pricePerUnit))}${it.unit ? `/${it.unit}` : ""}` : ""; emailCustomers({ item: it.name, qty: String(justRestocked.stock), unit: it.unit || "", price }); setJustRestocked(null); },
         onDismiss: () => setJustRestocked(null),
       } : null,
-      goingTitle: "Back stock (made, not out yet)",
-      going: backItems.map(backRow),
-      shelfTitle: "At the stand", shelfEmpty: "Add what you sell (eggs, honey, produce) with a price, and log sales in a tap.",
-      shelf: standItems.map(itemRow),
+      tabs,
+      going: [],
+      ...(view === "home"
+        ? { shelfTitle: "Made, not at the stand yet", shelfEmpty: "Nothing waiting. Curing soap, extra jars and eggs on hand show up here, ready to put out.", shelf: homeRows }
+        : { shelfTitle: "At the stand", shelfEmpty: "Add what you sell (eggs, honey, produce) with a price, and log sales in a tap.", shelf: standItems.map(itemRow) }),
       past: archivedItems.map((it) => ({ id: it.id, title: it.name, sub: "Off the stand · tap to put it back", onOpen: () => update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); const t = (h?.items || []).find((x) => x.id === it.id); if (t) { t.archived = false; t.onStand = true; } return d; }) })),
       pastTitle: "Off the stand",
       extras: [
         { key: "item", label: "Add an item", icon: NlPlus, run: () => { setEditingItem(null); setShowItemModal(true); } },
         ...(nl.onOpenOrders ? [{ key: "orders", label: "Customer pre-orders", sub: data.orderPage && data.orderPage.on ? "See requests, share your order link" : "Let customers order ahead from a link or QR sign", icon: NlBag, run: nl.onOpenOrders }] : []),
-        { key: "back", label: "Add to back stock", sub: "Made something that isn't going out yet? Curing soap, extra jam", icon: NlPackage, run: () => setPickingBack(true) },
+        { key: "back", label: "Add to At home", sub: "Made something that isn't going out yet? Curing soap, extra jam", icon: NlPackage, run: () => setPickingBack(true) },
         ...(setModal ? [{ key: "email", label: "Email your customers", sub: emailContacts ? `${emailContacts} customer${emailContacts === 1 ? "" : "s"} with an email` : "Add their emails to send what's fresh", icon: NlMail, run: () => emailCustomers() },
           { key: "how", label: "How customer emails work", icon: NlHelp, run: () => setModal({ type: "stockEmailTutorial" }) }] : []),
         { key: "infra", label: "Equipment", sub: recentInfra[0] ? `Last: ${recentInfra[0].item || "item"}` : "Signs, coolers, the stand itself", icon: NlHammer, run: () => setInfraModal({ open: true, entry: null }) },
@@ -1060,6 +1123,7 @@ export default function FarmstandPage({ hobby, data, update, setModal, nl = null
         {sellingItem && <QuickSellModal item={sellingItem} onClose={() => setSellingItem(null)} onSell={(saleData) => recordSale(sellingItem, saleData)} />}
         {restockingItem && <RestockModal item={restockingItem} startPlace={restockingItem._place || "stand"} onClose={() => setRestockingItem(null)} onRestock={(restockData) => recordRestock(restockingItem, restockData)} />}
         {movingItem && <MoveToStandModal item={movingItem} onClose={() => setMovingItem(null)} onMove={(q) => moveToStand(movingItem, q)} />}
+        {puttingOut && <PutOutModal entry={puttingOut} onClose={() => setPuttingOut(null)} onPut={(q) => { const e = puttingOut; let itemId = ""; update((d) => { itemId = putOut(d, e, q, todayStr()); return d; }); setJustRestocked({ item: { ...(standItemFor(data, e) || {}), id: itemId, name: e.name, unit: e.kind === "eggs" ? "dozen" : e.kind === "soap" ? "bar" : "jar" }, stock: q + (Number((standItemFor(data, e) || {}).stock) || 0) }); }} />}
         {pickingBack && <PickItemModal items={items} onClose={() => setPickingBack(false)} onPick={(it) => { setPickingBack(false); if (it) setRestockingItem({ ...it, _place: "home" }); else { setEditingItem(null); setNewItemPlace("home"); setShowItemModal(true); } }} />}
         {infraModal.open && <InfrastructureModal entry={infraModal.entry} onSave={saveInfra} onDelete={deleteInfra} onClose={() => setInfraModal({ open: false, entry: null })} />}
         <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
