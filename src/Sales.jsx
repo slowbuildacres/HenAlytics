@@ -344,6 +344,9 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       tip: Number(tip) || 0,
       created: existingSale?.created || Date.now(),
     };
+    // Editing keeps where the sale came from: an order (so the order still
+    // shows "In Sales" and isn't added twice), a farm stand item, how they paid.
+    ["fromOrder", "fromOrderItem", "fromFarmstandItem", "payMethod"].forEach((k) => { if (existingSale && existingSale[k] != null && existingSale[k] !== "") sale[k] = existingSale[k]; });
 
     if (hobbyType === "eggs") {
       sale = { ...sale, eggType, eggPurpose, unit, pricePerUnit: Number(pricePerUnit) || 0 };
