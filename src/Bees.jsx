@@ -332,8 +332,11 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
               </label>
             </div>
             <label style={{ display:"block" }}>
-              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Revenue (optional)</div>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>What it's worth (optional)</div>
               <input style={inputStyle()} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
+              {/* This number stays on the harvest log; it isn't a sale. Said
+                  plainly, since "Revenue" read like it would count in Sales. */}
+              <div style={{ fontSize:12,color:palette.inkSoft,marginTop:4 }}>Just for your notes. Honey you sell goes in Sales, so it counts there.</div>
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
