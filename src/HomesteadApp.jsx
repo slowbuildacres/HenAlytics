@@ -21658,6 +21658,12 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       setValidationError("Please pick which batch this entry belongs to.");
       return;
     }
+    // A cleared date box saved a log with no date: no day, week, month or
+    // year counted it, so it vanished from every total.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) {
+      setValidationError("Pick a date.");
+      return;
+    }
     setValidationError("");
 
     // Coerce numeric fields from string inputs to actual numbers

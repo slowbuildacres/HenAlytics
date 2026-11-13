@@ -22,7 +22,7 @@ import React, { useState } from "react";
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Tag as NlTag, DollarSign as NlDollar } from "lucide-react";
 import { X } from "lucide-react";
-import { fmtMoney, fmtWeight, lbsToInput, lbsFromInput, weightUnitLabel, currencySymbol, perWeightLabel, perLbToInput, fmtWeightWhole, platesLine } from "./units.js";
+import { fmtMoney, fmtWeight, lbsToInput, lbsFromInput, weightUnitLabel, currencySymbol, perWeightLabel, perLbToInput, perLbFromInput, fmtWeightWhole, platesLine } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 
@@ -334,7 +334,7 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
     const gear = (hobby.gear || []).slice().sort((a, b) => ((b.date || "") < (a.date || "") ? -1 : 1));
     const ctx = {
       key: "hunting",
-      summary: { big: t.meatLbs ? fmtWeight(t.meatLbs) : "0", small: `of meat in ${year}`, line: [`${t.harvests.length} harvest${t.harvests.length === 1 ? "" : "s"}`, t.meatLbs ? `${fmtMoney(t.costPerLb)} a lb vs. ${fmtMoney(t.valuePerLb)} at the store` : null, openTags.length ? `${openTags.length} open tag${openTags.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") },
+      summary: { big: t.meatLbs ? fmtWeight(t.meatLbs) : "0", small: `of meat in ${year}`, line: [`${t.harvests.length} harvest${t.harvests.length === 1 ? "" : "s"}`, t.meatLbs ? `${fmtMoney(perLbToInput(t.costPerLb))} a ${perWeightLabel()} vs. ${fmtMoney(perLbToInput(t.valuePerLb))} at the store` : null, openTags.length ? `${openTags.length} open tag${openTags.length === 1 ? "" : "s"}` : null].filter(Boolean).join(" · ") },
       newLabel: "Log a harvest", onNew: () => setHarvestModal({ open: true, item: null }),
       goingTitle: "Open tags",
       going: openTags.map((tg) => ({ id: tg.id, title: tg.name || `${tg.species || ""} tag`.trim(), onOpen: () => setTagModal({ open: true, item: tg }),
@@ -348,7 +348,7 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
       extras: [
         { key: "tag", label: "Add a tag", sub: "Licenses and tags you bought", icon: NlTag, run: () => setTagModal({ open: true, item: null }) },
         { key: "gear", label: "Add gear", sub: "Ammo, blinds, processing tools", icon: NlHammer, run: () => setGearModal({ open: true, item: null }) },
-        { key: "price", label: `Store meat price: ${fmtMoney(t.valuePerLb)} a lb`, sub: "What you'd pay for meat at the store", icon: NlDollar, run: () => { setPriceDraft(String(t.valuePerLb)); setEditPrice(true); } },
+        { key: "price", label: `Store meat price: ${fmtMoney(perLbToInput(t.valuePerLb))} a ${perWeightLabel()}`, sub: "What you'd pay for meat at the store", icon: NlDollar, run: () => { setPriceDraft(perLbToInput(t.valuePerLb)); setEditPrice(true); } },
         { key: "expense", label: "Expense", icon: NlReceipt, run: () => setModal && setModal({ type: "addExpense", hobbyId: hobby.id }) },
         ...(Array.isArray(hobby.customLogs) ? hobby.customLogs : []).map((c) => ({ key: c.id, label: c.label, icon: NlNote, run: () => setModal && setModal({ type: "log", action: "custom", customLogId: c.id, hobbyIdOverride: hobby.id }) })),
         { key: "customlog", label: "Make a custom log button", icon: NlPlus, run: () => setModal && setModal({ type: "customLogPicker", hobbyId: hobby.id }) },
@@ -361,8 +361,8 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
         {gearModal.open && <GearModal item={gearModal.item} onSave={saveGear} onDelete={deleteGear} onClose={() => setGearModal({ open: false, item: null })} />}
         {editPrice && (
           <ModalShell title="Store meat price" onClose={() => setEditPrice(false)}>
-            <Field label="Price per lb at the store"><input type="number" step="0.01" min={0} value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} style={inputStyle()} /></Field>
-            <Btn onClick={() => { const v = parseFloat(priceDraft); mutate((h) => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
+            <Field label={`Price per ${perWeightLabel()} at the store`}><input type="number" step="0.01" min={0} value={priceDraft} onChange={(e) => setPriceDraft(e.target.value)} style={inputStyle()} /></Field>
+            <Btn onClick={() => { const v = perLbFromInput(parseFloat(priceDraft)); mutate((h) => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
           </ModalShell>
         )}
         <PantryView tab={nl.tab} ctx={ctx} onOpenJournal={nl.onOpenJournal} onSeeAll={nl.onSeeAll} />
@@ -381,17 +381,17 @@ export default function HuntingPage({ hobby, data, update, setModal, nl = null }
         <StatCard label="Harvested" value={t.harvests.length} accent={palette.feather} />
         <StatCard label="Meat in freezer" value={t.meatLbs > 0 ? fmtWeight(t.meatLbs) : "—"} accent={palette.leaf} />
         <StatCard label="Spent" value={fmtMoney(t.totalCost)} sub="tags + gear + processing" accent={palette.accent} />
-        <StatCard label="Cost / lb" value={t.meatLbs > 0 ? fmtMoney(t.costPerLb) : "—"} sub={t.meatLbs > 0 ? `store value ≈ ${fmtMoney(t.storeValue)}` : null} accent={palette.yolk} />
+        <StatCard label={`Cost / ${perWeightLabel()}`} value={t.meatLbs > 0 ? fmtMoney(perLbToInput(t.costPerLb)) : "—"} sub={t.meatLbs > 0 ? `store value ≈ ${fmtMoney(t.storeValue)}` : null} accent={palette.yolk} />
       </div>
 
       <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 16 }}>
         {editPrice ? (
           <span style={{ display: "inline-flex", gap: 6, alignItems: "center" }}>
-            Store price per lb: <input type="number" step="0.01" min={0} value={priceDraft} onChange={e => setPriceDraft(e.target.value)} style={{ ...inputStyle(), width: 90, padding: "4px 8px", fontSize: 13 }} />
-            <Btn small onClick={() => { const v = parseFloat(priceDraft); mutate(h => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
+            Store price per {perWeightLabel()}: <input type="number" step="0.01" min={0} value={priceDraft} onChange={e => setPriceDraft(e.target.value)} style={{ ...inputStyle(), width: 90, padding: "4px 8px", fontSize: 13 }} />
+            <Btn small onClick={() => { const v = perLbFromInput(parseFloat(priceDraft)); mutate(h => { h.meatValuePerLb = v > 0 ? v : DEFAULT_MEAT_VALUE; }); setEditPrice(false); }}>Save</Btn>
           </span>
         ) : (
-          <>Comparing against {fmtMoney(t.valuePerLb)}/lb store meat · <button onClick={() => { setPriceDraft(String(t.valuePerLb)); setEditPrice(true); }} style={{ background: "none", border: "none", padding: 0, color: palette.inkSoft, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>change</button></>
+          <>Comparing against {fmtMoney(perLbToInput(t.valuePerLb))}/{perWeightLabel()} store meat · <button onClick={() => { setPriceDraft(perLbToInput(t.valuePerLb)); setEditPrice(true); }} style={{ background: "none", border: "none", padding: 0, color: palette.inkSoft, textDecoration: "underline", cursor: "pointer", fontSize: 12 }}>change</button></>
         )}
       </div>
 
@@ -527,7 +527,7 @@ export function HuntingAnalytics({ hobby, dateRange = null }) {
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 16 }}>
         <StatCard label="Harvested" value={t.harvests.length} accent={palette.feather} />
         <StatCard label="Meat" value={t.meatLbs > 0 ? fmtWeight(t.meatLbs) : "—"} accent={palette.leaf} />
-        <StatCard label="Cost / lb" value={t.meatLbs > 0 ? fmtMoney(t.costPerLb) : "—"} sub={`vs ${fmtMoney(t.valuePerLb)}/lb store`} accent={palette.yolk} />
+        <StatCard label={`Cost / ${perWeightLabel()}`} value={t.meatLbs > 0 ? fmtMoney(perLbToInput(t.costPerLb)) : "—"} sub={`vs ${fmtMoney(perLbToInput(t.valuePerLb))}/${perWeightLabel()} store`} accent={palette.yolk} />
         <StatCard label="Store value" value={fmtMoney(t.storeValue)} sub={t.storeValue - t.totalCost >= 0 ? `${fmtMoney(t.storeValue - t.totalCost)} ahead` : `${fmtMoney(t.totalCost - t.storeValue)} behind`} accent={palette.leaf} />
         <StatCard label="Tags filled" value={`${filled}/${t.tags.length}`} accent={palette.accent} />
       </div>

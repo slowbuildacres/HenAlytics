@@ -140,8 +140,12 @@ export function buildReminderSchedule(calendarEvents, opts = {}) {
   const hour = typeof opts.hour === "number" ? opts.hour : REMINDER_HOUR;
   const now = opts.now instanceof Date ? opts.now : new Date();
   const max = typeof opts.max === "number" ? opts.max : MAX_SCHEDULED;
+  // Ids already sent today as a late (past-the-hour) reminder. Reconcile runs
+  // on every launch and every calendar change, so without this the same
+  // reminder went off again a minute after each one.
+  const lateDone = opts.lateDone instanceof Set ? opts.lateDone : new Set();
 
-  const events = Array.isArray(calendarEvents) ? calendarEvents : [];
+  const events = (Array.isArray(calendarEvents) ? calendarEvents : []).filter((e) => e && !e.done && !e.completed);
 
   const upcoming = events
     .map((e) => {
@@ -157,7 +161,7 @@ export function buildReminderSchedule(calendarEvents, opts = {}) {
           x.at.getFullYear() === now.getFullYear() &&
           x.at.getMonth() === now.getMonth() &&
           x.at.getDate() === now.getDate();
-        if (sameDay) return { ...x, at: new Date(now.getTime() + 60 * 1000) };
+        if (sameDay) return lateDone.has(x.event.id) ? null : { ...x, at: new Date(now.getTime() + 60 * 1000), late: true };
         return null; // genuinely in the past — skip
       }
       return x;
@@ -171,8 +175,21 @@ export function buildReminderSchedule(calendarEvents, opts = {}) {
     title: x.event.title || "Homestead reminder",
     body: x.event.notes || "",
     schedule: { at: x.at },
-    extra: { eventId: x.event.id, type: x.event.type || null },
+    extra: { eventId: x.event.id, type: x.event.type || null, ...(x.late ? { late: true } : {}) },
   }));
+}
+
+// Remembers which of today's reminders already went out late (local only).
+const LATE_KEY = "henalytics_late_reminders_v1";
+const dayKey = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function readLateDone(now) {
+  try {
+    const o = JSON.parse(localStorage.getItem(LATE_KEY) || "null");
+    return new Set(o && o.day === dayKey(now) && Array.isArray(o.ids) ? o.ids : []);
+  } catch (_) { return new Set(); }
+}
+function writeLateDone(now, ids) {
+  try { localStorage.setItem(LATE_KEY, JSON.stringify({ day: dayKey(now), ids: [...ids] })); } catch (_) {}
 }
 
 // Reconcile device notifications to match the current upcoming events: cancel
@@ -187,11 +204,15 @@ export async function reconcileReminders(calendarEvents, opts = {}) {
 
   await cancelAllReminders();
 
-  const notifications = buildReminderSchedule(calendarEvents, opts);
+  const now = opts.now instanceof Date ? opts.now : new Date();
+  const lateDone = readLateDone(now);
+  const notifications = buildReminderSchedule(calendarEvents, { ...opts, now, lateDone });
   if (notifications.length === 0) return { scheduled: 0 };
 
   try {
     await LN.schedule({ notifications });
+    const late = notifications.filter((n) => n.extra && n.extra.late).map((n) => n.extra.eventId);
+    if (late.length) writeLateDone(now, [...lateDone, ...late]);
     return { scheduled: notifications.length };
   } catch (e) {
     console.warn("[reminders] schedule failed", e?.message || e);

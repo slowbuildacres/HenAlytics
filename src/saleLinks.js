@@ -79,6 +79,11 @@ export function unlinkDeletedEntry(d, hobby, entry) {
       // Older farrow / kindle reminders weren't linked: same day, same kind.
       || (due && !e.relatedId && e.date === due && / expected$/.test(String(e.title || "")) && (e.type === "pigs" || e.type === "rabbits")))));
   }
+  // A garden planting log has a plantings[] record the garden screen shows
+  // (the garden page's own delete drops it; the Journal's didn't).
+  if (entry.action === "planted" && Array.isArray(d.plantings)) {
+    d.plantings = d.plantings.filter((p) => !(p && p.entryId === entry.id));
+  }
   const sales = Array.isArray(d.sales) ? d.sales : [];
   if (entry.action === "sold_eggs") {
     // The Sales row is a copy of the log, same id.

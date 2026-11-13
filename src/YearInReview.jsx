@@ -6,7 +6,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel } from "./units.js";
+import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel, perLbToInput, perWeightLabel } from "./units.js";
 import { huntingTotals } from "./Hunting.jsx";
 import { soapBatchStats } from "./SoapMaking.jsx";
 import { getYearWeather } from "./weather.js";
@@ -840,7 +840,7 @@ function MeatChickensCard({ stats }) {
         <div style={{ marginTop: 4, marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>The numbers</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {meatCostPerLb > 0 && <Stat big={fmtMoney(meatCostPerLb)} label="cost per lb of meat" accent={palette.feather} />}
+            {meatCostPerLb > 0 && <Stat big={fmtMoney(perLbToInput(meatCostPerLb))} label={`cost per ${perWeightLabel()} of meat`} accent={palette.feather} />}
             <Stat big={fmtMoney(meatChickenTotalCost)} label="total spent on meat birds" accent={palette.feather} />
           </div>
           <div style={{ marginTop: 12, padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, lineHeight: 1.6 }}>
@@ -1305,7 +1305,7 @@ function HuntingCard({ data, year }) {
       {t.harvests.length > 0 && <CountUp number={t.harvests.length} suffix={`harvest${t.harvests.length===1?"":"s"}`} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {t.meatLbs > 0 && <Stat big={fmtWeight(t.meatLbs)} label="meat in the freezer" accent={palette.leaf}/>}
-        {t.costPerLb > 0 && <Stat big={fmtMoney(t.costPerLb)} label="cost per lb" accent={palette.feather}/>}
+        {t.costPerLb > 0 && <Stat big={fmtMoney(perLbToInput(t.costPerLb))} label={`cost per ${perWeightLabel()}`} accent={palette.feather}/>}
         {t.storeValue > 0 && <Stat big={fmtMoney(t.storeValue)} label="store value" accent={palette.accent}/>}
       </div>
     </Card>

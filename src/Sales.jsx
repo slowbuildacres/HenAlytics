@@ -361,7 +361,9 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const save = () => {
     let sale = {
       id: existingSale?.id || newId(),
-      date, hobbyType, qty: Number(qty) || 0,
+      // A cleared date box saved a sale with no date, which no month, year
+      // report or chart counts. Today instead.
+      date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayStr(), hobbyType, qty: Number(qty) || 0,
       note, buyerId: buyerId || null,
       tip: Number(tip) || 0,
       created: existingSale?.created || Date.now(),
@@ -1318,6 +1320,8 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
     const n = parseFloat(amount);
     if (!n || n <= 0) { setError("Enter a valid amount."); return null; }
     if (!category.trim()) { setError("Pick or type a category."); return null; }
+    // No date: no month, report or repeat schedule would count it.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setError("Pick a date."); return null; }
     // Only persist flockId if the chosen hobby actually has that flock — guards
     // against a stale selection if the hobby was changed after picking a flock.
     const selHobby = visibleHobbies.find(h => h.id === hobbyId);
@@ -2465,11 +2469,14 @@ export function buildYearReport(data, year, now = new Date()) {
     return h ? (h.name || h.type) : (id ? String(id) : "General");
   };
 
+  // Sales name their buyer by buyerId (customerName is only on chick sales),
+  // so the report's Customer column was blank for nearly every sale.
+  const who = new Map((data.customers || []).filter((c) => c && c.id).map((c) => [c.id, c.name || ""]));
   const sales = collectAllSales(data).filter(s => inYear(s.date)).map(s => ({
     date: s.date,
     hobby: (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
     item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
-    customer: s.customerName || "",
+    customer: (s.buyerId && who.get(s.buyerId)) || s.customerName || s.buyer || "",
     qty: s.qty != null ? `${s.qty}${s.unit ? ` ${s.unit}` : ""}` : "",
     amount: Math.round(computeRevenue(s) * 100) / 100,
     tip: Number(s.tip) || 0,
