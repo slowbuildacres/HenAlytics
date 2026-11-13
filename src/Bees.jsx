@@ -1,5 +1,6 @@
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from "react";
+import { scoreOf, noteBulkDelete } from "./sync.js";
 // NEW_LOOK (3.0): the rebuilt bee screens reuse this file's forms.
 import { BeeToday, BeeHives, BeeHive, HivePicker } from "./newlook/bees/BeeScreens.jsx";
 import { showUndo } from "./newlook/UndoBar.jsx";
@@ -914,7 +915,8 @@ export default function BeesPage({ hobby, data, update, setModal }) {
 
   const deleteHive = (hiveId) => {
     // Confirmation handled inline in HiveDetail; this just performs the deletion.
-    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; h.hives=(h.hives||[]).filter(x=>x.id!==hiveId); d.entries[hobby.id]=(d.entries[hobby.id]||[]).filter(e=>e.hiveId!==hiveId); return d; });
+    // noteBulkDelete: a hive's logs going with it is on purpose (sync.js guard).
+    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; const before = scoreOf(d); h.hives=(h.hives||[]).filter(x=>x.id!==hiveId); d.entries[hobby.id]=(d.entries[hobby.id]||[]).filter(e=>e.hiveId!==hiveId); noteBulkDelete(d, before); return d; });
     setSelectedHive(null);
   };
 
@@ -1039,7 +1041,8 @@ export function BeesNewLook({ hobby, data, update, setModal, tab, onTab, onOpenJ
   const deleteHive = (hive) => {
     const removed = entries.filter((e) => e.hiveId === hive.id);
     const idx = hives.findIndex((x) => x.id === hive.id);
-    update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; h.hives = (h.hives || []).filter((x) => x.id !== hive.id); d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.hiveId !== hive.id); return d; });
+    // noteBulkDelete: a hive's logs going with it is on purpose (sync.js guard).
+    update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; const before = scoreOf(d); h.hives = (h.hives || []).filter((x) => x.id !== hive.id); d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.hiveId !== hive.id); noteBulkDelete(d, before); return d; });
     setHiveId(null);
     showUndo(`Deleted ${hive.name}`, () => update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;

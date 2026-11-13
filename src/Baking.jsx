@@ -774,7 +774,9 @@ export default function BakingPage({ hobby, data, update, setModal, nl = null })
             const current = Number(item.currentAmount) || 0;
             const newAmt = Math.max(0, current - inPurchaseUnits);
             item.currentAmount = newAmt;
-            deductions.push({ pantryId: item.id, amount: inPurchaseUnits, unit: item.purchaseUnit });
+            // What actually came off the shelf (stock stops at 0).
+            const taken = current - newAmt;
+            if (taken > 0) deductions.push({ pantryId: item.id, amount: taken, unit: item.purchaseUnit });
           }
           if (deductions.length > 0) {
             // Store on the bake entry for traceability/future refund.

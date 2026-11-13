@@ -28,6 +28,7 @@
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
+import { scoreOf, noteBulkDelete } from "./sync.js";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
@@ -266,10 +267,13 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
 
   const remove = () => {
     undoable(update, "Deleted infusion")(d => {
+      const before = scoreOf(d);
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       // Strip sales tied to this batch (they'd be orphaned)
       if (Array.isArray(d.sales)) d.sales = d.sales.filter(s => s.batchId !== batch.id);
+      // A deliberate delete of many records: tell the sync guard (sync.js).
+      noteBulkDelete(d, before);
       return d;
     });
     onClose();

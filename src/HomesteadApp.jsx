@@ -81,6 +81,7 @@ import {
   sendFeedback, acceptInvite, deleteAccount,
   listMyHomesteads, setActiveHomestead,
   getHiddenHomesteadIds, setHomesteadHidden,
+  scoreOf, noteBulkDelete,
 } from "./sync.js";
 import { noteDeletions } from "./mergeUnsynced.js";
 import {
@@ -19629,6 +19630,7 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
       if (!h || !Array.isArray(h.currentBatches)) return d;
+      const before = scoreOf(d);
       h.currentBatches = h.currentBatches.filter((b) => b.id !== batch.id);
       // Also drop entries for this batch — they'd otherwise orphan to a
       // batch that no longer exists, polluting analytics.
@@ -19637,6 +19639,8 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
       if (Array.isArray(d.freezerLog)) {
         d.freezerLog = d.freezerLog.filter((f) => f.batchId !== batch.id);
       }
+      // Removing a batch and its logs is on purpose: tell the sync guard.
+      noteBulkDelete(d, before);
       return d;
     });
     onClose();
@@ -25010,7 +25014,10 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
   const remove = () => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
+      // Its care and harvest history goes with it, on purpose (sync.js guard).
+      const before = scoreOf(d);
       if (h) h.perennials = (h.perennials||[]).filter(x => x.id !== perennial.id);
+      noteBulkDelete(d, before);
       return d;
     });
     onClose();

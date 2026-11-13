@@ -31,6 +31,7 @@ import { undoable } from "./newlook/UndoBar.jsx";
 import { Sheet, Button as NlButton } from "./newlook/ui.jsx";
 import { font as NL_FONT } from "./newlook/theme.js";
 import React, { useState, useMemo } from "react";
+import { scoreOf, noteBulkDelete } from "./sync.js";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
@@ -320,12 +321,15 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     undoable(update, "Deleted season")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
+      const before = scoreOf(d);
       h.seasons = (h.seasons || []).filter(s => s.id !== id);
       // Also remove entries tagged to this season so we don't keep orphans.
       if (Array.isArray(d.entries[hobby.id])) {
         d.entries[hobby.id] = d.entries[hobby.id].filter(e => e.seasonId !== id);
       }
       if (h.currentSeasonId === id) h.currentSeasonId = (h.seasons[0] || {}).id || null;
+      // Its logs going with it is on purpose: tell the sync guard (sync.js).
+      noteBulkDelete(d, before);
       return d;
     });
   };
