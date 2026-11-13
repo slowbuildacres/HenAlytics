@@ -782,7 +782,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
       </div>
 
       {harvestChart.length > 0 && (
-        <ChartCard title="Harvest over time (lbs)">
+        <ChartCard title={`Harvest over time (${weightUnitLabel()})`}>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={harvestChart}>
               <XAxis dataKey="month" stroke={palette.inkSoft} fontSize={11} />

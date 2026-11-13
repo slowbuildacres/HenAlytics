@@ -589,6 +589,7 @@ function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEv
       addCalendarEvent({
         id: newId(),
         date: expectedFoalDate,
+        relatedId: record.id,
         title: `🐴 Expected foaling: ${mareName}`,
         type: "horse_foaling",
         notes: `From breeding logged ${bredDate}`,
@@ -1240,6 +1241,8 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.breedings = (h.breedings||[]).filter(b => b.id !== id);
+      // Its expected-foaling reminder goes too (like goats and cows).
+      if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => e.relatedId !== id);
       return d;
     });
   };

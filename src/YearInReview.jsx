@@ -6,7 +6,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel, perLbToInput, perWeightLabel } from "./units.js";
+import { fmtRain, fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel, perLbToInput, perWeightLabel } from "./units.js";
 import { huntingTotals } from "./Hunting.jsx";
 import { soapBatchStats } from "./SoapMaking.jsx";
 import { getYearWeather } from "./weather.js";
@@ -1372,7 +1372,7 @@ function WeatherCard({ stats }) {
             from the weather API) — fmtTemp handles the conversion. */}
         {weatherStats.hottestDay && <Stat big={fmtTemp(weatherStats.hottestDay.highF)} label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`} accent={palette.accent} />}
         {weatherStats.coldestDay && <Stat big={fmtTemp(weatherStats.coldestDay.lowF)} label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`} accent="#7AA8B8" />}
-        {weatherStats.totalRainIn > 0 && <Stat big={`${weatherStats.totalRainIn.toFixed(1)}"`} label={weatherStats.rainIsYearTotal ? "rain this year" : "rain logged"} accent={palette.leaf} />}
+        {weatherStats.totalRainIn > 0 && <Stat big={fmtRain(weatherStats.totalRainIn, 1)} label={weatherStats.rainIsYearTotal ? "rain this year" : "rain logged"} accent={palette.leaf} />}
         {weatherStats.lastSpringFrost && <Stat big={shortDate(weatherStats.lastSpringFrost)} label="last spring frost" accent="#7AA8B8" />}
         {weatherStats.firstFallFrost && <Stat big={shortDate(weatherStats.firstFallFrost)} label="first fall frost" accent="#7AA8B8" />}
       </div>
@@ -1430,7 +1430,7 @@ function FunFactsCard({ stats }) {
   if (stats.entryCountByHobby) {
     const top = Object.entries(stats.entryCountByHobby).sort((a, b) => b[1] - a[1])[0];
     if (top && top[1] > 0) {
-      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", baking: "Baking", canning: "Canning" };
+      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", baking: "Baking", canning: "Canning", sheep: "Sheep", horses: "Horses", sourdough: "Sourdough", farmstand: "Farmstand", freeze_drying: "Freeze Drying", dehydrating: "Dehydrating", fermentation: "Fermentation", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
       facts.push({ emoji: "⭐", label: "Most-tracked hobby", value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})` });
     }
   }

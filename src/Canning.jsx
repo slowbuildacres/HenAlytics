@@ -161,7 +161,7 @@ function Modal({ open, onClose, title, children }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%",
           maxHeight: "90vh", overflow: "auto",

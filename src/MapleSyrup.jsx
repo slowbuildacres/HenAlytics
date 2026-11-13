@@ -109,7 +109,7 @@ function Modal({ open, onClose, title, children }) {
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16,
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
         maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`,
         boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY,

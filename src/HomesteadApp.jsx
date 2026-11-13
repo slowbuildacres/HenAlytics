@@ -108,7 +108,7 @@ import HomeScreen from "./newlook/HomeScreen.jsx";
 import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
 import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
-import { unlinkDeletedEntry } from "./saleLinks.js";
+import { unlinkDeletedEntry, moveStandEggs } from "./saleLinks.js";
 import { nextYearProject, nextYearLabel } from "./newlook/projects/projectData.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
 import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
@@ -1525,7 +1525,11 @@ function exportAllAsCsv(data) {
 
   const escape = (val) => {
     if (val == null) return "";
-    const s = String(val);
+    let s = String(val);
+    // Text starting with = + - @ runs as a formula when the file is opened in
+    // a spreadsheet, and buyer names come from the public order page. Numbers
+    // (like -5) stay as they are.
+    if (typeof val === "string" && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
     // If has comma, quote, or newline, wrap in quotes and double internal quotes
     if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
@@ -1537,6 +1541,8 @@ function exportAllAsCsv(data) {
     if (c === "weather_lowF")  return escape(r.weather && r.weather.lowF  != null ? r.weather.lowF  : "");
     if (c === "weather_precipIn") return escape(r.weather && r.weather.precipIn != null ? r.weather.precipIn : "");
     if (c === "weather_summary") return escape(r.weather && r.weather.summary ? r.weather.summary : "");
+    // Most logs and sales keep their words in `notes`, some in `note`.
+    if (c === "note") return escape([r.note, r.notes].filter((x) => typeof x === "string" && x.trim()).join(" · "));
     return escape(r[c]);
   }).join(","));
 
@@ -1723,7 +1729,7 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput, fmtWeightWhole, fmtWeight1, harvestAmountLbs } from "./units.js";
+import { fmtRain, fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput, fmtWeightWhole, fmtWeight1, harvestAmountLbs } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { useSupportProgress } from "./newlook/supportProgress.js";
 import { tidyData } from "./tidyData.js";
@@ -2841,7 +2847,7 @@ function formatWeatherI18n(weather) {
   const high = weather.highF != null ? fmtTemp(weather.highF) : null;
   const low = weather.lowF != null ? fmtTemp(weather.lowF) : null;
   const summary = weather.summary || "";
-  const precip = weather.precipIn != null && weather.precipIn > 0 ? `${weather.precipIn.toFixed(2)}"` : "";
+  const precip = weather.precipIn != null && weather.precipIn > 0 ? fmtRain(weather.precipIn) : "";
   const parts = [];
   if (high && low) parts.push(`${high}/${low}`);
   else if (high) parts.push(high);
@@ -5332,6 +5338,22 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   //
   // `updatedAt` is intentionally excluded from the change comparison so that
   // re-stamping doesn't itself count as a change (which would loop).
+  // A log, sale or expense saved with its date box cleared (iOS's date picker
+  // has a Clear button) had date "", and no day, week, month or year counted
+  // it. Every hobby has its own forms, so the safety net is here, on records
+  // this save added or changed: an empty date becomes today.
+  const DATED = (it) => it.action != null || it.hobbyType != null || (it.amount != null && it.category != null);
+  // Same idea for amounts: number boxes take a typed "-5" despite min={0},
+  // and a feed log of -5 lbs or a litter of -5 kits took that much off every
+  // total. None of these is ever below zero, so a negative saves as 0.
+  const NEVER_NEG = /^(count|qty|quantity|lbs|oz|gal|gallons|weight|feedAmount|cost|price|amount|revenue|tip|unitQty|cuft|eggs|jars|bars|trays|sap|syrup|hours|pricePer[A-Za-z]*|costPer[A-Za-z]*|[a-z]+(Alive|Stillborn|Born|Weight|Lbs|Oz|Count|Cost|Price|Revenue|Hours|Taps|Started|Made|Remaining))$/;
+  // (Any record: a goat's breeding record keeps its kids born on the hobby.)
+  const fixEmptyDate = (it) => {
+    if (!it || typeof it !== "object") return;
+    for (const k of Object.keys(it)) if (typeof it[k] === "number" && it[k] < 0 && NEVER_NEG.test(k)) it[k] = 0;
+    if (!DATED(it)) return;
+    if ("date" in it && (it.date === "" || it.date == null)) it.date = todayStr();
+  };
   const stampChangedRecords = (oldNode, newNode) => {
     if (Array.isArray(newNode)) {
       // Build id→oldItem lookup if the old side was a comparable array.
@@ -5349,6 +5371,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           if (!oldItem) {
             // Brand-new record — stamp it (unless it already carries one).
             if (item.updatedAt == null) item.updatedAt = Date.now();
+            fixEmptyDate(item);
             // Still recurse so nested id-arrays inside get stamped too.
             stampChangedRecords(null, item);
           } else {
@@ -5357,6 +5380,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             stampChangedRecords(oldItem, item);
             if (recordContentChanged(oldItem, item)) {
               item.updatedAt = Date.now();
+              fixEmptyDate(item);
             }
           }
         } else {
@@ -8443,7 +8467,7 @@ function NeedsAttentionCard({ hobby, entries, setModal, data = null }) {
     // user can decide for themselves. Only when we have a usable total.
     const rainSub = weekRain && weekRain.totalIn != null
       ? (weekRain.totalIn > 0
-          ? `${weekRain.totalIn}" of rain in the last 7 days`
+          ? `${fmtRain(weekRain.totalIn)} of rain in the last 7 days`
           : "No rain in the last 7 days")
       : undefined;
 
@@ -8462,7 +8486,7 @@ function NeedsAttentionCard({ hobby, entries, setModal, data = null }) {
       // so they don't over-water. Informational, no action button.
       nudges.push({
         icon: "🌧️",
-        text: `${weekRain.totalIn}" of rain in the last 7 days`,
+        text: `${fmtRain(weekRain.totalIn)} of rain in the last 7 days`,
         sub: "Your beds may not need watering right now",
       });
     }
@@ -10534,9 +10558,9 @@ function GardenTodayCard({ hobby, data, update, entries, setModal, setPage, onOp
   const lastWater = waterDates.length ? waterDates.reduce((m, d) => (d > m ? d : m)) : null;
   const wateredDays = lastWater ? daysBetweenIso(lastWater, todayIso) : null;
   const rainIn = weekRain && weekRain.totalIn != null ? weekRain.totalIn : null;
-  const rainText = rainIn == null ? null : rainIn > 0 ? `${rainIn}" of rain in the last 7 days` : "No rain in the last 7 days";
+  const rainText = rainIn == null ? null : rainIn > 0 ? `${fmtRain(rainIn)} of rain in the last 7 days` : "No rain in the last 7 days";
   if (rainIn != null && rainIn >= 0.75) {
-    rows.push({ icon: "🌧️", text: `${rainIn}" of rain this week`, sub: "Your beds probably don't need watering today." });
+    rows.push({ icon: "🌧️", text: `${fmtRain(rainIn)} of rain this week`, sub: "Your beds probably don't need watering today." });
   } else if (wateredDays === null || wateredDays >= 4) {
     rows.push({
       icon: "💧",
@@ -14426,6 +14450,10 @@ function ManageHobbiesSection({ data, update }) {
     horses: "Horses",
     sourdough: "Sourdough",
     farmstand: "Farmstand",
+    // The newer hobbies showed their raw type ("freeze_drying") here.
+    baking: "Baking", canning: "Canning", freeze_drying: "Freeze Drying", dehydrating: "Dehydrating",
+    fermentation: "Fermentation", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting",
+    soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends",
   };
 
   return (
@@ -17204,7 +17232,7 @@ function WeatherSourceSettings({ data, update }) {
     setTesting(false);
     if (r.ok) {
       const w = r.sample;
-      setTestMsg({ ok: true, text: `Connected ✓ Today so far: ${w.highF != null ? fmtTemp(w.highF) : "—"} high, ${w.lowF != null ? fmtTemp(w.lowF) : "—"} low${w.precipIn != null ? `, ${w.precipIn}" rain` : ""}.` });
+      setTestMsg({ ok: true, text: `Connected ✓ Today so far: ${w.highF != null ? fmtTemp(w.highF) : "—"} high, ${w.lowF != null ? fmtTemp(w.lowF) : "—"} low${w.precipIn != null ? `, ${fmtRain(w.precipIn)} rain` : ""}.` });
     } else {
       setTestMsg({ ok: false, text: r.message + " If this keeps failing in a web browser, try the phone app — some station services block website requests." });
     }
@@ -17943,7 +17971,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal, /* STEP2A_EARLY_ACCESS */ earlyAccessConfig = null, isSupporter = false }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends", sourdough: "Sourdough", farmstand: "Farmstand", baking: "Baking", canning: "Canning", freeze_drying: "Freeze Drying", dehydrating: "Dehydrating", fermentation: "Fermentation" };
 
   // Category groups. Each group is a list of hobby types it contains.
   // Hobby types NOT in any group render flat at the top of the modal.
@@ -21675,6 +21703,12 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         cleanFields[k] = isNaN(n) ? 0 : n;
       }
     });
+    // A typed "-5" got past min={0} and was saved: a collection of -5 eggs
+    // took 5 off every total. Nothing logged here is ever below zero.
+    if (numericKeys.some((k) => typeof cleanFields[k] === "number" && cleanFields[k] < 0)) {
+      setValidationError("Amounts can't be below zero.");
+      return;
+    }
 
     // For sold_eggs with new unit-based fields, derive the canonical `count`
     // (total eggs) and `pricePerDozen` so existing analytics keep working.
@@ -21845,7 +21879,27 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         const dz = Math.round(((Number(entry.count) || 0) / 12) * 100) / 100;
         if (fs && dz > 0 && undoSnap) {
           undoSnap.stand = JSON.parse(JSON.stringify(fs));
-          addToStand(d, { key: `eggs:${hobby.id}`, kind: "eggs", name: "Eggs", price: null }, dz);
+          const itemId = addToStand(d, { key: `eggs:${hobby.id}`, kind: "eggs", name: "Eggs", price: null }, dz);
+          // Remembered on the log, so editing or deleting it later moves the
+          // stand's stock to match (moveStandEggs / unlinkDeletedEntry).
+          if (itemId) entry.toStand = { itemId, dz };
+        }
+      }
+      // An edited "put out at the stand" log: the stand follows the new count
+      // (or gives them all back if it's no longer a stand log).
+      if (isEdit && existingEntry.toStand && existingEntry.toStand.itemId) {
+        const was = Number(existingEntry.toStand.dz) || 0;
+        const now = action === "used_eggs" && entry.useType === "stand" ? Math.round(((Number(entry.count) || 0) / 12) * 100) / 100 : 0;
+        moveStandEggs(d, existingEntry.toStand.itemId, now - was);
+        if (now > 0) entry.toStand = { itemId: existingEntry.toStand.itemId, dz: now }; else delete entry.toStand;
+      } else if (isEdit && existingEntry.useType !== "stand" && action === "used_eggs" && entry.useType === "stand") {
+        // Changed to "put out at the stand" on edit: they go on the stand now.
+        // (An older stand log without toStand already went on it: left alone.)
+        const fs = d.hobbies.find((x) => x && x.id === "farmstand" && !x.hidden);
+        const dz = Math.round(((Number(entry.count) || 0) / 12) * 100) / 100;
+        if (fs && dz > 0) {
+          const itemId = addToStand(d, { key: `eggs:${hobby.id}`, kind: "eggs", name: "Eggs", price: null }, dz);
+          if (itemId) entry.toStand = { itemId, dz };
         }
       }
       if (finalPaths.length > 0) entry.photoPaths = finalPaths;

@@ -31,7 +31,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import { X, Trash2, Save, Edit3 } from "lucide-react";
-import { fmtMoney as fmtMoneyIntl, fmtWeight, fmtVolume } from "./units.js";
+import { fmtMoney as fmtMoneyIntl, fmtWeight, fmtVolume, flozToInput, flozLabel } from "./units.js";
 import { undoAnimalSale } from "./animalSale.js";
 
 const palette = legacyPalette({
@@ -387,11 +387,12 @@ const FIELD_LABELS = {
   action: "Type",
   date: "Date",
   weight: "Weight",
-  lbs: "Amount (lbs)",
+  lbs: "Amount",
   feedAmount: "Amount",
   feedUnit: "Unit",
   cost: "Cost",
-  gallons: "Gallons",
+  gallons: "Milk",
+  oz: "Milk",
   cause: "Cause",
   buyer: "Buyer",
   price: "Sale price",
@@ -402,10 +403,10 @@ const FIELD_LABELS = {
   durationMinutes: "Duration (minutes)",
   notes: "Notes",
   note: "Notes",
-  woolLbs: "Wool (lbs)",
+  woolLbs: "Wool",
   woolGrade: "Wool grade",
   count: "Count",
-  avgWeight: "Average weight (lbs)",
+  avgWeight: "Average weight",
   method: "Method",
   bredDate: "Breeding date",
   breedDate: "Breeding date",
@@ -418,6 +419,8 @@ const FIELD_LABELS = {
   kitsStillborn: "Kits stillborn",
   reason: "Reason",
 };
+
+const WEIGHT_KEYS = new Set(["lbs", "weight", "woolLbs", "avgWeight", "startWeight", "hangingWeight", "liveWeight", "birthWeight"]);
 
 // Fields we always hide — internal machinery or fields rendered in the header.
 const HIDDEN_FIELDS = new Set([
@@ -445,6 +448,14 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
       return fmtDate(val);
     }
     if (key === "cost" || key === "price") return fmtMoney(val);
+    // Weights and milk are stored in lbs / gallons / fl oz: show them in the
+    // person's units (a metric user's 50 kg goat read "Weight 110.23").
+    if (WEIGHT_KEYS.has(key) && !isNaN(Number(val))) return fmtWeight(Number(val), { forceBig: true });
+    if (key === "feedAmount" && event.source && event.source.feedUnit !== "cups" && !isNaN(Number(val))) return fmtWeight(Number(val), { forceBig: true });
+    if (key === "feedAmount" && !isNaN(Number(val))) return `${val} cups`;
+    if (key === "feedUnit") return null; // already on the amount
+    if (key === "gallons" && !isNaN(Number(val))) return fmtVolume(Number(val));
+    if (key === "oz" && !isNaN(Number(val))) return `${flozToInput(val)} ${flozLabel()}`;
     if (typeof val === "boolean") return val ? "Yes" : "No";
     if (typeof val === "object") return JSON.stringify(val);
     return String(val);

@@ -68,6 +68,15 @@ export function unwindShelfSale(d, sale) {
   }
 }
 
+// Eggs put out at the stand from Use Eggs: move that stand item's stock.
+export function moveStandEggs(d, itemId, dz) {
+  const n = Number(dz) || 0;
+  if (!d || !itemId || !n) return;
+  const stand = (Array.isArray(d.hobbies) ? d.hobbies : []).find((x) => x && x.type === "farmstand");
+  const it = stand && Array.isArray(stand.items) ? stand.items.find((x) => x && x.id === itemId) : null;
+  if (it) it.stock = Math.round(((Number(it.stock) || 0) + n) * 100) / 100;
+}
+
 // A log was deleted (Journal, recent activity). Undo what it did elsewhere:
 // its reminders (a breeding's farrow, kindle, heat or preg-check day) and
 // its Sales row.
@@ -84,6 +93,8 @@ export function unlinkDeletedEntry(d, hobby, entry) {
   if (entry.action === "planted" && Array.isArray(d.plantings)) {
     d.plantings = d.plantings.filter((p) => !(p && p.entryId === entry.id));
   }
+  // Eggs put out at the stand come back off it.
+  if (entry.toStand && entry.toStand.itemId) moveStandEggs(d, entry.toStand.itemId, -(Number(entry.toStand.dz) || 0));
   const sales = Array.isArray(d.sales) ? d.sales : [];
   if (entry.action === "sold_eggs") {
     // The Sales row is a copy of the log, same id.

@@ -1406,6 +1406,8 @@ export default function CatsPage({ hobby, data, update, setModal, user, nl = nul
     undoable(update, "Deleted breeding")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.breedings = (h.breedings || []).filter(b => b.id !== id);
+      // Its due-date reminder goes too (like goats and cows).
+      if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => e.relatedId !== id);
       return d;
     });
   };

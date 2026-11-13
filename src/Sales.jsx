@@ -84,6 +84,8 @@ const HOBBY_META = () => ({
   dog:           { label: "Dogs",          emoji: "🐕", color: palette.feather },
   cat:           { label: "Cats",          emoji: "🐈", color: palette.feather },
   maple_syrup:   { label: "Maple Syrup",   emoji: "🍁", color: palette.honey },
+  // Soap sales (from Soap Making) showed as "Other" without this.
+  soap:          { label: "Soap",          emoji: "🧼", color: palette.leaf },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 });
 
@@ -94,14 +96,16 @@ const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Pea
 // original member; cow/goat/sheep/pig/dog/cat were added later and write the
 // SAME sale shape from their hobby pages. The Sales edit modal must treat them
 // identically to horses or the flat price is lost on edit (Bug 5).
-const LIVESTOCK_FLAT_TYPES = ["horse", "cow", "goat", "sheep", "pig", "dog", "cat"];
+// "rabbit" is a rabbit sold as an animal from the Rabbits page (meat sales
+// are "rabbits"); without it here, editing one dropped its name and type.
+const LIVESTOCK_FLAT_TYPES = ["horse", "cow", "goat", "sheep", "pig", "dog", "cat", "rabbit"];
 // Things sold by the piece from a hobby's shelf. Their pages log the sale;
 // the Sales edit form shows item, unit, how many and price for them.
 const SHELF_TYPES = ["tincture", "oil_infusion", "salve", "tea", "soap", "maple_syrup"];
 const SHELF_WORDS = { tincture: "Bottles", oil_infusion: "Bottles", salve: "Tins", tea: "Sachets or oz", soap: "Bars", maple_syrup: "Bottles or jars" };
 // Maps a flat-livestock sale's hobbyType to the matching hobby id, so the edit
 // modal can offer a "sell an existing animal" dropdown for any of them.
-const LIVESTOCK_HOBBY_ID = { horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats" };
+const LIVESTOCK_HOBBY_ID = { horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", rabbit: "rabbits" };
 const EGG_PURPOSES = ["Eating", "Hatching"];
 const HONEY_FORMS = ["Raw comb", "Extracted", "Creamed", "Infused"];
 const HONEY_CONTAINERS = ["Half-pint jar (1 cup)", "Pint jar (2 cups)", "Quart jar", "Half-gallon", "Gallon", "Bulk lb"];
@@ -1176,7 +1180,7 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
              sale.hobbyType === "pig") {
     // Flat-livestock detail: animal name + transaction type. cat/dog have
     // their own (identical-shaped) branch just below for the species label.
-    const lsLabel = { horse: "Horse", cow: "Cow", goat: "Goat", sheep: "Sheep", pig: "Pig" }[sale.hobbyType] || "Animal";
+    const lsLabel = { horse: "Horse", cow: "Cow", goat: "Goat", sheep: "Sheep", pig: "Pig", dog: "Dog", cat: "Cat", rabbit: "Rabbit" }[sale.hobbyType] || "Animal";
     detail = `${sale.crop || lsLabel} · ${sale.saleType || "sold"}`;
   } else if (sale.hobbyType === "incubator") {
     const birdLabel = sale.birdType ? sale.birdType.toLowerCase() : "chick";
@@ -2038,7 +2042,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
           ? allExpensesExpanded
           : allExpensesExpanded.filter(ex => {
               // filterType is a hobbyType (e.g. "eggs"); map back to hobbyId for expense matching.
-              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
+              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea", rabbit: "rabbits", soap: "soap" };
               return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
             });
 
@@ -2080,7 +2084,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
         const filteredEntrySourced = filterType === "all"
           ? entrySourcedExpenses
           : entrySourcedExpenses.filter(ex => {
-              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
+              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea", rabbit: "rabbits", soap: "soap" };
               return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
             });
 
@@ -2533,7 +2537,9 @@ export function buildYearReport(data, year, now = new Date()) {
 export const YEAR_REPORT_NOTE = "This report is here to help you run and grow your homestead. It isn't tax advice, and Henalytics isn't made by an accountant. If you're filing taxes, go over these numbers with a tax professional.";
 
 export function yearReportCsv(r) {
-  const esc = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  // A customer name or note starting with = + - @ would run as a formula in
+  // a spreadsheet; amounts like -12.00 stay numbers.
+  const esc = (v) => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const rows = [["Type", "Date", "Hobby", "Item / Category", "Customer", "Quantity", "Amount", "Tip", "Note"]];
   r.sales.forEach(s => rows.push(["Sale", s.date, s.hobby, s.item, s.customer, s.qty, s.amount.toFixed(2), s.tip ? s.tip.toFixed(2) : "", s.note]));
   r.expensesList.forEach(e => rows.push(["Expense", e.date, e.hobby, e.category, "", "", (-e.amount).toFixed(2), "", e.note]));
