@@ -30,7 +30,7 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, buildCustomerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel } from '../src/orderShared.js';
+import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, buildCustomerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel, plural, fromLine } from '../src/orderShared.js';
 import { planAll, sourceKey, takesPreorders, publicSupply, perUnit, estimateRequest, addDays, daysBetween, HORIZON } from '../src/orderSupply.js';
 
 const SITE = 'https://henalytics.com';
@@ -156,16 +156,6 @@ function shell(title, body) {
 <body><main>${body}<footer>Order requests by <a href="${SITE}">Henalytics</a>, the homestead app.</footer></main></body></html>`;
 }
 
-// "loaf" → "loaves", "dozen" stays "dozen", "jar" → "jars".
-function plural(unit, n) {
-  const u = String(unit || '').trim();
-  if (n === 1 || !u || /doz|dz/i.test(u) || /s$/i.test(u)) return u;
-  if (/[^aeiou]y$/i.test(u)) return `${u.slice(0, -1)}ies`;
-  if (/(af|lf)$/i.test(u)) return `${u.slice(0, -1)}ves`;
-  if (/(ch|sh|x)$/i.test(u)) return `${u}es`;
-  return `${u}s`;
-}
-
 // The page's ready-date estimate, worked out in the browser as people change
 // how many they want or the day. Same rules as readyForNew() in
 // src/orderSupply.js; the server works it out again when they send it.
@@ -255,7 +245,7 @@ ${op.paused ? `<div class="card"><h2>Not taking orders right now</h2><p class="s
   <label for="o-name">Your name</label><input id="o-name" type="text" name="name" required maxlength="${ORDER_LIMITS.name}" autocomplete="name" value="${v('name')}">
   <label for="o-email">Email</label><input id="o-email" type="email" name="email" required maxlength="${ORDER_LIMITS.email}" autocomplete="email" value="${v('email')}">
   <label for="o-phone">Phone (optional)</label><input id="o-phone" type="tel" name="phone" maxlength="${ORDER_LIMITS.phone}" autocomplete="tel" value="${v('phone')}">
-  <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></label>
+  <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> <span>It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></span></label>
   ${fulfilHtml}
   ${dateHtml}
   ${standingHtml}
@@ -369,7 +359,7 @@ ${est ? `<p class="est">${esc(est)} <span class="soft">An estimate; they'll conf
 ${open && row.owner_message ? `<p class="soft">From ${esc(page.farm)}: ${esc(row.owner_message)}</p>` : ''}
 ${open ? payBlock(page, row) : ''}
 ${open && row.repeat_weeks ? form('stop', 'Stop my standing order after this one', true) : ''}
-${open && row.status !== 'ready' ? form('cancel', 'Cancel this order', true) : ''}</div>
+${open && row.status !== 'ready' ? form('cancel', row.repeat_weeks ? 'Cancel the whole standing order' : 'Cancel this order', true) : ''}</div>
 ${pageLink ? `<p style="text-align:center"><a href="${pageLink}" style="color:inherit">${open ? 'Order something else' : 'Order again'} from ${esc(page.farm)}</a></p>` : ''}`;
   return shell(`${page.farm} · Your order`, body);
 }
@@ -390,7 +380,7 @@ function payBlock(page, row) {
   }
   const p = payInstructions({ method: row.pay_method, op: page.op, amount: total, farm: page.farm, delivery: row.fulfil === 'delivery' });
   if (!p) return none;
-  return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}</p>
+  return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}${row.repeat_weeks ? " That's for this one; each time is paid on its own." : ''}</p>
 ${p.link ? `<a class="btn link" href="${esc(p.link)}" rel="noopener">${esc(p.button)}</a><p class="soft" style="margin:8px 0 0">Opens the app on your phone. If it doesn't, send it to the name above.</p>` : ''}
 ${['venmo', 'cashapp', 'paypal', 'zelle'].includes(row.pay_method) ? `<p class="soft" style="margin:8px 0 0">Check the name before you send. If ${esc(page.farm)} can't fill the order, they'll send your money back.</p>` : ''}
 <p class="soft" style="margin:8px 0 0;font-size:13px">Payments go straight to ${esc(page.farm)}. Henalytics doesn't process, hold or refund payments.</p></div>`;
@@ -428,7 +418,7 @@ async function confirmCustomer(page, token, row) {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `${page.farm.replace(/[<>"\r\n]/g, '')} <${from}>`, to: [row.email], ...(replyTo ? { reply_to: replyTo } : {}), subject: mail.subject, html: mail.html, text: `${mail.text}\n\nDidn't ask for this? You can ignore this email.` }),
+      body: JSON.stringify({ from: fromLine(page.farm, from), to: [row.email], ...(replyTo ? { reply_to: replyTo } : {}), subject: mail.subject, html: mail.html, text: `${mail.text}\n\nDidn't ask for this? You can ignore this email.` }),
     });
     if (r.ok) await rest(`order_requests?status_token=eq.${row.status_token}&homestead_id=eq.${page.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ emailed_at: new Date().toISOString() }) }).catch(() => {});
   } catch (e) { console.error('[order-page] confirm email', e); }

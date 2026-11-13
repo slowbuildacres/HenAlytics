@@ -35,7 +35,7 @@
 // ============================================================================
 
 import { getCorsOrigin } from './_cors.js';
-import { ORDER_STATUSES, JOIN_STATUSES, ORDER_LIMITS, EMAIL_RE, buildCustomerEmail, buildBackEmail, cleanPageSettings } from '../src/orderShared.js';
+import { ORDER_STATUSES, JOIN_STATUSES, ORDER_LIMITS, EMAIL_RE, buildCustomerEmail, buildBackEmail, cleanPageSettings, fromLine } from '../src/orderShared.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAILY_EMAILS = 200;
@@ -174,7 +174,7 @@ export default async function handler(req, res) {
         const ok = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: `${info.farm} <${from}>`, to: [r.email], reply_to: info.replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
+          body: JSON.stringify({ from: fromLine(info.farm, from), to: [r.email], reply_to: info.replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
         }).then((x) => x.ok).catch(() => false);
         if (!ok) continue;
         sent++;
@@ -250,7 +250,7 @@ export default async function handler(req, res) {
           const r = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: `${farm} <${from}>`, to: [row.email], reply_to: replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
+            body: JSON.stringify({ from: fromLine(farm, from), to: [row.email], reply_to: replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
           });
           if (r.ok) {
             emailed = true;

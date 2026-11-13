@@ -34,6 +34,7 @@
 import crypto from 'node:crypto';
 import { getCorsOrigin } from './_cors.js';
 import { buildStockEmail, cleanDraft, stockFromName } from '../src/stockEmail.js';
+import { fromLine } from '../src/orderShared.js';
 
 const RESEND_BATCH = 'https://api.resend.com/emails/batch';
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -155,7 +156,8 @@ export default async function handler(req, res) {
     draft.photos = draft.photos.filter((p) => photoOk(p, user.id));
     if (!draft.items.length && !draft.note) return res.status(400).json({ error: 'Add at least one item or a note.' });
 
-    const from = `${fromName} via Henalytics <${process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com'}>`;
+    // fromLine drops punctuation Resend can trip on ("Lulay Farm, LLC").
+    const from = fromLine(`${fromName} via Henalytics`, process.env.STOCK_EMAIL_FROM || 'hello@henalytics.com');
     const message = (to, isTest) => {
       const unsub = isTest ? `${appBase()}/` : unsubscribeUrl(hid, to);
       const e = buildStockEmail(draft, { fromName, mailingAddress: settings.mailingAddress }, { unsubscribeUrl: unsub, isTest });

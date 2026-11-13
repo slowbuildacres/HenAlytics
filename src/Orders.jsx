@@ -422,10 +422,17 @@ function PageSettingsSheet({ open, onClose, data, update }) {
   const [autoAccept, setAutoAccept] = useState(op.autoAccept);
   const [notifyBack, setNotifyBack] = useState(op.notifyBack);
   const [confirmNew, setConfirmNew] = useState(false);
+  // A stray tap outside the sheet shouldn't throw away a menu's worth of edits.
+  const [leaving, setLeaving] = useState(false);
+  const snap = (o, mn) => JSON.stringify([o.intro, o.pickup, mn, o.joinList, o.joinGroupId, o.emailMe, o.pay, o.payWhen, [...o.pickupDays].sort(), o.paused, o.pausedNote, o.delivery, o.standing, o.autoAccept, o.notifyBack]);
+  const tryClose = () => {
+    const now = snap({ intro, pickup, joinList, joinGroupId, emailMe, pay, payWhen, pickupDays, paused, pausedNote, delivery, standing, autoAccept, notifyBack }, menu);
+    if (now !== snap(cleanPageSettings(data.orderPage || {}), ownerMenu((data.orderPage || {}).menu))) setLeaving(true); else onClose();
+  };
   useEffect(() => {
     if (!open) return;
     const o = cleanPageSettings(data.orderPage || {});
-    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setDelivery(o.delivery); setStanding(o.standing); setAutoAccept(o.autoAccept); setNotifyBack(o.notifyBack); setConfirmNew(false);
+    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setDelivery(o.delivery); setStanding(o.standing); setAutoAccept(o.autoAccept); setNotifyBack(o.notifyBack); setConfirmNew(false); setLeaving(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const stand = standItems(data);
   const standToAdd = stand.filter((i) => !menu.some((m) => m.standItemId === i.id || m.name.toLowerCase() === String(i.name).toLowerCase()));
@@ -449,7 +456,7 @@ function PageSettingsSheet({ open, onClose, data, update }) {
     onClose();
   };
   return (
-    <Sheet open={open} onClose={onClose} label="Order page settings" showClose maxHeight="92vh">
+    <Sheet open={open} onClose={tryClose} label="Order page settings" showClose maxHeight="92vh">
       <h2 style={{ margin: "0 4px 4px", fontFamily: font.display, fontWeight: 400, fontSize: 24 }}>Your order page</h2>
       <p style={{ margin: "0 4px 6px", fontSize: 14, color: nl.soft, lineHeight: 1.45 }}>What customers see when they open your link or scan your sign.</p>
 
@@ -554,6 +561,16 @@ function PageSettingsSheet({ open, onClose, data, update }) {
         <Button small kind="quiet" onClick={() => save({ on: false })}>Turn off my order page</Button>
       </div>
       {confirmNew && <p style={{ fontSize: 13, color: nl.soft, margin: "8px 4px 0" }}>The old link and QR sign stop working. Print a new sign after.</p>}
+      {leaving && (
+        <div role="alertdialog" aria-label="Save your changes?" style={{ position: "sticky", bottom: 0, marginTop: 12, padding: 12, background: nl.card, border: `1.5px solid ${nl.field}`, borderRadius: 16, boxShadow: `0 -6px 18px ${nl.shadow}` }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Save your changes?</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button small onClick={() => save()}>Save</Button>
+            <Button small kind="quiet" onClick={onClose}>Don't save</Button>
+            <Button small kind="quiet" onClick={() => setLeaving(false)}>Keep editing</Button>
+          </div>
+        </div>
+      )}
     </Sheet>
   );
 }

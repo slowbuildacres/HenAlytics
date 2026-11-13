@@ -9,7 +9,8 @@
 // A person is the same customer when, in this order:
 //   1. the email matches (any case, spaces trimmed), or
 //   2. the phone matches (last 10 digits, at least 7), or
-//   3. the name matches (any case, extra spaces ignored) and the saved one
+//   3. the full name matches (any case, extra spaces ignored; at least two
+//      words, so two different "Sarah"s don't become one) and the saved one
 //      has no email yet, or the same one.
 // Two saved customers with the same name and different emails stay two.
 //
@@ -21,6 +22,8 @@
 
 const cleanEmail = (e) => String(e || "").trim().toLowerCase();
 const cleanName = (n) => String(n || "").trim().replace(/\s+/g, " ").toLowerCase();
+// A name only identifies someone with a first and last name.
+const fullName = (n) => { const c = cleanName(n); return c.includes(" ") ? c : ""; };
 const phoneKey = (p) => { const d = String(p || "").replace(/[^0-9]/g, ""); return d.length >= 7 ? d.slice(-10) : ""; };
 
 // who: { email, phone, name } (an order uses customer_name).
@@ -28,10 +31,10 @@ export function matchCustomer(customers, who) {
   const list = (Array.isArray(customers) ? customers : []).filter((c) => c && typeof c === "object");
   const em = cleanEmail(who && who.email);
   const ph = phoneKey(who && who.phone);
-  const nm = cleanName(who && (who.name != null ? who.name : who.customer_name));
+  const nm = fullName(who && (who.name != null ? who.name : who.customer_name));
   return (em && list.find((c) => cleanEmail(c.email) === em))
     || (ph && list.find((c) => phoneKey(c.phone) === ph && (!em || !cleanEmail(c.email) || cleanEmail(c.email) === em)))
-    || (nm && list.find((c) => cleanName(c.name) === nm && (!cleanEmail(c.email) || !em || cleanEmail(c.email) === em)))
+    || (nm && list.find((c) => fullName(c.name) === nm && (!cleanEmail(c.email) || !em || cleanEmail(c.email) === em)))
     || null;
 }
 
@@ -49,7 +52,7 @@ export function findDuplicates(customers) {
       const emailsAgree = !ea || !eb || ea === eb;
       if ((ea && ea === eb)
         || (phoneKey(a.phone) && phoneKey(a.phone) === phoneKey(b.phone) && emailsAgree)
-        || (cleanName(a.name) && cleanName(a.name) === cleanName(b.name) && emailsAgree)) join(a, b);
+        || (fullName(a.name) && fullName(a.name) === fullName(b.name) && emailsAgree)) join(a, b);
     }
   }
   const groups = new Map();

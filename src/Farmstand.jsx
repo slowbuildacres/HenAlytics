@@ -26,6 +26,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp, Package as NlPackage, ShoppingBag as NlBag } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { homeFromHobbies, putOut, standItemFor } from "./homeInventory.js";
+import { plural } from "./orderShared.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
@@ -369,7 +370,7 @@ function QuickSellModal({ item, onSell, onClose }) {
             </div>
           )}
 
-          <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
+          <Field label={item.unit && item.unit !== "each" ? `How many ${plural(item.unit, q === 1 ? 1 : 2)}?` : "How many?"}>
             <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
 
@@ -512,7 +513,7 @@ function RestockModal({ item, onRestock, onClose, startPlace = "stand" }) {
             {place === "home" ? "In back stock" : "At the stand"}: <strong>{currentStock}</strong> → After: <strong>{afterRestock}</strong>
           </div>
 
-          <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
+          <Field label={item.unit && item.unit !== "each" ? `How many ${plural(item.unit, q === 1 ? 1 : 2)}?` : "How many?"}>
             <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
           <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:-6,marginBottom:12 }}>

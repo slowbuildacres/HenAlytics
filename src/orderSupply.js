@@ -435,8 +435,10 @@ export function buildSources(menu, ctx) {
           if (day <= 0) readyNow += pos(b.qty); else batches.push({ day, qty: pos(b.qty) });
         });
       }
+      // Eggs at home keep coming as the hens lay (the app sends the pace).
+      const perDay = home && ISO.test(String(home.asOf)) && daysBetween(home.asOf, today) <= SNAP_STALE_DAYS ? pos(home.perDay) : 0;
       if (!it.trackStock && !readyNow && !batches.length) return; // not counted: no limit
-      out.set(key, { key, mode: "stock", now: (it.trackStock ? Math.max(0, num(it.stock)) : 0) + readyNow, perDay: 0, batches });
+      out.set(key, { key, mode: "stock", now: (it.trackStock ? Math.max(0, num(it.stock)) : 0) + readyNow, perDay, batches });
       return;
     }
     if (key.startsWith("make:")) {
