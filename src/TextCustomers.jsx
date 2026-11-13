@@ -48,10 +48,11 @@ export default function TextCustomersSheet({ open, onClose, data }) {
   const people = useMemo(() => {
     const seen = new Set();
     return all.filter((c) => textable(c) && (!group || (Array.isArray(c.groups) && c.groups.includes(group))))
-      .filter((c) => { const d = digits(c.phone); if (seen.has(d)) return false; seen.add(d); return true; })
+      // Same number written "+1 309…" and "309…" is one person: one text.
+      .filter((c) => { const d = digits(c.phone).slice(-10); if (seen.has(d)) return false; seen.add(d); return true; })
       .sort((a, b) => String(a.name || "").localeCompare(String(b.name || "")));
   }, [all, group]);
-  const notOk = all.filter((c) => c && digits(c.phone).length >= 7 && c.textOk !== true).length;
+  const notOk = all.filter((c) => c && digits(c.phone).length >= 7 && c.textOk !== true && (!group || (Array.isArray(c.groups) && c.groups.includes(group)))).length;
   const body = (c) => {
     const text = msg.replace(/\{name\}/gi, firstName(c.name) || "there").replace(/\s+$/, "");
     return withLink && orderUrl ? `${text}\nOrder here: ${orderUrl}` : text;

@@ -20,6 +20,7 @@ import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from 
 import { fmtMoney, fmtMoneyWhole, perLbToInput, perLbFromInput, perWeightLabel, lbsToInput, lbsFromInput, weightUnitLabel, fmtWeight, currencySymbol } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
 import { askConfirm, askChoice } from "./newlook/ConfirmHost.jsx";
+import { unwindAnimalSale } from "./animalSale.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -1498,6 +1499,8 @@ export function removeSale(d, id) {
       e => !(e.action === "sold_eggs" && e.id === id)
     );
   }
+  // An animal sale: bring the animal back and drop its "sale" log entry.
+  unwindAnimalSale(d, id);
   if (target?.brooderBatchId && target?.dispositionId) {
     const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
     const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);

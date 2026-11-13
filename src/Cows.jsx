@@ -5,6 +5,7 @@ import { localIso } from "./localDate.js";
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
+import { undoAnimalSale } from "./animalSale.js";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
@@ -459,7 +460,7 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
   const save=()=>{
     if(!name.trim())return;
     const id=animal?.id||newId();
-    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),pastureId:pastureId||null,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?localIso():null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]=data;else h.animals.push(data);}else h.animals.push(data);return d;});
+    update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(!h)return d;if(!Array.isArray(h.animals))h.animals=[];const data={id,name:name.trim(),breed:finalBreed,purpose,sex,dob,tagId,rfidNumber:rfidNumber.trim(),brandDate,brandLocation:brandLocation.trim(),pastureId:pastureId||null,notes,sireId:sireId||null,sire:sire.trim(),damId:damId||null,dam:dam.trim(),registryNumber:registryNumber.trim(),registryName:registryName.trim(),purchaseCost:Number(purchaseCost)||0,purchaseDate:purchaseDate||(Number(purchaseCost)>0?localIso():null),photos:animal?.photos||[],created:animal?.created||Date.now(),archived:animal?.archived||false,archivedReason:animal?.archivedReason,archivedDate:animal?.archivedDate};if(isEdit){const idx=h.animals.findIndex(a=>a.id===id);if(idx!==-1)h.animals[idx]={...h.animals[idx],...data};else h.animals.push(data);}else h.animals.push(data);return d;});
     onClose();
   };
   const remove=()=>{update(d=>{const h=d.hobbies.find(x=>x.id===hobbyId);if(h)h.animals=(h.animals||[]).filter(a=>a.id!==animal.id);return d;});onClose();};
@@ -474,11 +475,14 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
     });
     onClose();
   };
-  const restore=()=>{
+  // A sold animal can come back with its sale undone (out of Sales too) or
+  // kept (sold, then bought back).
+  const restore=(undoSale)=>{
     update(d=>{
       const h=d.hobbies.find(x=>x.id===hobbyId);
       const a=(h?.animals||[]).find(x=>x.id===animal.id);
-      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;}
+      if(a&&undoSale&&a.saleId)undoAnimalSale(d,a.saleId);
+      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;delete a.saleId;}
       return d;
     });
     onClose();
@@ -599,7 +603,10 @@ function AnimalModal({animal,hobbyId,animals,pastures=[],update,user,onClose}){
       <div style={{display:"flex",gap:8,flexWrap:"wrap",alignItems:"center"}}>
         <Btn onClick={save}>{isEdit?"Save changes":"Add cow"}</Btn>
         {isEdit && animal?.archived && (
-          <Btn variant="ghost" onClick={restore}>Restore from archive</Btn>
+          animal.saleId?<>
+            <Btn variant="ghost" onClick={()=>restore(true)}>Undo the sale</Btn>
+            <Btn variant="ghost" onClick={()=>restore(false)}>Restore, keep the sale</Btn>
+          </>:<Btn variant="ghost" onClick={()=>restore(false)}>Restore from archive</Btn>
         )}
         {isEdit && !animal?.archived && !showArchive && !confirmDelete && (
           <Btn variant="ghost" onClick={()=>setShowArchive(true)}>Archive</Btn>

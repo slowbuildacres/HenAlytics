@@ -21,6 +21,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
+import { undoAnimalSale } from "./animalSale.js";
 import { X, Edit3 } from "lucide-react";
 import { fmtMoney, lbsFromInput, weightUnitLabel, currencySymbol } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
@@ -366,6 +367,8 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
+      // Keep what this form doesn't show (the sale link, photos' extras…).
+      ...(horse || {}),
       id: horse?.id || newId(),
       name: name.trim(),
       breed: finalBreed,
@@ -390,6 +393,17 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       archived: horse?.archived || false,
       archivedReason: horse?.archivedReason,
       archivedDate: horse?.archivedDate,
+    });
+    onClose();
+  };
+
+  const restoreHorse = (undoSale) => {
+    update((d) => {
+      const h = (d.hobbies || []).find((x) => x.id === hobbyId);
+      const a = h && (h.animals || []).find((x) => x.id === horse.id);
+      if (a && undoSale && a.saleId) undoAnimalSale(d, a.saleId);
+      if (a) { a.archived = false; delete a.archivedReason; delete a.archivedDate; delete a.saleId; }
+      return d;
     });
     onClose();
   };
@@ -509,6 +523,16 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       </details>
 
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
+        {horse && horse.archived && update && hobbyId && (
+          // "Past horses" says tap one to restore it: this is where. A sold
+          // horse can come back with its sale undone (out of Sales too) or kept.
+          horse.saleId
+            ? <>
+                <Btn variant="ghost" onClick={() => restoreHorse(true)}>Undo the sale</Btn>
+                <Btn variant="ghost" onClick={() => restoreHorse(false)}>Restore, keep the sale</Btn>
+              </>
+            : <Btn variant="ghost" onClick={() => restoreHorse(false)}>Restore</Btn>
+        )}
         {horse && onDelete && (
           !confirmDelete
             ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>

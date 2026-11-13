@@ -82,12 +82,21 @@ function photoOk(url, userId) {
 function dayAgoIso() { return new Date(Date.now() - 86400000).toISOString(); }
 
 async function usage(hid) {
-  const rows = await rest(`stock_email_sends?select=kind,recipients&homestead_id=eq.${hid}&created_at=gte.${encodeURIComponent(dayAgoIso())}`) || [];
+  const rows = await rest(`stock_email_sends?select=kind,recipients,subject,created_at&homestead_id=eq.${hid}&created_at=gte.${encodeURIComponent(dayAgoIso())}`) || [];
   return {
     sentToday: rows.filter((r) => r.kind === 'send').reduce((t, r) => t + (Number(r.recipients) || 0), 0),
     testsToday: rows.filter((r) => r.kind === 'test').length,
+    sends: rows.filter((r) => r.kind === 'send'),
   };
 }
+
+// The same email to the same people twice in a short while is a retry (the
+// app lost the answer while a long send ran, or a second tap), not news. The
+// log row's subject starts with a fingerprint of what went to whom.
+const REPEAT_MS = 15 * 60 * 1000;
+const sendPrint = (subject, html, recipients) => crypto.createHash('sha256')
+  .update(`${subject}\n${html}\n${[...recipients].sort().join(',')}`).digest('hex').slice(0, 16);
+const logSubject = (print, subject) => `#${print} ${subject || ''}`.slice(0, 200);
 
 async function sendBatch(messages) {
   let sent = 0;
@@ -96,11 +105,14 @@ async function sendBatch(messages) {
     const chunk = messages.slice(i, i + 100);
     let attempt = 0;
     for (;;) {
-      const r = await fetch(RESEND_BATCH, {
-        method: 'POST',
-        headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-        body: JSON.stringify(chunk),
-      });
+      let r;
+      try {
+        r = await fetch(RESEND_BATCH, {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify(chunk),
+        });
+      } catch (e) { failures.push(String(e && e.message || e).slice(0, 160)); break; }
       if (r.ok) { sent += chunk.length; break; }
       if (r.status === 429 && attempt < 2) { attempt++; await new Promise((ok) => setTimeout(ok, 1200 * attempt)); continue; }
       failures.push(`${r.status} ${(await r.text()).slice(0, 160)}`);
@@ -171,7 +183,7 @@ export default async function handler(req, res) {
       if (!user.email) return res.status(400).json({ error: 'Your account has no email address.' });
       if (use.testsToday >= TEST_LIMIT) return res.status(429).json({ error: `That's ${TEST_LIMIT} test emails today. Try again tomorrow.` });
       const r = await sendBatch([message(user.email, true)]);
-      await rest('stock_email_sends', { method: 'POST', body: JSON.stringify({ homestead_id: hid, user_id: user.id, kind: 'test', recipients: r.sent, subject: draft.subject || null }) });
+      await rest('stock_email_sends', { method: 'POST', body: JSON.stringify({ homestead_id: hid, user_id: user.id, kind: 'test', recipients: r.sent, subject: (draft.subject || '').slice(0, 200) || null }) });
       if (!r.sent) return res.status(502).json({ error: "The test email didn't send. Try again in a moment." });
       return res.status(200).json({ ok: true, sent: r.sent, to: user.email });
     }
@@ -193,13 +205,23 @@ export default async function handler(req, res) {
     }
     if (!recipients.length) return res.status(400).json({ error: 'Nobody on those lists has an email address yet.' });
     if (recipients.length > MAX_PER_SEND) return res.status(400).json({ error: `That's more than ${MAX_PER_SEND} people. Pick smaller lists.` });
+    const sample = buildStockEmail(draft, { fromName, mailingAddress: settings.mailingAddress }, { unsubscribeUrl: '#' });
+    const print = sendPrint(sample.subject, sample.html, recipients);
+    const recent = use.sends.find((x) => String(x.subject || '').startsWith(`#${print} `) && Date.now() - Date.parse(x.created_at) < REPEAT_MS && Number(x.recipients) > 0);
+    if (recent) return res.status(200).json({ ok: true, already: true, sent: Number(recent.recipients) || 0, failed: 0 });
     if (use.sentToday + recipients.length > limit) {
       const left = Math.max(0, limit - use.sentToday);
       return res.status(429).json({ error: `Daily limit: ${left} more email${left === 1 ? '' : 's'} today (${limit} a day). Pick a smaller list or send tomorrow.` });
     }
 
+    // Logged before sending, so a second request while this one runs sees it.
+    const logged = await rest('stock_email_sends', { method: 'POST', headers: { Prefer: 'return=representation' }, body: JSON.stringify({ homestead_id: hid, user_id: user.id, kind: 'send', recipients: recipients.length, subject: logSubject(print, sample.subject) }) });
+    const logId = Array.isArray(logged) && logged[0] && logged[0].id;
     const r = await sendBatch(recipients.map((em) => message(em, false)));
-    await rest('stock_email_sends', { method: 'POST', body: JSON.stringify({ homestead_id: hid, user_id: user.id, kind: 'send', recipients: r.sent, subject: draft.subject || null }) });
+    if (logId && r.sent !== recipients.length) {
+      // Nothing went: drop the row so trying again works. Some went: count those.
+      await rest(`stock_email_sends?id=eq.${logId}`, r.sent ? { method: 'PATCH', body: JSON.stringify({ recipients: r.sent }) } : { method: 'DELETE' }).catch(() => {});
+    }
     if (!r.sent) return res.status(502).json({ error: "The emails didn't send. Try again in a moment.", detail: r.failures[0] || null });
     return res.status(200).json({ ok: true, sent: r.sent, failed: recipients.length - r.sent });
   } catch (e) {

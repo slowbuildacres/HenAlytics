@@ -36,6 +36,7 @@
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
+import { undoAnimalSale, linkSaleBuyer } from "./animalSale.js";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
@@ -377,7 +378,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
       };
       if(isEdit){
         const idx=h.animals.findIndex(a=>a.id===id);
-        if(idx!==-1)h.animals[idx]=dataObj;else h.animals.push(dataObj);
+        if(idx!==-1)h.animals[idx]={...h.animals[idx],...dataObj};else h.animals.push(dataObj);
       } else h.animals.push(dataObj);
       return d;
     });
@@ -404,11 +405,14 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
     });
     onClose();
   };
-  const restore=()=>{
+  // A sold animal can come back with its sale undone (out of Sales too) or
+  // kept (sold, then bought back).
+  const restore=(undoSale)=>{
     update(d=>{
       const h=d.hobbies.find(x=>x.id===hobbyId);
       const a=(h?.animals||[]).find(x=>x.id===animal.id);
-      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;}
+      if(a&&undoSale&&a.saleId)undoAnimalSale(d,a.saleId);
+      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;delete a.saleId;}
       return d;
     });
     onClose();
@@ -488,7 +492,10 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!name.trim()}>{isEdit?"Save":"Add"}</Btn>
         {isEdit && animal?.archived && (
-          <Btn variant="ghost" onClick={restore}>Restore</Btn>
+          animal.saleId?<>
+            <Btn variant="ghost" onClick={()=>restore(true)}>Undo the sale</Btn>
+            <Btn variant="ghost" onClick={()=>restore(false)}>Restore, keep the sale</Btn>
+          </>:<Btn variant="ghost" onClick={()=>restore(false)}>Restore</Btn>
         )}
         {isEdit && !animal?.archived && !showArchive && !confirmDelete && (
           <Btn variant="ghost" onClick={()=>setShowArchive(true)}>Archive</Btn>
@@ -621,11 +628,13 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
           a.saleId=entry.id;
         }
         d.sales=d.sales||[];
-        d.sales.push({
+        const row={
           id:entry.id,date,hobbyType:"rabbit",crop:animal.name,saleType,
           pricePerUnit:Number(salePrice)||0,totalRevenue:Number(salePrice)||0,
           qty:1,animalId:animal.id,buyer:saleBuyer.trim(),notes:notes||"",
-        });
+        };
+        linkSaleBuyer(d,row,newId);
+        d.sales.push(row);
       }
       return d;
     });
@@ -1274,11 +1283,13 @@ function RemoveRabbitModal({ hobby, hobbyId, update, onClose }) {
         target.archivedDate = date;
         target.saleId = entry.id;
         d.sales = d.sales || [];
-        d.sales.push({
+        const row = {
           id: entry.id, date, hobbyType: "rabbit", crop: animal.name, saleType,
           pricePerUnit: numericPrice, totalRevenue: numericPrice,
           qty: 1, animalId, buyer: partyName, notes: notes.trim() || "",
-        });
+        };
+        linkSaleBuyer(d, row, newId);
+        d.sales.push(row);
       } else if (reason === "died") {
         const entry = {
           id: newId(), date, action: "death",

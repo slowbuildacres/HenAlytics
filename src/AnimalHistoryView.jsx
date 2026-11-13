@@ -32,6 +32,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState } from "react";
 import { X, Trash2, Save, Edit3 } from "lucide-react";
 import { fmtMoney as fmtMoneyIntl, fmtWeight, fmtVolume } from "./units.js";
+import { undoAnimalSale } from "./animalSale.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -171,11 +172,15 @@ function collectEvents({ animal, hobby, entries, sales, species }) {
     });
   });
 
-  // 2. Sales (cross-species — data.sales is global)
-  (sales || []).filter(s => s.animalId === animalId).forEach(s => {
+  // 2. Sales (cross-species — data.sales is global). A sale logged on the
+  // animal's page is already listed above as its "sale" entry (same id).
+  const listed = new Set(out.map(e => e.recordId));
+  (sales || []).filter(s => s.animalId === animalId && !listed.has(s.id)).forEach(s => {
     const bits = [];
-    if (s.type && s.type !== "sold") bits.push(s.type);
-    if (s.price > 0) bits.push(fmtMoney(s.price));
+    const type = s.saleType || s.type;
+    const price = Number(s.totalRevenue ?? s.pricePerUnit ?? s.price) || 0;
+    if (type && type !== "sold") bits.push(type);
+    if (price > 0) bits.push(fmtMoney(price));
     if (s.buyer) bits.push(`to ${s.buyer}`);
     out.push({
       date: s.date,
@@ -668,7 +673,9 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
                   Delete this {event.label.toLowerCase()} record?
                 </div>
                 <div style={{ fontSize: 12, color: palette.inkSoft, marginBottom: 10, lineHeight: 1.4 }}>
-                  This can't be undone. The record will be removed from {animal.name}'s history.
+                  {event.sourceKey === "sale" || (event.source && event.source.action === "sale")
+                    ? `This can't be undone. The sale comes out of Sales too, and ${animal.name} moves back to your animals.`
+                    : `This can't be undone. The record will be removed from ${animal.name}'s history.`}
                 </div>
                 <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
                   <button
@@ -786,13 +793,14 @@ export function AnimalHistoryView({ animal, hobby, entries, sales, species, upda
     const { sourceKey, recordId } = selectedEvent;
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
-      if (sourceKey === "entry") {
+      if (sourceKey === "sale" || (sourceKey === "entry" && selectedEvent.source && selectedEvent.source.action === "sale")) {
+        // A sale is one thing in three places: drop the Sales row and log
+        // entry, and bring the animal back if this sale archived it.
+        undoAnimalSale(d, recordId);
+      } else if (sourceKey === "entry") {
         const arr = d.entries?.[hobby.id];
         if (!Array.isArray(arr)) return d;
         d.entries[hobby.id] = arr.filter(e => e.id !== recordId);
-      } else if (sourceKey === "sale") {
-        if (!Array.isArray(d.sales)) return d;
-        d.sales = d.sales.filter(s => s.id !== recordId);
       } else if (h && Array.isArray(h[sourceKey])) {
         h[sourceKey] = h[sourceKey].filter(r => r.id !== recordId);
       }

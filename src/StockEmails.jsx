@@ -24,6 +24,7 @@ import { supabase, isSupabaseConfigured } from "./supabase.js";
 import { getActiveHomesteadId, compressImage } from "./sync.js";
 import { apiUrl } from "./apiBase.js";
 import { buildStockEmail, defaultSubject, stockFromName, STOCK_EMAIL_LIMITS } from "./stockEmail.js";
+import { matchCustomer } from "./customerMatch.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -156,17 +157,22 @@ export function StockEmailTutorial({ onClose, onStart }) {
 }
 
 // ---- Contacts ---------------------------------------------------------------
-function ContactForm({ initial, lists, onSave, onCancel, onDelete }) {
+function ContactForm({ initial, lists, customers = [], onSave, onCancel, onDelete }) {
   const [name, setName] = useState(initial?.name || "");
   const [email, setEmail] = useState(initial?.email || "");
   const [sel, setSel] = useState(new Set(initial?.groups || []));
+  const [sure, setSure] = useState(false);
   const okEmail = !email.trim() || validEmail(email);
-  const valid = name.trim() && okEmail;
+  const em = email.trim().toLowerCase();
+  // Two people can't share an email: list emails go out once per address.
+  const taken = em && customers.some((c) => c && c.id !== initial?.id && String(c.email || "").trim().toLowerCase() === em);
+  const valid = name.trim() && okEmail && !taken;
   return (
     <div style={{ background: palette.card, border: `1.5px solid ${palette.ink}`, borderRadius: 12, padding: 12, marginBottom: 10 }}>
       <input value={name} onChange={(e) => setName(e.target.value)} placeholder="Name" style={{ ...inputStyle(), marginBottom: 8 }} autoFocus={!initial} />
       <input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="Email" type="email" inputMode="email" autoCapitalize="off"
-        style={{ ...inputStyle(), borderColor: okEmail ? undefined : palette.accent }} />
+        style={{ ...inputStyle(), borderColor: okEmail && !taken ? undefined : palette.accent }} />
+      {taken && <div role="alert" style={{ fontSize: 12, color: palette.accent, marginTop: 4 }}>Someone else already has that email.</div>}
       {lists.length > 0 && (
         <>
           <Label>Lists</Label>
@@ -181,7 +187,7 @@ function ContactForm({ initial, lists, onSave, onCancel, onDelete }) {
         <button type="button" disabled={!valid} onClick={() => onSave({ ...(initial || {}), id: initial?.id || newId(), name: name.trim(), email: email.trim().toLowerCase(), groups: [...sel] })}
           style={{ ...btn("primary", !valid), flex: 1 }}>{initial ? "Save" : "Add contact"}</button>
         <button type="button" onClick={onCancel} style={btn("ghost")}>Cancel</button>
-        {onDelete && <button type="button" onClick={onDelete} style={{ ...linkBtn(), color: palette.accent, fontWeight: 400 }}>Delete</button>}
+        {onDelete && <button type="button" onClick={() => (sure ? onDelete() : setSure(true))} style={{ ...linkBtn(), color: palette.accent, fontWeight: sure ? 700 : 400 }}>{sure ? "Tap again to delete" : "Delete"}</button>}
       </div>
     </div>
   );
@@ -276,6 +282,11 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
   }, [customers, listSel, everyone, unsub]);
 
   const mutate = (fn) => update((d) => { d.customers = Array.isArray(d.customers) ? d.customers : []; d.customerGroups = Array.isArray(d.customerGroups) ? d.customerGroups : []; fn(d); return d; });
+  // Fills a saved customer in from a new entry: email if blank, plus lists.
+  const addTo = (f, c) => {
+    if (!String(f.email || "").trim() && c.email) f.email = c.email;
+    f.groups = Array.from(new Set([...(Array.isArray(f.groups) ? f.groups : []), ...(c.groups || [])]));
+  };
   const setSettings = (patch) => update((d) => { d.stockEmailSettings = { ...(d.stockEmailSettings || {}), ...patch }; return d; });
   const togglePick = (o) => setPicked((p) => p.some((x) => x.key === o.key) ? p.filter((x) => x.key !== o.key) : [...p, { key: o.key, name: o.name, unit: o.unit, qty: o.qty, price: o.price }].slice(0, STOCK_EMAIL_LIMITS.items));
   const setPickField = (key, field, val) => setPicked((p) => p.map((x) => x.key === key ? { ...x, [field]: val } : x));
@@ -301,6 +312,11 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
     setBusy("send"); setMsg(null);
     try {
       const r = await callApi("send", { draft, lists: everyone ? "all" : [...listSel] });
+      if (r.already) {
+        say("ok", `You already sent this to ${r.sent} ${r.sent === 1 ? "person" : "people"} a few minutes ago, so it didn't go out twice.`);
+        setConfirm(false); setBusy("");
+        return;
+      }
       update((d) => {
         d.stockEmailLog = Array.isArray(d.stockEmailLog) ? d.stockEmailLog : [];
         d.stockEmailLog.unshift({ id: newId(), date: todayIso(), subject: preview.subject, count: r.sent });
@@ -397,7 +413,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
               <Chip active={everyone} onClick={() => setEveryone((v) => !v)}>👥 All contacts</Chip>
               {!everyone && lists.map((g) => {
-                const n = customers.filter((c) => validEmail(c.email) && !unsub.has(String(c.email).toLowerCase()) && (c.groups || []).includes(g.id)).length;
+                const n = new Set(customers.filter((c) => validEmail(c.email) && c.emailOk !== false && !unsub.has(String(c.email).trim().toLowerCase()) && (c.groups || []).includes(g.id)).map((c) => String(c.email).trim().toLowerCase())).size;
                 return <Chip key={g.id} active={listSel.has(g.id)} onClick={() => setListSel((s) => { const x = new Set(s); if (x.has(g.id)) x.delete(g.id); else x.add(g.id); return x; })}>{g.emoji} {g.name} ({n})</Chip>;
               })}
             </div>
@@ -465,10 +481,19 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
         {/* ================= CONTACTS ================= */}
         {tab === "contacts" && (
           <div>
-            {editing === "new" && <ContactForm lists={lists} onSave={(c) => { mutate((d) => { d.customers.push({ note: "", ...c }); }); setEditing(null); }} onCancel={() => setEditing(null)} />}
+            {editing === "new" && <ContactForm lists={lists} customers={customers} onCancel={() => setEditing(null)} onSave={(c) => {
+              // Someone added by hand, from an order or a sale: fill them in, don't add them twice.
+              const found = matchCustomer(customers, c);
+              mutate((d) => {
+                const f = found && d.customers.find((x) => x && x.id === found.id);
+                if (f) { addTo(f, c); return; }
+                d.customers.push({ note: "", ...c });
+              });
+              if (found) say("ok", `${found.name || c.name} was already in your customers, so they were updated.`);
+              setEditing(null);
+            }} />}
             {editing === "paste" && <PasteList lists={lists} onCancel={() => setEditing(null)} onAdd={(rows) => { mutate((d) => {
-              const have = new Set(d.customers.map((c) => String(c.email || "").toLowerCase()).filter(Boolean));
-              rows.forEach((r) => { if (!have.has(r.email)) { d.customers.push(r); have.add(r.email); } });
+              rows.forEach((r) => { const f = matchCustomer(d.customers, r); if (f) addTo(f, r); else d.customers.push(r); });
             }); setEditing(null); }} />}
             {editing == null && (
               <div style={{ display: "flex", gap: 8, marginBottom: 10 }}>
@@ -483,7 +508,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
             )}
             <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
               {[...customers].sort((a, b) => String(a.name).localeCompare(String(b.name))).map((c) => editing === c.id ? (
-                <ContactForm key={c.id} initial={c} lists={lists} onCancel={() => setEditing(null)}
+                <ContactForm key={c.id} initial={c} lists={lists} customers={customers} onCancel={() => setEditing(null)}
                   onSave={(nc) => { mutate((d) => { const i = d.customers.findIndex((x) => x.id === nc.id); if (i >= 0) d.customers[i] = { ...d.customers[i], ...nc }; }); setEditing(null); }}
                   onDelete={() => { mutate((d) => { d.customers = d.customers.filter((x) => x.id !== c.id); }); setEditing(null); }} />
               ) : (
