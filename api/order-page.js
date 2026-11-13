@@ -582,7 +582,7 @@ export default async function handler(req, res) {
   const again = (msg, status = 400) => send(status, orderPageHtml(page, token, { error: msg, values }));
 
   // Bot checks: honeypot, signed form time.
-  if (!signed()) return again('Something went wrong with the form. Please try again.');
+  if (!signed()) return again(Number(b.ts) && Date.now() - Number(b.ts) > 86400000 ? 'This page was open a while, so please check your order and send it again.' : 'Something went wrong with the form. Please try again.');
   if ((Date.now() - Number(b.ts)) / 1000 < MIN_SECONDS) return again('That was quick! Please check your request and send it again.');
 
   const kind = b.kind === 'join' ? 'join' : 'order';
@@ -603,6 +603,10 @@ export default async function handler(req, res) {
   const backOnly = backItems.length && !anyQty && !String(values.note || '').trim();
   // Something sold out between opening the page and sending it.
   const goneNow = kind === 'order' ? page.op.menu.filter((m) => Number(qty[m.id]) > 0 && Number.isFinite(m.left) && m.left <= 0).map((m) => m.name) : [];
+  // More than is left now (someone else ordered since the page opened): say
+  // so, rather than quietly sending fewer.
+  const tooMany = kind === 'order' && !backOnly ? page.op.menu.filter((m) => Number(qty[m.id]) > 0 && Number.isFinite(m.left) && m.left > 0 && Number(qty[m.id]) > m.left) : [];
+  if (tooMany.length) return again(`Only ${tooMany.map((m) => `${m.left} ${m.name}`).join(' and ')} left now. Change the amount and send it again.`);
   if (goneNow.length && !backOnly) return again(`Sorry, ${goneNow.join(' and ')} just sold out. ${page.op.notifyBack ? "Tick \"Email me when it's back\" to hear when there's more, or pick something else." : 'Pick something else, or check back soon.'}`);
   const cleaned = cleanRequest({ ...values, kind, qty, ...(backOnly ? { note: 'back' } : {}) }, page.op.menu, backOnly ? [] : payOptions(page.op).map((m) => m.id), { pickupDays: backOnly ? [] : page.op.pickupDays, today: new Date(Date.now() - 36 * 3600000).toISOString().slice(0, 10), delivery: page.op.delivery, standing: page.op.standing });
   if (cleaned.error) return again(cleaned.error);
@@ -616,6 +620,10 @@ export default async function handler(req, res) {
     if (all.length >= PER_HOMESTEAD_DAY) return again('This farm has a lot of requests today. Please try again tomorrow, or reach out to them directly.', 429);
 
     const who = { customer_name: cleaned.row.customer_name, email: cleaned.row.email, phone: cleaned.row.text_ok ? cleaned.row.phone : '', homestead_id: page.id, ip_hash: hash, ...(cleaned.row.text_ok ? { text_ok: true } : {}) };
+    // Already asked to join and waiting for the farm: don't add them twice.
+    const wantsJoin = kind === 'join' || (kind === 'order' && values.alsoJoin && page.op.joinList);
+    const onList = wantsJoin && who.email ? ((await rest(`order_requests?select=id&homestead_id=eq.${page.id}&kind=eq.join&status=eq.new&email=eq.${encodeURIComponent(who.email)}&limit=1`).catch(() => null)) || []).length > 0 : false;
+    if (kind === 'join' && onList) return send(200, thanksHtml(page, token, { ...who, kind: 'join' }));
     const rows = [];
     let main = null;
     if (!backOnly) {
@@ -625,7 +633,7 @@ export default async function handler(req, res) {
     }
     if (backItems.length) rows.push({ ...who, kind: 'notify', items: backItems, note: '', pickup_date: null });
     const joined = kind === 'order' && values.alsoJoin && page.op.joinList;
-    if (joined) rows.push({ ...who, kind: 'join', items: [], note: '', pickup_date: null });
+    if (joined && !onList) rows.push({ ...who, kind: 'join', items: [], note: '', pickup_date: null });
     const saved = await saveRows(rows);
     const savedMain = main ? saved.find((r) => r.kind === main.kind) || main : null;
     const savedBack = saved.some((r) => r.kind === 'notify') ? backItems : [];
