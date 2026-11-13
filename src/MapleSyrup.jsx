@@ -141,7 +141,8 @@ function SeasonModal({ season, onSave, onDelete, onClose }) {
     onSave({
       id: season?.id || newId(),
       name: name.trim(),
-      year: parseInt(year) || new Date().getFullYear(),
+      // A typo like -5 or 202 filed the season under that "year".
+      year: (parseInt(year) >= 1900 && parseInt(year) <= 2100) ? parseInt(year) : new Date().getFullYear(),
       startDate,
       endDate: endDate || null,
       totalTaps: parseInt(totalTaps) || 0,
