@@ -30,6 +30,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState, useMemo, useEffect } from "react";
+import { undoAnimalSale } from "./animalSale.js";
 // NEW_LOOK (3.0): shared screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Wheat as NlWheat, Scale as NlScale, Shield as NlShield, Heart as NlHeart, Baby as NlBaby, DollarSign as NlDollar, Archive as NlArchive } from "lucide-react";
@@ -397,6 +398,8 @@ function DogModal({ dog, dogs, onSave, onDelete, onClose, update, user, hobbyId 
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
+      // Keep what this form doesn't show (why and when it left, its sale).
+      ...(dog || {}),
       id: dog?.id || newId(),
       name: name.trim(),
       breed: finalBreed,
@@ -419,6 +422,22 @@ function DogModal({ dog, dogs, onSave, onDelete, onClose, update, user, hobbyId 
     });
     onClose();
   };
+
+  // "Past dogs" says tap one to restore it: this is where. A sold one can
+  // come back with its sale undone (out of Sales too) or kept.
+  const restoreAnimal = (undoSale) => {
+    update((d) => {
+      const h = (d.hobbies || []).find((x) => x.id === hobbyId);
+      const a = h && (h.animals || []).find((x) => x.id === dog.id);
+      if (a && undoSale && a.saleId) undoAnimalSale(d, a.saleId);
+      if (a) { a.archived = false; delete a.archivedReason; delete a.archivedDate; delete a.saleId; }
+      return d;
+    });
+    onClose();
+  };
+  const restoreButtons = dog && dog.archived && update && hobbyId ? (dog.saleId
+    ? <><Btn variant="ghost" small onClick={() => restoreAnimal(true)}>Undo the sale</Btn><Btn variant="ghost" small onClick={() => restoreAnimal(false)}>Restore, keep the sale</Btn></>
+    : <Btn variant="ghost" small onClick={() => restoreAnimal(false)}>Restore</Btn>) : null;
 
   return (
     <ModalShell title={dog ? "Edit dog" : "Add a dog"} onClose={onClose}>
@@ -551,7 +570,8 @@ function DogModal({ dog, dogs, onSave, onDelete, onClose, update, user, hobbyId 
             <Btn variant="ghost" small onClick={() => setConfirmDelete(true)}>Delete</Btn>
           )
         ) : <div />}
-        <div style={{ display: "flex", gap: 8 }}>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", justifyContent: "flex-end" }}>
+          {restoreButtons}
           <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
           <Btn variant="primary" onClick={handleSave} disabled={!name.trim()}>Save</Btn>
         </div>
@@ -1569,6 +1589,9 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
                   d.sales = d.sales || [];
                   resolveSaleBuyer(d, payload.saleData);
                   d.sales.push(payload.saleData);
+                  // The animal remembers its sale, so deleting the sale in Sales
+                  // or restoring the animal can undo both (src/animalSale.js).
+                  { const hh = (d.hobbies || []).find((x) => x.id === hobby.id); const an = hh && (hh.animals || []).find((x) => x.id === payload.animalId); if (an) an.saleId = payload.saleData.id; }
                   return d;
                 });
               }
@@ -1875,6 +1898,9 @@ export default function DogsPage({ hobby, data, update, setModal, user, nl = nul
                   d.sales = d.sales || [];
                   resolveSaleBuyer(d, payload.saleData);
                   d.sales.push(payload.saleData);
+                  // The animal remembers its sale, so deleting the sale in Sales
+                  // or restoring the animal can undo both (src/animalSale.js).
+                  { const hh = (d.hobbies || []).find((x) => x.id === hobby.id); const an = hh && (hh.animals || []).find((x) => x.id === payload.animalId); if (an) an.saleId = payload.saleData.id; }
                   return d;
                 });
               }
