@@ -14,13 +14,14 @@
 // ============================================================================
 
 import { legacyPalette } from "./newlook/legacyTheme.js";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney, fmtMoneyWhole, perLbToInput, perLbFromInput, perWeightLabel, lbsToInput, lbsFromInput, weightUnitLabel, fmtWeight, currencySymbol } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
 import { askConfirm, askChoice } from "./newlook/ConfirmHost.jsx";
 import { unwindAnimalSale } from "./animalSale.js";
+import { restockForSale, unwindShelfSale } from "./saleLinks.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -94,6 +95,10 @@ const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Pea
 // SAME sale shape from their hobby pages. The Sales edit modal must treat them
 // identically to horses or the flat price is lost on edit (Bug 5).
 const LIVESTOCK_FLAT_TYPES = ["horse", "cow", "goat", "sheep", "pig", "dog", "cat"];
+// Things sold by the piece from a hobby's shelf. Their pages log the sale;
+// the Sales edit form shows item, unit, how many and price for them.
+const SHELF_TYPES = ["tincture", "oil_infusion", "salve", "tea", "soap", "maple_syrup"];
+const SHELF_WORDS = { tincture: "Bottles", oil_infusion: "Bottles", salve: "Tins", tea: "Sachets or oz", soap: "Bars", maple_syrup: "Bottles or jars" };
 // Maps a flat-livestock sale's hobbyType to the matching hobby id, so the edit
 // modal can offer a "sell an existing animal" dropdown for any of them.
 const LIVESTOCK_HOBBY_ID = { horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats" };
@@ -235,7 +240,8 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   // Shared fields
   const [date, setDate] = useState(existingSale?.date || todayStr());
   const [qty, setQty] = useState(existingSale?.qty != null ? String(existingSale.qty) : "");
-  const [note, setNote] = useState(existingSale?.note || "");
+  // Sales logged on a hobby page keep their note in `notes`.
+  const [note, setNote] = useState(existingSale?.note || existingSale?.notes || "");
   // Tip — extra a customer leaves beyond the item price. Optional, applies to
   // any sale type. Kept separate from revenue so it shows as its own line.
   const [tip, setTip] = useState(existingSale?.tip != null ? String(existingSale.tip) : "");
@@ -250,7 +256,17 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const [eggTypeCustom, setEggTypeCustom] = useState(existingSale?.eggTypeCustom || "");
   const [eggPurpose, setEggPurpose] = useState(existingSale?.eggPurpose || "Eating");
   const [unit, setUnit] = useState(existingSale?.unit || "dozen");
-  const [pricePerUnit, setPricePerUnit] = useState(existingSale?.pricePerUnit != null ? String(existingSale.pricePerUnit) : "");
+  // Imported sales and some older ones carry only a total: show the price
+  // it works out to, rather than a blank that would save the sale at $0.
+  const derivedPrice = (() => {
+    const s = existingSale;
+    if (!s || s.pricePerUnit != null || s.pricingMethod === "per_lb" || s.pricingMethod === "flat") return "";
+    const q = Number(s.qty) || 0; const r = Number(s.totalRevenue) || 0;
+    if (!(q > 0 && r > 0)) return "";
+    const per = s.hobbyType === "eggs" && String(s.unit || "eggs") === "eggs" ? q / 12 : q;
+    return String(Math.round((r / per) * 100) / 100);
+  })();
+  const [pricePerUnit, setPricePerUnit] = useState(existingSale?.pricePerUnit != null ? String(existingSale.pricePerUnit) : derivedPrice);
 
   // Honey
   const [honeyForm, setHoneyForm] = useState(existingSale?.honeyForm || "Extracted");
@@ -270,8 +286,14 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const [gardenUnit, setGardenUnit] = useState(existingSale?.gardenUnit || "lbs");
 
   // Other
-  const [otherItem, setOtherItem] = useState(existingSale?.otherItem || "");
-  const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : "");
+  const [otherItem, setOtherItem] = useState(existingSale?.otherItem || (existingSale?.hobbyType === "other" ? existingSale?.crop || "" : ""));
+  const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : (existingSale?.hobbyType === "other" && existingSale?.totalRevenue != null ? String(existingSale.totalRevenue) : ""));
+
+  // What the money fields said when the form opened. If they're unchanged on
+  // save (only the date, buyer or note was fixed), the sale keeps its total.
+  const moneyNow = () => JSON.stringify([qty, pricePerUnit, flatPrice, pricePerLb, avgWeightLbs, unit, pricingMethod]);
+  const moneyAtOpen = useRef(null);
+  if (moneyAtOpen.current == null) moneyAtOpen.current = moneyNow();
 
   // Incubator / chicks (brooder sales). birdType + brooderBatchName are
   // free-text so the user can edit if needed; the underlying brooder batch
@@ -303,10 +325,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
     if (hobbyType === "baking") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "canning") return q * (Number(pricePerUnit) || 0);
     // Herbalism types follow qty × price pattern (bottles, tins, sachets, or oz)
-    if (hobbyType === "tincture" || hobbyType === "oil_infusion" ||
-        hobbyType === "salve" || hobbyType === "tea") {
-      return q * (Number(pricePerUnit) || 0);
-    }
+    if (SHELF_TYPES.includes(hobbyType)) return q * (Number(pricePerUnit) || 0);
     if (LIVESTOCK_FLAT_TYPES.includes(hobbyType)) return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "incubator") return q * (Number(pricePerUnit) || 0);
@@ -347,7 +366,9 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
     };
     // Editing keeps where the sale came from: an order (so the order still
     // shows "In Sales" and isn't added twice), a farm stand item, how they paid.
-    ["fromOrder", "fromOrderItem", "fromFarmstandItem", "payMethod"].forEach((k) => { if (existingSale && existingSale[k] != null && existingSale[k] !== "") sale[k] = existingSale[k]; });
+    // The same goes for the batch it came off (salve tins, canning jars,
+    // soap bars count their sales by batchId), its hobby, and an import.
+    ["fromOrder", "fromOrderItem", "fromFarmstandItem", "payMethod", "batchId", "hobbyId", "fromCanningBatchId", "fromCanningEntryId", "fromBakeId", "importId", "flockId", "buyer", "customerName"].forEach((k) => { if (existingSale && existingSale[k] != null && existingSale[k] !== "") sale[k] = existingSale[k]; });
 
     if (hobbyType === "eggs") {
       sale = { ...sale, eggType, eggPurpose, unit, pricePerUnit: Number(pricePerUnit) || 0 };
@@ -406,6 +427,13 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       // travels with the sale so we can archive that animal on save.
       sale = { ...sale, crop, saleType: otherItem || "sold", pricePerUnit: saleRev, totalRevenue: saleRev };
       if (selectedAnimalId) sale.animalId = selectedAnimalId;
+    } else if (SHELF_TYPES.includes(hobbyType)) {
+      // Salve tins, tincture and oil bottles, tea, soap bars, syrup: what it
+      // was, the unit, how many and the price each. The unit (tin size,
+      // "bars", "oz" for loose tea) isn't on the form, so it stays as logged.
+      sale = { ...sale, crop, pricePerUnit: Number(pricePerUnit) || 0 };
+      if (existingSale?.gardenUnit != null) sale.gardenUnit = existingSale.gardenUnit;
+      if (existingSale?.unit != null) sale.unit = existingSale.unit;
     } else if (hobbyType === "garden") {
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit) || 0 };
     } else if (hobbyType === "incubator") {
@@ -426,7 +454,9 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       sale = { ...sale, otherItem, flatPrice: Number(flatPrice) || 0 };
     }
 
-    sale.totalRevenue = previewRevenue;
+    sale.totalRevenue = isEdit && existingSale.totalRevenue != null && moneyNow() === moneyAtOpen.current
+      ? Number(existingSale.totalRevenue) || 0
+      : previewRevenue;
 
     // If new buyer name entered, create customer first
     let finalBuyerId = buyerId;
@@ -447,6 +477,8 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       d.sales = d.sales || [];
       if (isEdit) {
         const idx = d.sales.findIndex(s => s.id === sale.id);
+        // Selling more or fewer off a batch moves its shelf count to match.
+        if (idx !== -1 && d.sales[idx].hobbyType === sale.hobbyType) restockForSale(d, d.sales[idx], (Number(d.sales[idx].qty) || 0) - (Number(sale.qty) || 0));
         if (idx !== -1) d.sales[idx] = sale;
         else d.sales.push(sale);
       } else {
@@ -456,7 +488,10 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       // source so the editable copy in `d.sales` is the only version visible.
       // Without this, the entry would keep appearing alongside the edited copy
       // every time the user reopens the Sales tab.
-      if (isEdit && existingSale?.isLegacy && d.entries?.["egg_layers"]) {
+      // A Sold Eggs log's copy (migratedFromEntries) is the same: once edited
+      // here, Sales holds the numbers, so the log goes and eggs on hand
+      // count this sale instead of the old log.
+      if (isEdit && (existingSale?.isLegacy || existingSale?.migratedFromEntries) && d.entries?.["egg_layers"]) {
         d.entries["egg_layers"] = d.entries["egg_layers"].filter(
           e => !(e.action === "sold_eggs" && e.id === sale.id)
         );
@@ -924,6 +959,25 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                     Linked to a brooder batch — edits sync to the Incubator page.
                   </div>
                 )}
+              </>}
+
+              {/* Salve, tincture, oil, tea, soap, syrup */}
+              {SHELF_TYPES.includes(hobbyType) && <>
+                <Field label="Item">
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Calendula salve, Elderberry tincture..." />
+                </Field>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  <div style={{ flex:1,minWidth:80 }}>
+                    <Field label={`${SHELF_WORDS[hobbyType]} sold`}>
+                      <input type="number" min={0} step="any" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Price each">
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
+                    </Field>
+                  </div>
+                </div>
               </>}
 
               {/* Other */}
@@ -1501,6 +1555,8 @@ export function removeSale(d, id) {
   }
   // An animal sale: bring the animal back and drop its "sale" log entry.
   unwindAnimalSale(d, id);
+  // A sale off a batch (salve, tincture, oil, tea, canning): stock goes back.
+  unwindShelfSale(d, target);
   if (target?.brooderBatchId && target?.dispositionId) {
     const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
     const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);

@@ -107,6 +107,7 @@ import HomeScreen from "./newlook/HomeScreen.jsx";
 import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
 import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
+import { unlinkDeletedEntry } from "./saleLinks.js";
 import { nextYearProject, nextYearLabel } from "./newlook/projects/projectData.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
 import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
@@ -391,6 +392,70 @@ function isQuickLogHidden(hobby, action) {
 
 
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
+// A Sold Eggs log as its Sales row (same id). Used when old logs are copied
+// into Sales on load, and to keep that copy current when the log is edited.
+function soldEggsToSale(e) {
+  // Robust revenue derivation. Different versions of the sold_eggs form
+  // have written different field combinations over the months, and a few
+  // user reports surfaced sales landing in the Sales tab at $0 because the
+  // migration only looked at e.pricePerDozen — which can be missing on
+  // entries created before the unit-based selling form was introduced, or
+  // when the form's derivation guard didn't fire (e.g. unitQty empty).
+  // Try every known shape before giving up at 0. derivedQty fills in
+  // when the entry has unit-based fields but `count` was never set.
+  let qty = Number(e.count) || 0;
+  let pricePerDozen = Number(e.pricePerDozen) || 0;
+  let revenue = 0;
+
+  if (pricePerDozen > 0 && qty > 0) {
+    // Canonical path — current form writes both fields.
+    revenue = (qty / 12) * pricePerDozen;
+  } else if (Number(e.unitQty) > 0) {
+    // Form-fields path — derivation guard didn't run (e.g. older code or
+    // empty unitQty at save time), but the raw inputs are still there.
+    // NOTE: price is intentionally NOT required here — $0 sales are real
+    // (donated / given away eggs) and the egg COUNT must still migrate.
+    const unitToCount = {
+      single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+      custom: Number(e.customEggsPerUnit) || 0,
+    };
+    const eggsPerUnit = unitToCount[e.unit] || 12;
+    const totalEggs = Number(e.unitQty) * eggsPerUnit;
+    revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
+    if (totalEggs > 0) {
+      pricePerDozen = revenue / (totalEggs / 12);
+      if (qty === 0) qty = totalEggs;
+    }
+  } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
+    // Old-old shape — some pre-unit-based entries stored pricePerUnit as
+    // "$/dozen" and put total eggs in count. Treat pricePerUnit as $/dozen.
+    pricePerDozen = Number(e.pricePerUnit);
+    revenue = (qty / 12) * pricePerDozen;
+  } else if (Number(e.totalRevenue) > 0) {
+    // Last-ditch — entry has a stashed totalRevenue from some other path.
+    revenue = Number(e.totalRevenue);
+    if (qty > 0) pricePerDozen = revenue / (qty / 12);
+  }
+  // If all four paths fail, revenue stays 0 — the entry genuinely has no
+  // price info and the user will need to edit it. At least now we've tried.
+
+  return {
+    id: e.id,
+    date: e.date,
+    hobbyType: "eggs",
+    eggType: "Chicken",
+    eggPurpose: "Eating",
+    qty,
+    unit: "eggs",
+    pricePerUnit: pricePerDozen,
+    totalRevenue: revenue,
+    note: e.note || "",
+    buyerId: e.buyerId || null,
+    created: e.created || Date.now(),
+    migratedFromEntries: true,
+  };
+}
+
 function migrateData(data) {
   if (!data || typeof data !== "object") return defaultData();
   if (!Array.isArray(data.hobbies)) data.hobbies = defaultData().hobbies;
@@ -462,65 +527,7 @@ function migrateData(data) {
   const existingSaleIds = new Set((data.sales || []).map(s => s.id));
   eggLayerEntries.forEach(e => {
     if (e.action === "sold_eggs" && !existingSaleIds.has(e.id)) {
-      // Robust revenue derivation. Different versions of the sold_eggs form
-      // have written different field combinations over the months, and a few
-      // user reports surfaced sales landing in the Sales tab at $0 because the
-      // migration only looked at e.pricePerDozen — which can be missing on
-      // entries created before the unit-based selling form was introduced, or
-      // when the form's derivation guard didn't fire (e.g. unitQty empty).
-      // Try every known shape before giving up at 0. derivedQty fills in
-      // when the entry has unit-based fields but `count` was never set.
-      let qty = Number(e.count) || 0;
-      let pricePerDozen = Number(e.pricePerDozen) || 0;
-      let revenue = 0;
-
-      if (pricePerDozen > 0 && qty > 0) {
-        // Canonical path — current form writes both fields.
-        revenue = (qty / 12) * pricePerDozen;
-      } else if (Number(e.unitQty) > 0) {
-        // Form-fields path — derivation guard didn't run (e.g. older code or
-        // empty unitQty at save time), but the raw inputs are still there.
-        // NOTE: price is intentionally NOT required here — $0 sales are real
-        // (donated / given away eggs) and the egg COUNT must still migrate.
-        const unitToCount = {
-          single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
-          custom: Number(e.customEggsPerUnit) || 0,
-        };
-        const eggsPerUnit = unitToCount[e.unit] || 12;
-        const totalEggs = Number(e.unitQty) * eggsPerUnit;
-        revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
-        if (totalEggs > 0) {
-          pricePerDozen = revenue / (totalEggs / 12);
-          if (qty === 0) qty = totalEggs;
-        }
-      } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
-        // Old-old shape — some pre-unit-based entries stored pricePerUnit as
-        // "$/dozen" and put total eggs in count. Treat pricePerUnit as $/dozen.
-        pricePerDozen = Number(e.pricePerUnit);
-        revenue = (qty / 12) * pricePerDozen;
-      } else if (Number(e.totalRevenue) > 0) {
-        // Last-ditch — entry has a stashed totalRevenue from some other path.
-        revenue = Number(e.totalRevenue);
-        if (qty > 0) pricePerDozen = revenue / (qty / 12);
-      }
-      // If all four paths fail, revenue stays 0 — the entry genuinely has no
-      // price info and the user will need to edit it. At least now we've tried.
-
-      data.sales.push({
-        id: e.id,
-        date: e.date,
-        hobbyType: "eggs",
-        eggType: "Chicken",
-        eggPurpose: "Eating",
-        qty,
-        unit: "eggs",
-        pricePerUnit: pricePerDozen,
-        totalRevenue: revenue,
-        note: e.note || "",
-        buyerId: e.buyerId || null,
-        created: e.created || Date.now(),
-        migratedFromEntries: true,
-      });
+      data.sales.push(soldEggsToSale(e));
       existingSaleIds.add(e.id);
     }
   });
@@ -7559,6 +7566,9 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
                 if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
                 undoable(update, `Deleted ${deletedLogName(e)}`, { onUndo: () => { undone = true; } })((d) => {
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
+                  // A sale log takes its Sales row with it (and gives back the
+                  // animal or the jars); see src/saleLinks.js.
+                  unlinkDeletedEntry(d, hobby, e);
                   // For butcher entries, also remove the matching record from
                   // currentBatch.butchered (so remaining-birds math recovers)
                   // and from the universal freezer log (which mirrors the
@@ -7978,6 +7988,7 @@ function JournalPage({ data, update, setModal }) {
     undoable(update, `Deleted ${deletedLogName(entry)}`, { onUndo: () => { undone = true; } })((d) => {
       // Wherever it lives: the live log, a finished batch or a closed season.
       removeEntryEverywhere(d, hobby.id, entry.id);
+      unlinkDeletedEntry(d, hobby, entry);
       if (entry.action === "butcher") {
         const h = d.hobbies.find((x) => x.id === hobby.id);
         if (h && Array.isArray(h.currentBatches)) {
@@ -21829,6 +21840,12 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         delete entry.newBuyerName;
         delete entry._showNewBuyer;
         if (!entry.buyerId) delete entry.buyerId;
+        // Its copy in Sales (same id, made when the app loads) follows edits,
+        // so a fixed price or count shows in Sales too.
+        if (isEdit && Array.isArray(d.sales)) {
+          const si = d.sales.findIndex((x) => x && x.id === entry.id && x.migratedFromEntries);
+          if (si >= 0) d.sales[si] = { ...d.sales[si], ...soldEggsToSale({ ...entry, id: d.sales[si].id }) };
+        }
       }
       // "Put out at the farm stand" from Use Eggs: they go on the stand's
       // egg item too, like Farm stand › At home does (src/homeInventory.js).

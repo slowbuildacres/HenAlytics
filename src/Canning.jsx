@@ -674,8 +674,9 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
       // Log entry for history
       if (!d.entries) d.entries = {};
       if (!Array.isArray(d.entries["canning"])) d.entries["canning"] = [];
+      const logId = newId();
       d.entries["canning"].push({
-        id: newId(),
+        id: logId,
         date: useData.date,
         action: useData.reason === "sale" ? "sale" : "use",
         reason: useData.reason,
@@ -708,6 +709,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
           buyerId: null,
           created: Date.now(),
           fromCanningBatchId: useData.batchId,
+          fromCanningEntryId: logId,
         });
       }
       return d;
