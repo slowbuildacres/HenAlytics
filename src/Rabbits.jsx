@@ -598,7 +598,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
       if(action==="bred" && kindleDate){
         d.calendarEvents = d.calendarEvents || [];
         d.calendarEvents.push({
-          id:newId(),date:kindleDate,
+          id:newId(),date:kindleDate,relatedId:entry.id,
           title:`🍼 ${animal.name} — kindle expected`,
           type:"rabbits",
           notes:`Bred ${fmtDate(date)}${entry.buckName?" · sire "+entry.buckName:""}`,
@@ -1076,7 +1076,7 @@ function BredRabbitModal({ hobby, hobbyId, update, onClose, initialAnimalId = nu
       if (kindleDate) {
         d.calendarEvents = d.calendarEvents || [];
         d.calendarEvents.push({
-          id: newId(), date: kindleDate,
+          id: newId(), date: kindleDate, relatedId: entry.id,
           title: `🍼 ${doe?.name || "doe"} — kindle expected`,
           type: "rabbits",
           notes: `Bred ${fmtDate(date)}${buck?.name ? " · sire " + buck.name : ""}`,

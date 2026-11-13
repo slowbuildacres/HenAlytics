@@ -68,9 +68,17 @@ export function unwindShelfSale(d, sale) {
   }
 }
 
-// A log was deleted (Journal, recent activity). Undo what it did elsewhere.
+// A log was deleted (Journal, recent activity). Undo what it did elsewhere:
+// its reminders (a breeding's farrow, kindle, heat or preg-check day) and
+// its Sales row.
 export function unlinkDeletedEntry(d, hobby, entry) {
   if (!d || !entry) return;
+  if (Array.isArray(d.calendarEvents)) {
+    const due = entry.action === "bred" ? (entry.farrowDate || entry.kindleDate) : null;
+    d.calendarEvents = d.calendarEvents.filter((e) => !(e && (e.relatedId === entry.id
+      // Older farrow / kindle reminders weren't linked: same day, same kind.
+      || (due && !e.relatedId && e.date === due && / expected$/.test(String(e.title || "")) && (e.type === "pigs" || e.type === "rabbits")))));
+  }
   const sales = Array.isArray(d.sales) ? d.sales : [];
   if (entry.action === "sold_eggs") {
     // The Sales row is a copy of the log, same id.

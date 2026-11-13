@@ -183,7 +183,14 @@ function RunModal({ run, hobbyId, update, onClose }) {
       if (!Array.isArray(h.runs)) h.runs = [];
       if (isEdit) {
         const idx = h.runs.findIndex(r => r.id === id);
-        if (idx !== -1) h.runs[idx] = runData; else h.runs.push(runData);
+        if (idx !== -1) h.runs[idx] = { ...h.runs[idx], ...runData }; else h.runs.push(runData);
+        // Its lockdown and hatch-day reminders move with a new set date or
+        // bird type, or they'd remind on the old day.
+        (Array.isArray(d.calendarEvents) ? d.calendarEvents : []).forEach(e => {
+          if (!e || e.runId !== id) return;
+          if (e.type === "incubator_lockdown") Object.assign(e, { date: lockdownDate, title: `🔒 Lockdown: ${runData.name}`, notes: `Stop turning eggs. Move to hatcher. ${birdType} — ${n} eggs.` });
+          if (e.type === "incubator_hatch") Object.assign(e, { date: hatchDate, title: `🐣 Hatch day: ${runData.name}`, notes: `Expected hatch. ${birdType} — ${n} eggs set.` });
+        });
       } else {
         h.runs.push(runData);
       }
@@ -193,9 +200,11 @@ function RunModal({ run, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted run")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.runs = (h.runs||[]).filter(r => r.id !== run.id);
+      // Its lockdown and hatch reminders go too.
+      if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => !(e && e.runId === run.id));
       return d;
     });
     onClose();

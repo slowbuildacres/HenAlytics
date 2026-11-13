@@ -707,7 +707,7 @@ function BredPigModal({ hobby, hobbyId, update, onClose, initialAnimalId = null 
       if (farrowDate) {
         d.calendarEvents = d.calendarEvents || [];
         d.calendarEvents.push({
-          id: newId(), date: farrowDate,
+          id: newId(), date: farrowDate, relatedId: entry.id,
           title: `🐽 ${female?.name || "sow"} — farrow expected`,
           type: "pigs",
           notes: `Bred ${fmtDate(date)}${boar?.name ? " · sire " + boar.name : ""}`,

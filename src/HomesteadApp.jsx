@@ -183,7 +183,7 @@ import { LivestockStats } from "./newlook/livestock/LivestockScreens.jsx";
 import { SPECIES } from "./newlook/livestock/livestockData.js";
 import SalesScreen from "./newlook/sales/SalesScreen.jsx";
 import { MeatToday, MeatBatches, MeatStats } from "./newlook/meat/MeatScreens.jsx";
-import { batchAlive, restorePastBatch as restorePastBatchIn } from "./meatBatches.js";
+import { batchAlive, restorePastBatch as restorePastBatchIn, removeButcherLog, syncButcherEdit } from "./meatBatches.js";
 import { requestHobbyAction, useHobbyRequest } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics, CowsNewLook } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
@@ -7575,24 +7575,9 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
                   // butcher entry). Without this, deleting a butcher row would
                   // leave the batch count permanently low and the freezer log
                   // would keep showing meat the user said was deleted.
-                  if (e.action === "butcher") {
-                    const h = d.hobbies.find((x) => x.id === hobby.id);
-                    // Find which active batch this entry belonged to, then
-                    // strip the matching butcher record from THAT batch's
-                    // butchered[] so the remaining-bird count recovers. With
-                    // multi-batch support, e.batchId tells us which one.
-                    if (h && Array.isArray(h.currentBatches)) {
-                      const b = h.currentBatches.find((x) => x.id === e.batchId);
-                      if (b && Array.isArray(b.butchered)) {
-                        b.butchered = b.butchered.filter((bu) => bu.id !== e.id);
-                      }
-                    }
-                    if (Array.isArray(d.freezerLog)) {
-                      d.freezerLog = d.freezerLog.filter(
-                        (f) => !(f.batchId === e.batchId && f.date === e.date && f.count === e.count)
-                      );
-                    }
-                  }
+                  // Its batch record and freezer row (one, not every
+                  // look-alike), and any birds it took from a flock.
+                  removeButcherLog(d, hobby.id, e);
                   return d;
                 });
               }}
@@ -7989,20 +7974,9 @@ function JournalPage({ data, update, setModal }) {
       // Wherever it lives: the live log, a finished batch or a closed season.
       removeEntryEverywhere(d, hobby.id, entry.id);
       unlinkDeletedEntry(d, hobby, entry);
-      if (entry.action === "butcher") {
-        const h = d.hobbies.find((x) => x.id === hobby.id);
-        if (h && Array.isArray(h.currentBatches)) {
-          const b = h.currentBatches.find((x) => x.id === entry.batchId);
-          if (b && Array.isArray(b.butchered)) {
-            b.butchered = b.butchered.filter((bu) => bu.id !== entry.id);
-          }
-        }
-        if (Array.isArray(d.freezerLog)) {
-          d.freezerLog = d.freezerLog.filter(
-            (f) => !(f.batchId === entry.batchId && f.date === entry.date && f.count === entry.count)
-          );
-        }
-      }
+      // Butcher logs: the batch (live or finished) and one freezer row;
+      // flock removals give their birds back.
+      removeButcherLog(d, hobby.id, entry);
       return d;
     });
   };
@@ -20158,7 +20132,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
                   });
                   if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
                   d.freezerLog.push({
-                    id: newId(), date, hobbyId: hobby.id, batchId: target.id,
+                    id: newId(), fromEntryId: entryId, date, hobbyId: hobby.id, batchId: target.id,
                     batchName: target.name, birdType: target.birdType || "Chicken",
                     count: n, avgWeight: w, note: note.trim(), created: Date.now(),
                   });
@@ -20857,11 +20831,15 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
             const fl = (h.flocks || []).find((x) => x.id === activeFlock.id);
             if (fl) fl.birdCount = Math.max(0, (fl.birdCount || 0) - n);
 
+            // The log remembers how many it took from the flock, so deleting
+            // or editing it later puts them back (src/meatBatches.js).
+            const logId = newId();
             // Butchered → freezer log + butcher entry (preserves existing flow)
             if (isButcher) {
               if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
               d.freezerLog.push({
                 id: newId(),
+                fromEntryId: logId,
                 date,
                 hobbyId: hobby.id,
                 flockId: activeFlock.id,
@@ -20874,12 +20852,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
               });
               d.entries[hobby.id] = d.entries[hobby.id] || [];
               d.entries[hobby.id].push({
-                id: newId(),
+                id: logId,
                 date,
                 action: "butcher",
                 count: n,
                 avgWeight: w,
                 flockId: activeFlock.id,
+                tookFromFlock: n,
                 note: note.trim(),
                 created: Date.now(),
               });
@@ -20888,12 +20867,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
               // they show up in mortality stats consistently.
               d.entries[hobby.id] = d.entries[hobby.id] || [];
               d.entries[hobby.id].push({
-                id: newId(),
+                id: logId,
                 date,
                 action: "death",
                 count: n,
                 cause: reason === "culled" ? `culled: ${note.trim() || "no detail"}` : (note.trim() || "unknown"),
                 flockId: activeFlock.id,
+                tookFromFlock: n,
                 created: Date.now(),
               });
             } else {
@@ -20908,13 +20888,14 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
               }[reason] || "Removed";
               d.entries[hobby.id] = d.entries[hobby.id] || [];
               d.entries[hobby.id].push({
-                id: newId(),
+                id: logId,
                 date,
                 action: "note",
                 note: `${reasonLabel} · ${n} ${activeFlock.birdType?.toLowerCase() || "bird"}${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
                 flockId: activeFlock.id,
                 cullReason: reason,
                 cullCount: n,
+                tookFromFlock: n,
                 created: Date.now(),
               });
             }
@@ -22100,6 +22081,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
         d.entries[hobby.id].push(entry);
       } else {
+        // A butcher or flock-removal log's count, weight and date follow to
+        // the batch, the freezer log and the flock (src/meatBatches.js).
+        syncButcherEdit(d, hobby.id, existingEntry, entry);
         // Edit: replace the existing entry in place. The entry may live in
         // data.entries[hobby.id] OR on a finished batch's / closed garden
         // season's finalEntries snapshot. Update wherever it is.
@@ -22589,12 +22573,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {action === "butcher" && (
         <>
-          {/* Editing a butcher entry from the activity log. NOTE: we don't
-              re-sync changes back to hobby.currentBatch.butchered[] here —
-              that array tracks the running total per batch. Edits to count
-              would desync the batch's remaining-bird count.
-              For now: editing date and notes is safe; count/weight edits
-              should be done by deleting + re-creating via the butcher modal. */}
+          {/* Editing a butcher entry from the activity log. Count, weight and
+              date follow to the batch's butchered[] and the freezer log on
+              save (syncButcherEdit in src/meatBatches.js). */}
           <Field label="How many butchered">
             <input
               type="number" inputMode="numeric"
