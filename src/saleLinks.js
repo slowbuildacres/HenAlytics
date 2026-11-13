@@ -7,6 +7,8 @@
 //   tea        batch.sachetsRemaining, or bulkRemainingOz when sold by the oz
 //   canning    batch.jarsRemaining (sale.fromCanningBatchId), plus a "sale"
 //              log in entries.canning
+//   farmstand  item.stock, for a sale rung up on the stand (fromFarmstandItem;
+//              not an order's sale, which takes stock its own way)
 // (Soap works out its bars from the sales themselves, so it needs nothing.)
 // Deleting such a sale in Sales, or changing how many, used to leave the
 // shelf count as it was. Deleting the log from the Journal left the money in
@@ -30,6 +32,15 @@ export function restockForSale(d, sale, qty) {
     const h = hobbyFor(d, sale, "canning");
     const b = h && Array.isArray(h.batches) ? h.batches.find((x) => x && x.id === sale.fromCanningBatchId) : null;
     if (b) b.jarsRemaining = Math.max(0, (Number(b.jarsRemaining) || 0) + n);
+    return;
+  }
+  // A sale rung up on the farm stand took its stock (an order's sale didn't:
+  // the order handles stock itself, so leave those alone).
+  if (sale.hobbyType === "farmstand" && sale.fromFarmstandItem && !sale.fromOrder) {
+    const h = (Array.isArray(d.hobbies) ? d.hobbies : []).find((x) => x && x.type === "farmstand");
+    const it = h && Array.isArray(h.items) ? h.items.find((x) => x && x.id === sale.fromFarmstandItem) : null;
+    // Not floored: the stand lets stock go below zero on purpose.
+    if (it && it.trackStock) it.stock = Math.round(((Number(it.stock) || 0) + n) * 100) / 100;
     return;
   }
   if (!sale.batchId) return;

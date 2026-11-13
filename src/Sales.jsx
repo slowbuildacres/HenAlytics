@@ -286,7 +286,9 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const [gardenUnit, setGardenUnit] = useState(existingSale?.gardenUnit || "lbs");
 
   // Other
-  const [otherItem, setOtherItem] = useState(existingSale?.otherItem || (existingSale?.hobbyType === "other" ? existingSale?.crop || "" : ""));
+  // An animal sale keeps sold / leased / rehomed in saleType (the form uses
+  // otherItem for it); reading it here keeps a lease a lease on edit.
+  const [otherItem, setOtherItem] = useState(existingSale?.otherItem || (existingSale?.hobbyType === "other" ? existingSale?.crop || "" : LIVESTOCK_FLAT_TYPES.includes(existingSale?.hobbyType) ? existingSale?.saleType || "" : ""));
   const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : (existingSale?.hobbyType === "other" && existingSale?.totalRevenue != null ? String(existingSale.totalRevenue) : ""));
 
   // What the money fields said when the form opened. If they're unchanged on
@@ -506,7 +508,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
           const a = (livestockHobby.animals || []).find(x => x.id === selectedAnimalId);
           if (a && !a.archived) {
             a.archived = true;
-            const verb = (otherItem || "sold") === "leased" ? "Leased" : "Sold";
+            const verb = (otherItem || "sold") === "leased" ? "Leased" : otherItem === "rehomed" ? "Rehomed" : "Sold";
             const priceStr = Number(pricePerUnit) > 0 ? ` for ${fmtMoney(Number(pricePerUnit))}` : "";
             a.archivedReason = `${verb}${priceStr}`;
             a.archivedDate = date;
@@ -922,6 +924,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   <select style={inputStyle()} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
                     <option value="sold">Sold</option>
                     <option value="leased">Leased</option>
+                    <option value="rehomed">Rehomed</option>
                   </select>
                 </Field>
                 <Field label="Sale / lease price">
