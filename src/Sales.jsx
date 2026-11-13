@@ -427,11 +427,14 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
     // If new buyer name entered, create customer first
     let finalBuyerId = buyerId;
     if (showNewBuyer && newBuyerName.trim()) {
-      finalBuyerId = newId();
+      // Someone already saved under that name (from an order, say): them.
+      const nm = newBuyerName.trim().replace(/\s+/g, " ");
+      const same = (customers || []).find((c) => c && String(c.name || "").trim().replace(/\s+/g, " ").toLowerCase() === nm.toLowerCase());
+      finalBuyerId = same ? same.id : newId();
       sale.buyerId = finalBuyerId;
-      update(d => {
+      if (!same) update(d => {
         d.customers = d.customers || [];
-        d.customers.push({ id: finalBuyerId, name: newBuyerName.trim(), note: "" });
+        d.customers.push({ id: finalBuyerId, name: nm, note: "" });
         return d;
       });
     }

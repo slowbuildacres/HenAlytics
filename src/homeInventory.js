@@ -86,7 +86,15 @@ export function putOut(d, entry, qty, today) {
     if (!Array.isArray(d.entries[h.id])) d.entries[h.id] = [];
     d.entries[h.id].push({ id: newId(), date: today, action: "used_eggs", useType: "stand", count: n * 12, notes: `${n} dozen to the farm stand`, created: Date.now() });
   } else return "";
-  let stand = (d.hobbies || []).find((x) => x && x.id === "farmstand");
+  return addToStand(d, entry, n);
+}
+
+// Adds qty of a home entry to its farm stand item (made if needed, linked by
+// item.fromSource), in place. Returns the item id, or "" with no farm stand.
+export function addToStand(d, entry, qty) {
+  const n = Math.round(num(qty) * 100) / 100;
+  if (!(n > 0)) return "";
+  const stand = (d.hobbies || []).find((x) => x && x.id === "farmstand");
   if (!stand) return "";
   if (!Array.isArray(stand.items)) stand.items = [];
   let it = standItemFor(d, entry);

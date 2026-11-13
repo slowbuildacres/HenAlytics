@@ -144,6 +144,7 @@ import { eggInsight } from "./eggInsights.js";
 // 3.0: helpers shared with the new-look screens live in their own files.
 import { computeFeedStatus, feedEntryLbs, FEED_BURN_WINDOW_DAYS } from "./feedSupply.js";
 import { computeEggsOnHand } from "./eggInventory.js";
+import { addToStand } from "./homeInventory.js";
 import { winterSeason, WINTER_ITEMS } from "./winterChecklist.js";
 import { planAnnualConfirm } from "./gardenPlanting.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
@@ -21814,14 +21815,30 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       // persisted on the entry.
       if (action === "sold_eggs") {
         if (entry._showNewBuyer && entry.newBuyerName && entry.newBuyerName.trim()) {
-          const newCustId = newId();
           d.customers = d.customers || [];
-          d.customers.push({ id: newCustId, name: entry.newBuyerName.trim(), note: "" });
-          entry.buyerId = newCustId;
+          // Someone already saved under that name (from an order, say): them.
+          const nm = entry.newBuyerName.trim().replace(/\s+/g, " ");
+          const same = d.customers.find((c) => c && String(c.name || "").trim().replace(/\s+/g, " ").toLowerCase() === nm.toLowerCase());
+          if (same) entry.buyerId = same.id;
+          else {
+            const newCustId = newId();
+            d.customers.push({ id: newCustId, name: nm, note: "" });
+            entry.buyerId = newCustId;
+          }
         }
         delete entry.newBuyerName;
         delete entry._showNewBuyer;
         if (!entry.buyerId) delete entry.buyerId;
+      }
+      // "Put out at the farm stand" from Use Eggs: they go on the stand's
+      // egg item too, like Farm stand › At home does (src/homeInventory.js).
+      if (!isEdit && action === "used_eggs" && entry.useType === "stand") {
+        const fs = d.hobbies.find((x) => x && x.id === "farmstand" && !x.hidden);
+        const dz = Math.round(((Number(entry.count) || 0) / 12) * 100) / 100;
+        if (fs && dz > 0 && undoSnap) {
+          undoSnap.stand = JSON.parse(JSON.stringify(fs));
+          addToStand(d, { key: `eggs:${hobby.id}`, kind: "eggs", name: "Eggs", price: null }, dz);
+        }
       }
       if (finalPaths.length > 0) entry.photoPaths = finalPaths;
       if (weather) entry.weather = weather;
@@ -22101,6 +22118,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       showUndo(undoMessage(action, cleanFields, hobby), () => update((d) => {
         const i = d.hobbies.findIndex((x) => x.id === hobby.id);
         if (i !== -1 && snap.hobby) d.hobbies[i] = snap.hobby;
+        if (snap.stand) { const k = d.hobbies.findIndex((x) => x && x.id === "farmstand"); if (k !== -1) d.hobbies[k] = snap.stand; }
         d.entries[hobby.id] = snap.entries;
         if (Array.isArray(d.sales)) d.sales = d.sales.filter((x) => !x || snap.sales.has(x.id));
         if (Array.isArray(d.expenses)) d.expenses = d.expenses.filter((x) => !x || snap.expenses.has(x.id));
