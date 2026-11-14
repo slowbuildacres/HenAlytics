@@ -5346,7 +5346,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   // Same idea for amounts: number boxes take a typed "-5" despite min={0},
   // and a feed log of -5 lbs or a litter of -5 kits took that much off every
   // total. None of these is ever below zero, so a negative saves as 0.
-  const NEVER_NEG = /^(count|qty|quantity|lbs|oz|gal|gallons|weight|feedAmount|cost|price|amount|revenue|tip|unitQty|cuft|eggs|jars|bars|trays|sap|syrup|hours|pricePer[A-Za-z]*|costPer[A-Za-z]*|[a-z][A-Za-z]*(Alive|Stillborn|Born|Weight|Lbs|Oz|Count|Cost|Price|Revenue|Hours|Taps|Started|Made|Remaining))$/;
+  const NEVER_NEG = /^(count|qty|miles|minutes|quantity|lbs|oz|gal|gallons|weight|feedAmount|cost|price|amount|revenue|tip|unitQty|cuft|eggs|jars|bars|trays|sap|syrup|hours|pricePer[A-Za-z]*|costPer[A-Za-z]*|[a-z][A-Za-z]*(Alive|Stillborn|Born|Weight|Lbs|Oz|Count|Cost|Price|Revenue|Hours|Minutes|Feet|Miles|Taps|Started|Made|Remaining|G))$/;
   // (Any record: a goat's breeding record keeps its kids born on the hobby.)
   const fixEmptyDate = (it) => {
     if (!it || typeof it !== "object") return;
