@@ -137,7 +137,7 @@ export function StockEmailTutorial({ onClose, onStart }) {
   const last = i === TUTORIAL.length - 1;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 220, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 18, padding: "22px 20px 18px", fontFamily: FONT_BODY, textAlign: "center", boxShadow: "0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 400, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 18, padding: "22px 20px 18px", fontFamily: FONT_BODY, textAlign: "center", boxShadow: "0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ fontSize: 11, letterSpacing: 2, textTransform: "uppercase", color: palette.inkSoft, marginBottom: 8 }}>New · Customer emails</div>
         <div style={{ fontSize: 46, lineHeight: 1, marginBottom: 10 }}>{s.icon}</div>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, color: palette.ink, marginBottom: 8 }}>{s.title}</div>
@@ -343,7 +343,7 @@ export default function StockEmailsModal({ data, update, onClose, user, preset =
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "max(16px, env(safe-area-inset-top)) 12px 24px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 540, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 540, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 10 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, flex: 1 }}>📧 Email your customers</div>
           <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: palette.ink, padding: 4, lineHeight: 1 }}>×</button>

@@ -505,7 +505,7 @@ function HistoryDetailModal({ event, animal, hobby, species, onClose, onSave, on
       }}
     >
       <div
-        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16,
           maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto",
@@ -829,7 +829,7 @@ export function AnimalHistoryView({ animal, hobby, entries, sales, species, upda
       }}
     >
       <div
-        onClick={e => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16,
           maxWidth: 520, width: "100%", maxHeight: "92vh", overflow: "auto",

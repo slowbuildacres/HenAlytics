@@ -446,7 +446,7 @@ function NewAreaModal({ gridChoiceOffered, onCancel, onCreate, /* GARDEN_GRID_LO
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, padding: 18, borderRadius: 12,
           maxWidth: 380, width: "100%",

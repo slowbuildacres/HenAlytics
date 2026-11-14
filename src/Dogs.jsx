@@ -164,7 +164,7 @@ function ModalShell({ title, onClose, children, maxWidth = 460 }) {
       display: "flex", alignItems: "flex-end", justifyContent: "center",
       zIndex: 200, padding: 0,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderTopLeftRadius: 20, borderTopRightRadius: 20,
         maxWidth, width: "100%", maxHeight: "92vh", overflowY: "auto",
         border: `2px solid ${palette.ink}`, boxShadow: `0 -6px 0 ${palette.line}`,

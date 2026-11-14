@@ -365,7 +365,7 @@ function CandleModal({ run, hobbyId, update, onClose }) {
           <input
             type="checkbox" checked={discard}
             onChange={() => setDiscard(!discard)}
-            onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}
             style={{ marginTop: 2, flexShrink: 0 }}
           />
           <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.4 }}>

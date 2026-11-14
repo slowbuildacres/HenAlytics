@@ -5892,7 +5892,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           }}
         >
           <div
-            onClick={(e) => e.stopPropagation()}
+            role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
             style={{
               background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
               border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
@@ -15841,7 +15841,7 @@ function SupporterNamePromptModal({ user, onClose }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 200, padding: 16,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
         border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         fontFamily: FONT_BODY, overflow: "hidden",
@@ -24678,7 +24678,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden" }}>
 
         {/* Period filter */}
         <div style={{ padding:"16px 16px 0",display:"flex",gap:6,justifyContent:"center" }}>
@@ -24843,7 +24843,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 20, maxWidth: 420, width: "100%",
           border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
@@ -25284,7 +25284,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
           border: `2px solid ${palette.ink}`,
@@ -25426,7 +25426,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 250, padding: 16,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{
         position: "relative", width: "100%", maxWidth: 400, maxHeight: "90vh",
         overflowY: "auto", borderRadius: 20, border: `2px solid ${palette.ink}`,
         boxShadow: "0 12px 32px rgba(0,0,0,0.22)", background: palette.card,
@@ -25621,7 +25621,7 @@ function AppStoreLaunchModal({ onClose, webOS }) {
       `}</style>
 
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           position: "relative",
           width: "100%", maxWidth: 380,
@@ -25824,7 +25824,7 @@ function WhatsNewModal({ onClose }) {
       }}
     >
       <div
-        onClick={e=>e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()}
         style={{
           background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",
           maxHeight:"min(85vh, 600px)",
@@ -25945,7 +25945,7 @@ function MilestoneModal({ config, userCount, milestone, onClose, onOpenSupport }
       onClick={onClose}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette_local.card,
           borderRadius: 16,
@@ -26118,7 +26118,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
         <div style={{ background:palette.leaf,padding:"24px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
           <button
             onClick={onClose}
@@ -26290,7 +26290,7 @@ function PhotosModal({ data, user, onClose }) {
       style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}
       >
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
