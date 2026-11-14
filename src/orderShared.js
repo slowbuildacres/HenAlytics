@@ -226,6 +226,7 @@ export function cleanRequest(fields, menu, payIds = [], rules = {}) {
     if (!pickup) return { error: 'Please pick a pickup day.' };
     if (!days.includes(weekdayOf(pickup)) || (rules.today && pickup < rules.today)) return { error: 'Please pick one of the pickup days.' };
   }
+  if (pickup && rules.today && pickup < rules.today) return { error: "Please pick a day that hasn't passed." };
   if (pickup && rules.today && pickup > yearAfter(rules.today)) return { error: 'Please pick a day within the next year.' };
   const delivery = rules.delivery && rules.delivery.on && fields.fulfil === 'delivery';
   const address = delivery ? clip(fields.address, L.address) : '';
@@ -258,8 +259,23 @@ export function moneyText(n) {
   if (!Number.isFinite(Number(n))) return '';
   return `$${Number(n).toFixed(2).replace(/\.00$/, '')}`;
 }
+// "loaf" → "loaves", "jar" → "jars"; "dozen", "lb" and "oz" stay.
+export function plural(unit, n) {
+  const u = String(unit || '').trim();
+  if (Number(n) === 1 || !u || /^each$/i.test(u) || /doz|dz/i.test(u) || /s$/i.test(u) || /^(lb|oz|kg|g|qt|pt|gal|ml|l)\.?$/i.test(u) || /[^a-z]$/i.test(u)) return u;
+  if (/[^aeiou]y$/i.test(u)) return `${u.slice(0, -1)}ies`;
+  if (/(af|lf)$/i.test(u)) return `${u.slice(0, -1)}ves`;
+  if (/(ch|sh|x)$/i.test(u)) return `${u}es`;
+  return `${u}s`;
+}
+
+// "2 dozen Farm eggs", "3 loaves Sourdough", but "2 Dozen eggs" when the
+// name already says it.
 export function itemLine(i) {
-  const unit = i.unit ? ` ${i.unit}` : '';
+  if (i && i.id === 'delivery') return 'Delivery';
+  const u = String(i.unit || '').trim();
+  const said = u && new RegExp(`(^|[^a-z])${u.toLowerCase().replace(/[^a-z0-9 ]/g, '').replace(/s$/, '')}`, 'i').test(String(i.name || ''));
+  const unit = u && !said ? ` ${plural(u, i.qty)}` : '';
   return `${i.qty}${unit} ${i.name}`.replace(/\s+/g, ' ');
 }
 export function orderTotal(items) {
@@ -312,7 +328,7 @@ export function buildCustomerEmail({ status, farmName, items, note, pickupDate, 
   const payLater = status === 'received' && pay && pay.method && pay.op && pay.op.payWhen === 'accepted' ? `You'll get how to pay once ${farm} accepts it.` : '';
   const refund = pay && status === 'declined' && ['venmo', 'cashapp', 'paypal', 'zelle'].includes(pay.method) && (pay.paid || (pay.op && pay.op.payWhen !== 'accepted'))
     ? `If you already paid, ${farm} will send it back.` : '';
-  const payHtml = p ? `<div style="margin:12px 0;padding:12px 14px;border:1px solid #2C181022;border-radius:12px"><p style="font-size:15px;margin:0 0 ${p.link ? 10 : 0}px"><b>Paying:</b> ${esc(p.line)}${pay.op && pay.op.payWhen === 'order' ? ' (If you already paid, you\'re all set.)' : ''}</p>${p.link ? `<a href="${esc(p.link)}" style="display:inline-block;background:#E8B547;color:#2C1810;text-decoration:none;padding:11px 16px;border-radius:12px;font-weight:700">${esc(p.button)}</a>` : ''}<p style="font-size:12px;color:#5C4530;margin:10px 0 0">Check the name before you send. Payments go straight to ${esc(farm)}; Henalytics doesn't process, hold or refund payments.</p></div>` : '';
+  const payHtml = p ? `<div style="margin:12px 0;padding:12px 14px;border:1px solid #2C181022;border-radius:12px"><p style="font-size:15px;margin:0 0 ${p.link ? 10 : 0}px"><b>Paying:</b> ${esc(p.line)}${repeatWeeks ? ' That\'s for this one; each time is paid on its own.' : ''}${pay.op && pay.op.payWhen === 'order' ? ' (If you already paid, you\'re all set.)' : ''}</p>${p.link ? `<a href="${esc(p.link)}" style="display:inline-block;background:#E8B547;color:#2C1810;text-decoration:none;padding:11px 16px;border-radius:12px;font-weight:700">${esc(p.button)}</a>` : ''}<p style="font-size:12px;color:#5C4530;margin:10px 0 0">Check the name before you send. Payments go straight to ${esc(farm)}; Henalytics doesn't process, hold or refund payments.</p></div>` : '';
   const html = wrap(`
 <h1 style="font-family:Georgia,serif;font-weight:400;font-size:24px;margin:0 0 10px">${esc(h.subject)}</h1>
 <p style="font-size:15px;line-height:1.5;margin:0 0 10px">${esc(h.lead)}</p>
@@ -326,7 +342,7 @@ ${payHtml}
 ${statusUrl ? `<p style="font-size:14px;margin:10px 0 0"><a href="${esc(statusUrl)}" style="color:#2C1810">Check on your order</a></p>` : ''}${refund ? `<p style="font-size:14px;margin:6px 0">${esc(refund)}</p>` : ''}
 <p style="font-size:13px;color:#5C4530;margin:14px 0 0">Questions? Just reply to this email.${payLater ? ` ${esc(payLater)}` : p || refund ? '' : ` No payment was taken; settle up with ${esc(farm)} directly.`}</p>
 ${orderUrl ? `<p style="font-size:13px;margin:8px 0 0"><a href="${esc(orderUrl)}" style="color:#2C1810">${status === 'declined' ? 'See what else they have' : 'Order again'} from ${esc(farm)}</a></p>` : ''}`);
-  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `${address ? 'Delivery' : 'Pickup'} you asked for: ${when}${repeatWeeks ? ` (${repeatLabel(repeatWeeks).toLowerCase()})` : ''}` : '', address && status !== 'declined' ? `Delivering to ${address}` : '', pickupText && status !== 'declined' && !address ? pickupText : '', statusUrl ? `Check on your order: ${statusUrl}` : '', p ? `Paying: ${p.line}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${payLater ? ` ${payLater}` : p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
+  const text = [h.lead, msg, itemsText(items), note ? `Your note: ${note}` : '', when && status !== 'declined' ? `${address ? 'Delivery' : 'Pickup'} you asked for: ${when}${repeatWeeks ? ` (${repeatLabel(repeatWeeks).toLowerCase()})` : ''}` : '', address && status !== 'declined' ? `Delivering to ${address}` : '', pickupText && status !== 'declined' && !address ? pickupText : '', statusUrl ? `Check on your order: ${statusUrl}` : '', p ? `Paying: ${p.line}${repeatWeeks ? " That's for this one; each time is paid on its own." : ''}${p.link ? ` ${p.link}` : ''}\nCheck the name before you send. Payments go straight to ${farm}; Henalytics doesn't process, hold or refund payments.` : '', refund, `Questions? Just reply to this email.${payLater ? ` ${payLater}` : p || refund ? '' : ` No payment was taken; settle up with ${farm} directly.`}`, orderUrl ? `Order again: ${orderUrl}` : ''].filter(Boolean).join('\n\n');
   return { subject: h.subject, html, text };
 }
 
@@ -370,6 +386,14 @@ ${orderUrl ? `<p style="margin:14px 0 0"><a href="${esc(orderUrl)}" style="displ
 // ---------------------------------------------------------------- texting
 // Texts go out from the owner's own phone: the app opens Messages with the
 // number and words filled in. "?&body=" works on both iPhone and Android.
+// The From line for an email sent in the farm's name. Resend can reject or
+// garble a display name with punctuation in it (a comma in "Lulay Farm, LLC"
+// reads as a second address), so those characters become spaces.
+export function fromLine(name, address) {
+  const n = String(name || '').replace(/[,;:()<>"\\[\]@?\r\n]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 60);
+  return n ? `${n} <${address}>` : address;
+}
+
 export function smsHref(phone, body) {
   const num = String(phone || '').replace(/[^0-9+]/g, '');
   return `sms:${num}?&body=${encodeURIComponent(String(body || '').slice(0, 900))}`;

@@ -117,7 +117,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -183,7 +183,14 @@ function RunModal({ run, hobbyId, update, onClose }) {
       if (!Array.isArray(h.runs)) h.runs = [];
       if (isEdit) {
         const idx = h.runs.findIndex(r => r.id === id);
-        if (idx !== -1) h.runs[idx] = runData; else h.runs.push(runData);
+        if (idx !== -1) h.runs[idx] = { ...h.runs[idx], ...runData }; else h.runs.push(runData);
+        // Its lockdown and hatch-day reminders move with a new set date or
+        // bird type, or they'd remind on the old day.
+        (Array.isArray(d.calendarEvents) ? d.calendarEvents : []).forEach(e => {
+          if (!e || e.runId !== id) return;
+          if (e.type === "incubator_lockdown") Object.assign(e, { date: lockdownDate, title: `🔒 Lockdown: ${runData.name}`, notes: `Stop turning eggs. Move to hatcher. ${birdType} — ${n} eggs.` });
+          if (e.type === "incubator_hatch") Object.assign(e, { date: hatchDate, title: `🐣 Hatch day: ${runData.name}`, notes: `Expected hatch. ${birdType} — ${n} eggs set.` });
+        });
       } else {
         h.runs.push(runData);
       }
@@ -193,9 +200,11 @@ function RunModal({ run, hobbyId, update, onClose }) {
   };
 
   const remove = () => {
-    update(d => {
+    undoable(update, "Deleted run")(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.runs = (h.runs||[]).filter(r => r.id !== run.id);
+      // Its lockdown and hatch reminders go too.
+      if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => !(e && e.runId === run.id));
       return d;
     });
     onClose();
@@ -356,7 +365,7 @@ function CandleModal({ run, hobbyId, update, onClose }) {
           <input
             type="checkbox" checked={discard}
             onChange={() => setDiscard(!discard)}
-            onClick={e => e.stopPropagation()}
+            role="dialog" aria-modal="true" onClick={e => e.stopPropagation()}
             style={{ marginTop: 2, flexShrink: 0 }}
           />
           <div style={{ fontSize: 13, color: palette.ink, lineHeight: 1.4 }}>

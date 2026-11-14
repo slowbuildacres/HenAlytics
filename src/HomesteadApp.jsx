@@ -81,6 +81,7 @@ import {
   sendFeedback, acceptInvite, deleteAccount,
   listMyHomesteads, setActiveHomestead,
   getHiddenHomesteadIds, setHomesteadHidden,
+  scoreOf, noteBulkDelete,
 } from "./sync.js";
 import { noteDeletions } from "./mergeUnsynced.js";
 import {
@@ -107,6 +108,7 @@ import HomeScreen from "./newlook/HomeScreen.jsx";
 import MoreScreen from "./newlook/MoreScreen.jsx";
 import AnnouncementCard from "./newlook/Announcements.jsx";
 import { allEntriesByHobby, removeEntryEverywhere } from "./allEntries.js";
+import { unlinkDeletedEntry, moveStandEggs } from "./saleLinks.js";
 import { nextYearProject, nextYearLabel } from "./newlook/projects/projectData.js";
 import { closeTopOverlay } from "./newlook/backClose.js";
 import { gardenNewSeasonDue } from "./newlook/garden/gardenData.js";
@@ -144,6 +146,7 @@ import { eggInsight } from "./eggInsights.js";
 // 3.0: helpers shared with the new-look screens live in their own files.
 import { computeFeedStatus, feedEntryLbs, FEED_BURN_WINDOW_DAYS } from "./feedSupply.js";
 import { computeEggsOnHand } from "./eggInventory.js";
+import { addToStand } from "./homeInventory.js";
 import { winterSeason, WINTER_ITEMS } from "./winterChecklist.js";
 import { planAnnualConfirm } from "./gardenPlanting.js";
 import { renderNodeToBlob, shareImageBlob, shareUrl, createShareLink, canShareFiles as canShareImageFiles } from "./shareCard.js";
@@ -181,7 +184,7 @@ import { LivestockStats } from "./newlook/livestock/LivestockScreens.jsx";
 import { SPECIES } from "./newlook/livestock/livestockData.js";
 import SalesScreen from "./newlook/sales/SalesScreen.jsx";
 import { MeatToday, MeatBatches, MeatStats } from "./newlook/meat/MeatScreens.jsx";
-import { batchAlive, restorePastBatch as restorePastBatchIn } from "./meatBatches.js";
+import { batchAlive, restorePastBatch as restorePastBatchIn, removeButcherLog, syncButcherEdit } from "./meatBatches.js";
 import { requestHobbyAction, useHobbyRequest } from "./newlook/hobbyRequests.js";
 import CowsPage, { CowsAnalytics, CowsNewLook } from "./Cows.jsx";
 import PigsPage, { PigsAnalytics, PigsNewLook } from "./Pigs.jsx";
@@ -390,6 +393,70 @@ function isQuickLogHidden(hobby, action) {
 
 
 // Migrate older data shapes to the current schema. Safe to call on fresh data too.
+// A Sold Eggs log as its Sales row (same id). Used when old logs are copied
+// into Sales on load, and to keep that copy current when the log is edited.
+function soldEggsToSale(e) {
+  // Robust revenue derivation. Different versions of the sold_eggs form
+  // have written different field combinations over the months, and a few
+  // user reports surfaced sales landing in the Sales tab at $0 because the
+  // migration only looked at e.pricePerDozen — which can be missing on
+  // entries created before the unit-based selling form was introduced, or
+  // when the form's derivation guard didn't fire (e.g. unitQty empty).
+  // Try every known shape before giving up at 0. derivedQty fills in
+  // when the entry has unit-based fields but `count` was never set.
+  let qty = Number(e.count) || 0;
+  let pricePerDozen = Number(e.pricePerDozen) || 0;
+  let revenue = 0;
+
+  if (pricePerDozen > 0 && qty > 0) {
+    // Canonical path — current form writes both fields.
+    revenue = (qty / 12) * pricePerDozen;
+  } else if (Number(e.unitQty) > 0) {
+    // Form-fields path — derivation guard didn't run (e.g. older code or
+    // empty unitQty at save time), but the raw inputs are still there.
+    // NOTE: price is intentionally NOT required here — $0 sales are real
+    // (donated / given away eggs) and the egg COUNT must still migrate.
+    const unitToCount = {
+      single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
+      custom: Number(e.customEggsPerUnit) || 0,
+    };
+    const eggsPerUnit = unitToCount[e.unit] || 12;
+    const totalEggs = Number(e.unitQty) * eggsPerUnit;
+    revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
+    if (totalEggs > 0) {
+      pricePerDozen = revenue / (totalEggs / 12);
+      if (qty === 0) qty = totalEggs;
+    }
+  } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
+    // Old-old shape — some pre-unit-based entries stored pricePerUnit as
+    // "$/dozen" and put total eggs in count. Treat pricePerUnit as $/dozen.
+    pricePerDozen = Number(e.pricePerUnit);
+    revenue = (qty / 12) * pricePerDozen;
+  } else if (Number(e.totalRevenue) > 0) {
+    // Last-ditch — entry has a stashed totalRevenue from some other path.
+    revenue = Number(e.totalRevenue);
+    if (qty > 0) pricePerDozen = revenue / (qty / 12);
+  }
+  // If all four paths fail, revenue stays 0 — the entry genuinely has no
+  // price info and the user will need to edit it. At least now we've tried.
+
+  return {
+    id: e.id,
+    date: e.date,
+    hobbyType: "eggs",
+    eggType: "Chicken",
+    eggPurpose: "Eating",
+    qty,
+    unit: "eggs",
+    pricePerUnit: pricePerDozen,
+    totalRevenue: revenue,
+    note: e.note || "",
+    buyerId: e.buyerId || null,
+    created: e.created || Date.now(),
+    migratedFromEntries: true,
+  };
+}
+
 function migrateData(data) {
   if (!data || typeof data !== "object") return defaultData();
   if (!Array.isArray(data.hobbies)) data.hobbies = defaultData().hobbies;
@@ -461,65 +528,7 @@ function migrateData(data) {
   const existingSaleIds = new Set((data.sales || []).map(s => s.id));
   eggLayerEntries.forEach(e => {
     if (e.action === "sold_eggs" && !existingSaleIds.has(e.id)) {
-      // Robust revenue derivation. Different versions of the sold_eggs form
-      // have written different field combinations over the months, and a few
-      // user reports surfaced sales landing in the Sales tab at $0 because the
-      // migration only looked at e.pricePerDozen — which can be missing on
-      // entries created before the unit-based selling form was introduced, or
-      // when the form's derivation guard didn't fire (e.g. unitQty empty).
-      // Try every known shape before giving up at 0. derivedQty fills in
-      // when the entry has unit-based fields but `count` was never set.
-      let qty = Number(e.count) || 0;
-      let pricePerDozen = Number(e.pricePerDozen) || 0;
-      let revenue = 0;
-
-      if (pricePerDozen > 0 && qty > 0) {
-        // Canonical path — current form writes both fields.
-        revenue = (qty / 12) * pricePerDozen;
-      } else if (Number(e.unitQty) > 0) {
-        // Form-fields path — derivation guard didn't run (e.g. older code or
-        // empty unitQty at save time), but the raw inputs are still there.
-        // NOTE: price is intentionally NOT required here — $0 sales are real
-        // (donated / given away eggs) and the egg COUNT must still migrate.
-        const unitToCount = {
-          single: 1, half_dozen: 6, dozen: 12, eighteen: 18, flat: 30,
-          custom: Number(e.customEggsPerUnit) || 0,
-        };
-        const eggsPerUnit = unitToCount[e.unit] || 12;
-        const totalEggs = Number(e.unitQty) * eggsPerUnit;
-        revenue = Number(e.unitQty) * (Number(e.pricePerUnit) || 0);
-        if (totalEggs > 0) {
-          pricePerDozen = revenue / (totalEggs / 12);
-          if (qty === 0) qty = totalEggs;
-        }
-      } else if (Number(e.pricePerUnit) > 0 && qty > 0) {
-        // Old-old shape — some pre-unit-based entries stored pricePerUnit as
-        // "$/dozen" and put total eggs in count. Treat pricePerUnit as $/dozen.
-        pricePerDozen = Number(e.pricePerUnit);
-        revenue = (qty / 12) * pricePerDozen;
-      } else if (Number(e.totalRevenue) > 0) {
-        // Last-ditch — entry has a stashed totalRevenue from some other path.
-        revenue = Number(e.totalRevenue);
-        if (qty > 0) pricePerDozen = revenue / (qty / 12);
-      }
-      // If all four paths fail, revenue stays 0 — the entry genuinely has no
-      // price info and the user will need to edit it. At least now we've tried.
-
-      data.sales.push({
-        id: e.id,
-        date: e.date,
-        hobbyType: "eggs",
-        eggType: "Chicken",
-        eggPurpose: "Eating",
-        qty,
-        unit: "eggs",
-        pricePerUnit: pricePerDozen,
-        totalRevenue: revenue,
-        note: e.note || "",
-        buyerId: e.buyerId || null,
-        created: e.created || Date.now(),
-        migratedFromEntries: true,
-      });
+      data.sales.push(soldEggsToSale(e));
       existingSaleIds.add(e.id);
     }
   });
@@ -1516,7 +1525,11 @@ function exportAllAsCsv(data) {
 
   const escape = (val) => {
     if (val == null) return "";
-    const s = String(val);
+    let s = String(val);
+    // Text starting with = + - @ runs as a formula when the file is opened in
+    // a spreadsheet, and buyer names come from the public order page. Numbers
+    // (like -5) stay as they are.
+    if (typeof val === "string" && /^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
     // If has comma, quote, or newline, wrap in quotes and double internal quotes
     if (/[",\n]/.test(s)) return '"' + s.replace(/"/g, '""') + '"';
     return s;
@@ -1528,6 +1541,8 @@ function exportAllAsCsv(data) {
     if (c === "weather_lowF")  return escape(r.weather && r.weather.lowF  != null ? r.weather.lowF  : "");
     if (c === "weather_precipIn") return escape(r.weather && r.weather.precipIn != null ? r.weather.precipIn : "");
     if (c === "weather_summary") return escape(r.weather && r.weather.summary ? r.weather.summary : "");
+    // Most logs and sales keep their words in `notes`, some in `note`.
+    if (c === "note") return escape([r.note, r.notes].filter((x) => typeof x === "string" && x.trim()).join(" · "));
     return escape(r[c]);
   }).join(","));
 
@@ -1714,7 +1729,7 @@ const fmtTractorDistance = (totalFeet) => {
 // setUserUnits() in a useEffect to keep the module-level state in sync with
 // data.units.
 // ============================================================================
-import { fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput, fmtWeightWhole, fmtWeight1, harvestAmountLbs } from "./units.js";
+import { fmtRain, fmtMoney, fmtTemp, fmtWeight, fmtVolume, fmtCups, fmtOz, setUserUnits, getCurrentHemisphere, currencySymbol, weightUnitLabel, volumeUnitLabel, lbsFromInput, galFromInput, weightFromLbs, volumeFromGal, getCurrentWeightUnit, getCurrentVolumeUnit, lbsToInput, fmtWeightWhole, fmtWeight1, harvestAmountLbs } from "./units.js";
 import { groupDigits } from "./numFmt.js";
 import { useSupportProgress } from "./newlook/supportProgress.js";
 import { tidyData } from "./tidyData.js";
@@ -2832,7 +2847,7 @@ function formatWeatherI18n(weather) {
   const high = weather.highF != null ? fmtTemp(weather.highF) : null;
   const low = weather.lowF != null ? fmtTemp(weather.lowF) : null;
   const summary = weather.summary || "";
-  const precip = weather.precipIn != null && weather.precipIn > 0 ? `${weather.precipIn.toFixed(2)}"` : "";
+  const precip = weather.precipIn != null && weather.precipIn > 0 ? fmtRain(weather.precipIn) : "";
   const parts = [];
   if (high && low) parts.push(`${high}/${low}`);
   else if (high) parts.push(high);
@@ -5323,6 +5338,22 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
   //
   // `updatedAt` is intentionally excluded from the change comparison so that
   // re-stamping doesn't itself count as a change (which would loop).
+  // A log, sale or expense saved with its date box cleared (iOS's date picker
+  // has a Clear button) had date "", and no day, week, month or year counted
+  // it. Every hobby has its own forms, so the safety net is here, on records
+  // this save added or changed: an empty date becomes today.
+  const DATED = (it) => it.action != null || it.hobbyType != null || (it.amount != null && it.category != null);
+  // Same idea for amounts: number boxes take a typed "-5" despite min={0},
+  // and a feed log of -5 lbs or a litter of -5 kits took that much off every
+  // total. None of these is ever below zero, so a negative saves as 0.
+  const NEVER_NEG = /^(count|qty|miles|minutes|quantity|lbs|oz|gal|gallons|weight|feedAmount|cost|price|amount|revenue|tip|unitQty|cuft|eggs|jars|bars|trays|sap|syrup|hours|pricePer[A-Za-z]*|costPer[A-Za-z]*|[a-z][A-Za-z]*(Alive|Stillborn|Born|Weight|Lbs|Oz|Count|Cost|Price|Revenue|Hours|Minutes|Feet|Miles|Taps|Started|Made|Remaining|G))$/;
+  // (Any record: a goat's breeding record keeps its kids born on the hobby.)
+  const fixEmptyDate = (it) => {
+    if (!it || typeof it !== "object") return;
+    for (const k of Object.keys(it)) if (typeof it[k] === "number" && it[k] < 0 && NEVER_NEG.test(k)) it[k] = 0;
+    if (!DATED(it)) return;
+    if ("date" in it && (it.date === "" || it.date == null)) it.date = todayStr();
+  };
   const stampChangedRecords = (oldNode, newNode) => {
     if (Array.isArray(newNode)) {
       // Build id→oldItem lookup if the old side was a comparable array.
@@ -5340,6 +5371,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           if (!oldItem) {
             // Brand-new record — stamp it (unless it already carries one).
             if (item.updatedAt == null) item.updatedAt = Date.now();
+            fixEmptyDate(item);
             // Still recurse so nested id-arrays inside get stamped too.
             stampChangedRecords(null, item);
           } else {
@@ -5348,6 +5380,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
             stampChangedRecords(oldItem, item);
             if (recordContentChanged(oldItem, item)) {
               item.updatedAt = Date.now();
+              fixEmptyDate(item);
             }
           }
         } else {
@@ -5859,7 +5892,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           }}
         >
           <div
-            onClick={(e) => e.stopPropagation()}
+            role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
             style={{
               background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
               border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
@@ -7558,30 +7591,18 @@ function HomePage({ hobby, data, update, setModal, setPage }) {
                 if (photos.length) setTimeout(() => { if (!undone) photos.forEach((p) => deletePhoto(p).catch(() => {})); }, UNDO_MS + 3000);
                 undoable(update, `Deleted ${deletedLogName(e)}`, { onUndo: () => { undone = true; } })((d) => {
                   d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((x) => x.id !== e.id);
+                  // A sale log takes its Sales row with it (and gives back the
+                  // animal or the jars); see src/saleLinks.js.
+                  unlinkDeletedEntry(d, hobby, e);
                   // For butcher entries, also remove the matching record from
                   // currentBatch.butchered (so remaining-birds math recovers)
                   // and from the universal freezer log (which mirrors the
                   // butcher entry). Without this, deleting a butcher row would
                   // leave the batch count permanently low and the freezer log
                   // would keep showing meat the user said was deleted.
-                  if (e.action === "butcher") {
-                    const h = d.hobbies.find((x) => x.id === hobby.id);
-                    // Find which active batch this entry belonged to, then
-                    // strip the matching butcher record from THAT batch's
-                    // butchered[] so the remaining-bird count recovers. With
-                    // multi-batch support, e.batchId tells us which one.
-                    if (h && Array.isArray(h.currentBatches)) {
-                      const b = h.currentBatches.find((x) => x.id === e.batchId);
-                      if (b && Array.isArray(b.butchered)) {
-                        b.butchered = b.butchered.filter((bu) => bu.id !== e.id);
-                      }
-                    }
-                    if (Array.isArray(d.freezerLog)) {
-                      d.freezerLog = d.freezerLog.filter(
-                        (f) => !(f.batchId === e.batchId && f.date === e.date && f.count === e.count)
-                      );
-                    }
-                  }
+                  // Its batch record and freezer row (one, not every
+                  // look-alike), and any birds it took from a flock.
+                  removeButcherLog(d, hobby.id, e);
                   return d;
                 });
               }}
@@ -7977,20 +7998,10 @@ function JournalPage({ data, update, setModal }) {
     undoable(update, `Deleted ${deletedLogName(entry)}`, { onUndo: () => { undone = true; } })((d) => {
       // Wherever it lives: the live log, a finished batch or a closed season.
       removeEntryEverywhere(d, hobby.id, entry.id);
-      if (entry.action === "butcher") {
-        const h = d.hobbies.find((x) => x.id === hobby.id);
-        if (h && Array.isArray(h.currentBatches)) {
-          const b = h.currentBatches.find((x) => x.id === entry.batchId);
-          if (b && Array.isArray(b.butchered)) {
-            b.butchered = b.butchered.filter((bu) => bu.id !== entry.id);
-          }
-        }
-        if (Array.isArray(d.freezerLog)) {
-          d.freezerLog = d.freezerLog.filter(
-            (f) => !(f.batchId === entry.batchId && f.date === entry.date && f.count === entry.count)
-          );
-        }
-      }
+      unlinkDeletedEntry(d, hobby, entry);
+      // Butcher logs: the batch (live or finished) and one freezer row;
+      // flock removals give their birds back.
+      removeButcherLog(d, hobby.id, entry);
       return d;
     });
   };
@@ -8456,7 +8467,7 @@ function NeedsAttentionCard({ hobby, entries, setModal, data = null }) {
     // user can decide for themselves. Only when we have a usable total.
     const rainSub = weekRain && weekRain.totalIn != null
       ? (weekRain.totalIn > 0
-          ? `${weekRain.totalIn}" of rain in the last 7 days`
+          ? `${fmtRain(weekRain.totalIn)} of rain in the last 7 days`
           : "No rain in the last 7 days")
       : undefined;
 
@@ -8475,7 +8486,7 @@ function NeedsAttentionCard({ hobby, entries, setModal, data = null }) {
       // so they don't over-water. Informational, no action button.
       nudges.push({
         icon: "🌧️",
-        text: `${weekRain.totalIn}" of rain in the last 7 days`,
+        text: `${fmtRain(weekRain.totalIn)} of rain in the last 7 days`,
         sub: "Your beds may not need watering right now",
       });
     }
@@ -10547,9 +10558,9 @@ function GardenTodayCard({ hobby, data, update, entries, setModal, setPage, onOp
   const lastWater = waterDates.length ? waterDates.reduce((m, d) => (d > m ? d : m)) : null;
   const wateredDays = lastWater ? daysBetweenIso(lastWater, todayIso) : null;
   const rainIn = weekRain && weekRain.totalIn != null ? weekRain.totalIn : null;
-  const rainText = rainIn == null ? null : rainIn > 0 ? `${rainIn}" of rain in the last 7 days` : "No rain in the last 7 days";
+  const rainText = rainIn == null ? null : rainIn > 0 ? `${fmtRain(rainIn)} of rain in the last 7 days` : "No rain in the last 7 days";
   if (rainIn != null && rainIn >= 0.75) {
-    rows.push({ icon: "🌧️", text: `${rainIn}" of rain this week`, sub: "Your beds probably don't need watering today." });
+    rows.push({ icon: "🌧️", text: `${fmtRain(rainIn)} of rain this week`, sub: "Your beds probably don't need watering today." });
   } else if (wateredDays === null || wateredDays >= 4) {
     rows.push({
       icon: "💧",
@@ -14439,6 +14450,10 @@ function ManageHobbiesSection({ data, update }) {
     horses: "Horses",
     sourdough: "Sourdough",
     farmstand: "Farmstand",
+    // The newer hobbies showed their raw type ("freeze_drying") here.
+    baking: "Baking", canning: "Canning", freeze_drying: "Freeze Drying", dehydrating: "Dehydrating",
+    fermentation: "Fermentation", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting",
+    soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends",
   };
 
   return (
@@ -15826,7 +15841,7 @@ function SupporterNamePromptModal({ user, onClose }) {
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 200, padding: 16,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 20, maxWidth: 460, width: "100%",
         border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
         fontFamily: FONT_BODY, overflow: "hidden",
@@ -17217,7 +17232,7 @@ function WeatherSourceSettings({ data, update }) {
     setTesting(false);
     if (r.ok) {
       const w = r.sample;
-      setTestMsg({ ok: true, text: `Connected ✓ Today so far: ${w.highF != null ? fmtTemp(w.highF) : "—"} high, ${w.lowF != null ? fmtTemp(w.lowF) : "—"} low${w.precipIn != null ? `, ${w.precipIn}" rain` : ""}.` });
+      setTestMsg({ ok: true, text: `Connected ✓ Today so far: ${w.highF != null ? fmtTemp(w.highF) : "—"} high, ${w.lowF != null ? fmtTemp(w.lowF) : "—"} low${w.precipIn != null ? `, ${fmtRain(w.precipIn)} rain` : ""}.` });
     } else {
       setTestMsg({ ok: false, text: r.message + " If this keeps failing in a web browser, try the phone app — some station services block website requests." });
     }
@@ -17956,7 +17971,7 @@ function AddHobbyModal({ update, onClose }) {
 }
 
 function ManageHobbiesModal({ data, update, onClose, setActiveHobby, setPage, setModal, /* STEP2A_EARLY_ACCESS */ earlyAccessConfig = null, isSupporter = false }) {
-  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
+  const friendlyType = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Beekeeping", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", sheep: "Sheep", horses: "Horses", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends", sourdough: "Sourdough", farmstand: "Farmstand", baking: "Baking", canning: "Canning", freeze_drying: "Freeze Drying", dehydrating: "Dehydrating", fermentation: "Fermentation" };
 
   // Category groups. Each group is a list of hobby types it contains.
   // Hobby types NOT in any group render flat at the top of the modal.
@@ -19643,6 +19658,7 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
     update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id);
       if (!h || !Array.isArray(h.currentBatches)) return d;
+      const before = scoreOf(d);
       h.currentBatches = h.currentBatches.filter((b) => b.id !== batch.id);
       // Also drop entries for this batch — they'd otherwise orphan to a
       // batch that no longer exists, polluting analytics.
@@ -19651,6 +19667,8 @@ function EditBatchModalBody({ hobby, batchId, entries = [], update, onClose }) {
       if (Array.isArray(d.freezerLog)) {
         d.freezerLog = d.freezerLog.filter((f) => f.batchId !== batch.id);
       }
+      // Removing a batch and its logs is on purpose: tell the sync guard.
+      noteBulkDelete(d, before);
       return d;
     });
     onClose();
@@ -20146,7 +20164,7 @@ function ButcherModalBody({ hobby, batchId, entries, update, onClose }) {
                   });
                   if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
                   d.freezerLog.push({
-                    id: newId(), date, hobbyId: hobby.id, batchId: target.id,
+                    id: newId(), fromEntryId: entryId, date, hobbyId: hobby.id, batchId: target.id,
                     batchName: target.name, birdType: target.birdType || "Chicken",
                     count: n, avgWeight: w, note: note.trim(), created: Date.now(),
                   });
@@ -20845,11 +20863,15 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
             const fl = (h.flocks || []).find((x) => x.id === activeFlock.id);
             if (fl) fl.birdCount = Math.max(0, (fl.birdCount || 0) - n);
 
+            // The log remembers how many it took from the flock, so deleting
+            // or editing it later puts them back (src/meatBatches.js).
+            const logId = newId();
             // Butchered → freezer log + butcher entry (preserves existing flow)
             if (isButcher) {
               if (!Array.isArray(d.freezerLog)) d.freezerLog = [];
               d.freezerLog.push({
                 id: newId(),
+                fromEntryId: logId,
                 date,
                 hobbyId: hobby.id,
                 flockId: activeFlock.id,
@@ -20862,12 +20884,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
               });
               d.entries[hobby.id] = d.entries[hobby.id] || [];
               d.entries[hobby.id].push({
-                id: newId(),
+                id: logId,
                 date,
                 action: "butcher",
                 count: n,
                 avgWeight: w,
                 flockId: activeFlock.id,
+                tookFromFlock: n,
                 note: note.trim(),
                 created: Date.now(),
               });
@@ -20876,12 +20899,13 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
               // they show up in mortality stats consistently.
               d.entries[hobby.id] = d.entries[hobby.id] || [];
               d.entries[hobby.id].push({
-                id: newId(),
+                id: logId,
                 date,
                 action: "death",
                 count: n,
                 cause: reason === "culled" ? `culled: ${note.trim() || "no detail"}` : (note.trim() || "unknown"),
                 flockId: activeFlock.id,
+                tookFromFlock: n,
                 created: Date.now(),
               });
             } else {
@@ -20896,13 +20920,14 @@ function ButcherFlockModal({ hobby, flock, update, onClose }) {
               }[reason] || "Removed";
               d.entries[hobby.id] = d.entries[hobby.id] || [];
               d.entries[hobby.id].push({
-                id: newId(),
+                id: logId,
                 date,
                 action: "note",
                 note: `${reasonLabel} · ${n} ${activeFlock.birdType?.toLowerCase() || "bird"}${n === 1 ? "" : "s"}${note.trim() ? " · " + note.trim() : ""}`,
                 flockId: activeFlock.id,
                 cullReason: reason,
                 cullCount: n,
+                tookFromFlock: n,
                 created: Date.now(),
               });
             }
@@ -21661,6 +21686,12 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       setValidationError("Please pick which batch this entry belongs to.");
       return;
     }
+    // A cleared date box saved a log with no date: no day, week, month or
+    // year counted it, so it vanished from every total.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(String(date || ""))) {
+      setValidationError("Pick a date.");
+      return;
+    }
     setValidationError("");
 
     // Coerce numeric fields from string inputs to actual numbers
@@ -21672,6 +21703,12 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
         cleanFields[k] = isNaN(n) ? 0 : n;
       }
     });
+    // A typed "-5" got past min={0} and was saved: a collection of -5 eggs
+    // took 5 off every total. Nothing logged here is ever below zero.
+    if (numericKeys.some((k) => typeof cleanFields[k] === "number" && cleanFields[k] < 0)) {
+      setValidationError("Amounts can't be below zero.");
+      return;
+    }
 
     // For sold_eggs with new unit-based fields, derive the canonical `count`
     // (total eggs) and `pricePerDozen` so existing analytics keep working.
@@ -21814,14 +21851,56 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       // persisted on the entry.
       if (action === "sold_eggs") {
         if (entry._showNewBuyer && entry.newBuyerName && entry.newBuyerName.trim()) {
-          const newCustId = newId();
           d.customers = d.customers || [];
-          d.customers.push({ id: newCustId, name: entry.newBuyerName.trim(), note: "" });
-          entry.buyerId = newCustId;
+          // Someone already saved under that name (from an order, say): them.
+          const nm = entry.newBuyerName.trim().replace(/\s+/g, " ");
+          const same = d.customers.find((c) => c && String(c.name || "").trim().replace(/\s+/g, " ").toLowerCase() === nm.toLowerCase());
+          if (same) entry.buyerId = same.id;
+          else {
+            const newCustId = newId();
+            d.customers.push({ id: newCustId, name: nm, note: "" });
+            entry.buyerId = newCustId;
+          }
         }
         delete entry.newBuyerName;
         delete entry._showNewBuyer;
         if (!entry.buyerId) delete entry.buyerId;
+        // Its copy in Sales (same id, made when the app loads) follows edits,
+        // so a fixed price or count shows in Sales too.
+        if (isEdit && Array.isArray(d.sales)) {
+          const si = d.sales.findIndex((x) => x && x.id === entry.id && x.migratedFromEntries);
+          if (si >= 0) d.sales[si] = { ...d.sales[si], ...soldEggsToSale({ ...entry, id: d.sales[si].id }) };
+        }
+      }
+      // "Put out at the farm stand" from Use Eggs: they go on the stand's
+      // egg item too, like Farm stand › At home does (src/homeInventory.js).
+      if (!isEdit && action === "used_eggs" && entry.useType === "stand") {
+        const fs = d.hobbies.find((x) => x && x.id === "farmstand" && !x.hidden);
+        const dz = Math.round(((Number(entry.count) || 0) / 12) * 100) / 100;
+        if (fs && dz > 0 && undoSnap) {
+          undoSnap.stand = JSON.parse(JSON.stringify(fs));
+          const itemId = addToStand(d, { key: `eggs:${hobby.id}`, kind: "eggs", name: "Eggs", price: null }, dz);
+          // Remembered on the log, so editing or deleting it later moves the
+          // stand's stock to match (moveStandEggs / unlinkDeletedEntry).
+          if (itemId) entry.toStand = { itemId, dz };
+        }
+      }
+      // An edited "put out at the stand" log: the stand follows the new count
+      // (or gives them all back if it's no longer a stand log).
+      if (isEdit && existingEntry.toStand && existingEntry.toStand.itemId) {
+        const was = Number(existingEntry.toStand.dz) || 0;
+        const now = action === "used_eggs" && entry.useType === "stand" ? Math.round(((Number(entry.count) || 0) / 12) * 100) / 100 : 0;
+        moveStandEggs(d, existingEntry.toStand.itemId, now - was);
+        if (now > 0) entry.toStand = { itemId: existingEntry.toStand.itemId, dz: now }; else delete entry.toStand;
+      } else if (isEdit && existingEntry.useType !== "stand" && action === "used_eggs" && entry.useType === "stand") {
+        // Changed to "put out at the stand" on edit: they go on the stand now.
+        // (An older stand log without toStand already went on it: left alone.)
+        const fs = d.hobbies.find((x) => x && x.id === "farmstand" && !x.hidden);
+        const dz = Math.round(((Number(entry.count) || 0) / 12) * 100) / 100;
+        if (fs && dz > 0) {
+          const itemId = addToStand(d, { key: `eggs:${hobby.id}`, kind: "eggs", name: "Eggs", price: null }, dz);
+          if (itemId) entry.toStand = { itemId, dz };
+        }
       }
       if (finalPaths.length > 0) entry.photoPaths = finalPaths;
       if (weather) entry.weather = weather;
@@ -22066,6 +22145,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
         d.entries[hobby.id].push(entry);
       } else {
+        // A butcher or flock-removal log's count, weight and date follow to
+        // the batch, the freezer log and the flock (src/meatBatches.js).
+        syncButcherEdit(d, hobby.id, existingEntry, entry);
         // Edit: replace the existing entry in place. The entry may live in
         // data.entries[hobby.id] OR on a finished batch's / closed garden
         // season's finalEntries snapshot. Update wherever it is.
@@ -22101,6 +22183,7 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
       showUndo(undoMessage(action, cleanFields, hobby), () => update((d) => {
         const i = d.hobbies.findIndex((x) => x.id === hobby.id);
         if (i !== -1 && snap.hobby) d.hobbies[i] = snap.hobby;
+        if (snap.stand) { const k = d.hobbies.findIndex((x) => x && x.id === "farmstand"); if (k !== -1) d.hobbies[k] = snap.stand; }
         d.entries[hobby.id] = snap.entries;
         if (Array.isArray(d.sales)) d.sales = d.sales.filter((x) => !x || snap.sales.has(x.id));
         if (Array.isArray(d.expenses)) d.expenses = d.expenses.filter((x) => !x || snap.expenses.has(x.id));
@@ -22554,12 +22637,9 @@ function LogModal({ hobby, action, customLogId, data, update, onClose, user, exi
 
       {action === "butcher" && (
         <>
-          {/* Editing a butcher entry from the activity log. NOTE: we don't
-              re-sync changes back to hobby.currentBatch.butchered[] here —
-              that array tracks the running total per batch. Edits to count
-              would desync the batch's remaining-bird count.
-              For now: editing date and notes is safe; count/weight edits
-              should be done by deleting + re-creating via the butcher modal. */}
+          {/* Editing a butcher entry from the activity log. Count, weight and
+              date follow to the batch's butchered[] and the freezer log on
+              save (syncButcherEdit in src/meatBatches.js). */}
           <Field label="How many butchered">
             <input
               type="number" inputMode="numeric"
@@ -24598,7 +24678,7 @@ function ShareStatsModal({ hobby, allEntries, data, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.6)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16,overflowY:"auto" }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden" }}>
 
         {/* Period filter */}
         <div style={{ padding:"16px 16px 0",display:"flex",gap:6,justifyContent:"center" }}>
@@ -24763,7 +24843,7 @@ export function TutorialModal({ onClose, startSlide = 0 }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 20, maxWidth: 420, width: "100%",
           border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
@@ -24994,7 +25074,10 @@ function EditPerennialModal({ hobbyId, perennial, update, onClose }) {
   const remove = () => {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobbyId);
+      // Its care and harvest history goes with it, on purpose (sync.js guard).
+      const before = scoreOf(d);
       if (h) h.perennials = (h.perennials||[]).filter(x => x.id !== perennial.id);
+      noteBulkDelete(d, before);
       return d;
     });
     onClose();
@@ -25201,7 +25284,7 @@ function AccountNudgeModal({ onCreateAccount, onClose }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 380, width: "100%",
           border: `2px solid ${palette.ink}`,
@@ -25343,7 +25426,7 @@ function GiveawayModal({ user, onClose, onNeedAccount, onSupport, followedKey, o
       display: "flex", alignItems: "center", justifyContent: "center",
       zIndex: 250, padding: 16,
     }}>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{
         position: "relative", width: "100%", maxWidth: 400, maxHeight: "90vh",
         overflowY: "auto", borderRadius: 20, border: `2px solid ${palette.ink}`,
         boxShadow: "0 12px 32px rgba(0,0,0,0.22)", background: palette.card,
@@ -25538,7 +25621,7 @@ function AppStoreLaunchModal({ onClose, webOS }) {
       `}</style>
 
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           position: "relative",
           width: "100%", maxWidth: 380,
@@ -25741,7 +25824,7 @@ function WhatsNewModal({ onClose }) {
       }}
     >
       <div
-        onClick={e=>e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()}
         style={{
           background:palette.bg,borderRadius:20,maxWidth:420,width:"100%",
           maxHeight:"min(85vh, 600px)",
@@ -25862,7 +25945,7 @@ function MilestoneModal({ config, userCount, milestone, onClose, onOpenSupport }
       onClick={onClose}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette_local.card,
           borderRadius: 16,
@@ -26035,7 +26118,7 @@ function SupporterThanksModal({ onClose, onLeaveTip }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.55)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:20,maxWidth:440,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY,overflow:"hidden",maxHeight:"92vh",display:"flex",flexDirection:"column" }}>
         <div style={{ background:palette.leaf,padding:"24px 24px 18px",textAlign:"center",position:"relative",flexShrink:0 }}>
           <button
             onClick={onClose}
@@ -26207,7 +26290,7 @@ function PhotosModal({ data, user, onClose }) {
       style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{ background:palette.bg,borderRadius:16,maxWidth:720,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}
       >
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>

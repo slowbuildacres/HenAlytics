@@ -35,7 +35,7 @@
 // ============================================================================
 
 import { getCorsOrigin } from './_cors.js';
-import { ORDER_STATUSES, JOIN_STATUSES, ORDER_LIMITS, EMAIL_RE, buildCustomerEmail, buildBackEmail, cleanPageSettings } from '../src/orderShared.js';
+import { ORDER_STATUSES, JOIN_STATUSES, ORDER_LIMITS, EMAIL_RE, buildCustomerEmail, buildBackEmail, cleanPageSettings, fromLine } from '../src/orderShared.js';
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DAILY_EMAILS = 200;
@@ -64,7 +64,7 @@ async function getUser(req) {
 
 const BASE_FIELDS = 'id,kind,status,customer_name,email,phone,items,note,pickup_date,owner_message,created_at,updated_at';
 const PAY_FIELDS = `${BASE_FIELDS},pay_method,paid,text_ok`;
-const FIELDS = `${PAY_FIELDS},status_token,repeat_weeks,fulfil,address`;
+const FIELDS = `${PAY_FIELDS},status_token,repeat_weeks,fulfil,address,emailed_at`;
 // Reads that still work if newer columns haven't been added yet.
 const missingPayCols = (e) => /pay_method|text_ok|column .*paid|paid.*column|'paid'/.test(String(e && e.message));
 const missingExtraCols = (e) => /status_token|repeat_weeks|fulfil|address/.test(String(e && e.message));
@@ -174,7 +174,7 @@ export default async function handler(req, res) {
         const ok = await fetch('https://api.resend.com/emails', {
           method: 'POST',
           headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ from: `${info.farm} <${from}>`, to: [r.email], reply_to: info.replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
+          body: JSON.stringify({ from: fromLine(info.farm, from), to: [r.email], reply_to: info.replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
         }).then((x) => x.ok).catch(() => false);
         if (!ok) continue;
         sent++;
@@ -214,6 +214,8 @@ export default async function handler(req, res) {
         await rest(`order_requests?id=eq.${id}&homestead_id=eq.${hid}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ repeat_weeks: null, updated_at: new Date().toISOString() }) });
         return res.status(200).json({ ok: true });
       }
+      // Already moved on (a second tap, or another phone did it): leave it.
+      if (/^\d{4}-\d{2}-\d{2}$/.test(String(body.from || '')) && row.pickup_date && row.pickup_date !== body.from) return res.status(200).json({ ok: true, next: row.pickup_date, already: true });
       const today = /^\d{4}-\d{2}-\d{2}$/.test(String(body.today || '')) ? String(body.today) : new Date().toISOString().slice(0, 10);
       let next = /^\d{4}-\d{2}-\d{2}$/.test(String(row.pickup_date || '')) ? row.pickup_date : today;
       do { next = addDaysIso(next, row.repeat_weeks * 7); } while (next <= today);
@@ -233,6 +235,10 @@ export default async function handler(req, res) {
 
     let emailed = false;
     let emailError = '';
+    // The same step again within a few minutes (a second tap, or another
+    // phone): they already got that email.
+    const repeat = row.status === status && row.emailed_at && Date.now() - Date.parse(row.emailed_at) < 10 * 60000;
+    if (repeat && body.notify === true) return res.status(200).json({ ok: true, emailed: false, emailError: '', was: row.status, already: true });
     if (row.kind === 'order' && body.notify === true && ['accepted', 'ready', 'declined'].includes(status) && EMAIL_RE.test(row.email || '')) {
       if (!process.env.RESEND_API_KEY) emailError = 'Email is not set up.';
       else {
@@ -244,7 +250,7 @@ export default async function handler(req, res) {
           const r = await fetch('https://api.resend.com/emails', {
             method: 'POST',
             headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-            body: JSON.stringify({ from: `${farm} <${from}>`, to: [row.email], reply_to: replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
+            body: JSON.stringify({ from: fromLine(farm, from), to: [row.email], reply_to: replyTo, subject: mail.subject, html: mail.html, text: mail.text }),
           });
           if (r.ok) {
             emailed = true;
@@ -254,7 +260,7 @@ export default async function handler(req, res) {
         }
       }
     }
-    return res.status(200).json({ ok: true, emailed, emailError });
+    return res.status(200).json({ ok: true, emailed, emailError, was: row.status });
   } catch (e) {
     console.error('[orders]', e);
     return res.status(502).json({ error: 'Something went wrong. Please try again.' });

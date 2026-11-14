@@ -36,6 +36,7 @@
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
+import { undoAnimalSale, linkSaleBuyer } from "./animalSale.js";
 import { X, Edit3, Plus } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from "recharts";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
@@ -91,7 +92,7 @@ function Btn({children,onClick,variant="primary",small=false,style={},disabled=f
 function Field({label,children}){return <label style={{display:"block",marginBottom:14}}><div style={{fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600}}>{label}</div>{children}</label>;}
 function Modal({open,onClose,title,children}){
   if(!open)return null;
-  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}><div onClick={e=>e.stopPropagation()} style={{background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`}}><div style={{fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink}}>{title}</div><button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4}}><X size={22}/></button></div><div style={{padding:20}}>{children}</div></div></div>;
+  return <div onClick={onClose} style={{position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16}}><div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e=>e.stopPropagation()} style={{background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY}}><div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`}}><div style={{fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink}}>{title}</div><button onClick={onClose} aria-label="Close" style={{background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4}}><X size={22}/></button></div><div style={{padding:20}}>{children}</div></div></div>;
 }
 function StatCard({label,value,sub,accent=palette.accent}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,flex:"1 1 130px",minWidth:130,boxSizing:"border-box"}}><div style={{fontSize:10,color:palette.inkSoft,textTransform:"uppercase",letterSpacing:1,marginBottom:6}}>{label}</div><div style={{fontSize:22,fontFamily:FONT_DISPLAY,color:palette.ink,lineHeight:1.1}}>{groupDigits(value)}</div>{sub&&<div style={{fontSize:11,color:palette.inkSoft,marginTop:4}}>{sub}</div>}</div>;}
 function ChartCard({title,children}){return <div style={{background:palette.card,border:`1.5px solid ${palette.line}`,borderRadius:16,padding:14,marginBottom:12}}><div style={{fontFamily:FONT_DISPLAY,fontSize:18,marginBottom:10,color:palette.ink}}>{plainTitle(title)}</div>{children}</div>;}
@@ -377,7 +378,7 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
       };
       if(isEdit){
         const idx=h.animals.findIndex(a=>a.id===id);
-        if(idx!==-1)h.animals[idx]=dataObj;else h.animals.push(dataObj);
+        if(idx!==-1)h.animals[idx]={...h.animals[idx],...dataObj};else h.animals.push(dataObj);
       } else h.animals.push(dataObj);
       return d;
     });
@@ -404,11 +405,14 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
     });
     onClose();
   };
-  const restore=()=>{
+  // A sold animal can come back with its sale undone (out of Sales too) or
+  // kept (sold, then bought back).
+  const restore=(undoSale)=>{
     update(d=>{
       const h=d.hobbies.find(x=>x.id===hobbyId);
       const a=(h?.animals||[]).find(x=>x.id===animal.id);
-      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;}
+      if(a&&undoSale&&a.saleId)undoAnimalSale(d,a.saleId);
+      if(a){a.archived=false;delete a.archivedReason;delete a.archivedDate;delete a.saleId;}
       return d;
     });
     onClose();
@@ -488,7 +492,10 @@ function AnimalModal({animal,hobbyId,animals,update,user,onClose}){
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={save} disabled={!name.trim()}>{isEdit?"Save":"Add"}</Btn>
         {isEdit && animal?.archived && (
-          <Btn variant="ghost" onClick={restore}>Restore</Btn>
+          animal.saleId?<>
+            <Btn variant="ghost" onClick={()=>restore(true)}>Undo the sale</Btn>
+            <Btn variant="ghost" onClick={()=>restore(false)}>Restore, keep the sale</Btn>
+          </>:<Btn variant="ghost" onClick={()=>restore(false)}>Restore</Btn>
         )}
         {isEdit && !animal?.archived && !showArchive && !confirmDelete && (
           <Btn variant="ghost" onClick={()=>setShowArchive(true)}>Archive</Btn>
@@ -591,7 +598,7 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
       if(action==="bred" && kindleDate){
         d.calendarEvents = d.calendarEvents || [];
         d.calendarEvents.push({
-          id:newId(),date:kindleDate,
+          id:newId(),date:kindleDate,relatedId:entry.id,
           title:`🍼 ${animal.name} — kindle expected`,
           type:"rabbits",
           notes:`Bred ${fmtDate(date)}${entry.buckName?" · sire "+entry.buckName:""}`,
@@ -621,11 +628,13 @@ function LogModal({animal,hobbyId,animals,action,update,onClose}){
           a.saleId=entry.id;
         }
         d.sales=d.sales||[];
-        d.sales.push({
+        const row={
           id:entry.id,date,hobbyType:"rabbit",crop:animal.name,saleType,
           pricePerUnit:Number(salePrice)||0,totalRevenue:Number(salePrice)||0,
           qty:1,animalId:animal.id,buyer:saleBuyer.trim(),notes:notes||"",
-        });
+        };
+        linkSaleBuyer(d,row,newId);
+        d.sales.push(row);
       }
       return d;
     });
@@ -1067,7 +1076,7 @@ function BredRabbitModal({ hobby, hobbyId, update, onClose, initialAnimalId = nu
       if (kindleDate) {
         d.calendarEvents = d.calendarEvents || [];
         d.calendarEvents.push({
-          id: newId(), date: kindleDate,
+          id: newId(), date: kindleDate, relatedId: entry.id,
           title: `🍼 ${doe?.name || "doe"} — kindle expected`,
           type: "rabbits",
           notes: `Bred ${fmtDate(date)}${buck?.name ? " · sire " + buck.name : ""}`,
@@ -1274,11 +1283,13 @@ function RemoveRabbitModal({ hobby, hobbyId, update, onClose }) {
         target.archivedDate = date;
         target.saleId = entry.id;
         d.sales = d.sales || [];
-        d.sales.push({
+        const row = {
           id: entry.id, date, hobbyType: "rabbit", crop: animal.name, saleType,
           pricePerUnit: numericPrice, totalRevenue: numericPrice,
           qty: 1, animalId, buyer: partyName, notes: notes.trim() || "",
-        });
+        };
+        linkSaleBuyer(d, row, newId);
+        d.sales.push(row);
       } else if (reason === "died") {
         const entry = {
           id: newId(), date, action: "death",

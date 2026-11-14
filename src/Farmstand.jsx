@@ -26,6 +26,7 @@ import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, Mail as NlMail, HelpCircle as NlHelp, Package as NlPackage, ShoppingBag as NlBag } from "lucide-react";
 import { X, Edit3 } from "lucide-react";
 import { homeFromHobbies, putOut, standItemFor } from "./homeInventory.js";
+import { plural } from "./orderShared.js";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtMoneyWhole, currencySymbol } from "./units.js";
 import { groupDigits } from "./numFmt.js";
@@ -347,7 +348,7 @@ function QuickSellModal({ item, onSell, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:420,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>Sold {item.name}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -369,7 +370,7 @@ function QuickSellModal({ item, onSell, onClose }) {
             </div>
           )}
 
-          <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
+          <Field label={item.unit && item.unit !== "each" ? `How many ${plural(item.unit, q === 1 ? 1 : 2)}?` : "How many?"}>
             <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
 
@@ -512,7 +513,7 @@ function RestockModal({ item, onRestock, onClose, startPlace = "stand" }) {
             {place === "home" ? "In back stock" : "At the stand"}: <strong>{currentStock}</strong> → After: <strong>{afterRestock}</strong>
           </div>
 
-          <Field label={`How many ${item.unit}${q===1?"":"s"}?`}>
+          <Field label={item.unit && item.unit !== "each" ? `How many ${plural(item.unit, q === 1 ? 1 : 2)}?` : "How many?"}>
             <input type="number" step="0.1" min={0} style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} autoFocus />
           </Field>
           <div style={{ display:"flex",flexWrap:"wrap",gap:6,marginTop:-6,marginBottom:12 }}>
@@ -761,7 +762,7 @@ function InfrastructureModal({ entry, onSave, onDelete, onClose }) {
   };
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{entry ? "Edit infrastructure" : "🔨 Log infrastructure"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>

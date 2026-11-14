@@ -12,9 +12,10 @@ import React, { useMemo, useRef, useState } from "react";
 import { ChevronLeft, Egg, Sprout, DollarSign, Upload, ClipboardPaste, Check, Info } from "lucide-react";
 import { nl, font, type } from "../theme.js";
 import { Card, CardHeader, Button, Chip } from "../ui.jsx";
-import { showUndo } from "../UndoBar.jsx";
+import { showUndo, undoable } from "../UndoBar.jsx";
 import { readFile, parseDelimited, headerRow, columnNames, guessColumns, buildRecords, KIND_FIELDS, loggedEggDays, newId } from "./importData.js";
 import { fmtMoney } from "../../units.js";
+import { scoreOf, noteBulkDelete } from "../../sync.js";
 
 const KINDS = [
   { key: "eggs", label: "Egg counts", sub: "A date and how many eggs", I: Egg },
@@ -25,6 +26,24 @@ const SALE_TYPES = [
   { key: "eggs", label: "Eggs" }, { key: "garden", label: "Produce" }, { key: "honey", label: "Honey" },
   { key: "meat_chickens", label: "Meat birds" }, { key: "rabbits", label: "Rabbits" }, { key: "other", label: "Other" },
 ];
+// Takes every record one import brought in back out, wherever it is now
+// (egg logs under any hobby, garden harvests including closed seasons'
+// copies, sales). Importing the same sheet twice is easy; this is the fix.
+function removeImport(d, importId) {
+  const before = scoreOf(d);
+  const keep = (x) => !(x && x.importId === importId);
+  Object.keys(d.entries || {}).forEach((k) => { if (Array.isArray(d.entries[k])) d.entries[k] = d.entries[k].filter(keep); });
+  (d.hobbies || []).forEach((h) => {
+    (Array.isArray(h && h.archivedSeasons) ? h.archivedSeasons : []).forEach((sn) => { if (Array.isArray(sn.finalEntries)) sn.finalEntries = sn.finalEntries.filter(keep); });
+  });
+  d.sales = (d.sales || []).filter(keep);
+  d.imports = (d.imports || []).filter((x) => x.id !== importId);
+  // Hundreds of records leaving at once is on purpose here; without this the
+  // sync guard refuses the save and a refresh brings them all back.
+  noteBulkDelete(d, before);
+  return d;
+}
+
 const shortDate = (iso) => { const [y, m, d] = iso.split("-").map(Number); return new Date(y, m - 1, d).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }); };
 const selStyle = () => ({ width: "100%", minHeight: 44, borderRadius: 12, border: `1.5px solid ${nl.field}`, background: nl.card, color: nl.ink, padding: "0 10px", font: `500 15px ${font.body}` });
 
@@ -39,6 +58,8 @@ export default function ImportScreen({ data, update, onBack, toast }) {
   const [cols, setCols] = useState(null);
   const [skipDupes, setSkipDupes] = useState(true);
   const [done, setDone] = useState(null);
+  // A past import being taken back out: first tap asks, second does it.
+  const [takeOut, setTakeOut] = useState(null);
   const fileRef = useRef(null);
 
   const eggHobby = (data.hobbies || []).find((h) => h && h.type === "egg_layers");
@@ -98,13 +119,7 @@ export default function ImportScreen({ data, update, onBack, toast }) {
       d.imports = [...(d.imports || []), { id: importId, kind, count: n, file: fileName, at: Date.now() }];
       return d;
     });
-    const undo = () => update((d) => {
-      if (kind === "eggs") d.entries[eggHobby.id] = (d.entries[eggHobby.id] || []).filter((e) => e.importId !== importId);
-      else if (kind === "harvest") d.entries.garden = (d.entries.garden || []).filter((e) => e.importId !== importId);
-      else d.sales = (d.sales || []).filter((s) => s.importId !== importId);
-      d.imports = (d.imports || []).filter((x) => x.id !== importId);
-      return d;
-    });
+    const undo = () => update((d) => removeImport(d, importId));
     const what = kind === "eggs" ? `${n} egg log${n === 1 ? "" : "s"}` : kind === "harvest" ? `${n} harvest${n === 1 ? "" : "s"}` : `${n} sale${n === 1 ? "" : "s"}`;
     showUndo(`Added ${what}`, () => { undo(); setDone(null); });
     setDone({ what, importId, undo });
@@ -153,8 +168,13 @@ export default function ImportScreen({ data, update, onBack, toast }) {
             <Card>
               <CardHeader title="Brought in before" />
               {(data.imports || []).slice().reverse().slice(0, 5).map((x) => (
-                <div key={x.id} style={{ padding: "8px 14px 10px", borderTop: `1px solid ${nl.rule}`, fontSize: 14 }}>
-                  {x.count} {x.kind === "eggs" ? "egg logs" : x.kind === "harvest" ? "harvests" : "sales"}<span style={{ color: nl.soft }}> · {x.file} · {new Date(x.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span>
+                <div key={x.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 6px 6px 14px", borderTop: `1px solid ${nl.rule}`, fontSize: 14 }}>
+                  <span style={{ flex: 1 }}>{x.count} {x.kind === "eggs" ? "egg logs" : x.kind === "harvest" ? "harvests" : "sales"}<span style={{ color: nl.soft }}> · {x.file} · {new Date(x.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</span></span>
+                  <button type="button" onClick={() => {
+                    if (takeOut !== x.id) { setTakeOut(x.id); return; }
+                    setTakeOut(null);
+                    undoable(update, `Took out ${x.count} ${x.kind === "eggs" ? "egg logs" : x.kind === "harvest" ? "harvests" : "sales"}`)((d) => removeImport(d, x.id));
+                  }} style={{ minHeight: 44, padding: "0 10px", border: "none", background: "none", color: takeOut === x.id ? nl.alert : nl.soft, fontWeight: takeOut === x.id ? 700 : 500, font: "inherit", fontSize: 13, cursor: "pointer" }}>{takeOut === x.id ? "Tap again to take out" : "Take these out"}</button>
                 </div>
               ))}
             </Card>

@@ -47,10 +47,13 @@ export const SALE_TO_HOBBY = {
   sourdough:     "sourdough",
   baking:        "baking",
   canning:       "canning",
-  tincture:      "canning",
-  oil_infusion:  "canning",
-  salve:         "canning",
-  tea:           "canning",
+  // Each has its own hobby now, where its costs are logged; crediting their
+  // sales to Canning made them look like losses and Canning look better.
+  tincture:      "tincture",
+  oil_infusion:  "oil_infusion",
+  salve:         "salve",
+  tea:           "tea",
+  soap:          "soap",
   incubator:     "incubator",
   horse:         "horses",
   cow:           "cows",
@@ -86,6 +89,16 @@ export const HOBBY_LABEL = {
   dogs:          { label: "Dogs",         emoji: "🐕" },
   cats:          { label: "Cats",         emoji: "🐈" },
   maple_syrup:   { label: "Maple Syrup",  emoji: "🍁" },
+  tincture:      { label: "Tinctures",    emoji: "🌿" },
+  oil_infusion:  { label: "Oil Infusions", emoji: "🫒" },
+  salve:         { label: "Salves",       emoji: "🪻" },
+  tea:           { label: "Tea Blends",   emoji: "🍵" },
+  soap:          { label: "Soap",         emoji: "🧼" },
+  // Costs logged in these showed under their raw id ("freeze_drying").
+  freeze_drying: { label: "Freeze Drying", emoji: "❄️" },
+  dehydrating:   { label: "Dehydrating",  emoji: "🌬️" },
+  fermentation:  { label: "Fermentation", emoji: "🫧" },
+  hunting:       { label: "Hunting",      emoji: "🦌" },
   other:         { label: "Other",        emoji: "💰" },
 };
 

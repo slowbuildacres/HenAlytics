@@ -20,6 +20,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useMemo, useEffect } from "react";
+import { undoAnimalSale } from "./animalSale.js";
 import { X, Edit3, Plus, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, LineChart, Line } from "recharts";
 import { fmtMoney, fmtWeight, fmtVolume, weightUnitLabel, lbsFromInput, weightFromLbs, getCurrentWeightUnit, getCurrentVolumeUnit, flozFromInput, currencySymbol, volumeFromGal, volumeUnitLabel } from "./units.js";
@@ -148,7 +149,7 @@ function Field({ label, children }) {
 function ModalShell({ title, onClose, children, maxWidth = 460 }) {
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`,position:"sticky",top:0,background:palette.bg,zIndex:1 }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -386,6 +387,8 @@ function AnimalModal({ animal, animals, paddocks, onSave, onDelete, onClose, upd
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
+      // Keep what this form doesn't show (why and when it left, its sale).
+      ...(animal || {}),
       id: animal?.id || newId(),
       name: name.trim(),
       breed: finalBreed,
@@ -412,6 +415,22 @@ function AnimalModal({ animal, animals, paddocks, onSave, onDelete, onClose, upd
     });
     onClose();
   };
+
+  // "Past sheep" says tap one to restore it: this is where. A sold one can
+  // come back with its sale undone (out of Sales too) or kept.
+  const restoreAnimal = (undoSale) => {
+    update((d) => {
+      const h = (d.hobbies || []).find((x) => x.id === hobbyId);
+      const a = h && (h.animals || []).find((x) => x.id === animal.id);
+      if (a && undoSale && a.saleId) undoAnimalSale(d, a.saleId);
+      if (a) { a.archived = false; delete a.archivedReason; delete a.archivedDate; delete a.saleId; }
+      return d;
+    });
+    onClose();
+  };
+  const restoreButtons = animal && animal.archived && update && hobbyId ? (animal.saleId
+    ? <><Btn variant="ghost" small onClick={() => restoreAnimal(true)}>Undo the sale</Btn><Btn variant="ghost" small onClick={() => restoreAnimal(false)}>Restore, keep the sale</Btn></>
+    : <Btn variant="ghost" small onClick={() => restoreAnimal(false)}>Restore</Btn>) : null;
 
   return (
     <ModalShell title={animal ? "Edit sheep" : "Add sheep"} onClose={onClose}>
@@ -523,6 +542,7 @@ function AnimalModal({ animal, animals, paddocks, onSave, onDelete, onClose, upd
             ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
             : <Btn variant="danger" onClick={() => { onDelete(animal.id); onClose(); }}>Confirm delete</Btn>
         )}
+        {restoreButtons}
         <Btn variant="ghost" onClick={onClose}>Cancel</Btn>
         <Btn onClick={handleSave} disabled={!name.trim()}>Save</Btn>
       </div>
@@ -1413,6 +1433,8 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.breedings = (h.breedings||[]).filter(b => b.id !== id);
+      // Its due-date reminder goes too (like goats and cows).
+      if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => e.relatedId !== id);
       return d;
     });
   };
@@ -1568,6 +1590,9 @@ export default function SheepPage({ hobby, data, update, setModal, user }) {
                   d.sales = d.sales || [];
                   resolveSaleBuyer(d, payload.saleData);
                   d.sales.push(payload.saleData);
+                  // The animal remembers its sale, so deleting the sale in Sales
+                  // or restoring the animal can undo both (src/animalSale.js).
+                  { const hh = (d.hobbies || []).find((x) => x.id === hobby.id); const an = hh && (hh.animals || []).find((x) => x.id === payload.animalId); if (an) an.saleId = payload.saleData.id; }
                   return d;
                 });
               }
@@ -2128,7 +2153,12 @@ export function SheepNewLook({ hobby, data, update, user, setModal, tab, onOpenJ
             if (payload && payload.entry) {
               addEntry(payload.entry);
               if (payload.archiveReason && payload.animalId) archive(payload.animalId, payload.archiveReason);
-              if (payload.saleData) update((d) => { d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData); return d; });
+              if (payload.saleData) update((d) => {
+                d.sales = d.sales || []; resolveSaleBuyer(d, payload.saleData); d.sales.push(payload.saleData);
+                // The sheep remembers its sale (deleting the sale or restoring her undoes both).
+                const hh = (d.hobbies || []).find((x) => x.id === hobby.id); const an = hh && (hh.animals || []).find((x) => x.id === payload.animalId); if (an) an.saleId = payload.saleData.id;
+                return d;
+              });
             } else addEntry(payload);
           }}
           onClose={closeForm} onAddAnimal={() => setForm({ kind: "animal", animal: null })} />

@@ -83,7 +83,10 @@ export default async function handler(req, res) {
   res.setHeader('Content-Disposition', 'inline; filename="henalytics.ics"');
   // Calendar apps poll on their own schedule (Google: every several hours).
   // A short shared cache keeps repeated polls cheap without going stale.
-  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=900, stale-while-revalidate=3600');
+  // Short edge cache only: turning the link off (or making a new one) in
+  // the app should stop the old link soon, not after an hour of
+  // stale-while-revalidate copies.
+  res.setHeader('Cache-Control', 'public, max-age=0, s-maxage=300');
   res.setHeader('X-Robots-Tag', 'noindex');
   if (req.method === 'HEAD') return res.status(200).end();
   return res.status(200).send(text);

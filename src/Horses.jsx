@@ -21,6 +21,7 @@
 import { legacyPalette } from "./newlook/legacyTheme.js";
 import NeedAnimal, { noAnimals } from "./newlook/NeedAnimal.jsx";
 import React, { useState, useEffect } from "react";
+import { undoAnimalSale } from "./animalSale.js";
 import { X, Edit3 } from "lucide-react";
 import { fmtMoney, lbsFromInput, weightUnitLabel, currencySymbol } from "./units.js";
 import { SireDamPicker, PedigreeView } from "./PedigreeView.jsx";
@@ -143,7 +144,7 @@ function Field({ label, children }) {
 function ModalShell({ title, onClose, children, maxWidth = 460 }) {
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}`,position:"sticky",top:0,background:palette.bg,zIndex:1 }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -366,6 +367,8 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
   const handleSave = () => {
     if (!name.trim()) return;
     onSave({
+      // Keep what this form doesn't show (the sale link, photos' extras…).
+      ...(horse || {}),
       id: horse?.id || newId(),
       name: name.trim(),
       breed: finalBreed,
@@ -390,6 +393,17 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       archived: horse?.archived || false,
       archivedReason: horse?.archivedReason,
       archivedDate: horse?.archivedDate,
+    });
+    onClose();
+  };
+
+  const restoreHorse = (undoSale) => {
+    update((d) => {
+      const h = (d.hobbies || []).find((x) => x.id === hobbyId);
+      const a = h && (h.animals || []).find((x) => x.id === horse.id);
+      if (a && undoSale && a.saleId) undoAnimalSale(d, a.saleId);
+      if (a) { a.archived = false; delete a.archivedReason; delete a.archivedDate; delete a.saleId; }
+      return d;
     });
     onClose();
   };
@@ -509,6 +523,16 @@ function HorseModal({ horse, horses, onSave, onDelete, onClose, update, user, ho
       </details>
 
       <div style={{ display:"flex",gap:10,justifyContent:"flex-end",flexWrap:"wrap",marginTop:8 }}>
+        {horse && horse.archived && update && hobbyId && (
+          // "Past horses" says tap one to restore it: this is where. A sold
+          // horse can come back with its sale undone (out of Sales too) or kept.
+          horse.saleId
+            ? <>
+                <Btn variant="ghost" onClick={() => restoreHorse(true)}>Undo the sale</Btn>
+                <Btn variant="ghost" onClick={() => restoreHorse(false)}>Restore, keep the sale</Btn>
+              </>
+            : <Btn variant="ghost" onClick={() => restoreHorse(false)}>Restore</Btn>
+        )}
         {horse && onDelete && (
           !confirmDelete
             ? <Btn variant="ghost" onClick={() => setConfirmDelete(true)}>Delete</Btn>
@@ -565,6 +589,7 @@ function BreedingModal({ horses, breeding, onSave, onDelete, onClose, calendarEv
       addCalendarEvent({
         id: newId(),
         date: expectedFoalDate,
+        relatedId: record.id,
         title: `🐴 Expected foaling: ${mareName}`,
         type: "horse_foaling",
         notes: `From breeding logged ${bredDate}`,
@@ -1216,6 +1241,8 @@ export default function HorsesPage({ hobby, data, update, setModal, user }) {
     update(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (h) h.breedings = (h.breedings||[]).filter(b => b.id !== id);
+      // Its expected-foaling reminder goes too (like goats and cows).
+      if (Array.isArray(d.calendarEvents)) d.calendarEvents = d.calendarEvents.filter(e => e.relatedId !== id);
       return d;
     });
   };

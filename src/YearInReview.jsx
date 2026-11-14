@@ -6,7 +6,7 @@ import { legacyPalette } from "./newlook/legacyTheme.js";
 import React, { useState, useMemo, useEffect } from "react";
 import { Egg, Drumstick, Sprout, Calendar as CalendarIcon, Camera, Sun, CloudRain, Heart } from "lucide-react";
 import { getPhotoUrl } from "./sync.js";
-import { fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel } from "./units.js";
+import { fmtRain, fmtMoney, fmtTemp, fmtWeight, weightFromLbs, weightUnitLabel, fmtWeight1, fmtWeightWhole, fmtVolumeBig, volumeFromGal, volumeUnitLabel, perLbToInput, perWeightLabel } from "./units.js";
 import { huntingTotals } from "./Hunting.jsx";
 import { soapBatchStats } from "./SoapMaking.jsx";
 import { getYearWeather } from "./weather.js";
@@ -840,7 +840,7 @@ function MeatChickensCard({ stats }) {
         <div style={{ marginTop: 4, marginBottom: 14 }}>
           <div style={{ fontSize: 11, color: palette.inkSoft, marginBottom: 8, textTransform: "uppercase", letterSpacing: 0.5 }}>The numbers</div>
           <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
-            {meatCostPerLb > 0 && <Stat big={fmtMoney(meatCostPerLb)} label="cost per lb of meat" accent={palette.feather} />}
+            {meatCostPerLb > 0 && <Stat big={fmtMoney(perLbToInput(meatCostPerLb))} label={`cost per ${perWeightLabel()} of meat`} accent={palette.feather} />}
             <Stat big={fmtMoney(meatChickenTotalCost)} label="total spent on meat birds" accent={palette.feather} />
           </div>
           <div style={{ marginTop: 12, padding: 10, background: palette.bgAlt, borderRadius: 8, fontSize: 12, color: palette.inkSoft, lineHeight: 1.6 }}>
@@ -1305,7 +1305,7 @@ function HuntingCard({ data, year }) {
       {t.harvests.length > 0 && <CountUp number={t.harvests.length} suffix={`harvest${t.harvests.length===1?"":"s"}`} big />}
       <div style={{ display:"flex",flexWrap:"wrap",gap:8,marginTop:8 }}>
         {t.meatLbs > 0 && <Stat big={fmtWeight(t.meatLbs)} label="meat in the freezer" accent={palette.leaf}/>}
-        {t.costPerLb > 0 && <Stat big={fmtMoney(t.costPerLb)} label="cost per lb" accent={palette.feather}/>}
+        {t.costPerLb > 0 && <Stat big={fmtMoney(perLbToInput(t.costPerLb))} label={`cost per ${perWeightLabel()}`} accent={palette.feather}/>}
         {t.storeValue > 0 && <Stat big={fmtMoney(t.storeValue)} label="store value" accent={palette.accent}/>}
       </div>
     </Card>
@@ -1372,7 +1372,7 @@ function WeatherCard({ stats }) {
             from the weather API) — fmtTemp handles the conversion. */}
         {weatherStats.hottestDay && <Stat big={fmtTemp(weatherStats.hottestDay.highF)} label={`hottest · ${shortDate(weatherStats.hottestDay.date)}`} accent={palette.accent} />}
         {weatherStats.coldestDay && <Stat big={fmtTemp(weatherStats.coldestDay.lowF)} label={`coldest · ${shortDate(weatherStats.coldestDay.date)}`} accent="#7AA8B8" />}
-        {weatherStats.totalRainIn > 0 && <Stat big={`${weatherStats.totalRainIn.toFixed(1)}"`} label={weatherStats.rainIsYearTotal ? "rain this year" : "rain logged"} accent={palette.leaf} />}
+        {weatherStats.totalRainIn > 0 && <Stat big={fmtRain(weatherStats.totalRainIn, 1)} label={weatherStats.rainIsYearTotal ? "rain this year" : "rain logged"} accent={palette.leaf} />}
         {weatherStats.lastSpringFrost && <Stat big={shortDate(weatherStats.lastSpringFrost)} label="last spring frost" accent="#7AA8B8" />}
         {weatherStats.firstFallFrost && <Stat big={shortDate(weatherStats.firstFallFrost)} label="first fall frost" accent="#7AA8B8" />}
       </div>
@@ -1430,7 +1430,7 @@ function FunFactsCard({ stats }) {
   if (stats.entryCountByHobby) {
     const top = Object.entries(stats.entryCountByHobby).sort((a, b) => b[1] - a[1])[0];
     if (top && top[1] > 0) {
-      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", baking: "Baking", canning: "Canning" };
+      const hobbyLabels = { garden: "Garden", egg_layers: "Egg Layers", meat_chickens: "Meat Birds", rabbits: "Rabbits", bees: "Bees", incubator: "Incubator", goats: "Goats", cows: "Cows", pigs: "Pigs", baking: "Baking", canning: "Canning", sheep: "Sheep", horses: "Horses", sourdough: "Sourdough", farmstand: "Farmstand", freeze_drying: "Freeze Drying", dehydrating: "Dehydrating", fermentation: "Fermentation", dogs: "Dogs", cats: "Cats", maple_syrup: "Maple Syrup", hunting: "Hunting", soap: "Soap Making", tincture: "Tinctures", oil_infusion: "Oil Infusions", salve: "Salves", tea: "Tea Blends" };
       facts.push({ emoji: "⭐", label: "Most-tracked hobby", value: `${hobbyLabels[top[0]] || top[0]} (${top[1]})` });
     }
   }

@@ -256,7 +256,7 @@ export function PedigreeView({ animal, animals, onClose, onJumpTo }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16,
           maxWidth: 720, width: "100%", maxHeight: "92vh", overflow: "auto",
