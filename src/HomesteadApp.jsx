@@ -3,7 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 
 import {
   Sprout, Egg, Drumstick, Plus, Droplet, Sun, Scissors, AlertTriangle,
-  Skull, Bird, Home, BarChart3, X, ChevronDown, ChevronUp, Calendar, DollarSign, Sparkles,
+  Skull, Bird, Home, BarChart3, X, ChevronDown, ChevronUp, ChevronRight, Calendar, DollarSign, Sparkles,
   Snowflake, Archive, Trash2, Edit3, Save, Settings, ArrowLeft,
   Mail, Lightbulb, UserCircle, Lock, Heart, NotebookPen, Hammer, Leaf, LogOut, Download,
   Camera, Cloud, CloudOff, Loader2, Image as ImageIcon, UserPlus, CheckCircle, Check,
@@ -125,6 +125,7 @@ import YearScreen from "./newlook/YearScreen.jsx";
 import { GardenToday, GardenPlants, GardenPlan, GardenStats, GardenClosed, GardenNeedSeason, nextGardenSeasonName } from "./newlook/garden/GardenScreens.jsx";
 import { HobbyTitle, HobbySwitcherSheet } from "./newlook/HobbySwitcher.jsx";
 import { hobbyPage, HOBBY_PAGES, entryForHobby, PRESERVING_TYPES, HERBAL_TYPES, cleanName } from "./newlook/hobbies.js";
+import { journalRecords } from "./journalRecords.js";
 import { initErrorReporting, reportError, recordActiveDay } from "./telemetry.js";
 import { apiUrl } from './apiBase.js';
 import { isAuthCallbackUrl, handleAuthCallbackUrl, captureProviderToken } from './oauth.js';
@@ -7105,7 +7106,7 @@ if (import.meta.env.DEV && typeof window !== "undefined") window.__henBack = nat
           <Legacy><CalendarPage data={data} update={update} setModal={setModal} /></Legacy>
         )}
         {page === "journal" && (
-          <Legacy><JournalPage data={data} update={update} setModal={setModal} /></Legacy>
+          <Legacy><JournalPage data={data} update={update} setModal={setModal} onOpenHobby={(h) => { setActiveHobby(h.id); setPage(hobbyPage(h)); }} /></Legacy>
         )}
         {page === "orders" && (
           <OrdersScreen data={data} update={update} user={user} onBack={() => setPage(ordersBack)} onSignIn={() => setModal({ type: "signin" })} onCountChange={orderCount.refresh} initialTab={ordersTab} onEmailCustomers={() => setModal({ type: "stockEmails" })} onTour={() => setShowOrdersTour(true)} />
@@ -7883,7 +7884,7 @@ function JournalScrapbook({ data, hobbyFilter }) {
 // header to toggle. Only one season is expanded by default (the most recent
 // one with entries) so the page doesn't open as a wall of text.
 // ============================================================================
-function JournalPage({ data, update, setModal }) {
+function JournalPage({ data, update, setModal, onOpenHobby }) {
   const [hobbyFilter, setHobbyFilter] = useState("all");
   const [openSeasons, setOpenSeasons] = useState(() => new Set());
   const initializedRef = useRef(false);
@@ -7913,6 +7914,17 @@ function JournalPage({ data, update, setModal }) {
     return map;
   }, [data.hobbies]);
 
+  // Logs some hobbies keep on their own records (batches, bakes, rides,
+  // harvests, breedings…), as read-only rows that open the hobby.
+  const recordsByHobby = React.useMemo(() => {
+    const map = {};
+    for (const h of data.hobbies || []) {
+      const rows = journalRecords(h);
+      if (rows.length > 0) map[h.id] = rows;
+    }
+    return map;
+  }, [data.hobbies]);
+
   const hobbiesWithEntries = React.useMemo(() => {
     const list = [];
     for (const h of data.hobbies || []) {
@@ -7921,10 +7933,10 @@ function JournalPage({ data, update, setModal }) {
       const archived = archivedEntriesByHobby[h.id];
       const liveHas = Array.isArray(arr) && arr.length > 0;
       const archivedHas = Array.isArray(archived) && archived.length > 0;
-      if (liveHas || archivedHas) list.push(h);
+      if (liveHas || archivedHas || recordsByHobby[h.id]) list.push(h);
     }
     return list;
-  }, [data.hobbies, data.entries, archivedEntriesByHobby]);
+  }, [data.hobbies, data.entries, archivedEntriesByHobby, recordsByHobby]);
 
   // Collect all entries (or just the filtered hobby's) and tag with season +
   // hobby info. Then group by season key, sort groups newest-first, sort
@@ -7937,7 +7949,7 @@ function JournalPage({ data, update, setModal }) {
     // belt-and-suspenders), we render it only once.
     const seenIds = new Set();
     const pushEntry = (e, h) => {
-      if (!e || !e.date) return;
+      if (!e || typeof e.date !== "string" || !/^\d{4}-\d{2}-\d{2}/.test(e.date)) return;
       if (e.id) {
         if (seenIds.has(e.id)) return;
         seenIds.add(e.id);
@@ -7957,6 +7969,7 @@ function JournalPage({ data, update, setModal }) {
       if (Array.isArray(archived)) {
         for (const e of archived) pushEntry(e, h);
       }
+      for (const r of recordsByHobby[h.id] || []) pushEntry(r, h);
     }
     // Sort each group's items newest-first
     for (const g of byKey.values()) {
@@ -7964,14 +7977,18 @@ function JournalPage({ data, update, setModal }) {
     }
     // Sort groups newest season first
     return Array.from(byKey.values()).sort((a, b) => b.info.sortOrder - a.info.sortOrder);
-  }, [data.hobbies, data.entries, data.homesteadLocation, hobbyFilter, archivedEntriesByHobby]);
+  }, [data.hobbies, data.entries, data.homesteadLocation, data.frostDates, hobbyFilter, archivedEntriesByHobby, recordsByHobby]);
 
   // On first render (or when filter changes and we have results), expand only
   // the most recent season so the page doesn't open as a giant wall.
   React.useEffect(() => {
     if (grouped.length === 0) return;
     if (!initializedRef.current) {
-      setOpenSeasons(new Set([grouped[0].info.key]));
+      // The newest season, and the season of the newest log up to today,
+      // so a log typed with a future date can't fold today's away.
+      const today = todayStr();
+      const current = grouped.find((g) => g.items.some((it) => it.entry.date <= today));
+      setOpenSeasons(new Set([grouped[0].info.key, current && current.info.key].filter(Boolean)));
       initializedRef.current = true;
     }
   }, [grouped]);
@@ -8137,12 +8154,16 @@ function JournalPage({ data, update, setModal }) {
                           {cleanName(hobby.name)}
                         </div>
                       )}
-                      <ActivityRow
-                        entry={entry}
-                        hobbyType={hobby.type}
-                        onEdit={() => setModal({ type: "log", action: entry.action, existingEntry: entry, hobbyIdOverride: hobby.id })}
-                        onDelete={() => deleteEntry(entry, hobby)}
-                      />
+                      {entry.isRecord ? (
+                        <RecordRow entry={entry} hobby={hobby} onOpen={onOpenHobby ? () => onOpenHobby(hobby) : null} />
+                      ) : (
+                        <ActivityRow
+                          entry={entry}
+                          hobbyType={hobby.type}
+                          onEdit={() => setModal({ type: "log", action: entry.action, existingEntry: entry, hobbyIdOverride: hobby.id })}
+                          onDelete={() => deleteEntry(entry, hobby)}
+                        />
+                      )}
                     </div>
                   ))}
                 </div>
@@ -8152,6 +8173,41 @@ function JournalPage({ data, update, setModal }) {
         })}
       </div>
     </div>
+  );
+}
+
+// A Journal row for a log the hobby keeps on its own record (a canning
+// batch, a bake, a ride…). It's edited where it lives, so the row opens the
+// hobby instead of a log form.
+function RecordRow({ entry, hobby, onOpen }) {
+  const detail = [entry.detail, entry.note].filter(Boolean).join(" · ");
+  const body = (
+    <>
+      <div style={{
+        width: 36, height: 36, borderRadius: 8, background: palette.bgAlt,
+        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+      }}>
+        <NotebookPen size={18} strokeWidth={1.8} color={palette.ink} />
+      </div>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontWeight: 600, fontSize: 14, color: palette.ink }}>{entry.title}</div>
+        <div style={{ fontSize: 12, color: palette.inkSoft, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+          {fmtDate(entry.date)}{detail ? ` · ${detail}` : ""}
+        </div>
+      </div>
+      {onOpen && <ChevronRight size={18} color={palette.inkSoft} style={{ flexShrink: 0 }} />}
+    </>
+  );
+  const box = {
+    display: "flex", alignItems: "center", gap: 12, padding: "12px 14px", width: "100%",
+    background: palette.card, border: `1.5px solid ${palette.line}`, borderRadius: 10,
+    textAlign: "left", fontFamily: FONT_BODY, color: palette.ink,
+  };
+  if (!onOpen) return <div style={box}>{body}</div>;
+  return (
+    <button type="button" onClick={onOpen} style={{ ...box, cursor: "pointer" }} aria-label={`${entry.title}, ${fmtDate(entry.date)}. Open ${cleanName(hobby.name)} to edit`}>
+      {body}
+    </button>
   );
 }
 
@@ -11917,7 +11973,7 @@ function ActivityRow({ entry, hobbyType, onDelete, onEdit }) {
       break;
     }
     case "planted": detail = `${entry.plant || ""} ${entry.quantity ? "× " + entry.quantity : ""}`.trim(); break;
-    case "harvested": detail = `${entry.plant || ""} · ${entry.quantity || 0} ${entry.unit || "lbs"}`; break;
+    case "harvested": detail = [entry.plant, `${entry.quantity || 0} ${entry.unit || "lbs"}`].filter(Boolean).join(" · "); break;
     case "fed": {
       // Display in whichever unit was logged, converted to the user's
       // preferred unit system. Legacy entries have just `lbs`; newer
