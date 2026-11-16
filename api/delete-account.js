@@ -166,6 +166,17 @@ export default async function handler(req, res) {
           errors.push({ step: 'delete_invites', homesteadId, error: invErr.message });
         }
 
+        // Saved backups are whole copies of the homestead (customers'
+        // emails and phones too), so they go with it. Explicit, like the
+        // invites above, since the table's cascade isn't in this repo.
+        const { error: bkErr } = await supabase
+          .from('homestead_backups')
+          .delete()
+          .eq('homestead_id', homesteadId);
+        if (bkErr) {
+          errors.push({ step: 'delete_backups', homesteadId, error: bkErr.message });
+        }
+
         const { error: hsErr } = await supabase
           .from('homesteads')
           .delete()

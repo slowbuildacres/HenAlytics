@@ -21,6 +21,7 @@
 
 import { computeEggsOnHand } from "./eggInventory.js";
 import { soapBatchStats } from "./SoapMaking.jsx";
+import { measureSource } from "./orderSupply.js";
 
 const num = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -85,7 +86,15 @@ export function putOut(d, entry, qty, today) {
     if (!Array.isArray(d.entries[h.id])) d.entries[h.id] = [];
     d.entries[h.id].push({ id: newId(), date: today, action: "used_eggs", useType: "stand", count: n * 12, notes: `${n} dozen to the farm stand`, created: Date.now() });
   } else return "";
-  let stand = (d.hobbies || []).find((x) => x && x.id === "farmstand");
+  return addToStand(d, entry, n);
+}
+
+// Adds qty of a home entry to its farm stand item (made if needed, linked by
+// item.fromSource), in place. Returns the item id, or "" with no farm stand.
+export function addToStand(d, entry, qty) {
+  const n = Math.round(num(qty) * 100) / 100;
+  if (!(n > 0)) return "";
+  const stand = (d.hobbies || []).find((x) => x && x.id === "farmstand");
   if (!stand) return "";
   if (!Array.isArray(stand.items)) stand.items = [];
   let it = standItemFor(d, entry);
@@ -103,22 +112,32 @@ export function putOut(d, entry, qty, today) {
 
 // For pre-orders: what's at home for each farm stand item on the order menu,
 // so a stand item can be pre-ordered from soap that's still curing or jars
-// on the shelf. { "stand:<itemId>": { onHand, perDay: 0, asOf, batches } }
+// on the shelf. { "stand:<itemId>": { onHand, perDay, asOf, batches } }
 // (onHand ready now, batches [{ on, qty }] ready later), in the stand
 // item's own unit (eggs in dozens).
 export function homeSnaps(data, menu, today) {
   const out = {};
   const entries = homeFromHobbies(data, today);
+  // Hens whose eggs go to a stand item, even with none in the fridge right
+  // now (they've all been put out): their laying pace still counts.
+  const layers = ((data && data.hobbies) || []).filter((h) => h && !h.hidden && h.type === "egg_layers");
   (Array.isArray(menu) ? menu : []).forEach((m) => {
     const from = m && m.supply && m.supply.from;
     if (!m || !m.standItemId || (from && from !== "stand")) return;
     const key = `stand:${String(m.standItemId).replace(/[^a-zA-Z0-9_-]/g, "").slice(0, 40)}`;
     if (out[key]) return;
     const mine = entries.filter((e) => { const it = standItemFor(data, e); return it && it.id === m.standItemId; });
-    if (!mine.length) return;
+    const hens = layers.filter((h) => { const it = standItemFor(data, { key: `eggs:${h.id}`, kind: "eggs", name: "Eggs" }); return it && it.id === m.standItemId; });
+    if (!mine.length && !hens.length) return;
     const onHand = mine.filter((e) => !e.readyOn || e.readyOn <= today).reduce((n, e) => n + e.qty, 0);
     const batches = mine.filter((e) => e.readyOn && e.readyOn > today).map((e) => ({ on: e.readyOn, qty: e.qty }));
-    out[key] = { onHand, perDay: 0, asOf: today, ...(batches.length ? { batches } : {}) };
+    // Eggs keep coming: the hens' laying pace, in dozens a day, so a stand
+    // item that takes pre-orders can say when more will be there.
+    let perDay = 0;
+    hens.forEach((h) => { try { const r = measureSource(data, { from: "eggs", hobbyId: h.id }, today); if (r && r.perDay > 0) perDay += r.perDay / 12; } catch (_) { /* no pace */ } });
+    perDay = Math.round(perDay * 1000) / 1000;
+    if (!mine.length && !perDay) return;
+    out[key] = { onHand, perDay, asOf: today, ...(batches.length ? { batches } : {}) };
   });
   return out;
 }

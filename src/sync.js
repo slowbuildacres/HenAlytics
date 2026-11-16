@@ -435,6 +435,29 @@ function scoreData(data) {
   return score;
 }
 
+// ---- Deliberate bulk deletes ------------------------------------------------
+// The clobber guard below refuses any save that drops more than 10 records,
+// to stop a stale or broken copy wiping the cloud. A person deleting a hive
+// with its logs, a season, a batch, or taking out an import does that on
+// purpose — and was refused, shown the "cloud is ahead" banner, and on
+// refresh got everything back. Those deletes call noteBulkDelete() with the
+// score from before; the data then carries { n, at } and the guard allows a
+// drop that size for a short while. Anything unexplained is still refused.
+export const scoreOf = (data) => scoreData(data);
+const BULK_DELETE_WINDOW_MS = 30 * 60 * 1000;
+export function noteBulkDelete(d, before) {
+  if (!d || typeof d !== 'object') return;
+  const n = (Number(before) || 0) - scoreData(d);
+  if (!(n > 0)) return;
+  const prev = d._bulkDelete && Date.now() - Number(d._bulkDelete.at) < BULK_DELETE_WINDOW_MS ? Number(d._bulkDelete.n) || 0 : 0;
+  d._bulkDelete = { n: prev + n, at: Date.now() };
+}
+function bulkDeleteAllowance(data) {
+  const b = data && data._bulkDelete;
+  if (!b || !(Date.now() - Number(b.at) < BULK_DELETE_WINDOW_MS)) return 0;
+  return Math.max(0, Number(b.n) || 0);
+}
+
 // Per-list counts (names and numbers only, no content) so a refused save can
 // say WHICH lists differ between this device and the cloud.
 function scoreParts(data) {
@@ -566,7 +589,7 @@ async function safeWriteCloudHomestead(homesteadId, newData) {
     return { skipped: true, reason: 'stale-baseline' };
   }
 
-  if (currentScore >= 5 && newScore < currentScore - 10) {
+  if (currentScore >= 5 && newScore < currentScore - 10 - bulkDeleteAllowance(newData)) {
     console.warn(
       `Refusing to clobber cloud data (current score=${currentScore}, new=${newScore}). Skipping save.`
     );

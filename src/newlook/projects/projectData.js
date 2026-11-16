@@ -65,9 +65,11 @@ const inR = (d, p) => !!d && d >= p.start && d <= p.end;
 // ---- money ------------------------------------------------------------------
 export function candidateSales(data, p) {
   const k = kindOf(p.kind);
+  // Sales name their buyer by buyerId (customerName is only on chick sales).
+  const who = new Map(((data && data.customers) || []).filter((c) => c && c.id).map((c) => [c.id, c.name || ""]));
   return collectAllSales(data)
     .filter((s) => s && inR(s.date, p) && (s.hobbyId ? s.hobbyId === p.hobbyId : k.saleTypes.includes(s.hobbyType)))
-    .map((s) => ({ id: s.id, date: s.date, what: s.item || saleKind(s), qty: s.qty, unit: s.unit, buyer: s.customerName || "", amount: Math.round(computeRevenue(s) * 100) / 100 }))
+    .map((s) => ({ id: s.id, date: s.date, what: s.item || saleKind(s), qty: s.qty, unit: s.unit, buyer: (s.buyerId && who.get(s.buyerId)) || s.customerName || s.buyer || "", amount: Math.round(computeRevenue(s) * 100) / 100 }))
     .sort((a, b) => a.date.localeCompare(b.date));
 }
 const SOURCE_LABEL = {
@@ -81,7 +83,11 @@ export function candidateExpenses(data, p) {
   return extractHobbyExpenses(data, p.hobbyId)
     .filter((r) => r && inR(r.date, p) && (Number(r.cost) || 0) > 0)
     .map((r) => ({ id: r.id || `${r.source}:${r.date}:${r.cost}:${r.note || ""}`, date: r.date, what: r.note || r.label || sourceLabel(r.source), category: r.category || sourceLabel(r.source), amount: Math.round((Number(r.cost) || 0) * 100) / 100 }))
-    .sort((a, b) => a.date.localeCompare(b.date));
+    .sort((a, b) => a.date.localeCompare(b.date))
+    // Two costs alike in every way (two $20 feed logs the same day) got the
+    // same id, so ticking one ticked both. The first keeps its id (projects
+    // already saved still match it); the next get #2, #3.
+    .map((() => { const seen = new Map(); return (x) => { const n = (seen.get(x.id) || 0) + 1; seen.set(x.id, n); return n === 1 ? x : { ...x, id: `${x.id}#${n}` }; }; })());
 }
 export function projectMoney(data, p) {
   const allS = candidateSales(data, p), allE = candidateExpenses(data, p);

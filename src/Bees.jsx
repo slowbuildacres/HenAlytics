@@ -1,5 +1,6 @@
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import React, { useState, useEffect } from "react";
+import { scoreOf, noteBulkDelete } from "./sync.js";
 // NEW_LOOK (3.0): the rebuilt bee screens reuse this file's forms.
 import { BeeToday, BeeHives, BeeHive, HivePicker } from "./newlook/bees/BeeScreens.jsx";
 import { showUndo } from "./newlook/UndoBar.jsx";
@@ -109,7 +110,7 @@ function HiveModal({ hive, onSave, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{hive ? "Edit Hive" : "Add Hive"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -249,7 +250,7 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:200,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:460,width:"100%",maxHeight:"90vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)" }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit " : ""}{titles[action]||action}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -332,8 +333,11 @@ function LogEntryModal({ hive, action, onSave, onClose, existingEntry }) {
               </label>
             </div>
             <label style={{ display:"block" }}>
-              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Revenue (optional)</div>
+              <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>What it's worth (optional)</div>
               <input style={inputStyle()} type="number" min={0} step="0.01" value={harvestRevenue} onChange={e=>setHarvestRevenue(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
+              {/* This number stays on the harvest log; it isn't a sale. Said
+                  plainly, since "Revenue" read like it would count in Sales. */}
+              <div style={{ fontSize:12,color:palette.inkSoft,marginTop:4 }}>Just for your notes. Honey you sell goes in Sales, so it counts there.</div>
             </label>
             <label style={{ display:"block" }}>
               <div style={{ fontSize:11,color:palette.inkSoft,marginBottom:6,textTransform:"uppercase",letterSpacing:0.8,fontWeight:600 }}>Notes (optional)</div>
@@ -778,7 +782,7 @@ export function BeesAnalytics({ hobby, entries, /* ADV_ANALYTICS */ allEntries =
       </div>
 
       {harvestChart.length > 0 && (
-        <ChartCard title="Harvest over time (lbs)">
+        <ChartCard title={`Harvest over time (${weightUnitLabel()})`}>
           <ResponsiveContainer width="100%" height={200}>
             <BarChart data={harvestChart}>
               <XAxis dataKey="month" stroke={palette.inkSoft} fontSize={11} />
@@ -911,7 +915,8 @@ export default function BeesPage({ hobby, data, update, setModal }) {
 
   const deleteHive = (hiveId) => {
     // Confirmation handled inline in HiveDetail; this just performs the deletion.
-    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; h.hives=(h.hives||[]).filter(x=>x.id!==hiveId); d.entries[hobby.id]=(d.entries[hobby.id]||[]).filter(e=>e.hiveId!==hiveId); return d; });
+    // noteBulkDelete: a hive's logs going with it is on purpose (sync.js guard).
+    update(d => { const h = d.hobbies.find(x=>x.id===hobby.id); if (!h) return d; const before = scoreOf(d); h.hives=(h.hives||[]).filter(x=>x.id!==hiveId); d.entries[hobby.id]=(d.entries[hobby.id]||[]).filter(e=>e.hiveId!==hiveId); noteBulkDelete(d, before); return d; });
     setSelectedHive(null);
   };
 
@@ -1036,7 +1041,8 @@ export function BeesNewLook({ hobby, data, update, setModal, tab, onTab, onOpenJ
   const deleteHive = (hive) => {
     const removed = entries.filter((e) => e.hiveId === hive.id);
     const idx = hives.findIndex((x) => x.id === hive.id);
-    update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; h.hives = (h.hives || []).filter((x) => x.id !== hive.id); d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.hiveId !== hive.id); return d; });
+    // noteBulkDelete: a hive's logs going with it is on purpose (sync.js guard).
+    update((d) => { const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d; const before = scoreOf(d); h.hives = (h.hives || []).filter((x) => x.id !== hive.id); d.entries[hobby.id] = (d.entries[hobby.id] || []).filter((e) => e.hiveId !== hive.id); noteBulkDelete(d, before); return d; });
     setHiveId(null);
     showUndo(`Deleted ${hive.name}`, () => update((d) => {
       const h = d.hobbies.find((x) => x.id === hobby.id); if (!h) return d;

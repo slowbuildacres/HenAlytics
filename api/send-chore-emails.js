@@ -182,9 +182,10 @@ export default async function handler(req, res) {
           continue;
         }
 
-        // Idempotency
+        // Idempotency: one email per person per homestead per week (a farmhand
+        // on two homesteads gets each one's chores).
         const dupeRes = await fetch(
-          `${SUPABASE}/rest/v1/chore_email_sends?select=id&recipient_email=eq.${encodeURIComponent(email)}&week_start=eq.${weekStartIso}&status=eq.sent`,
+          `${SUPABASE}/rest/v1/chore_email_sends?select=id&recipient_email=eq.${encodeURIComponent(email)}&homestead_id=eq.${h.id}&week_start=eq.${weekStartIso}&status=eq.sent`,
           { headers: { apikey: SERVICE_KEY, Authorization: `Bearer ${SERVICE_KEY}` } }
         );
         if (dupeRes.ok) {

@@ -27,6 +27,7 @@ import { ownerMenu, creditChoices, guessCredit, standItems, orderLines, lineTota
 import { cleanSupply, sourceKey, guessPer, baseLabel, harvestUnitOf, measureSource, measureSnaps, sameSnaps, planAll, addDays, LIVE_FROM, BIRTH_DEFAULTS, repeatDates } from "./orderSupply.js";
 import { hobbyAllEntries } from "./allEntries.js";
 import { homeSnaps, homeFromHobbies, standItemFor, putOut } from "./homeInventory.js";
+import { matchCustomer } from "./customerMatch.js";
 
 export const ORDER_SITE = "https://henalytics.com/o/";
 const newId = () => Math.random().toString(36).slice(2, 10);
@@ -421,10 +422,17 @@ function PageSettingsSheet({ open, onClose, data, update }) {
   const [autoAccept, setAutoAccept] = useState(op.autoAccept);
   const [notifyBack, setNotifyBack] = useState(op.notifyBack);
   const [confirmNew, setConfirmNew] = useState(false);
+  // A stray tap outside the sheet shouldn't throw away a menu's worth of edits.
+  const [leaving, setLeaving] = useState(false);
+  const snap = (o, mn) => JSON.stringify([o.intro, o.pickup, mn, o.joinList, o.joinGroupId, o.emailMe, o.pay, o.payWhen, [...o.pickupDays].sort(), o.paused, o.pausedNote, o.delivery, o.standing, o.autoAccept, o.notifyBack]);
+  const tryClose = () => {
+    const now = snap({ intro, pickup, joinList, joinGroupId, emailMe, pay, payWhen, pickupDays, paused, pausedNote, delivery, standing, autoAccept, notifyBack }, menu);
+    if (now !== snap(cleanPageSettings(data.orderPage || {}), ownerMenu((data.orderPage || {}).menu))) setLeaving(true); else onClose();
+  };
   useEffect(() => {
     if (!open) return;
     const o = cleanPageSettings(data.orderPage || {});
-    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setDelivery(o.delivery); setStanding(o.standing); setAutoAccept(o.autoAccept); setNotifyBack(o.notifyBack); setConfirmNew(false);
+    setIntro(o.intro); setPickup(o.pickup); setMenu(ownerMenu((data.orderPage || {}).menu)); setJoinList(o.joinList); setJoinGroupId(o.joinGroupId); setEmailMe(o.emailMe); setPay(o.pay); setPayWhen(o.payWhen); setPickupDays(o.pickupDays); setPaused(o.paused); setPausedNote(o.pausedNote); setDelivery(o.delivery); setStanding(o.standing); setAutoAccept(o.autoAccept); setNotifyBack(o.notifyBack); setConfirmNew(false); setLeaving(false);
   }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
   const stand = standItems(data);
   const standToAdd = stand.filter((i) => !menu.some((m) => m.standItemId === i.id || m.name.toLowerCase() === String(i.name).toLowerCase()));
@@ -448,7 +456,7 @@ function PageSettingsSheet({ open, onClose, data, update }) {
     onClose();
   };
   return (
-    <Sheet open={open} onClose={onClose} label="Order page settings" showClose maxHeight="92vh">
+    <Sheet open={open} onClose={tryClose} label="Order page settings" showClose maxHeight="92vh">
       <h2 style={{ margin: "0 4px 4px", fontFamily: font.display, fontWeight: 400, fontSize: 24 }}>Your order page</h2>
       <p style={{ margin: "0 4px 6px", fontSize: 14, color: nl.soft, lineHeight: 1.45 }}>What customers see when they open your link or scan your sign.</p>
 
@@ -553,6 +561,16 @@ function PageSettingsSheet({ open, onClose, data, update }) {
         <Button small kind="quiet" onClick={() => save({ on: false })}>Turn off my order page</Button>
       </div>
       {confirmNew && <p style={{ fontSize: 13, color: nl.soft, margin: "8px 4px 0" }}>The old link and QR sign stop working. Print a new sign after.</p>}
+      {leaving && (
+        <div role="alertdialog" aria-label="Save your changes?" style={{ position: "sticky", bottom: 0, marginTop: 12, padding: 12, background: nl.card, border: `1.5px solid ${nl.field}`, borderRadius: 16, boxShadow: `0 -6px 18px ${nl.shadow}` }}>
+          <div style={{ fontWeight: 600, marginBottom: 8 }}>Save your changes?</div>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <Button small onClick={() => save()}>Save</Button>
+            <Button small kind="quiet" onClick={onClose}>Don't save</Button>
+            <Button small kind="quiet" onClick={() => setLeaving(false)}>Keep editing</Button>
+          </div>
+        </div>
+      )}
     </Sheet>
   );
 }
@@ -642,10 +660,11 @@ function UpdateSheet({ req, step, data, onClose, onDone }) {
     );
   }
   const go = async () => {
+    if (busy) return;
     setBusy(true); setErr("");
     try {
       const r = await callOrders("update", { id: req.id, status: s.status, message: message.trim(), notify });
-      const said = r && r.emailError ? `Saved, but ${r.emailError.charAt(0).toLowerCase()}${r.emailError.slice(1)}` : notify && r && r.emailed ? `Done. ${req.customer_name} got an email.` : "Done.";
+      const said = r && r.already ? `Done. ${req.customer_name} already got that email a few minutes ago.` : r && r.emailError ? `Saved, but ${r.emailError.charAt(0).toLowerCase()}${r.emailError.slice(1)}` : notify && r && r.emailed ? `Done. ${req.customer_name} got an email.` : "Done.";
       if (text && canText) { setBusy(false); setTextReady(said); return; }
       onDone(said);
     } catch (e) { setErr(e.message); setBusy(false); }
@@ -704,7 +723,7 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
   // A standing order's paid mark resets each week, so it isn't asked here;
   // the sale still records how they paid.
   const askPaid = !addOnly && !!req.pay_method && req.paid !== true && !req.repeat_weeks;
-  const known = !!findCustomer(data, req.email);
+  const known = !!findCustomer(data, req);
   const [saveCust, setSaveCust] = useState(!known && !addOnly);
   const [date, setDate] = useState(isoToday());
   const [busy, setBusy] = useState(false);
@@ -714,19 +733,29 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
   const setLine = (key, patch) => setLines((ls) => ls.map((l) => (l.key === key ? { ...l, ...patch } : l)));
   const t = lineTotals(lines);
   const go = async () => {
+    if (busy) return;
     setBusy(true); setErr("");
     try {
+      // Someone already marked it (a second tap, or another phone): don't
+      // move a standing order on twice or add the sale again.
       if (!addOnly && req.repeat_weeks) {
         // A standing order: this week's is picked up, the order moves to its next day.
-        const r = await callOrders("next", { id: req.id, today: isoToday() });
+        const r = await callOrders("next", { id: req.id, today: isoToday(), from: req.pickup_date || "" });
+        if (r.already) { onDone(`Already marked picked up. Next one ${orderPrettyDate(r.next)}.`); return; }
         req = { ...req, nextDate: r.next };
-      } else if (!addOnly) await callOrders("update", { id: req.id, status: "done", notify: false, ...(askPaid ? { paid: paidNow } : {}) });
+      } else if (!addOnly) {
+        const r = await callOrders("update", { id: req.id, status: "done", notify: false, ...(askPaid ? { paid: paidNow } : {}) });
+        if (r.was === "done") { onDone("Already marked picked up."); return; }
+      }
     } catch (e) { setErr(e.message); setBusy(false); return; }
     let added = null;
     const newBuyerId = !known && saveCust ? newId() : null;
     if (newBuyerId) update((d) => { saveCustomerInto(d, req, "", newBuyerId); return d; });
+    // Already a customer (maybe added by hand with just a name or phone):
+    // fill in the email they ordered with.
+    else if (known) update((d) => { saveCustomerInto(d, req); return d; });
     if (toSales && !orderInSales(data, key)) {
-      const found = findCustomer(data, req.email);
+      const found = findCustomer(data, req);
       const buyer = found || (newBuyerId ? { id: newBuyerId } : null);
       const sales = salesFromLines(lines, { req: { ...req, id: key }, date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : isoToday(), buyerId: buyer ? buyer.id : null })
         .map((x) => (req.pay_method ? { ...x, payMethod: req.pay_method, note: `${x.note} · ${payLabel(req.pay_method)}` } : x));
@@ -829,17 +858,19 @@ function PickedUpSheet({ req: req0, data, update, addOnly, onClose, onDone }) {
 }
 
 // ---------------------------------------------------------------- customers
-export const findCustomer = (data, email) => {
-  const em = String(email || "").trim().toLowerCase();
-  return em && Array.isArray(data && data.customers) ? data.customers.find((c) => c && String(c.email || "").toLowerCase() === em) || null : null;
-};
+// The saved customer for an order or sign-up: same email, phone, or a name
+// saved without an email (someone added by hand who now ordered). See
+// src/customerMatch.js.
+export const findCustomer = (data, req) => matchCustomer(data && data.customers, typeof req === "string" ? { email: req } : { email: req && req.email, phone: req && req.phone, name: req && req.customer_name });
 // Adds (or updates) a customer from an order or sign-up, keeping what the
 // owner already has. Phone and "OK to text" only come in when the customer
 // said it's OK to text.
 export function saveCustomerInto(d, req, groupId = "", useId = "") {
   if (!Array.isArray(d.customers)) d.customers = [];
   const em = String(req.email || "").trim().toLowerCase();
-  let c = em ? d.customers.find((x) => x && String(x.email || "").toLowerCase() === em) : null;
+  let c = findCustomer(d, req);
+  // Added by hand without an email: this is it now.
+  if (c && em && !String(c.email || "").trim()) c.email = em;
   if (!c) {
     c = { id: useId || newId(), name: String(req.customer_name || "").slice(0, 60), email: em, groups: [], note: req.kind === "join" ? "Joined from your order page" : "From an order", emailOk: true };
     d.customers.push(c);
@@ -924,6 +955,8 @@ function PackingList({ orders, farm, onReady, onEmailAll }) {
   const dates = [...new Set(dated.map((r) => r.pickup_date))].sort().slice(0, 6);
   const [day, setDay] = useState(dates[0] || "");
   const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [emailedDays, setEmailedDays] = useState([]);
   useEffect(() => { if (!dates.includes(day)) setDay(dates[0] || ""); }, [dates.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
   if (!dates.length) return null;
   const list = dated.filter((r) => r.pickup_date === day);
@@ -969,7 +1002,10 @@ function PackingList({ orders, farm, onReady, onEmailAll }) {
             <MessageSquare size={16} aria-hidden="true" />Text {texters.length === 1 ? texters[0].customer_name : `all ${texters.length}`}
           </a>
         )}
-        {notReady.length > 0 && <Button small kind="quiet" icon={<Mail size={16} />} onClick={() => onEmailAll(notReady)}>Mark all ready and email them</Button>}
+        {/* Everyone on the day, packed or not: ticking the checklist doesn't email. Once per day here. */}
+        {list.length > 0 && (emailedDays.includes(day)
+          ? <span style={{ alignSelf: "center", fontSize: 13, color: nl.soft }}>Emailed them it's ready.</span>
+          : <Button small kind="quiet" icon={<Mail size={16} />} disabled={sending} onClick={async () => { if (sending) return; setSending(true); try { await onEmailAll(list); setEmailedDays((x) => [...x, day]); } finally { setSending(false); } }}>{sending ? "Emailing…" : notReady.length ? "Mark all ready and email them" : "Email them it's ready"}</Button>)}
       </div>
       {texters.length > 1 && ios && <p style={{ margin: "-6px 14px 12px", fontSize: 12, color: nl.soft }}>On iPhone a group text shows everyone's number to each other.</p>}
     </Card>
@@ -978,6 +1014,7 @@ function PackingList({ orders, farm, onReady, onEmailAll }) {
 
 // "Email me when it's back", grouped by item, with one tap to tell them.
 function BackRequests({ rows, onSend, onDismiss }) {
+  const [sending, setSending] = useState("");
   const byItem = new Map();
   rows.forEach((r) => (r.items || []).forEach((i) => {
     if (!i || !i.id) return;
@@ -993,7 +1030,7 @@ function BackRequests({ rows, onSend, onDismiss }) {
           <div style={{ fontSize: 15, fontWeight: 600 }}>{g.name} <span style={{ fontWeight: 400, color: nl.soft }}>· {g.people.length} {g.people.length === 1 ? "person" : "people"}</span></div>
           <div style={{ fontSize: 13, color: nl.soft, overflowWrap: "anywhere" }}>{g.people.map((r) => r.customer_name).join(", ")}</div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <Button small icon={<Mail size={16} />} onClick={() => onSend(g)}>Email them it's back</Button>
+            <Button small icon={<Mail size={16} />} disabled={!!sending} onClick={async () => { if (sending) return; setSending(g.id); try { await onSend(g); } finally { setSending(""); } }}>{sending === g.id ? "Emailing…" : "Email them it's back"}</Button>
             <Button small kind="quiet" onClick={() => onDismiss(g)}>Clear</Button>
           </div>
         </div>
@@ -1004,6 +1041,9 @@ function BackRequests({ rows, onSend, onDismiss }) {
 
 // ---------------------------------------------------------------- cards
 function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, customer, onSaveCustomer, farm, plan, onStop }) {
+  // Remove deletes it for good: a second tap to be sure.
+  const [sure, setSure] = useState(false);
+  useEffect(() => { if (!sure) return undefined; const t = setTimeout(() => setSure(false), 4000); return () => clearTimeout(t); }, [sure]);
   const items = Array.isArray(req.items) ? req.items : [];
   const total = orderTotal(items);
   const when = orderPrettyDate(req.pickup_date);
@@ -1014,7 +1054,7 @@ function OrderCard({ req, onStep, onPickedUp, onRemove, inSales, onPaid, custome
       ? [{ label: "It's ready", primary: true, run: () => onStep(req, "ready") }, { label: "Picked up", run: () => onPickedUp(req) }]
       : req.status === "ready"
         ? [{ label: "Picked up", primary: true, run: () => onPickedUp(req) }]
-        : [...(req.status === "done" && !inSales ? [{ label: "Add to Sales", run: () => onPickedUp(req, true) }] : []), { label: "Remove", run: () => onRemove(req) }];
+        : [...(req.status === "done" && !inSales ? [{ label: "Add to Sales", run: () => onPickedUp(req, true) }] : []), { label: sure ? "Tap again to remove" : "Remove", run: () => (sure ? onRemove(req) : setSure(true)) }];
   const badge = { new: { tone: "ready", text: "New" }, accepted: { tone: "quiet", text: "Accepted" }, ready: { tone: "good", text: "Ready" }, done: { tone: "quiet", text: "Picked up" }, declined: { tone: "alert", text: "Declined" }, cancelled: { tone: "alert", text: "They cancelled" } }[req.status];
   const open = ["new", "accepted", "ready"].includes(req.status);
   return (
@@ -1124,9 +1164,11 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
     try { await callOrders("update", { id: req.id, status: ready ? "ready" : "accepted", notify: false }); } catch (e) { setToast(e.message); load(); }
   };
   const emailAllReady = async (list) => {
+    const ids = new Set(list.map((r) => r.id));
+    setReqs((all) => (all || []).map((r) => (ids.has(r.id) ? { ...r, status: "ready" } : r)));
     let n = 0;
     for (const r of list) { try { const x = await callOrders("update", { id: r.id, status: "ready", notify: true }); if (x.emailed) n++; } catch (_) { /* keep going */ } }
-    setToast(`Marked ${list.length} ready${n ? `, emailed ${n}` : ""}.`);
+    setToast(`${list.length === 1 ? "1 order" : `${list.length} orders`} ready${n ? `, emailed ${n}` : ""}.`);
     load();
   };
   const sendBack = async (g) => {
@@ -1238,7 +1280,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.fresh.length > 0 && (
         <Card>
           <CardHeader title="New requests" right={`${groups.fresh.length}`} />
-          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {groups.fresh.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {groups.joins.length > 0 && (
@@ -1263,13 +1305,13 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
       {groups.today.length > 0 && (
         <Card>
           <CardHeader title="Picking up today" right={`${groups.today.length}`} />
-          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {groups.today.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {groups.open.length > 0 && (
         <Card>
           <CardHeader title="To fill" right={`${groups.open.length}`} />
-          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {groups.open.map((r) => <OrderCard key={r.id} req={r} onStep={(q, s) => setStep({ req: q, s })} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
       {reqs && !groups.fresh.length && !groups.open.length && !groups.today.length && !groups.joins.length && (
@@ -1282,7 +1324,7 @@ export default function OrdersScreen({ data, update, user, onBack, onSignIn, onC
         <Card>
           <Row first title={`Past orders (${groups.past.length})`} sub="Picked up and declined, last 6 months" onClick={() => setShowPast((v) => !v)}
             trailing={<ChevronDown size={18} color={nl.soft} style={{ transform: showPast ? "rotate(180deg)" : "none" }} aria-hidden="true" />} />
-          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r.email)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
+          {showPast && groups.past.map((r) => <OrderCard key={r.id} req={r} onStep={() => {}} onPickedUp={(q, addOnly) => setPickup({ req: q, addOnly: !!addOnly })} onRemove={remove} inSales={orderInSales(data, saleKey(r))} onPaid={setPaid} customer={findCustomer(data, r)} onSaveCustomer={saveOne} farm={farm} plan={plan} onStop={stopRepeat} />)}
         </Card>
       )}
 

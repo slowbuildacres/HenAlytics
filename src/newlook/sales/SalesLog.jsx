@@ -13,7 +13,7 @@ import { Trash2, Search, Repeat, DollarSign } from "lucide-react";
 import { nl, font, type } from "../theme.js";
 import { Card, Chip, Button } from "../ui.jsx";
 import HobbyGlyph from "../HobbyGlyph.jsx";
-import { showUndo } from "../UndoBar.jsx";
+import { showUndo, undoable } from "../UndoBar.jsx";
 import { AddSaleModal, AddExpenseModal, collectAllSales, computeRevenue, removeSale, saleKind, expandRecurringExpenses } from "../../Sales.jsx";
 import { extractHobbyExpenses, extractBuildCosts } from "../../expenseFifo.js";
 import { fmtMoney } from "../../units.js";
@@ -72,13 +72,9 @@ export default function SalesLog({ data, update, onOpenHobby }) {
 
   const del = (r) => {
     if (r.kind === "sale") {
-      const before = JSON.parse(JSON.stringify({ sales: data.sales || [], eggs: (data.entries && data.entries.egg_layers) || null }));
-      update((d) => removeSale(d, r.sale.id));
-      showUndo(`Deleted ${fmtMoney(r.amount)} sale`, () => update((d) => {
-        d.sales = before.sales;
-        if (before.eggs) { d.entries = d.entries || {}; d.entries.egg_layers = before.eggs; }
-        return d;
-      }));
+      // Deleting a sale can also bring back a sold animal or put jars and
+      // tins back on their batch, so Undo puts back everything it changed.
+      undoable(update, `Deleted ${fmtMoney(r.amount)} sale`)((d) => removeSale(d, r.sale.id));
     } else if (r.expense && !r.recurring) {
       const ex = r.expense;
       update((d) => { d.expenses = (d.expenses || []).filter((x) => x.id !== ex.id); return d; });

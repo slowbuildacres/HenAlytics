@@ -161,7 +161,7 @@ function Modal({ open, onClose, title, children }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%",
           maxHeight: "90vh", overflow: "auto",
@@ -674,8 +674,9 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
       // Log entry for history
       if (!d.entries) d.entries = {};
       if (!Array.isArray(d.entries["canning"])) d.entries["canning"] = [];
+      const logId = newId();
       d.entries["canning"].push({
-        id: newId(),
+        id: logId,
         date: useData.date,
         action: useData.reason === "sale" ? "sale" : "use",
         reason: useData.reason,
@@ -708,6 +709,7 @@ export default function CanningPage({ hobby, data, update, setModal, nl = null }
           buyerId: null,
           created: Date.now(),
           fromCanningBatchId: useData.batchId,
+          fromCanningEntryId: logId,
         });
       }
       return d;

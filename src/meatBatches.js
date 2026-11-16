@@ -60,3 +60,65 @@ export function restorePastBatch(d, hobbyId, batchId) {
   }
   return d;
 }
+
+// ---- Butcher and flock-removal logs, kept in step -------------------------
+// A butcher log is written three times: the log itself, the batch's
+// butchered[] (same id, drives birds left) and the freezer log (its own id,
+// fromEntryId on new ones). Taking birds out of an egg flock also lowers the
+// flock's birdCount (tookFromFlock on new logs). Editing or deleting the log
+// from the Journal used to change only the log.
+function butcherRecord(h, entryId) {
+  for (const list of [h && h.currentBatches, h && h.archivedBatches]) {
+    for (const b of Array.isArray(list) ? list : []) {
+      const r = b && Array.isArray(b.butchered) ? b.butchered.find((x) => x && x.id === entryId) : null;
+      if (r) return { b, r };
+    }
+  }
+  return null;
+}
+function freezerIndex(d, entry) {
+  const log = Array.isArray(d.freezerLog) ? d.freezerLog : [];
+  let i = log.findIndex((f) => f && f.fromEntryId === entry.id);
+  // Older records have no link: the first one from the same batch or flock,
+  // day and count (one record, not every look-alike).
+  if (i < 0) i = log.findIndex((f) => f && !f.fromEntryId && f.date === entry.date && Number(f.count) === Number(entry.count)
+    && (entry.batchId ? f.batchId === entry.batchId : entry.flockId ? f.flockId === entry.flockId : !f.batchId && !f.flockId));
+  return i;
+}
+const flockOf = (d, hobbyId, flockId) => {
+  const h = (d.hobbies || []).find((x) => x && x.id === hobbyId);
+  return h && Array.isArray(h.flocks) ? h.flocks.find((f) => f && f.id === flockId) : null;
+};
+
+export function removeButcherLog(d, hobbyId, entry) {
+  if (!d || !entry) return;
+  const h = (d.hobbies || []).find((x) => x && x.id === hobbyId);
+  if (entry.action === "butcher") {
+    const hit = butcherRecord(h, entry.id);
+    if (hit) hit.b.butchered = hit.b.butchered.filter((x) => !(x && x.id === entry.id));
+    const i = freezerIndex(d, entry);
+    if (i >= 0) d.freezerLog.splice(i, 1);
+  }
+  const back = Number(entry.tookFromFlock) || 0;
+  const fl = back && entry.flockId ? flockOf(d, hobbyId, entry.flockId) : null;
+  if (fl) fl.birdCount = (Number(fl.birdCount) || 0) + back;
+}
+
+// `after` is the edited log; it gets tookFromFlock updated in place.
+export function syncButcherEdit(d, hobbyId, before, after) {
+  if (!d || !before || !after) return;
+  const n = Number(after.count) || 0;
+  if (before.action === "butcher") {
+    const h = (d.hobbies || []).find((x) => x && x.id === hobbyId);
+    const hit = butcherRecord(h, before.id);
+    if (hit) Object.assign(hit.r, { date: after.date, count: n, avgWeight: Number(after.avgWeight) || 0 });
+    const i = freezerIndex(d, before);
+    if (i >= 0) Object.assign(d.freezerLog[i], { date: after.date, count: n, avgWeight: Number(after.avgWeight) || 0, fromEntryId: before.id });
+  }
+  const took = Number(before.tookFromFlock) || 0;
+  if (took && before.flockId && (before.action === "butcher" || before.action === "death") && n !== took) {
+    const fl = flockOf(d, hobbyId, before.flockId);
+    if (fl) fl.birdCount = Math.max(0, (Number(fl.birdCount) || 0) + took - n);
+    after.tookFromFlock = n;
+  }
+}

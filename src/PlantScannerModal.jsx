@@ -377,7 +377,7 @@ export default function PlantScannerModal({ onClose }) {
       padding: "20px 16px", overflowY: "auto", fontFamily: FONT_BODY,
     }} onClick={onClose}>
       <style>{`@keyframes scan-spin { to { transform: rotate(360deg); } }`}</style>
-      <div onClick={(e) => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 12, maxWidth: 540, width: "100%",
         border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)",
       }}>

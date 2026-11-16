@@ -242,7 +242,10 @@ export function applyPantryDeductions(d, lines) {
     const current = Number(it.currentAmount) || 0;
     const newAmt = Math.max(0, current - inPurchaseUnits);
     it.currentAmount = newAmt;
-    deductions.push({ pantryId: it.id, amount: inPurchaseUnits, unit: it.purchaseUnit });
+    // Record what actually came off the shelf (stock stops at 0), so giving
+    // it back never makes flour you didn't have.
+    const taken = current - newAmt;
+    if (taken > 0) deductions.push({ pantryId: it.id, amount: taken, unit: it.purchaseUnit });
   }
   return deductions;
 }
@@ -251,9 +254,8 @@ export function applyPantryDeductions(d, lines) {
 // Used when a batch/bake that consumed pantry items is deleted, so the
 // stock numbers stay honest. `deductions` is the array stored on the batch
 // as `_pantryDeductions` (each row already in the pantry item's purchase
-// unit, so no conversion needed). Refund caps at the original purchase
-// amount — we never overshoot the bag's capacity, since the user may have
-// since edited purchaseAmount down.
+// unit, so no conversion needed). Deductions record only what actually came
+// off the shelf, so the refund adds exactly that back.
 //
 // Safe no-op when d, deductions, or d.pantry are missing/empty.
 export function applyPantryRefunds(d, deductions) {
@@ -265,9 +267,11 @@ export function applyPantryRefunds(d, deductions) {
     if (!it) continue;
     const amt = Number(ded.amount) || 0;
     if (amt <= 0) continue;
+    // Give back exactly what was taken. No cap at the bag size: a restock
+    // adds the new bag to what's left (10 lb + a 25 lb bag = 35), so a cap
+    // of 25 lost stock every time a bake or batch was edited or deleted.
     const current = Number(it.currentAmount) || 0;
-    const cap = Number(it.purchaseAmount) || Infinity;
-    it.currentAmount = Math.min(cap, current + amt);
+    it.currentAmount = current + amt;
   }
 }
 

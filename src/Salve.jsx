@@ -23,6 +23,7 @@
 import { legacyPalette, plainTitle } from "./newlook/legacyTheme.js";
 import { undoable } from "./newlook/UndoBar.jsx";
 import React, { useState } from "react";
+import { scoreOf, noteBulkDelete } from "./sync.js";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus } from "lucide-react";
@@ -105,7 +106,7 @@ function Modal({ open, onClose, title, children }) {
   if (!open) return null;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16 }}>
-      <div onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY }}>
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, maxWidth: 480, width: "100%", maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`, boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "16px 20px", borderBottom: `1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 22, color: palette.ink }}>{title}</div>
           <button onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", color: palette.ink, padding: 4 }}><X size={22} /></button>
@@ -197,9 +198,12 @@ function BatchModal({ batch, hobbyId, update, onClose }) {
 
   const remove = () => {
     undoable(update, "Deleted batch")(d => {
+      const before = scoreOf(d);
       const h = d.hobbies.find(x => x.id === hobbyId);
       if (h) h.batches = (h.batches || []).filter(b => b.id !== batch.id);
       if (Array.isArray(d.sales)) d.sales = d.sales.filter(s => s.batchId !== batch.id);
+      // A deliberate delete of many records: tell the sync guard (sync.js).
+      noteBulkDelete(d, before);
       return d;
     });
     onClose();

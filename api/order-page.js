@@ -30,7 +30,7 @@
 // ============================================================================
 
 import crypto from 'node:crypto';
-import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, buildCustomerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel } from '../src/orderShared.js';
+import { ORDER_TOKEN_RE, ORDER_LIMITS, cleanPageSettings, cleanRequest, buildOwnerEmail, buildCustomerEmail, esc, moneyText, itemLine, payOptions, payInstructions, orderTotal, payLabel, pickupDates, orderPrettyDate, WEEKDAYS, cleanDays, REPEAT_WEEKS, repeatLabel, plural, fromLine } from '../src/orderShared.js';
 import { planAll, sourceKey, takesPreorders, publicSupply, perUnit, estimateRequest, addDays, daysBetween, HORIZON } from '../src/orderSupply.js';
 
 const SITE = 'https://henalytics.com';
@@ -52,6 +52,17 @@ async function rest(path, opts = {}) {
 
 export function formSig(token, ts) {
   return crypto.createHmac('sha256', secret() || 'missing').update(`order|${token}|${ts}`).digest('base64url').slice(0, 32);
+}
+// One form, one order. A double tap, a page refresh after sending, or the
+// browser re-sending the form gives the same key, so the same order isn't
+// saved twice: the key is the order's status_token (unique in the table).
+// Built from the signed form time plus who sent it and exactly what they
+// filled in, so a changed order from the same form is a new order, and two
+// people can never share a key.
+export function orderOnceKey(token, ts, hash, values, qty) {
+  const q = Object.keys(qty).sort().filter((k) => Number(qty[k]) > 0).map((k) => [k, String(qty[k])]);
+  const what = JSON.stringify([values.email.trim().toLowerCase(), q, values.pickupDate, values.note, values.fulfil, values.address, values.repeat, values.payMethod]);
+  return crypto.createHmac('sha256', secret() || 'missing').update(`once|${token}|${ts}|${hash}|${what}`).digest('hex').slice(0, 32);
 }
 function ipHash(req, homesteadId) {
   const fwd = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim() || String(req.headers['x-real-ip'] || '') || 'unknown';
@@ -145,16 +156,6 @@ function shell(title, body) {
 <body><main>${body}<footer>Order requests by <a href="${SITE}">Henalytics</a>, the homestead app.</footer></main></body></html>`;
 }
 
-// "loaf" → "loaves", "dozen" stays "dozen", "jar" → "jars".
-function plural(unit, n) {
-  const u = String(unit || '').trim();
-  if (n === 1 || !u || /doz|dz/i.test(u) || /s$/i.test(u)) return u;
-  if (/[^aeiou]y$/i.test(u)) return `${u.slice(0, -1)}ies`;
-  if (/(af|lf)$/i.test(u)) return `${u.slice(0, -1)}ves`;
-  if (/(ch|sh|x)$/i.test(u)) return `${u}es`;
-  return `${u}s`;
-}
-
 // The page's ready-date estimate, worked out in the browser as people change
 // how many they want or the day. Same rules as readyForNew() in
 // src/orderSupply.js; the server works it out again when they send it.
@@ -244,7 +245,7 @@ ${op.paused ? `<div class="card"><h2>Not taking orders right now</h2><p class="s
   <label for="o-name">Your name</label><input id="o-name" type="text" name="name" required maxlength="${ORDER_LIMITS.name}" autocomplete="name" value="${v('name')}">
   <label for="o-email">Email</label><input id="o-email" type="email" name="email" required maxlength="${ORDER_LIMITS.email}" autocomplete="email" value="${v('email')}">
   <label for="o-phone">Phone (optional)</label><input id="o-phone" type="tel" name="phone" maxlength="${ORDER_LIMITS.phone}" autocomplete="tel" value="${v('phone')}">
-  <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></label>
+  <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"${values.textOk ? ' checked' : ''}> <span>It's OK to text me about my order <span class="soft" style="font-size:14px">(add your phone above)</span></span></label>
   ${fulfilHtml}
   ${dateHtml}
   ${standingHtml}
@@ -264,7 +265,8 @@ ${op.joinList ? `<form class="card" method="post" action="/o/${token}">
   <label class="check" style="margin-top:8px"><input type="checkbox" name="textOk" value="1"> Text me too when there's something fresh</label>
   <button class="btn alt" type="submit">Add me to the list</button>
 </form>` : ''}
-<script>document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;i.dispatchEvent(new Event('input',{bubbles:true}));});});});
+<script>document.querySelectorAll('form[method=post]').forEach(function(f){var sent=false,b=f.querySelector('button[type=submit]'),t=b&&b.textContent;f.addEventListener('submit',function(e){if(sent){e.preventDefault();return;}sent=true;setTimeout(function(){if(b){b.disabled=true;b.textContent='Sending\u2026';}},0);});window.addEventListener('pageshow',function(){sent=false;if(b){b.disabled=false;b.textContent=t;}});});
+document.querySelectorAll('.qty').forEach(function(q){var i=q.querySelector('input'),mx=Number(q.getAttribute('data-max'))||${ORDER_LIMITS.qty};q.querySelectorAll('button').forEach(function(b){b.addEventListener('click',function(){var n=Math.max(0,Math.min(mx,(parseInt(i.value,10)||0)+Number(b.getAttribute('data-d'))));i.value=n;i.dispatchEvent(new Event('input',{bubbles:true}));});});});
 (function(){var s=document.querySelector('select[data-days]');if(!s)return;var days=s.getAttribute('data-days').split(',').map(Number),keep=s.value,now=new Date(),out=[];for(var k=0;k<=${HORIZON}&&out.length<80;k++){var t=new Date(now.getFullYear(),now.getMonth(),now.getDate()+k);if(days.indexOf(t.getDay())>-1)out.push(t);}
 var p=function(n){return(n<10?'0':'')+n};s.innerHTML='<option value="">Pick a day</option>'+out.map(function(t){var v=t.getFullYear()+'-'+p(t.getMonth()+1)+'-'+p(t.getDate());return '<option value="'+v+'"'+(v===keep?' selected':'')+'>'+t.toLocaleDateString('en-US',{weekday:'short',month:'short',day:'numeric'})+'</option>'}).join('');})();
 ${hasSup ? estimateScript(sup, page.today || usToday(), farm) : ''}
@@ -357,7 +359,7 @@ ${est ? `<p class="est">${esc(est)} <span class="soft">An estimate; they'll conf
 ${open && row.owner_message ? `<p class="soft">From ${esc(page.farm)}: ${esc(row.owner_message)}</p>` : ''}
 ${open ? payBlock(page, row) : ''}
 ${open && row.repeat_weeks ? form('stop', 'Stop my standing order after this one', true) : ''}
-${open && row.status !== 'ready' ? form('cancel', 'Cancel this order', true) : ''}</div>
+${open && row.status !== 'ready' ? form('cancel', row.repeat_weeks ? 'Cancel the whole standing order' : 'Cancel this order', true) : ''}</div>
 ${pageLink ? `<p style="text-align:center"><a href="${pageLink}" style="color:inherit">${open ? 'Order something else' : 'Order again'} from ${esc(page.farm)}</a></p>` : ''}`;
   return shell(`${page.farm} · Your order`, body);
 }
@@ -378,7 +380,7 @@ function payBlock(page, row) {
   }
   const p = payInstructions({ method: row.pay_method, op: page.op, amount: total, farm: page.farm, delivery: row.fulfil === 'delivery' });
   if (!p) return none;
-  return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}</p>
+  return `<div class="paybox"><b>How to pay</b><p style="margin:6px 0 0">${esc(p.line)}${row.repeat_weeks ? " That's for this one; each time is paid on its own." : ''}</p>
 ${p.link ? `<a class="btn link" href="${esc(p.link)}" rel="noopener">${esc(p.button)}</a><p class="soft" style="margin:8px 0 0">Opens the app on your phone. If it doesn't, send it to the name above.</p>` : ''}
 ${['venmo', 'cashapp', 'paypal', 'zelle'].includes(row.pay_method) ? `<p class="soft" style="margin:8px 0 0">Check the name before you send. If ${esc(page.farm)} can't fill the order, they'll send your money back.</p>` : ''}
 <p class="soft" style="margin:8px 0 0;font-size:13px">Payments go straight to ${esc(page.farm)}. Henalytics doesn't process, hold or refund payments.</p></div>`;
@@ -416,7 +418,7 @@ async function confirmCustomer(page, token, row) {
     const r = await fetch('https://api.resend.com/emails', {
       method: 'POST',
       headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ from: `${page.farm.replace(/[<>"\r\n]/g, '')} <${from}>`, to: [row.email], ...(replyTo ? { reply_to: replyTo } : {}), subject: mail.subject, html: mail.html, text: `${mail.text}\n\nDidn't ask for this? You can ignore this email.` }),
+      body: JSON.stringify({ from: fromLine(page.farm, from), to: [row.email], ...(replyTo ? { reply_to: replyTo } : {}), subject: mail.subject, html: mail.html, text: `${mail.text}\n\nDidn't ask for this? You can ignore this email.` }),
     });
     if (r.ok) await rest(`order_requests?status_token=eq.${row.status_token}&homestead_id=eq.${page.id}`, { method: 'PATCH', headers: { Prefer: 'return=minimal' }, body: JSON.stringify({ emailed_at: new Date().toISOString() }) }).catch(() => {});
   } catch (e) { console.error('[order-page] confirm email', e); }
@@ -470,6 +472,7 @@ async function saveRow(row) {
   const post = (r) => rest('order_requests', { method: 'POST', body: JSON.stringify(r), headers: { Prefer: 'return=minimal' } });
   try { await post(row); return row; } catch (e) {
     const msg = String(e && e.message);
+    if (/23505|duplicate key/.test(msg)) throw e;
     if (!EXTRA_COLS.test(msg) && !/pay_method|text_ok/.test(msg)) throw e;
   }
   if (row.kind === 'notify') return null;
@@ -538,7 +541,7 @@ export default async function handler(req, res) {
       row = Array.isArray(found) ? found[0] : null;
     } catch (e) { console.error('[order-page] status', e); }
     if (!row) return send(404, shell('Order not found', `<h1>We couldn't find that order</h1><div class="card"><p>The link may be old. Ask ${esc(page.farm)}, or <a href="/o/${token}">send a new request</a>.</p></div>`));
-    if (req.method !== 'POST') return send(200, statusHtml(page, token, row));
+    if (req.method !== 'POST') return send(200, statusHtml(page, token, row, { notice: req.query && req.query.again === '1' ? 'You already sent this order, so it went in once. Here it is.' : '' }));
     if (!signed()) return send(400, statusHtml(page, token, row, { notice: 'Something went wrong. Please try again.' }));
     const open = ['new', 'accepted', 'ready'].includes(row.status);
     let notice = '';
@@ -569,23 +572,35 @@ export default async function handler(req, res) {
   const again = (msg, status = 400) => send(status, orderPageHtml(page, token, { error: msg, values }));
 
   // Bot checks: honeypot, signed form time.
-  if (!signed()) return again('Something went wrong with the form. Please try again.');
+  if (!signed()) return again(Number(b.ts) && Date.now() - Number(b.ts) > 86400000 ? 'This page was open a while, so please check your order and send it again.' : 'Something went wrong with the form. Please try again.');
   if ((Date.now() - Number(b.ts)) / 1000 < MIN_SECONDS) return again('That was quick! Please check your request and send it again.');
 
   const kind = b.kind === 'join' ? 'join' : 'order';
   if (kind === 'join' && !page.op.joinList) return again("This farm isn't taking email list sign-ups here.");
   if (kind === 'order' && page.op.paused) return again(page.op.pausedNote || "They're not taking orders right now. Check back soon!");
+  // Sent before? Show that order instead of saving it again (before the
+  // stock checks: the first one may have taken the last of it).
+  const hash = ipHash(req, page.id);
+  const anyQty = Object.values(qty).some((n) => Number(n) > 0);
+  const onceKey = kind === 'order' && (anyQty || String(values.note || '').trim()) ? orderOnceKey(token, String(b.ts), hash, values, qty) : '';
+  const already = () => { res.setHeader('Location', `/o/${token}?s=${onceKey}&again=1`); res.setHeader('Cache-Control', 'no-store'); return res.status(303).send(''); };
+  if (onceKey) {
+    const dup = await rest(`order_requests?select=id&homestead_id=eq.${page.id}&status_token=eq.${onceKey}&limit=1`).catch(() => null);
+    if (Array.isArray(dup) && dup.length) return already();
+  }
   // "Email me when it's back" only, with nothing to order: just the note.
   const backItems = kind === 'order' && page.op.notifyBack ? page.op.menu.filter((m) => backIds.includes(m.id) && m.available && Number.isFinite(m.left) && m.left <= 0).map((m) => ({ id: m.id, name: m.name })) : [];
-  const anyQty = Object.values(qty).some((n) => Number(n) > 0);
   const backOnly = backItems.length && !anyQty && !String(values.note || '').trim();
   // Something sold out between opening the page and sending it.
   const goneNow = kind === 'order' ? page.op.menu.filter((m) => Number(qty[m.id]) > 0 && Number.isFinite(m.left) && m.left <= 0).map((m) => m.name) : [];
+  // More than is left now (someone else ordered since the page opened): say
+  // so, rather than quietly sending fewer.
+  const tooMany = kind === 'order' && !backOnly ? page.op.menu.filter((m) => Number(qty[m.id]) > 0 && Number.isFinite(m.left) && m.left > 0 && Number(qty[m.id]) > m.left) : [];
+  if (tooMany.length) return again(`Only ${tooMany.map((m) => `${m.left} ${m.name}`).join(' and ')} left now. Change the amount and send it again.`);
   if (goneNow.length && !backOnly) return again(`Sorry, ${goneNow.join(' and ')} just sold out. ${page.op.notifyBack ? "Tick \"Email me when it's back\" to hear when there's more, or pick something else." : 'Pick something else, or check back soon.'}`);
   const cleaned = cleanRequest({ ...values, kind, qty, ...(backOnly ? { note: 'back' } : {}) }, page.op.menu, backOnly ? [] : payOptions(page.op).map((m) => m.id), { pickupDays: backOnly ? [] : page.op.pickupDays, today: new Date(Date.now() - 36 * 3600000).toISOString().slice(0, 10), delivery: page.op.delivery, standing: page.op.standing });
   if (cleaned.error) return again(cleaned.error);
 
-  const hash = ipHash(req, page.id);
   try {
     const hourAgo = new Date(Date.now() - 3600000).toISOString();
     const dayAgo = new Date(Date.now() - 86400000).toISOString();
@@ -595,16 +610,20 @@ export default async function handler(req, res) {
     if (all.length >= PER_HOMESTEAD_DAY) return again('This farm has a lot of requests today. Please try again tomorrow, or reach out to them directly.', 429);
 
     const who = { customer_name: cleaned.row.customer_name, email: cleaned.row.email, phone: cleaned.row.text_ok ? cleaned.row.phone : '', homestead_id: page.id, ip_hash: hash, ...(cleaned.row.text_ok ? { text_ok: true } : {}) };
+    // Already asked to join and waiting for the farm: don't add them twice.
+    const wantsJoin = kind === 'join' || (kind === 'order' && values.alsoJoin && page.op.joinList);
+    const onList = wantsJoin && who.email ? ((await rest(`order_requests?select=id&homestead_id=eq.${page.id}&kind=eq.join&status=eq.new&email=eq.${encodeURIComponent(who.email)}&limit=1`).catch(() => null)) || []).length > 0 : false;
+    if (kind === 'join' && onList) return send(200, thanksHtml(page, token, { ...who, kind: 'join' }));
     const rows = [];
     let main = null;
     if (!backOnly) {
       const accepted = kind === 'order' && page.op.autoAccept && coveredNow(page, cleaned.row);
-      main = { ...cleaned.row, homestead_id: page.id, ip_hash: hash, ...(kind === 'order' ? { status_token: crypto.randomBytes(16).toString('hex') } : {}), ...(accepted ? { status: 'accepted' } : {}) };
+      main = { ...cleaned.row, homestead_id: page.id, ip_hash: hash, ...(kind === 'order' ? { status_token: onceKey || crypto.randomBytes(16).toString('hex') } : {}), ...(accepted ? { status: 'accepted' } : {}) };
       rows.push(main);
     }
     if (backItems.length) rows.push({ ...who, kind: 'notify', items: backItems, note: '', pickup_date: null });
     const joined = kind === 'order' && values.alsoJoin && page.op.joinList;
-    if (joined) rows.push({ ...who, kind: 'join', items: [], note: '', pickup_date: null });
+    if (joined && !onList) rows.push({ ...who, kind: 'join', items: [], note: '', pickup_date: null });
     const saved = await saveRows(rows);
     const savedMain = main ? saved.find((r) => r.kind === main.kind) || main : null;
     const savedBack = saved.some((r) => r.kind === 'notify') ? backItems : [];
@@ -616,6 +635,8 @@ export default async function handler(req, res) {
     if (!main) return send(200, thanksHtml(page, token, { ...who, kind: 'notify' }, { backItems: savedBack }));
     return send(200, thanksHtml(page, token, savedMain, { joined, backItems: savedBack, accepted: savedMain.status === 'accepted' }));
   } catch (e) {
+    // The same form sent twice at once: the second one hits the unique key.
+    if (onceKey && /23505|duplicate key/.test(String(e && e.message))) return already();
     console.error('[order-page] save', e);
     return again("Your request didn't go through. Please try again in a minute.", 502);
   }

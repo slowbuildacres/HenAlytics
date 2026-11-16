@@ -217,7 +217,7 @@ export function SeedUseModal({ hobby, plantName, update, onClose }) {
   const any = Object.keys(picked).length > 0;
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 210, display: "flex", alignItems: "flex-end", justifyContent: "center", padding: 12 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 16, padding: 16, fontFamily: FONT_BODY, marginBottom: "env(safe-area-inset-bottom)" }}>
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ width: "100%", maxWidth: 460, background: palette.bg, border: `2px solid ${palette.ink}`, borderRadius: 16, padding: 16, fontFamily: FONT_BODY, marginBottom: "env(safe-area-inset-bottom)" }}>
         <div style={{ fontFamily: FONT_DISPLAY, fontSize: 21, color: palette.ink, marginBottom: 4 }}>🌾 From your seed box?</div>
         <div style={{ fontSize: 13, color: palette.inkSoft, marginBottom: 12, lineHeight: 1.45 }}>
           You planted {plantName}. How much is left in the packet? Your "To buy" list keeps itself up to date.

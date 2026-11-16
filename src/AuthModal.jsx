@@ -231,7 +231,7 @@ export default function AuthModal({ onClose, initialMode = "signin" }) {
       }}
     >
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
           maxHeight: "90vh", overflow: "auto",

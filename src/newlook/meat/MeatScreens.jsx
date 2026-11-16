@@ -20,7 +20,7 @@ import { Card, CardHeader, Row, Button, Sheet, Badge } from "../ui.jsx";
 import FeedCard from "../FeedCard.jsx";
 import { RangeChips, FactCarousel, factCard, AllNumbers } from "../StatsParts.jsx";
 import { batchAlive, batchAgeDays, batchTotals, restorePastBatch } from "../../meatBatches.js";
-import { fmtWeight, fmtMoney, platesLine } from "../../units.js";
+import { fmtWeight, fmtMoney, platesLine, perLbToInput, perWeightLabel } from "../../units.js";
 import { isoDay, prettyDay } from "../eggs/eggFacts.js";
 import { showUndo } from "../UndoBar.jsx";
 
@@ -190,7 +190,7 @@ export function MeatBatches({ hobby, data, update, setModal }) {
             const t = batchTotals(b, entries);
             return (
               <Row key={b.id} icon={ic(Snowflake)} title={`${b.name}${b.birdType && b.birdType !== "Chicken" ? ` · ${b.birdType}` : ""}`}
-                sub={[`${dayYear(b.startDate)}${b.endDate ? ` to ${prettyDay(b.endDate)}` : ""}`, t.butchered ? `${t.butchered} butchered` : null, t.lbs ? fmtWeight(t.lbs) : null, t.deaths ? `${t.deaths} lost` : null, t.lbs && t.cost ? `${fmtMoney(t.cost / t.lbs)}/lb` : null].filter(Boolean).join(" · ")}
+                sub={[`${dayYear(b.startDate)}${b.endDate ? ` to ${prettyDay(b.endDate)}` : ""}`, t.butchered ? `${t.butchered} butchered` : null, t.lbs ? fmtWeight(t.lbs) : null, t.deaths ? `${t.deaths} lost` : null, t.lbs && t.cost ? `${fmtMoney(perLbToInput(t.cost / t.lbs))}/${perWeightLabel()}` : null].filter(Boolean).join(" · ")}
                 trailing={<Button kind="link" icon={<RotateCcw size={15} />} onClick={() => restore(b)} aria-label={`Make ${b.name} active again`}>Restore</Button>} />
             );
           })}
@@ -258,7 +258,7 @@ export function MeatStats({ hobby, data, setModal, allNumbers }) {
           <CardHeader title="By batch" />
           {batches.slice().reverse().map(({ b, t }) => (
             <Row key={b.id} icon={ic(b.active ? Bird : Snowflake)} title={b.name}
-              sub={[t.butchered ? `${t.butchered} birds · ${fmtWeight(t.lbs)}` : `${t.start} started`, t.lbs && t.cost ? `${fmtMoney(t.cost / t.lbs)}/lb` : null, t.deaths ? `${t.deaths} lost` : null].filter(Boolean).join(" · ")}
+              sub={[t.butchered ? `${t.butchered} birds · ${fmtWeight(t.lbs)}` : `${t.start} started`, t.lbs && t.cost ? `${fmtMoney(perLbToInput(t.cost / t.lbs))}/${perWeightLabel()}` : null, t.deaths ? `${t.deaths} lost` : null].filter(Boolean).join(" · ")}
               trailing={b.active ? <Badge tone="good">Going</Badge> : null} />
           ))}
         </Card>

@@ -60,6 +60,15 @@ export default async function handler(req, res) {
     return respond(req, res, 400, 'Invalid or expired unsubscribe link.', false);
   }
 
+  // A plain visit only asks. Work email systems (Outlook Safe Links and the
+  // like) open every link in an email to scan it, which used to unsubscribe
+  // people who never clicked. The button (and mail apps' one-click
+  // List-Unsubscribe-Post) sends a POST, which does it.
+  if (req.method === 'GET') {
+    res.setHeader('Cache-Control', 'no-store');
+    return respond(req, res, 200, `Stop getting weekly chore emails at ${email}?`, false, null, true);
+  }
+
   try {
     const supabase = getSupabaseAdmin();
     await supabase.from('chore_email_unsubscribes').upsert({
@@ -100,10 +109,12 @@ function verifyToken(token) {
 }
 
 // ============================================================================
-// Render response — HTML for browser GETs, JSON for POSTs
+// Render response — HTML for browsers (a visit, or the page's button), JSON
+// for mail apps' one-click POST
 // ============================================================================
-function respond(req, res, status, message, success, email) {
-  if (req.method === 'POST') {
+function respond(req, res, status, message, success, email, ask = false) {
+  const browser = /text\/html/.test(String((req.headers && req.headers.accept) || ''));
+  if (req.method === 'POST' && !browser) {
     return res.status(status).json({ ok: success, message });
   }
   // HTML response for clicks from email clients
@@ -116,11 +127,16 @@ function respond(req, res, status, message, success, email) {
 <body style="margin:0; padding:0; background:#F4EDE0; font-family:-apple-system,BlinkMacSystemFont,sans-serif;">
   <div style="max-width:480px; margin:80px auto; padding:32px 24px; background:#FAF5EA; border:1.5px solid #2C181030; border-radius:12px; box-shadow:3px 4px 0 #2C181020;">
     <div style="font-family:Georgia, serif; font-size:28px; color:#2C1810; margin-bottom:16px; text-align:center;">
-      ${success ? '🌾 Unsubscribed' : 'Unable to unsubscribe'}
+      ${ask ? 'Unsubscribe?' : success ? '🌾 Unsubscribed' : 'Unable to unsubscribe'}
     </div>
     <div style="font-size:15px; color:#2C1810; line-height:1.6; text-align:center; margin-bottom:20px;">
       ${escapeHtml(message)}
     </div>
+    ${ask ? `
+    <form method="POST" style="text-align:center; margin:4px 0 8px;">
+      <button type="submit" style="padding:13px 22px; border-radius:10px; border:2px solid #2C1810; background:#2C1810; color:#F4EDE0; font-size:15px; font-weight:700; cursor:pointer;">Unsubscribe</button>
+    </form>
+    ` : ''}
     ${success && email ? `
     <div style="font-size:13px; color:#5C4530; text-align:center; line-height:1.5;">
       <strong>${escapeHtml(email)}</strong> will no longer receive weekly chore emails.<br><br>

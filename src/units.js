@@ -85,6 +85,13 @@ export function fmtTemp(f) {
 
 // Temperature fields: stored in Fahrenheit, typed and shown in the
 // person's unit.
+// Rain is stored in inches. Someone on °C reads it in mm (the weather edit
+// form already asks for mm then).
+export function fmtRain(inches, decimals = 2) {
+  const n = Number(inches) || 0;
+  if (_currentTempUnit === "C") return `${Math.round(n * 25.4)} mm`;
+  return `${Number(n.toFixed(decimals))}"`;
+}
 export function tempUnitLabel() { return _currentTempUnit === "C" ? "°C" : "°F"; }
 export function tempFromF(f) {
   if (f === null || f === undefined || f === "" || isNaN(Number(f))) return "";

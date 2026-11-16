@@ -24,7 +24,7 @@ const fmtDate = (iso) => (iso ? new Date(iso + "T00:00:00").toLocaleDateString(u
 function Sheet({ title, onClose, children }) {
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "max(16px, env(safe-area-inset-top)) 12px 24px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 520, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 520, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
         <div style={{ display: "flex", alignItems: "center", marginBottom: 12 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 23, flex: 1 }}>{title}</div>
           <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", fontSize: 24, color: palette.ink, padding: 4, lineHeight: 1 }}>×</button>

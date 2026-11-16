@@ -14,12 +14,14 @@
 // ============================================================================
 
 import { legacyPalette } from "./newlook/legacyTheme.js";
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { X, Plus, Edit3, Trash2, ChevronDown, User } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell } from "recharts";
 import { fmtMoney, fmtMoneyWhole, perLbToInput, perLbFromInput, perWeightLabel, lbsToInput, lbsFromInput, weightUnitLabel, fmtWeight, currencySymbol } from "./units.js";
 import { computeFifoStats, computeSimpleStats, resolveWindow, WINDOW_OPTIONS, extractHobbyExpenses, extractBuildCosts } from "./expenseFifo.js";
 import { askConfirm, askChoice } from "./newlook/ConfirmHost.jsx";
+import { unwindAnimalSale } from "./animalSale.js";
+import { restockForSale, unwindShelfSale } from "./saleLinks.js";
 
 const palette = legacyPalette({
   bg: "#F4EDE0", bgAlt: "#EBE0CC", ink: "#2C1810", inkSoft: "#5C4530",
@@ -82,6 +84,8 @@ const HOBBY_META = () => ({
   dog:           { label: "Dogs",          emoji: "🐕", color: palette.feather },
   cat:           { label: "Cats",          emoji: "🐈", color: palette.feather },
   maple_syrup:   { label: "Maple Syrup",   emoji: "🍁", color: palette.honey },
+  // Soap sales (from Soap Making) showed as "Other" without this.
+  soap:          { label: "Soap",          emoji: "🧼", color: palette.leaf },
   other:         { label: "Other",         emoji: "💰", color: palette.inkSoft },
 });
 
@@ -92,10 +96,16 @@ const EGG_TYPES = ["Chicken", "Duck", "Goose", "Turkey", "Quail", "Guinea", "Pea
 // original member; cow/goat/sheep/pig/dog/cat were added later and write the
 // SAME sale shape from their hobby pages. The Sales edit modal must treat them
 // identically to horses or the flat price is lost on edit (Bug 5).
-const LIVESTOCK_FLAT_TYPES = ["horse", "cow", "goat", "sheep", "pig", "dog", "cat"];
+// "rabbit" is a rabbit sold as an animal from the Rabbits page (meat sales
+// are "rabbits"); without it here, editing one dropped its name and type.
+const LIVESTOCK_FLAT_TYPES = ["horse", "cow", "goat", "sheep", "pig", "dog", "cat", "rabbit"];
+// Things sold by the piece from a hobby's shelf. Their pages log the sale;
+// the Sales edit form shows item, unit, how many and price for them.
+const SHELF_TYPES = ["tincture", "oil_infusion", "salve", "tea", "soap", "maple_syrup"];
+const SHELF_WORDS = { tincture: "Bottles", oil_infusion: "Bottles", salve: "Tins", tea: "Sachets or oz", soap: "Bars", maple_syrup: "Bottles or jars" };
 // Maps a flat-livestock sale's hobbyType to the matching hobby id, so the edit
 // modal can offer a "sell an existing animal" dropdown for any of them.
-const LIVESTOCK_HOBBY_ID = { horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats" };
+const LIVESTOCK_HOBBY_ID = { horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", rabbit: "rabbits" };
 const EGG_PURPOSES = ["Eating", "Hatching"];
 const HONEY_FORMS = ["Raw comb", "Extracted", "Creamed", "Infused"];
 const HONEY_CONTAINERS = ["Half-pint jar (1 cup)", "Pint jar (2 cups)", "Quart jar", "Half-gallon", "Gallon", "Bulk lb"];
@@ -234,7 +244,8 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   // Shared fields
   const [date, setDate] = useState(existingSale?.date || todayStr());
   const [qty, setQty] = useState(existingSale?.qty != null ? String(existingSale.qty) : "");
-  const [note, setNote] = useState(existingSale?.note || "");
+  // Sales logged on a hobby page keep their note in `notes`.
+  const [note, setNote] = useState(existingSale?.note || existingSale?.notes || "");
   // Tip — extra a customer leaves beyond the item price. Optional, applies to
   // any sale type. Kept separate from revenue so it shows as its own line.
   const [tip, setTip] = useState(existingSale?.tip != null ? String(existingSale.tip) : "");
@@ -249,7 +260,17 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const [eggTypeCustom, setEggTypeCustom] = useState(existingSale?.eggTypeCustom || "");
   const [eggPurpose, setEggPurpose] = useState(existingSale?.eggPurpose || "Eating");
   const [unit, setUnit] = useState(existingSale?.unit || "dozen");
-  const [pricePerUnit, setPricePerUnit] = useState(existingSale?.pricePerUnit != null ? String(existingSale.pricePerUnit) : "");
+  // Imported sales and some older ones carry only a total: show the price
+  // it works out to, rather than a blank that would save the sale at $0.
+  const derivedPrice = (() => {
+    const s = existingSale;
+    if (!s || s.pricePerUnit != null || s.pricingMethod === "per_lb" || s.pricingMethod === "flat") return "";
+    const q = Number(s.qty) || 0; const r = Number(s.totalRevenue) || 0;
+    if (!(q > 0 && r > 0)) return "";
+    const per = s.hobbyType === "eggs" && String(s.unit || "eggs") === "eggs" ? q / 12 : q;
+    return String(Math.round((r / per) * 100) / 100);
+  })();
+  const [pricePerUnit, setPricePerUnit] = useState(existingSale?.pricePerUnit != null ? String(existingSale.pricePerUnit) : derivedPrice);
 
   // Honey
   const [honeyForm, setHoneyForm] = useState(existingSale?.honeyForm || "Extracted");
@@ -269,8 +290,16 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const [gardenUnit, setGardenUnit] = useState(existingSale?.gardenUnit || "lbs");
 
   // Other
-  const [otherItem, setOtherItem] = useState(existingSale?.otherItem || "");
-  const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : "");
+  // An animal sale keeps sold / leased / rehomed in saleType (the form uses
+  // otherItem for it); reading it here keeps a lease a lease on edit.
+  const [otherItem, setOtherItem] = useState(existingSale?.otherItem || (existingSale?.hobbyType === "other" ? existingSale?.crop || "" : LIVESTOCK_FLAT_TYPES.includes(existingSale?.hobbyType) ? existingSale?.saleType || "" : ""));
+  const [flatPrice, setFlatPrice] = useState(existingSale?.flatPrice != null ? String(existingSale.flatPrice) : (existingSale?.hobbyType === "other" && existingSale?.totalRevenue != null ? String(existingSale.totalRevenue) : ""));
+
+  // What the money fields said when the form opened. If they're unchanged on
+  // save (only the date, buyer or note was fixed), the sale keeps its total.
+  const moneyNow = () => JSON.stringify([qty, pricePerUnit, flatPrice, pricePerLb, avgWeightLbs, unit, pricingMethod]);
+  const moneyAtOpen = useRef(null);
+  if (moneyAtOpen.current == null) moneyAtOpen.current = moneyNow();
 
   // Incubator / chicks (brooder sales). birdType + brooderBatchName are
   // free-text so the user can edit if needed; the underlying brooder batch
@@ -302,10 +331,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
     if (hobbyType === "baking") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "canning") return q * (Number(pricePerUnit) || 0);
     // Herbalism types follow qty × price pattern (bottles, tins, sachets, or oz)
-    if (hobbyType === "tincture" || hobbyType === "oil_infusion" ||
-        hobbyType === "salve" || hobbyType === "tea") {
-      return q * (Number(pricePerUnit) || 0);
-    }
+    if (SHELF_TYPES.includes(hobbyType)) return q * (Number(pricePerUnit) || 0);
     if (LIVESTOCK_FLAT_TYPES.includes(hobbyType)) return Number(pricePerUnit) || 0;
     if (hobbyType === "garden") return q * (Number(pricePerUnit) || 0);
     if (hobbyType === "incubator") return q * (Number(pricePerUnit) || 0);
@@ -339,11 +365,18 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
   const save = () => {
     let sale = {
       id: existingSale?.id || newId(),
-      date, hobbyType, qty: Number(qty) || 0,
+      // A cleared date box saved a sale with no date, which no month, year
+      // report or chart counts. Today instead.
+      date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : todayStr(), hobbyType, qty: Number(qty) || 0,
       note, buyerId: buyerId || null,
       tip: Number(tip) || 0,
       created: existingSale?.created || Date.now(),
     };
+    // Editing keeps where the sale came from: an order (so the order still
+    // shows "In Sales" and isn't added twice), a farm stand item, how they paid.
+    // The same goes for the batch it came off (salve tins, canning jars,
+    // soap bars count their sales by batchId), its hobby, and an import.
+    ["fromOrder", "fromOrderItem", "fromFarmstandItem", "payMethod", "batchId", "hobbyId", "fromCanningBatchId", "fromCanningEntryId", "fromBakeId", "importId", "flockId", "buyer", "customerName"].forEach((k) => { if (existingSale && existingSale[k] != null && existingSale[k] !== "") sale[k] = existingSale[k]; });
 
     if (hobbyType === "eggs") {
       sale = { ...sale, eggType, eggPurpose, unit, pricePerUnit: Number(pricePerUnit) || 0 };
@@ -402,6 +435,13 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       // travels with the sale so we can archive that animal on save.
       sale = { ...sale, crop, saleType: otherItem || "sold", pricePerUnit: saleRev, totalRevenue: saleRev };
       if (selectedAnimalId) sale.animalId = selectedAnimalId;
+    } else if (SHELF_TYPES.includes(hobbyType)) {
+      // Salve tins, tincture and oil bottles, tea, soap bars, syrup: what it
+      // was, the unit, how many and the price each. The unit (tin size,
+      // "bars", "oz" for loose tea) isn't on the form, so it stays as logged.
+      sale = { ...sale, crop, pricePerUnit: Number(pricePerUnit) || 0 };
+      if (existingSale?.gardenUnit != null) sale.gardenUnit = existingSale.gardenUnit;
+      if (existingSale?.unit != null) sale.unit = existingSale.unit;
     } else if (hobbyType === "garden") {
       sale = { ...sale, crop, gardenUnit, pricePerUnit: Number(pricePerUnit) || 0 };
     } else if (hobbyType === "incubator") {
@@ -422,16 +462,21 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       sale = { ...sale, otherItem, flatPrice: Number(flatPrice) || 0 };
     }
 
-    sale.totalRevenue = previewRevenue;
+    sale.totalRevenue = isEdit && existingSale.totalRevenue != null && moneyNow() === moneyAtOpen.current
+      ? Number(existingSale.totalRevenue) || 0
+      : previewRevenue;
 
     // If new buyer name entered, create customer first
     let finalBuyerId = buyerId;
     if (showNewBuyer && newBuyerName.trim()) {
-      finalBuyerId = newId();
+      // Someone already saved under that name (from an order, say): them.
+      const nm = newBuyerName.trim().replace(/\s+/g, " ");
+      const same = (customers || []).find((c) => c && String(c.name || "").trim().replace(/\s+/g, " ").toLowerCase() === nm.toLowerCase());
+      finalBuyerId = same ? same.id : newId();
       sale.buyerId = finalBuyerId;
-      update(d => {
+      if (!same) update(d => {
         d.customers = d.customers || [];
-        d.customers.push({ id: finalBuyerId, name: newBuyerName.trim(), note: "" });
+        d.customers.push({ id: finalBuyerId, name: nm, note: "" });
         return d;
       });
     }
@@ -440,6 +485,8 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       d.sales = d.sales || [];
       if (isEdit) {
         const idx = d.sales.findIndex(s => s.id === sale.id);
+        // Selling more or fewer off a batch moves its shelf count to match.
+        if (idx !== -1 && d.sales[idx].hobbyType === sale.hobbyType) restockForSale(d, d.sales[idx], (Number(d.sales[idx].qty) || 0) - (Number(sale.qty) || 0));
         if (idx !== -1) d.sales[idx] = sale;
         else d.sales.push(sale);
       } else {
@@ -449,7 +496,10 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
       // source so the editable copy in `d.sales` is the only version visible.
       // Without this, the entry would keep appearing alongside the edited copy
       // every time the user reopens the Sales tab.
-      if (isEdit && existingSale?.isLegacy && d.entries?.["egg_layers"]) {
+      // A Sold Eggs log's copy (migratedFromEntries) is the same: once edited
+      // here, Sales holds the numbers, so the log goes and eggs on hand
+      // count this sale instead of the old log.
+      if (isEdit && (existingSale?.isLegacy || existingSale?.migratedFromEntries) && d.entries?.["egg_layers"]) {
         d.entries["egg_layers"] = d.entries["egg_layers"].filter(
           e => !(e.action === "sold_eggs" && e.id === sale.id)
         );
@@ -464,7 +514,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
           const a = (livestockHobby.animals || []).find(x => x.id === selectedAnimalId);
           if (a && !a.archived) {
             a.archived = true;
-            const verb = (otherItem || "sold") === "leased" ? "Leased" : "Sold";
+            const verb = (otherItem || "sold") === "leased" ? "Leased" : otherItem === "rehomed" ? "Rehomed" : "Sold";
             const priceStr = Number(pricePerUnit) > 0 ? ` for ${fmtMoney(Number(pricePerUnit))}` : "";
             a.archivedReason = `${verb}${priceStr}`;
             a.archivedDate = date;
@@ -498,7 +548,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit sale" : "Log a sale"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -880,6 +930,7 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                   <select style={inputStyle()} value={otherItem || "sold"} onChange={e=>setOtherItem(e.target.value)}>
                     <option value="sold">Sold</option>
                     <option value="leased">Leased</option>
+                    <option value="rehomed">Rehomed</option>
                   </select>
                 </Field>
                 <Field label="Sale / lease price">
@@ -917,6 +968,25 @@ export function AddSaleModal({ data, update, onClose, existingSale }) {
                     Linked to a brooder batch — edits sync to the Incubator page.
                   </div>
                 )}
+              </>}
+
+              {/* Salve, tincture, oil, tea, soap, syrup */}
+              {SHELF_TYPES.includes(hobbyType) && <>
+                <Field label="Item">
+                  <input style={inputStyle()} value={crop} onChange={e=>setCrop(e.target.value)} placeholder="Calendula salve, Elderberry tincture..." />
+                </Field>
+                <div style={{ display:"flex",gap:12,flexWrap:"wrap" }}>
+                  <div style={{ flex:1,minWidth:80 }}>
+                    <Field label={`${SHELF_WORDS[hobbyType]} sold`}>
+                      <input type="number" min={0} step="any" style={inputStyle()} value={qty} onChange={e=>setQty(e.target.value)} placeholder="0" />
+                    </Field>
+                  </div>
+                  <div style={{ flex:1 }}>
+                    <Field label="Price each">
+                      <input type="number" min={0} step="0.01" style={inputStyle()} value={pricePerUnit} onChange={e=>setPricePerUnit(e.target.value)} placeholder={`${currencySymbol()}0.00`} />
+                    </Field>
+                  </div>
+                </div>
               </>}
 
               {/* Other */}
@@ -996,7 +1066,7 @@ function CustomerModal({ customer, onSave, onClose }) {
   const phoneOk = phone.replace(/[^0-9]/g, "").length >= 7;
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:400,width:"100%",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:20,color:palette.ink }}>{customer ? "Edit customer" : "Add customer"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink }}><X size={20}/></button>
@@ -1110,7 +1180,7 @@ function SaleRow({ sale, customers, onEdit, onDelete }) {
              sale.hobbyType === "pig") {
     // Flat-livestock detail: animal name + transaction type. cat/dog have
     // their own (identical-shaped) branch just below for the species label.
-    const lsLabel = { horse: "Horse", cow: "Cow", goat: "Goat", sheep: "Sheep", pig: "Pig" }[sale.hobbyType] || "Animal";
+    const lsLabel = { horse: "Horse", cow: "Cow", goat: "Goat", sheep: "Sheep", pig: "Pig", dog: "Dog", cat: "Cat", rabbit: "Rabbit" }[sale.hobbyType] || "Animal";
     detail = `${sale.crop || lsLabel} · ${sale.saleType || "sold"}`;
   } else if (sale.hobbyType === "incubator") {
     const birdLabel = sale.birdType ? sale.birdType.toLowerCase() : "chick";
@@ -1254,6 +1324,8 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
     const n = parseFloat(amount);
     if (!n || n <= 0) { setError("Enter a valid amount."); return null; }
     if (!category.trim()) { setError("Pick or type a category."); return null; }
+    // No date: no month, report or repeat schedule would count it.
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) { setError("Pick a date."); return null; }
     // Only persist flockId if the chosen hobby actually has that flock — guards
     // against a stale selection if the hobby was changed after picking a flock.
     const selHobby = visibleHobbies.find(h => h.id === hobbyId);
@@ -1353,7 +1425,7 @@ export function AddExpenseModal({ data, update, onClose, existingExpense, occurr
 
   return (
     <div onClick={onClose} style={{ position:"fixed",inset:0,background:"rgba(44,24,16,0.5)",display:"flex",alignItems:"center",justifyContent:"center",zIndex:100,padding:16 }}>
-      <div onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
+      <div role="dialog" aria-modal="true" onClick={e=>e.stopPropagation()} style={{ background:palette.bg,borderRadius:16,maxWidth:480,width:"100%",maxHeight:"92vh",overflow:"auto",border:`2px solid ${palette.ink}`,boxShadow:"0 12px 32px rgba(0,0,0,0.22)",fontFamily:FONT_BODY }}>
         <div style={{ display:"flex",justifyContent:"space-between",alignItems:"center",padding:"16px 20px",borderBottom:`1.5px solid ${palette.line}` }}>
           <div style={{ fontFamily:FONT_DISPLAY,fontSize:22,color:palette.ink }}>{isEdit ? "Edit expense" : "Log expense"}</div>
           <button onClick={onClose} aria-label="Close" style={{ background:"none",border:"none",cursor:"pointer",color:palette.ink,padding:4 }}><X size={22}/></button>
@@ -1492,6 +1564,10 @@ export function removeSale(d, id) {
       e => !(e.action === "sold_eggs" && e.id === id)
     );
   }
+  // An animal sale: bring the animal back and drop its "sale" log entry.
+  unwindAnimalSale(d, id);
+  // A sale off a batch (salve, tincture, oil, tea, canning): stock goes back.
+  unwindShelfSale(d, target);
   if (target?.brooderBatchId && target?.dispositionId) {
     const incHobby = (d.hobbies || []).find(h => h.id === target.hobbyId);
     const batch = incHobby?.brooderBatches?.find(b => b.id === target.brooderBatchId);
@@ -1966,7 +2042,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
           ? allExpensesExpanded
           : allExpensesExpanded.filter(ex => {
               // filterType is a hobbyType (e.g. "eggs"); map back to hobbyId for expense matching.
-              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
+              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea", rabbit: "rabbits", soap: "soap" };
               return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
             });
 
@@ -2008,7 +2084,7 @@ export default function SalesPage({ data, update, onEmailCustomers, onPurchaseHi
         const filteredEntrySourced = filterType === "all"
           ? entrySourcedExpenses
           : entrySourcedExpenses.filter(ex => {
-              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea" };
+              const SALE_TO_HOBBY_LOCAL = { eggs: "egg_layers", honey: "bees", meat_chickens: "meat_chickens", rabbits: "rabbits", garden: "garden", farmstand: "farmstand", sourdough: "sourdough", baking: "baking", canning: "canning", incubator: "incubator", horse: "horses", cow: "cows", goat: "goats", sheep: "sheep", pig: "pigs", dog: "dogs", cat: "cats", maple_syrup: "maple_syrup", tincture: "tincture", oil_infusion: "oil_infusion", salve: "salve", tea: "tea", rabbit: "rabbits", soap: "soap" };
               return ex.hobbyId === SALE_TO_HOBBY_LOCAL[filterType];
             });
 
@@ -2397,11 +2473,14 @@ export function buildYearReport(data, year, now = new Date()) {
     return h ? (h.name || h.type) : (id ? String(id) : "General");
   };
 
+  // Sales name their buyer by buyerId (customerName is only on chick sales),
+  // so the report's Customer column was blank for nearly every sale.
+  const who = new Map((data.customers || []).filter((c) => c && c.id).map((c) => [c.id, c.name || ""]));
   const sales = collectAllSales(data).filter(s => inYear(s.date)).map(s => ({
     date: s.date,
     hobby: (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
     item: s.item || s.eggType || s.crop || s.saleForm || s.birdType || (HOBBY_META()[s.hobbyType] || HOBBY_META().other).label,
-    customer: s.customerName || "",
+    customer: (s.buyerId && who.get(s.buyerId)) || s.customerName || s.buyer || "",
     qty: s.qty != null ? `${s.qty}${s.unit ? ` ${s.unit}` : ""}` : "",
     amount: Math.round(computeRevenue(s) * 100) / 100,
     tip: Number(s.tip) || 0,
@@ -2458,7 +2537,9 @@ export function buildYearReport(data, year, now = new Date()) {
 export const YEAR_REPORT_NOTE = "This report is here to help you run and grow your homestead. It isn't tax advice, and Henalytics isn't made by an accountant. If you're filing taxes, go over these numbers with a tax professional.";
 
 export function yearReportCsv(r) {
-  const esc = (v) => { const s = v == null ? "" : String(v); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+  // A customer name or note starting with = + - @ would run as a formula in
+  // a spreadsheet; amounts like -12.00 stay numbers.
+  const esc = (v) => { let s = v == null ? "" : String(v); if (/^[=+\-@\t\r]/.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s; return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
   const rows = [["Type", "Date", "Hobby", "Item / Category", "Customer", "Quantity", "Amount", "Tip", "Note"]];
   r.sales.forEach(s => rows.push(["Sale", s.date, s.hobby, s.item, s.customer, s.qty, s.amount.toFixed(2), s.tip ? s.tip.toFixed(2) : "", s.note]));
   r.expensesList.forEach(e => rows.push(["Expense", e.date, e.hobby, e.category, "", "", (-e.amount).toFixed(2), "", e.note]));
@@ -2620,7 +2701,7 @@ export function YearEndReportModal({ data, onClose }) {
 
   return (
     <div onClick={onClose} style={{ position: "fixed", inset: 0, background: "rgba(44,24,16,0.55)", zIndex: 200, display: "flex", alignItems: "flex-start", justifyContent: "center", overflowY: "auto", padding: "max(16px, env(safe-area-inset-top)) 12px 24px" }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 520, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
+      <div role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()} style={{ background: palette.bg, borderRadius: 16, border: `2px solid ${palette.ink}`, width: "100%", maxWidth: 520, padding: 16, fontFamily: FONT_BODY, color: palette.ink }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 10 }}>
           <div style={{ fontFamily: FONT_DISPLAY, fontSize: 24, flex: 1 }}>{r.year} year-end report</div>
           <button type="button" onClick={onClose} aria-label="Close" style={{ background: "none", border: "none", cursor: "pointer", padding: 4, color: palette.ink }}><X size={20} /></button>

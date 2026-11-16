@@ -177,7 +177,7 @@ function RegionModal({ initial, subsData, data, onClose, onSaved }) {
       display: "flex", alignItems: "flex-end", justifyContent: "center",
     }} onClick={onClose}>
       <div
-        onClick={(e) => e.stopPropagation()}
+        role="dialog" aria-modal="true" onClick={(e) => e.stopPropagation()}
         style={{
           width: "100%", maxWidth: 480, maxHeight: "88vh", overflowY: "auto",
           background: palette.bg, borderRadius: "18px 18px 0 0", padding: 18,

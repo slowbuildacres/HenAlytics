@@ -31,6 +31,7 @@ import { undoable } from "./newlook/UndoBar.jsx";
 import { Sheet, Button as NlButton } from "./newlook/ui.jsx";
 import { font as NL_FONT } from "./newlook/theme.js";
 import React, { useState, useMemo } from "react";
+import { scoreOf, noteBulkDelete } from "./sync.js";
 // NEW_LOOK (3.0): shared kitchen & craft screens.
 import { PantryView } from "./newlook/pantry/PantryScreens.jsx";
 import { Hammer as NlHammer, Receipt as NlReceipt, NotebookPen as NlNote, Plus as NlPlus, ShoppingBasket as NlBasket } from "lucide-react";
@@ -108,7 +109,7 @@ function Modal({ open, onClose, title, children }) {
       position: "fixed", inset: 0, background: "rgba(44,24,16,0.5)",
       display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, padding: 16,
     }}>
-      <div onClick={e => e.stopPropagation()} style={{
+      <div role="dialog" aria-modal="true" aria-label={typeof title === "string" ? title : undefined} onClick={e => e.stopPropagation()} style={{
         background: palette.bg, borderRadius: 16, maxWidth: 460, width: "100%",
         maxHeight: "92vh", overflow: "auto", border: `2px solid ${palette.ink}`,
         boxShadow: "0 12px 32px rgba(0,0,0,0.22)", fontFamily: FONT_BODY,
@@ -140,7 +141,8 @@ function SeasonModal({ season, onSave, onDelete, onClose }) {
     onSave({
       id: season?.id || newId(),
       name: name.trim(),
-      year: parseInt(year) || new Date().getFullYear(),
+      // A typo like -5 or 202 filed the season under that "year".
+      year: (parseInt(year) >= 1900 && parseInt(year) <= 2100) ? parseInt(year) : new Date().getFullYear(),
       startDate,
       endDate: endDate || null,
       totalTaps: parseInt(totalTaps) || 0,
@@ -320,12 +322,15 @@ export default function MapleSyrupPage({ hobby, data, update, setModal, nl = nul
     undoable(update, "Deleted season")(d => {
       const h = d.hobbies.find(x => x.id === hobby.id);
       if (!h) return d;
+      const before = scoreOf(d);
       h.seasons = (h.seasons || []).filter(s => s.id !== id);
       // Also remove entries tagged to this season so we don't keep orphans.
       if (Array.isArray(d.entries[hobby.id])) {
         d.entries[hobby.id] = d.entries[hobby.id].filter(e => e.seasonId !== id);
       }
       if (h.currentSeasonId === id) h.currentSeasonId = (h.seasons[0] || {}).id || null;
+      // Its logs going with it is on purpose: tell the sync guard (sync.js).
+      noteBulkDelete(d, before);
       return d;
     });
   };

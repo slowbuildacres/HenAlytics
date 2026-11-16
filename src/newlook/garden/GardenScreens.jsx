@@ -23,7 +23,7 @@ import { Card, CardHeader, Row, Badge, Button, Sheet } from "../ui.jsx";
 import { winterSeason, WINTER_ITEMS } from "../../winterChecklist.js";
 import { getWeeklyPrecip } from "../../weather.js";
 import { needsBuying, seedViability } from "../../SeedInventory.jsx";
-import { fmtMoney, fmtWeightWhole } from "../../units.js";
+import { fmtMoney, fmtWeightWhole, fmtRain } from "../../units.js";
 import { isoDay, parseDay, prettyDay, DAY } from "../eggs/eggFacts.js";
 import { annualRows, perennialRows, seedStartRows, plantingWindows, seasonHarvests, harvestByCrop, gardenFunFacts } from "./gardenData.js";
 import { computeHarvestValue } from "../../gardenValue.js";
@@ -188,8 +188,8 @@ export function GardenToday({ hobby, data, update, setModal, frost, onPlanAnnual
             title={`Frost tonight, ${frost.lowText}`} sub={frost.crops && frost.crops.length ? `Cover ${frost.crops.join(", ").toLowerCase()}` : "Cover anything tender"} />
         )}
         <Row first={!frost} icon={<Ico I={Droplet} />}
-          title={rainIn != null && rainIn >= 0.75 ? `${rainIn}" of rain this week` : days == null ? "No watering logged yet" : days === 0 ? "Watered today" : `Watered ${days} day${days === 1 ? "" : "s"} ago`}
-          sub={rainIn != null && rainIn >= 0.75 ? "Your beds probably don't need watering today." : rainIn != null ? (rainIn > 0 ? `${rainIn}" of rain in the last 7 days` : "No rain in the last 7 days") : (loc ? null : "Add your location for rain and frost alerts")}
+          title={rainIn != null && rainIn >= 0.75 ? `${fmtRain(rainIn)} of rain this week` : days == null ? "No watering logged yet" : days === 0 ? "Watered today" : `Watered ${days} day${days === 1 ? "" : "s"} ago`}
+          sub={rainIn != null && rainIn >= 0.75 ? "Your beds probably don't need watering today." : rainIn != null ? (rainIn > 0 ? `${fmtRain(rainIn)} of rain in the last 7 days` : "No rain in the last 7 days") : (loc ? null : "Add your location for rain and frost alerts")}
           trailing={days === 0 ? null : <button type="button" onClick={() => log("watered")} style={{ minHeight: 36, padding: "0 12px", borderRadius: 999, border: `1.5px solid ${nl.good}`, background: "transparent", color: nl.goodInk, font: `600 13px ${font.body}`, cursor: "pointer" }}>Watered</button>} />
       </Card>
 

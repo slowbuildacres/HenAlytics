@@ -19,6 +19,7 @@ import { Card, Row, Button, Sheet } from "./newlook/ui.jsx";
 import { computeRevenue } from "./Sales.jsx";
 import { fmtMoney } from "./units.js";
 import TextCustomersSheet, { textable } from "./TextCustomers.jsx";
+import { matchCustomer, findDuplicates, mergeCustomers } from "./customerMatch.js";
 
 const newId = () => Math.random().toString(36).slice(2, 10);
 const EMAIL_RE = /^[^\s@<>"]+@[^\s@<>"]+\.[^\s@<>"]+$/;
@@ -72,7 +73,7 @@ function ListChips({ lists, sel, onToggle }) {
 }
 
 // ---------------------------------------------------------------- one customer
-function CustomerSheet({ customer, data, update, history, onClose }) {
+function CustomerSheet({ customer, data, update, history, onClose, onOpen }) {
   const isNew = !customer;
   const lists = Array.isArray(data.customerGroups) ? data.customerGroups.filter((g) => g && g.id) : [];
   const [name, setName] = useState(customer?.name || "");
@@ -88,6 +89,8 @@ function CustomerSheet({ customer, data, update, history, onClose }) {
   const dupe = em && (data.customers || []).some((c) => c && c.id !== customer?.id && String(c.email || "").toLowerCase() === em);
   const phoneOk = digits(phone).length >= 7;
   const ok = name.trim() && !badEmail && !dupe;
+  // Adding someone who's already here (from an order, a sale, a paste).
+  const already = isNew && name.trim() && !dupe ? matchCustomer(data.customers, { name, email: em, phone }) : null;
   const h = customer ? history[customer.id] : null;
   const save = () => {
     if (!ok) return;
@@ -112,6 +115,12 @@ function CustomerSheet({ customer, data, update, history, onClose }) {
       <input id="cu-name" style={inputStyle} value={name} onChange={(e) => setName(e.target.value)} placeholder="Jane Smith" autoFocus={isNew} />
       <label style={labelStyle} htmlFor="cu-email">Email</label>
       <input id="cu-email" style={{ ...inputStyle, borderColor: badEmail || dupe ? nl.alert : nl.line }} type="email" inputMode="email" autoCapitalize="none" value={email} onChange={(e) => setEmail(e.target.value)} placeholder="jane@example.com" />
+      {already && (
+        <div style={{ margin: "8px 2px 0", padding: "10px 12px", background: nl.chip, borderRadius: 12, fontSize: 14, lineHeight: 1.45 }}>
+          {already.name || "Someone"} is already in your customers{already.email ? ` (${already.email})` : already.phone ? ` (${already.phone})` : ""}.{" "}
+          <button type="button" onClick={() => onOpen && onOpen(already)} style={{ border: "none", background: "none", padding: 0, color: nl.goodInk, font: "inherit", fontWeight: 600, textDecoration: "underline", cursor: "pointer" }}>Open them instead</button>
+        </div>
+      )}
       {(badEmail || dupe) && <div role="alert" style={{ fontSize: 13, color: nl.alert, margin: "4px 2px 0" }}>{dupe ? "Someone else already has that email." : "That email doesn't look right."}</div>}
       <label style={labelStyle} htmlFor="cu-phone">Phone</label>
       <input id="cu-phone" style={inputStyle} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="555-123-4567" />
@@ -239,10 +248,8 @@ function PasteSheet({ data, update, onClose }) {
   const add = () => {
     update((d) => {
       if (!Array.isArray(d.customers)) d.customers = [];
-      const have = new Map(d.customers.filter((c) => c && c.email).map((c) => [String(c.email).toLowerCase(), c]));
-      const phones = new Map(d.customers.filter((c) => c && digits(c.phone).length >= 7).map((c) => [digits(c.phone), c]));
       rows.forEach((r) => {
-        const found = (r.email && have.get(r.email)) || (r.phone && phones.get(digits(r.phone)));
+        const found = matchCustomer(d.customers, r);
         if (found) {
           found.groups = Array.from(new Set([...(Array.isArray(found.groups) ? found.groups : []), ...sel]));
           if (!found.phone && r.phone) found.phone = r.phone;
@@ -251,8 +258,6 @@ function PasteSheet({ data, update, onClose }) {
         }
         const c = { id: newId(), name: r.name.slice(0, 60), email: r.email, phone: r.phone, groups: [...sel], note: "" };
         d.customers.push(c);
-        if (c.email) have.set(c.email, c);
-        if (c.phone) phones.set(digits(c.phone), c);
       });
       return d;
     });
@@ -284,6 +289,14 @@ export default function CustomersPanel({ data, update, onEmail, toast }) {
   const [open, setOpen] = useState(null); // customer | "new"
   const [sheet, setSheet] = useState(""); // lists | paste | text
   const say = (m) => { if (m && toast) toast(m); };
+  // The same person twice (added by hand, then they ordered): one tap to merge.
+  const notSame = Array.isArray(data.customersNotSame) ? data.customersNotSame : [];
+  const dupes = useMemo(() => findDuplicates(customers).filter((g) => !notSame.includes(g.map((c) => c.id).sort().join("|"))), [customers, notSame.join(",")]); // eslint-disable-line react-hooks/exhaustive-deps
+  const merge = (g) => {
+    update((d) => { mergeCustomers(d, g[0].id, g.slice(1).map((c) => c.id)); return d; });
+    say(`Merged into one ${g[0].name || "customer"}.`);
+  };
+  const keepApart = (g) => update((d) => { d.customersNotSame = [...(Array.isArray(d.customersNotSame) ? d.customersNotSame : []), g.map((c) => c.id).sort().join("|")].slice(-200); return d; });
   const shown = useMemo(() => {
     const s = q.trim().toLowerCase();
     return customers
@@ -320,6 +333,23 @@ export default function CustomersPanel({ data, update, onEmail, toast }) {
         </>
       )}
 
+      {dupes.length > 0 && (
+        <Card>
+          <div style={{ padding: "12px 14px 4px", fontWeight: 600 }}>Same person twice?</div>
+          {dupes.slice(0, 5).map((g) => (
+            <div key={g.map((c) => c.id).join("|")} style={{ padding: "8px 14px 12px", borderTop: `1px solid ${nl.rule}` }}>
+              <div style={{ fontSize: 14, lineHeight: 1.5, overflowWrap: "anywhere" }}>
+                {g.map((c) => <div key={c.id}><strong>{c.name || "Customer"}</strong> <span style={{ color: nl.soft }}>{[c.email, c.phone].filter(Boolean).join(" · ") || "no email or phone"}{history[c.id] ? ` · ${history[c.id].count} sale${history[c.id].count === 1 ? "" : "s"}` : ""}</span></div>)}
+              </div>
+              <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
+                <Button small onClick={() => merge(g)}>Merge into one</Button>
+                <Button small kind="quiet" onClick={() => keepApart(g)}>They're different</Button>
+              </div>
+            </div>
+          ))}
+        </Card>
+      )}
+
       {customers.length === 0 ? (
         <Card padded>
           <div style={{ fontFamily: font.display, fontSize: 20 }}>No customers yet</div>
@@ -349,7 +379,7 @@ export default function CustomersPanel({ data, update, onEmail, toast }) {
         </Card>
       )}
 
-      {open && <CustomerSheet key={open === "new" ? "new" : open.id} customer={open === "new" ? null : open} data={data} update={update} history={history} onClose={(m) => { setOpen(null); say(m); }} />}
+      {open && <CustomerSheet key={open === "new" ? "new" : open.id} customer={open === "new" ? null : open} data={data} update={update} history={history} onClose={(m) => { setOpen(null); say(m); }} onOpen={(c) => setOpen(c)} />}
       {sheet === "lists" && <ListsSheet data={data} update={update} onClose={() => setSheet("")} />}
       {sheet === "paste" && <PasteSheet data={data} update={update} onClose={(m) => { setSheet(""); say(m); }} />}
       {sheet === "text" && <TextCustomersSheet open onClose={() => setSheet("")} data={data} />}

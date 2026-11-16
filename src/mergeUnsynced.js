@@ -248,6 +248,24 @@ function mergeRecursive(cloud, local) {
 export const TOMBSTONE_KEYS = ['customers', 'customerGroups', 'sales', 'expenses', 'calendarEvents'];
 const TOMBSTONE_MAX_AGE = 180 * 86400000;
 
+// Logs too: each hobby's list in data.entries is noted as "entries.<key>".
+// Without this, a log deleted on one phone while another device saved first
+// came back with the stale-write recovery's merge. (A log moved into a closed
+// season or finished batch is noted here as well; that's right: it no longer
+// belongs in the live list, and moving it back clears the note.)
+const ENTRY_PREFIX = 'entries.';
+const listKeys = (a, b) => {
+  const keys = new Set(TOMBSTONE_KEYS);
+  for (const src of [a, b]) {
+    const e = src && isPlainObject(src.entries) ? src.entries : null;
+    if (e) Object.keys(e).forEach((k) => keys.add(ENTRY_PREFIX + k));
+  }
+  return [...keys];
+};
+const listOf = (data, key) => (key.startsWith(ENTRY_PREFIX)
+  ? (data && isPlainObject(data.entries) ? data.entries[key.slice(ENTRY_PREFIX.length)] : undefined)
+  : data && data[key]);
+
 const idsOf = (arr) => new Set((Array.isArray(arr) ? arr : []).filter((x) => isPlainObject(x) && x.id).map((x) => x.id));
 
 // Called by update() with the before/after data. Mutates `next`.
@@ -255,10 +273,11 @@ export function noteDeletions(prev, next, now = Date.now()) {
   if (!isPlainObject(prev) || !isPlainObject(next)) return;
   const book = isPlainObject(next.deletedRecords) ? { ...next.deletedRecords } : {};
   let touched = false;
-  for (const key of TOMBSTONE_KEYS) {
-    if (!Array.isArray(prev[key]) && !Array.isArray(next[key])) continue;
-    const before = idsOf(prev[key]);
-    const after = idsOf(next[key]);
+  for (const key of listKeys(prev, next)) {
+    const pv = listOf(prev, key); const nv = listOf(next, key);
+    if (!Array.isArray(pv) && !Array.isArray(nv)) continue;
+    const before = idsOf(pv);
+    const after = idsOf(nv);
     const notes = isPlainObject(book[key]) ? { ...book[key] } : {};
     let changed = false;
     before.forEach((id) => { if (!after.has(id)) { notes[id] = now; changed = true; } });
@@ -301,17 +320,21 @@ function unionNotes(a, b) {
 function applyDeletions(data, notes) {
   let removed = 0;
   let out = data;
-  for (const key of TOMBSTONE_KEYS) {
+  for (const key of listKeys(data, null)) {
     const n = notes[key];
-    if (!n || !Array.isArray(data[key])) continue;
-    const kept = data[key].filter((x) => {
+    const list = listOf(data, key);
+    if (!n || !Array.isArray(list)) continue;
+    const kept = list.filter((x) => {
       if (!isPlainObject(x) || !x.id || !(x.id in n)) return true;
       return (Number(x.updatedAt) || 0) > n[x.id];
     });
-    if (kept.length !== data[key].length) {
+    if (kept.length !== list.length) {
       if (out === data) out = { ...data };
-      out[key] = kept;
-      removed += data[key].length - kept.length;
+      if (key.startsWith(ENTRY_PREFIX)) {
+        if (out.entries === data.entries) out.entries = { ...data.entries };
+        out.entries[key.slice(ENTRY_PREFIX.length)] = kept;
+      } else out[key] = kept;
+      removed += list.length - kept.length;
     }
   }
   return { data: out, removed };
